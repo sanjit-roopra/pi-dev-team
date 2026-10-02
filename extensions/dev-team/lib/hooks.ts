@@ -15,6 +15,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { DEV_TEAM_SUBAGENT_TOOL } from "./agents.ts";
 import { type DevTeamConfig, isHookEnabled } from "./config.ts";
 
 export type ClaudeEvent =
@@ -62,7 +63,7 @@ export const PI_TO_CLAUDE_TOOL: Record<string, string> = {
 	find: "Glob",
 	ls: "LS",
 	skill: "Skill",
-	subagent: "Agent",
+	[DEV_TEAM_SUBAGENT_TOOL]: "Agent",
 	ask_user: "AskUserQuestion",
 	web_fetch: "WebFetch",
 };
@@ -110,7 +111,7 @@ export function toClaudeInput(piName: string, input: Record<string, unknown>, cw
 			return { command: input.command, timeout: input.timeout };
 		case "skill":
 			return { skill: input.name, name: input.name, args: input.args ?? "" };
-		case "subagent":
+		case DEV_TEAM_SUBAGENT_TOOL:
 			return {
 				subagent_type: input.agent,
 				prompt: input.task,
@@ -125,7 +126,7 @@ export function toClaudeInput(piName: string, input: Record<string, unknown>, cw
 /** Apply a hook's updatedInput (Claude field names) back onto pi arguments, for the fields that have a clear mapping. */
 export function applyUpdatedInput(piName: string, piInput: Record<string, unknown>, updated: Record<string, unknown>): void {
 	if (piName === "bash" && typeof updated.command === "string") piInput.command = updated.command;
-	if (piName === "subagent") {
+	if (piName === DEV_TEAM_SUBAGENT_TOOL) {
 		if (typeof updated.prompt === "string") piInput.task = updated.prompt;
 		if (typeof updated.additionalContext === "string" && typeof piInput.task === "string") {
 			piInput.task = `${piInput.task}\n\n${updated.additionalContext}`;

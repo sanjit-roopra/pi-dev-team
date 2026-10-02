@@ -27,7 +27,7 @@ This is the pi port of `/setup`. Follow the steps below with these substitutions
 
 - **Hard dependencies (Step 3):** the `claude` CLI is not required. `pi`, `python3`, `jq`, `git` and `gh` are.
 - **Step 4:** run the `project-init` skill with the `skill` tool (`dev-team:project-init` and `project-init` are the same).
-- **Step 7 (agent templates):** activate templates into `.claude/agents/` exactly as written. The pi `subagent` tool loads project agents from `.pi/agents/` and `.claude/agents/`, and they take precedence over the package agents.
+- **Step 7 (agent templates):** activate templates into `.claude/agents/` exactly as written. The pi `dev_team_subagent` tool loads project agents from `.pi/agents/` and `.claude/agents/`, and they take precedence over the package agents.
 - **Step 8 / 8a (project CLAUDE.md):** pi loads context files from the project root and its ancestors (`AGENTS.md`, or `CLAUDE.md`), **not** from `.claude/CLAUDE.md`. Everywhere these steps say `.claude/CLAUDE.md`, use `AGENTS.md` at the repository root instead (if the repo already has a root `CLAUDE.md` and no `AGENTS.md`, use that `CLAUDE.md`). Same merge/skip and marker rules.
 - **Step 9 (formatting hook):** do not write `.claude/settings.json`. Instead set `"autoFormat": true` in `.pi/dev-team.json` (create the file if missing, keep other keys). The pi extension then runs `hooks/post_format.py` (prettier / ruff / black, auto-detected) after every `write`/`edit`.
 - **Step 10 (/pr):** write the generated project command to `.claude/skills/pr/SKILL.md` as written. The pi port resolves project skills in `.pi/skills/` and `.claude/skills/` before the package's own.

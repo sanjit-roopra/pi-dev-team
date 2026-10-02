@@ -13,6 +13,7 @@ import * as path from "node:path";
 
 const PKG = path.resolve(import.meta.dirname, "..", "..");
 const PROVIDER = path.join(PKG, "test", "fixtures", "scripted-provider.ts");
+const EXTERNAL_SUBAGENT = path.join(PKG, "test", "fixtures", "external-subagent.ts");
 const filter = process.argv[2] ?? "";
 
 function script(steps) {
@@ -76,6 +77,36 @@ function readJsonl(file) {
 		.map((l) => JSON.parse(l));
 }
 
+function assertSubagentCoexistence(env, options) {
+	const child = script([
+		{ tool: "bash", args: { command: 'printf "pid=%s depth=%s agent=%s\\n" "$PPID" "$DEV_TEAM_SUBAGENT_DEPTH" "$DEV_TEAM_AGENT_NAME" > child-process.txt' } },
+		{ tool: "write", args: { path: ".env", content: "OFFLINE=1" } },
+	]);
+	const r = pi(env, script([
+		{ tool: "subagent", args: { task: "collision-probe" } },
+		{ tool: "dev_team_subagent", args: { subagent_type: "general-purpose", prompt: child } },
+	]), { ...options, json: true });
+	assert(r.code === 0, `startup/dispatch failed: ${r.err}\n${r.out.slice(-1000)}`);
+	const results = toolResults(r.out);
+	const external = results.find((x) => x.tool === "subagent");
+	const dispatch = results.find((x) => x.tool === "dev_team_subagent");
+	assert(results.length === 2 && external && dispatch, `tools did not coexist: ${JSON.stringify(results)}`);
+	assert(!external.isError && external.text === "EXTERNAL_SUBAGENT:collision-probe", JSON.stringify(external));
+	assert(external.details?.source === "external-subagent-fixture" && external.details.task === "collision-probe", JSON.stringify(external));
+	assert(!dispatch.isError && dispatch.text.includes("[pre_tool_guard] BLOCKED"), `child guard missing: ${JSON.stringify(dispatch)}`);
+	assert(!dispatch.text.includes("EXTERNAL_SUBAGENT:"), "dev-team dispatch called the external extension");
+	const childResult = dispatch.details?.results?.[0];
+	assert(dispatch.details?.results?.length === 1 && childResult?.ok && childResult.agent === "general-purpose", JSON.stringify(dispatch.details));
+	assert(childResult.model === "scripted/s1" && childResult.usage.turns >= 3, `no scripted child run: ${JSON.stringify(childResult)}`);
+	const childProcessFile = path.join(env.repo, "child-process.txt");
+	assert(fs.existsSync(childProcessFile), "real child process did not run bash");
+	const childProcess = fs.readFileSync(childProcessFile, "utf-8");
+	const childPid = Number(childProcess.match(/pid=(\d+)/)?.[1]);
+	assert(Number.isInteger(external.details.pid) && childPid > 0 && childPid !== external.details.pid, `child did not run separately: ${childProcess} parent=${external.details.pid}`);
+	assert(childProcess.includes("depth=1 agent=general-purpose"), `child env missing: ${childProcess}`);
+	assert(!fs.existsSync(path.join(env.repo, ".env")), "child wrote guarded .env");
+}
+
 const scenarios = {
 	"command /version expands the skill"(env) {
 		const r = pi(env, "/version");
@@ -134,12 +165,12 @@ const scenarios = {
 
 	"subagent: single dispatch, env and depth"(env) {
 		const child = script([{ tool: "bash", args: { command: "echo depth=$DEV_TEAM_SUBAGENT_DEPTH agent=$DEV_TEAM_AGENT_NAME i=[$DEV_TEAM_INTERACTIVE]" } }]);
-		const r = pi(env, script([{ tool: "subagent", args: { agent: "Explore", task: child } }]));
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "Explore", task: child } }]));
 		assert(r.out.includes("depth=1 agent=Explore i=[]"), r.out);
 	},
 
 	"subagent: unknown agent lists available agents"(env) {
-		const r = pi(env, script([{ tool: "subagent", args: { agent: "nope", task: "x" } }]));
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "nope", task: "x" } }]));
 		assert(r.out.includes('Unknown agent "nope"') && r.out.includes("security-review"), r.out.slice(0, 400));
 	},
 
@@ -154,14 +185,14 @@ const scenarios = {
 			script([
 				{
 					tools: [
-						{ tool: "subagent", args: { agent: "dev-team:security-review", task: `Files in scope for this review: src/a.js\n${pass}` } },
-						{ tool: "subagent", args: { subagent_type: "test-review", prompt: `Files in scope for this review: src/a.js\n${fail}` } },
+						{ tool: "dev_team_subagent", args: { agent: "dev-team:security-review", task: `Files in scope for this review: src/a.js\n${pass}` } },
+						{ tool: "dev_team_subagent", args: { subagent_type: "test-review", prompt: `Files in scope for this review: src/a.js\n${fail}` } },
 					],
 				},
 			]),
 			{ json: true },
 		);
-		const results = toolResults(r.out).filter((x) => x.tool === "subagent");
+		const results = toolResults(r.out).filter((x) => x.tool === "dev_team_subagent");
 		assert(results.length === 2 && results.every((x) => !x.isError), JSON.stringify(results).slice(0, 500));
 		const verdicts = readJsonl(path.join(env.repo, ".claude", "metrics", "review-verdicts.jsonl"));
 		const byLens = Object.fromEntries(verdicts.map((v) => [v.lens, v.outcome]));
@@ -176,7 +207,7 @@ const scenarios = {
 			{ tool: "write", args: { path: "src/b.js", content: "export const b = 2;\n" } },
 			{ tool: "bash", args: { command: "git add src/b.js && git commit -qm 'slice b' && echo committed" } },
 		]);
-		const r = pi(env, script([{ tool: "subagent", args: { agent: "software-engineer", task: child, isolation: "worktree" } }]));
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "software-engineer", task: child, isolation: "worktree" } }]));
 		assert(r.out.includes("worktree kept") && r.out.includes("1 commit(s)") && !r.out.includes("uncommitted"), r.out);
 		const branches = execFileSync("git", ["branch", "--list", "dev-team/*"], { cwd: env.repo, encoding: "utf-8" });
 		assert(branches.includes("dev-team/software-engineer-"), branches);
@@ -184,7 +215,7 @@ const scenarios = {
 	},
 
 	"subagent: worktree without changes is removed"(env) {
-		const r = pi(env, script([{ tool: "subagent", args: { agent: "Explore", task: script([{ text: "nothing to do" }]), isolation: "worktree" } }]));
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "Explore", task: script([{ text: "nothing to do" }]), isolation: "worktree" } }]));
 		assert(r.out.includes("worktree removed"), r.out);
 		const list = execFileSync("git", ["worktree", "list"], { cwd: env.repo, encoding: "utf-8" });
 		assert(list.trim().split("\n").length === 1, list);
@@ -200,7 +231,7 @@ const scenarios = {
 	},
 
 	"cost meter row includes main and subagent spend by agent type"(env) {
-		pi(env, script([{ tool: "subagent", args: { agent: "security-review", task: script([{ text: "{}" }]) } }]));
+		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "security-review", task: script([{ text: "{}" }]) } }]));
 		const rows = readJsonl(path.join(env.repo, ".claude", "metrics", "cost-metering.jsonl"));
 		const row = rows.at(-1);
 		assert(row?.session_id && row.by_agent_type?.main && row.by_agent_type["dev-team:security-review"], JSON.stringify(row));
@@ -215,16 +246,53 @@ const scenarios = {
 		assert(json.type === "result" && json.is_error === false && json.result.includes("via shim"), r.out);
 	},
 
-	"installed package (no -e) is loaded by subagent children too"(env) {
+	"subagent collision: dev-team loaded before external extension"(env) {
+		assertSubagentCoexistence(env, { extra: ["-e", EXTERNAL_SUBAGENT] });
+	},
+
+	"subagent collision: external extension loaded before dev-team"(env) {
+		assertSubagentCoexistence(env, { usePackageFlag: false, extra: ["-e", EXTERNAL_SUBAGENT, "-e", PKG] });
+	},
+
+	"subagent: parent/child prompts and depth limits preserve the external tool"(env) {
+		const agentDir = path.join(env.repo, ".pi", "agents");
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(path.join(agentDir, "collision-probe.md"), "---\nname: collision-probe\ndescription: Offline mapping probe\ntools: Read, Agent, Task, subagent\n---\nInspect the runtime tools and prompt.\n");
+		const options = { extra: ["-e", EXTERNAL_SUBAGENT] };
+		const parent = pi(env, script([{ inspect: "runtime" }]), options);
+		assert(parent.code === 0, parent.err);
+		const parentRuntime = JSON.parse(parent.out);
+		assert(parentRuntime.tools.includes("dev_team_subagent") && parentRuntime.tools.includes("subagent"), JSON.stringify(parentRuntime.tools));
+		assert(parentRuntime.systemPrompt.includes("Agent/Task(subagent_type=X, prompt=P)=dev_team_subagent(agent=X, task=P)"), "parent prompt maps dispatch to the wrong tool");
+		assert(!parentRuntime.systemPrompt.includes("=subagent(agent=X, task=P)"), "parent prompt still maps dispatch to the external tool");
+
+		const inspectChild = () => {
+			const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "collision-probe", task: script([{ inspect: "runtime" }]) } }]), { ...options, json: true });
+			assert(r.code === 0, r.err);
+			const dispatch = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+			assert(dispatch && !dispatch.isError && dispatch.details?.results?.[0]?.ok, JSON.stringify(dispatch));
+			const runtime = JSON.parse(dispatch.text);
+			assert(runtime.systemPrompt.includes("Agent/Task=dev_team_subagent."), "child prompt maps dispatch to the wrong tool");
+			assert(!runtime.systemPrompt.includes("Agent/Task=subagent."), "child prompt still maps dispatch to the external tool");
+			assert(runtime.tools.includes("subagent"), "external tool was removed by dev-team's depth safeguard");
+			return runtime;
+		};
+		assert(inspectChild().tools.includes("dev_team_subagent"), "Claude Agent/Task did not enable namespaced child dispatch");
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ maxSubagentDepth: 1 }));
+		assert(!inspectChild().tools.includes("dev_team_subagent"), "namespaced dispatch remains active at the depth limit");
+		const child = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "collision-probe", task: script([{ tool: "subagent", args: { task: "depth-probe" } }]) } }]), { ...options, json: true });
+		const dispatch = toolResults(child.out).find((x) => x.tool === "dev_team_subagent");
+		assert(child.code === 0 && dispatch && !dispatch.isError && dispatch.text.includes("EXTERNAL_SUBAGENT:depth-probe"), `external tool was blocked at dev-team's depth limit: ${JSON.stringify(dispatch)} ${child.err}`);
+	},
+
+	"installed package (no -e) subagent collision keeps child hooks"(env) {
 		const inst = spawnSync("pi", ["install", PKG], {
 			env: { ...process.env, HOME: env.home, PI_CODING_AGENT_DIR: path.join(env.home, ".pi", "agent") },
 			encoding: "utf-8",
 			cwd: env.repo,
 		});
 		assert(inst.status === 0, `pi install failed: ${inst.stderr}`);
-		const child = script([{ tool: "write", args: { path: ".env", content: "x" } }]);
-		const r = pi(env, script([{ tool: "subagent", args: { agent: "general-purpose", task: child } }]), { usePackageFlag: false });
-		assert(r.out.includes("[pre_tool_guard] BLOCKED"), `guard did not run inside the child: ${r.out.slice(0, 400)} ${r.err.slice(0, 400)}`);
+		assertSubagentCoexistence(env, { usePackageFlag: false, extra: ["-e", EXTERNAL_SUBAGENT] });
 	},
 };
 

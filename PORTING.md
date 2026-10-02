@@ -40,10 +40,10 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 | Slash command `/plan args` | Extension command `/plan` that expands `SKILL.md` with `$ARGUMENTS`, `$0..$N` substituted and sends it as the user turn | `skills.ts` |
 | `Skill` tool (skill chaining, e.g. `/specs` -> `/plan`) | `skill` tool: `{name, args}` returns the expanded skill | `skills.ts` |
 | Skill listing for the model | Compact index (name, command, first ~220 chars of the description) in a `<dev_team>` system-prompt section, like Claude Code's budgeted Skill tool listing. Skills are deliberately *not* registered as native pi skills: pi's full listing of 99 descriptions was 61 KB of system prompt; the compact index keeps the whole prompt at ~26 KB | `skills.ts`, `index.ts` |
-| `Agent` / `Task` tool | `subagent` tool: spawns `pi --mode json -p --no-session` with the agent body as appended system prompt, mapped tools, tier-resolved model, thinking level from `effort`. Single, parallel (`tasks[]`), `isolation: "worktree"` | `subagent.ts` |
+| `Agent` / `Task` tool | `dev_team_subagent` tool: spawns `pi --mode json -p --no-session` with the agent body as appended system prompt, mapped tools, tier-resolved model, thinking level from `effort`. Single, parallel (`tasks[]`), `isolation: "worktree"`. Namespaced to coexist with other extensions such as `pi-subagents` | `subagent.ts` |
 | `model: opus/sonnet/haiku/fable` | Tier table in `dev-team.json` (per user or project). Default `inherit` = parent's model. Presets for GitHub Copilot, Anthropic, OpenAI | `config.ts`, `/dev-team models` |
 | `effort: low/medium/high` | `--thinking low/medium/high` | `agents.ts` |
-| `tools: Read, Grep, Glob, Bash, Edit, Write` | `read, grep, find, ls, bash, edit, write` (+ `skill`, `subagent`, `ask_user`, `web_fetch` when listed) | `agents.ts` |
+| `tools: Read, Grep, Glob, Bash, Edit, Write` | `read, grep, find, ls, bash, edit, write` (+ `skill`, `dev_team_subagent`, `ask_user`, `web_fetch` when listed) | `agents.ts` |
 | Agent `skills:` frontmatter | Skill names appended to the child system prompt as a hint, with how to load them (exactly what upstream's `subagent_skill_context.py` injects, because Claude Code does not preload skills for plugin agents). Full preload would add up to 290 KB per dispatch | `subagent.ts` |
 | Agent `memory:`, `color:` | Ignored (UI / Claude-only persistent agent memory) | – |
 | Agent `tools: Bash(cmd *)` scoped grants | pi cannot scope bash; the allowed patterns are stated in the child prompt | `agents.ts` |
@@ -53,7 +53,7 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 | PreToolUse | `tool_call` (block, or mutate input for `updatedInput`) | |
 | PostToolUse | `tool_result` (advisories appended to the tool result, `decision: block` sets `isError`) | |
 | SessionStart / UserPromptSubmit / Stop / SessionEnd | `session_start` / `input` / `agent_end` / `session_shutdown` | |
-| SubagentStop | Fired by the `subagent` tool after each child, with a synthetic Claude-format transcript so `review_verdict_recorder.py` and `subagent_completion_guard.py` run unchanged | `transcript.ts` |
+| SubagentStop | Fired by the `dev_team_subagent` tool after each child, with a synthetic Claude-format transcript so `review_verdict_recorder.py` and `subagent_completion_guard.py` run unchanged | `transcript.ts` |
 | `cost_meter.py` (parses Claude transcripts, Claude-only price table) | TypeScript cost meter using pi's own `usage.cost` (works for Copilot and every provider). Same `cost-metering.jsonl` row shape plus `session_id`, so `/cost-report`, `regression`, `pace`, `/autoship --max-cost-usd` keep working | `metrics.ts` |
 | `context_ceiling_guard.py` (transcript tail + Claude window table) | TypeScript guard using `ctx.getContextUsage()` (knows every model's window). Same thresholds and env vars | `metrics.ts` |
 | `claude -p` / `claude --print` in scripts | `bin/claude` shim translating the flags the scripts use into `pi --mode json -p` and printing a Claude-style result envelope. Prepended to `PATH` inside pi only | `bin/claude` |
@@ -75,7 +75,7 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 ## 5. Known differences
 
 - Hook output. In Claude Code, text a PreToolUse/PostToolUse hook prints with exit 0 is only shown in the transcript view. The plugin was written as if the model sees it. The port appends it to the tool result so the model does see it (`hookOutputToModel`, default on).
-- Parallel tool calls. Claude Code runs several `Agent` calls in one message in parallel; so does pi. The `subagent` tool also accepts `tasks[]`. A global limit (`maxParallelAgents`, default 6) applies across both.
+- Parallel tool calls. Claude Code runs several `Agent` calls in one message in parallel; so does pi. The `dev_team_subagent` tool also accepts `tasks[]`. A global limit (`maxParallelAgents`, default 6) applies across both.
 - Subagent transcripts are not saved as sessions (`--no-session`). Usage is captured from the JSON event stream and recorded.
 - `allowed-tools` in skills is advisory in pi (as in upstream under `bypassPermissions`).
 
@@ -85,15 +85,15 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 2. Extension modules: `config`, `env`, `agents`, `skills` (commands + `skill` tool), `subagent`, `hooks` (bridge), `transcript`, `metrics`, `ask-user`, `web-fetch`, `/dev-team` command, compatibility guidelines in the system prompt.
 3. `bin/claude` shim.
 4. Overrides: setup, help, version, upgrade, headless-run.
-5. Verification: unit tests for pure mapping code; offline end-to-end runs of the real `pi` binary against a scripted provider (commands, `skill`, `subagent` single/parallel/worktree, hook blocks, SubagentStop ledger rows, cost rows); upstream Python hook test suite against the shipped copy.
+5. Verification: unit tests for pure mapping code; offline end-to-end runs of the real `pi` binary against a scripted provider (commands, `skill`, `dev_team_subagent` single/parallel/worktree, hook blocks, SubagentStop ledger rows, cost rows); upstream Python hook test suite against the shipped copy.
 
 ## 7. Verification
 
 - **Byte identity.** `hooks/`, `scripts/`, `tools/`, `knowledge/`, `templates/` and the 46 upstream agents are byte-identical to upstream (`diff -rq`). Only 13 `SKILL.md` files differ, each by a listed patch or note (`UPSTREAM.json`). The upstream Python test suite therefore applies unchanged.
 - **Upstream Python suite** run against the shipped copy (`uv run --with pytest ... pytest plugins/dev-team/tests/{hooks,scripts,lib}`): 4265 passed. The single error is `test_durable_runner.py`, which tests the dropped `long-eval` skill.
-- **Unit tests** (`test/unit`, node:test, 17 tests): tool and MCP-name mapping, tier and effort resolution, parsing of every upstream agent and skill, argument substitution, hook wiring, Claude input mapping, the synthetic transcript shape, argument forwarding.
+- **Unit tests** (`test/unit`, node:test, 19 tests): tool and MCP-name mapping, tier and effort resolution, parsing of every upstream agent and skill, argument substitution, hook wiring, Claude input mapping, the synthetic transcript shape, argument forwarding.
 - **Python tests** (`test/py`, 10 tests): sync helpers (description trimming, note insertion, idempotency) and the `claude` shim (flag translation, envelope, error path).
-- **End-to-end** (`test/e2e/run.mjs`, 17 scenarios). These run the real `pi` 0.99.1 binary with an offline scripted provider in throwaway git repos:
+- **End-to-end** (`test/e2e/run.mjs`, 20 scenarios). These run the real `pi` binary with an offline scripted provider in throwaway git repos, verified on pi 1.0.0:
   - `/commands` with `$0`/`$ARGUMENTS`
   - the plugin env in bash
   - `pre_tool_guard`, `destructive_guard`, freeze scope and `pre_pr_review` blocks
@@ -104,6 +104,8 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
   - the `skill` tool and `ask_user` (non-interactive)
   - cost rows split by agent type
   - the `claude -p` shim
-  - an installed package whose guards also run inside subagent children
+  - coexistence with an extension registering `subagent`, in both load orders
+  - parent/child prompt mapping and dispatch depth limits
+  - an installed package whose guards also run inside subagent children alongside the other extension
 - **Interactive.** A tmux session in pi's TUI covered `/dev-team` status, `/plan` expansion, and an `ask_user` select dialog whose answer reaches the model.
 - **Not verified here.** Runs against real model providers. The sandbox had no provider credentials, so the first real Copilot run is the remaining check.

@@ -83,7 +83,7 @@ PATCHES: list[tuple[str, str, str, str]] = [
     (
         "skills/triage/SKILL.md",
         r'Use the Agent tool with `subagent_type: "Explore"`',
-        'Use the `subagent` tool with `agent: "Explore"`',
+        'Use the `dev_team_subagent` tool with `agent: "Explore"`',
         "Claude's built-in Explore agent is provided by the port",
     ),
 ]

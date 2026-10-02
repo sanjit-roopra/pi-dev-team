@@ -9,14 +9,15 @@
  * Step N of the script is played on the N-th assistant turn. A step is either
  * {"text": "..."} (final answer) or {"tool": name, "args": {...}} or
  * {"tools": [{"tool": name, "args": {...}}, ...]} (parallel calls in one message).
+ * {"inspect": "runtime"} returns the model-facing system prompt and active tool names.
  * When the script is exhausted the model answers with the last tool result text
  * (prefixed "ECHO:") so tests can assert on what tools returned.
  * Each assistant message reports fixed usage so cost accounting can be tested.
  */
-import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-type Step = { text?: string; tool?: string; args?: Record<string, unknown>; tools?: { tool: string; args?: Record<string, unknown> }[] };
+type Step = { text?: string; inspect?: "runtime"; tool?: string; args?: Record<string, unknown>; tools?: { tool: string; args?: Record<string, unknown> }[] };
 
 function textOf(content: unknown): string {
 	if (typeof content === "string") return content;
@@ -44,7 +45,12 @@ export default function (pi: ExtensionAPI) {
 		if (match) {
 			const steps = JSON.parse(match[1]) as Step[];
 			const step = steps[assistantTurns];
-			if (step?.tools) {
+			if (step?.inspect === "runtime") {
+				msg = fauxAssistantMessage([fauxText(JSON.stringify({
+					systemPrompt: getCurrentSystemPrompt(context.messages),
+					tools: getCurrentTools(context.messages).map((t) => t.name),
+				}))]);
+			} else if (step?.tools) {
 				msg = fauxAssistantMessage(
 					step.tools.map((t) => fauxToolCall(t.tool, (t.args ?? {}) as never, { id: `call_${++counter}` })),
 					{ stopReason: "toolUse" },

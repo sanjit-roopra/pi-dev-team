@@ -1,9 +1,9 @@
 /**
- * `subagent` tool — pi equivalent of Claude Code's Agent/Task tool for dev-team agents.
+ * `dev_team_subagent` tool — pi equivalent of Claude Code's Agent/Task tool for dev-team agents.
  *
  * Each dispatch runs a child `pi --mode json -p --no-session` process with:
  *   - the agent's markdown body appended to the system prompt
- *   - its Claude tool list mapped to pi tools (Glob -> find/ls, Agent -> subagent, Skill -> skill, ...)
+ *   - its Claude tool list mapped to pi tools (Glob -> find/ls, Agent -> dev_team_subagent, Skill -> skill, ...)
  *   - its model tier (opus/sonnet/haiku/fable) resolved through dev-team.json, default: inherit
  *   - its `effort` mapped to --thinking
  * Around each dispatch it fires the upstream hooks Claude Code would fire:
@@ -17,7 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { type AgentDef, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
+import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
 import type { DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
@@ -258,7 +258,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			const available = pi.getAllTools().map((t) => t.name);
 			const mapping = mapTools(def.claudeTools, available);
 			let tools = mapping?.tools;
-			if (tools && deps.depth + 1 >= config.maxSubagentDepth) tools = tools.filter((t) => t !== "subagent");
+			if (tools && deps.depth + 1 >= config.maxSubagentDepth) tools = tools.filter((t) => t !== DEV_TEAM_SUBAGENT_TOOL);
 
 			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? []);
 			const promptFile = path.join(tmpDir, `agent-${def.name}.md`);
@@ -423,8 +423,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 	}
 
 	pi.registerTool({
-		name: "subagent",
-		label: "Subagent",
+		name: DEV_TEAM_SUBAGENT_TOOL,
+		label: "Dev-team subagent",
 		description: [
 			"Dispatch a dev-team agent (Claude Code's Agent/Task tool) in an isolated pi process with its own context.",
 			"The agent sees only `task`, so include every file path, diff range, scope marker and constraint it needs.",
@@ -504,7 +504,8 @@ export function buildSystemPrompt(def: AgentDef, packageRoot: string, scopedBash
 	const runtime: string[] = [
 		`You are the dev-team agent "${def.name}", dispatched as a subagent. Your final message is returned to the dispatcher verbatim; make it the complete deliverable (for review agents: the JSON result exactly as your output contract specifies).`,
 		`Plugin root: ${packageRoot} (also $CLAUDE_PLUGIN_ROOT in bash). Relative references like knowledge/X.md, skills/X/SKILL.md and scripts/X.py are under it.`,
-		"Tool names: Read=read, Grep=grep, Glob=find, Bash=bash, Edit=edit, Write=write, Skill=skill, Agent/Task=subagent.",
+		`Tool names: Read=read, Grep=grep, Glob=find, Bash=bash, Edit=edit, Write=write, Skill=skill, Agent/Task=${DEV_TEAM_SUBAGENT_TOOL}.`,
+		`Use ${DEV_TEAM_SUBAGENT_TOOL} for dev-team dispatch, including instructions that say to use the subagent tool. Other extensions' subagent tools do not apply the dev-team tier mappings or dispatch hooks.`,
 		"You run non-interactively: never wait for a human; where instructions ask the user, take the documented non-interactive default and report it.",
 	];
 	if (def.skills.length) {

@@ -2,7 +2,7 @@
  * pi-dev-team — pi port of Bryan Finster's dev-team plugin (bdfinst/agentic-dev-team).
  *
  * This extension provides the Claude Code runtime contract the upstream content relies on:
- *   env (CLAUDE_PLUGIN_ROOT, ...), /commands for skills, the `skill` and `subagent` tools,
+ *   env (CLAUDE_PLUGIN_ROOT, ...), /commands for skills, the `skill` and `dev_team_subagent` tools,
  *   `ask_user`, `web_fetch`, the Python hook bridge, native cost meter and context-ceiling guard.
  * See PORTING.md for the full mapping.
  */
@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
+import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -352,7 +352,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			if (verdict.block) return { block: true, reason: verdict.block };
 			if (verdict.warn) notify(ctx, [verdict.warn]);
 		}
-		if (event.toolName === "subagent") {
+		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			// PreToolUse(Agent) hooks run per dispatch inside the tool; only the context ceiling applies here.
 			const verdict = contextCeiling(ctx, "agent", String(input.agent ?? input.subagent_type ?? "tasks"));
 			if (verdict.block) return { block: true, reason: verdict.block };
@@ -376,7 +376,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
-		if (event.toolName === "subagent") {
+		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			running = Math.max(0, running - 1);
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", running ? `dev-team: ${running} agent call(s) running` : undefined);
 		}
@@ -443,7 +443,8 @@ export default function devTeam(pi: ExtensionAPI) {
 function compatGuide(packageRoot: string, index: string, interactive: boolean): string {
 	return [
 		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
-		"- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=subagent(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).",
+		`- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=${DEV_TEAM_SUBAGENT_TOOL}(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).`,
+		`- Always use ${DEV_TEAM_SUBAGENT_TOOL} for dev-team dispatch, including instructions that say to use the subagent tool. Other extensions' subagent tools do not apply the dev-team tier mappings or dispatch hooks.`,
 		'- A slash command inside dev-team instructions ("run /plan", "invoke /code-review --internal", "/dev-team:project-init") means: call the skill tool with that name and the text after it as args, then follow what it returns. Never ask the user to type it.',
 		`- \${CLAUDE_PLUGIN_ROOT} is ${packageRoot} and is exported in bash. knowledge/, scripts/, agents/, skills/, templates/, hooks/ paths in the instructions are relative to it.`,
 		"- Runtime state lives under .claude/ in the project (memory, metrics, hooks, plans) exactly as the skills describe. Project instructions are AGENTS.md / CLAUDE.md.",
@@ -451,7 +452,7 @@ function compatGuide(packageRoot: string, index: string, interactive: boolean): 
 		interactive
 			? "- Human gates: a human is attached (DEV_TEAM_INTERACTIVE=1). Ask with ask_user and wait for the answer; never assume approval."
 			: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
-		"- To run independent agents in parallel, issue several subagent calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.",
+		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
 		index ? `\nDev-team skills (load with the skill tool; "(/x)" = also a user command):\n${index}` : "",
 	].join("\n");
 }

@@ -77,7 +77,10 @@ class Shim(unittest.TestCase):
         self.assertEqual(shim.model_args(None), [])
 
     def test_map_tools(self):
-        self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent"), ["read", "find", "ls", "grep", "skill", "subagent"])
+        self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
+        for tool in ("Agent", "Task"):
+            with self.subTest(tool=tool):
+                self.assertEqual(shim.map_tools(tool), ["dev_team_subagent"])
 
     def _fake_pi(self, d, events, code=0):
         script = Path(d) / "fake-pi"

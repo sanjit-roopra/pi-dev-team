@@ -28,9 +28,17 @@ test("splitToolList keeps scoped Bash grants intact", () => {
 test("mapTools maps Claude tools to pi tools", () => {
 	const m = mapTools(["Read", "Grep", "Glob", "Bash(graphify *)", "Edit", "Write", "Skill", "Agent", "WebSearch", "Frobnicate"], ["read"]);
 	assert.ok(m);
-	assert.deepEqual(m.tools.sort(), ["bash", "edit", "find", "grep", "ls", "read", "skill", "subagent", "write"].sort());
+	assert.deepEqual(m.tools.sort(), ["bash", "dev_team_subagent", "edit", "find", "grep", "ls", "read", "skill", "write"].sort());
 	assert.deepEqual(m.scopedBash, ["graphify *"]);
 	assert.deepEqual(m.unmapped, ["Frobnicate"]);
+});
+
+test("Agent and Task map only to dev-team dispatch, preserving an external subagent", () => {
+	const available = ["dev_team_subagent", "subagent"];
+	for (const name of ["Agent", "Task"]) {
+		assert.deepEqual(mapTools([name], available)?.tools, ["dev_team_subagent"]);
+	}
+	assert.deepEqual(mapTools(["Agent", "Task", "subagent"], available)?.tools, available);
 });
 
 test("mapTools expands MCP patterns against registered tools, renaming Claude plugin servers", () => {
@@ -138,17 +146,31 @@ test("hook enablement honours defaults, disabled and enable lists", () => {
 
 test("toClaudeInput / applyUpdatedInput", () => {
 	assert.equal(claudeToolName("find"), "Glob");
-	assert.equal(claudeToolName("subagent"), "Agent");
+	assert.equal(claudeToolName("dev_team_subagent"), "Agent");
+	assert.equal(claudeToolName("subagent"), "subagent");
 	const w = toClaudeInput("write", { path: "a/b.ts", content: "x" }, "/repo");
 	assert.equal(w.file_path, "/repo/a/b.ts");
 	assert.equal(w.path, "/repo/a/b.ts");
 	const e = toClaudeInput("edit", { path: "/abs/f.ts", edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }] }, "/repo");
 	assert.equal(e.old_string, "a\nc");
 	assert.equal(e.new_string, "b\nd");
-	assert.deepEqual(toClaudeInput("subagent", { agent: "x", task: "t" }, "/r"), { subagent_type: "x", prompt: "t", description: "", model: undefined });
+	assert.deepEqual(toClaudeInput("dev_team_subagent", { agent: "x", task: "t" }, "/r"), { subagent_type: "x", prompt: "t", description: "", model: undefined });
 	const input: Record<string, unknown> = { command: "ls" };
 	applyUpdatedInput("bash", input, { command: "ls -la" });
 	assert.equal(input.command, "ls -la");
+});
+
+test("hook prompt updates apply only to namespaced dev-team dispatch", () => {
+	const dispatch: Record<string, unknown> = { agent: "x", task: "original" };
+	applyUpdatedInput("dev_team_subagent", dispatch, { prompt: "updated", additionalContext: "context" });
+	assert.deepEqual(dispatch, { agent: "x", task: "updated\n\ncontext" });
+	applyUpdatedInput("dev_team_subagent", dispatch, { additionalContext: "more context" });
+	assert.equal(dispatch.task, "updated\n\ncontext\n\nmore context");
+
+	const external = { agent: "external", task: "original", description: "external tool" };
+	assert.deepEqual(toClaudeInput("subagent", external, "/r"), external);
+	applyUpdatedInput("subagent", external, { prompt: "updated", additionalContext: "context" });
+	assert.deepEqual(external, { agent: "external", task: "original", description: "external tool" });
 });
 
 test("synthetic transcript matches the fields the SubagentStop hooks read", () => {
@@ -187,4 +209,6 @@ test("subagent system prompt carries runtime notes and skill hints", () => {
 	assert.match(prompt, /Relevant skills for this dispatch/);
 	assert.match(prompt, /test-driven-development/);
 	assert.match(prompt, /Unavailable in this runtime/);
+	assert.match(prompt, /Agent\/Task=dev_team_subagent\./);
+	assert.doesNotMatch(prompt, /Agent\/Task=subagent\b/);
 });

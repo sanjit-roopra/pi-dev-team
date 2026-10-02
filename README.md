@@ -22,8 +22,15 @@ Requirements:
 - `jq` recommended
 
 ```bash
-pi install ./pi-dev-team            # user-wide
+pi install git:github.com/sanjit-roopra/pi-dev-team  # user-wide from GitHub
+pi install ./pi-dev-team            # or from a local checkout
 pi install -l ./pi-dev-team         # or for one project (.pi/settings.json)
+```
+
+To update an existing Git installation:
+
+```bash
+pi update git:github.com/sanjit-roopra/pi-dev-team
 ```
 
 Then, inside pi:
@@ -77,10 +84,15 @@ The model uses dev-team through four tools the extension adds:
 
 | Tool | Claude Code equivalent | Notes |
 |---|---|---|
-| `subagent` | Agent / Task | Runs the agent in a child `pi` process with its own context, tools and tier model. Single calls, parallel calls (several calls in one message, or `tasks[]`), and `isolation: "worktree"`. Accepts `subagent_type`/`prompt` too. |
+| `dev_team_subagent` | Agent / Task | Runs the agent in a child `pi` process with its own context, tools and tier model. Single calls, parallel calls (several calls in one message, or `tasks[]`), and `isolation: "worktree"`. Accepts `subagent_type`/`prompt` too. |
 | `skill` | Skill | Loads a skill with arguments substituted. This is how skills chain (`/specs` → `/plan`, `/ship` → everything). |
 | `ask_user` | AskUserQuestion | The human gates. In non-interactive runs (`pi -p`, subagents) it tells the model to take the documented default. |
 | `web_fetch` | WebFetch | URL to text. |
+
+The dispatch tool is named `dev_team_subagent` so this package can coexist with
+`pi-subagents`, which registers `subagent`. Dev-team workflows use their own
+dispatch tool for model tiers, hooks, and metrics. Other workflows can still use
+the other package's `subagent` tool.
 
 ## Configure
 

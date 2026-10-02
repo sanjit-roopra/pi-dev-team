@@ -14,6 +14,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
+export const DEV_TEAM_SUBAGENT_TOOL = "dev_team_subagent";
+
 export interface AgentDef {
 	name: string;
 	description: string;
@@ -139,8 +141,8 @@ const CLAUDE_TO_PI_TOOL: Record<string, string[]> = {
 	write: ["write"],
 	notebookedit: ["edit"],
 	skill: ["skill"],
-	agent: ["subagent"],
-	task: ["subagent"],
+	agent: [DEV_TEAM_SUBAGENT_TOOL],
+	task: [DEV_TEAM_SUBAGENT_TOOL],
 	askuserquestion: ["ask_user"],
 	webfetch: ["web_fetch"],
 	todowrite: [],

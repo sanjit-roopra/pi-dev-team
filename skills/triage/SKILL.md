@@ -55,7 +55,7 @@ Apply the systematic debugging protocol from `skills/systematic-debugging/SKILL.
 2. **Investigate**: Trace data flow, check recent changes, find working reference code
 3. **Root cause**: Form and test a hypothesis
 
-Use the `subagent` tool with `agent: "Explore"` to deeply investigate the codebase:
+Use the `dev_team_subagent` tool with `agent: "Explore"` to deeply investigate the codebase:
 related source files and dependencies, existing tests (covered vs missing),
 recent changes to affected files (`git log`), error handling in the code path,
 and similar patterns elsewhere that work correctly.

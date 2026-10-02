@@ -38,7 +38,7 @@ TIERS = {"opus", "sonnet", "haiku", "fable", "inherit", "default"}
 TOOL_MAP = {
     "read": ["read"], "grep": ["grep"], "glob": ["find", "ls"], "ls": ["ls"], "bash": ["bash"],
     "edit": ["edit"], "multiedit": ["edit"], "write": ["write"], "notebookedit": ["edit"],
-    "skill": ["skill"], "agent": ["subagent"], "task": ["subagent"], "webfetch": ["web_fetch"],
+    "skill": ["skill"], "agent": ["dev_team_subagent"], "task": ["dev_team_subagent"], "webfetch": ["web_fetch"],
     "askuserquestion": ["ask_user"],
 }
 
