@@ -1,0 +1,25 @@
+{
+  "name": "pi-dev-team",
+  "version": "0.1.0",
+  "description": "pi port of Bryan Finster's dev-team (bdfinst/agentic-dev-team): persona-driven dev team, reviewer swarm, TDD-gated /specs -> /plan -> /build -> /pr workflow, guard hooks. Works with any pi model provider, including GitHub Copilot.",
+  "license": "MIT",
+  "keywords": ["pi-package", "agents", "code-review", "tdd", "dev-team"],
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions/dev-team/index.ts"],
+    "skills": [],
+    "prompts": [],
+    "themes": []
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "scripts": {
+    "sync": "python3 sync/sync_upstream.py --upstream ../agentic-dev-team",
+    "test": "node --test test/unit/*.test.ts && python3 -m unittest discover -s test/py -p 'test_*.py'",
+    "e2e": "node test/e2e/run.mjs"
+  },
+  "files": ["extensions", "agents", "skills", "hooks", "scripts", "knowledge", "templates", "tools", "bin", "docs", "sync", "overrides", "UPSTREAM.json", "PORTING.md", "README.md", "LICENSE"]
+}

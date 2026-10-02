@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""`claude` CLI shim for the pi port of dev-team.
+
+Upstream scripts (orchestrator.py, codebase_recon.py, progress_guardian.py,
+token_efficiency_review.py, mutation-testing helpers, ...) shell out to
+`claude -p ...`. Inside a pi session the pi-dev-team extension puts this
+directory first on PATH, so those calls run pi instead:
+
+  claude -p [--agent NAME] [--model M] [--output-format text|json|stream-json]
+         [--allowedTools "Read Grep ..."] [--append-system-prompt TEXT] [PROMPT]
+    -> pi --mode json -p --no-session [--dev-team-agent NAME] [--dev-team-tier T | --model P/ID]
+          [--tools ...] PROMPT
+
+and print Claude's result envelope, e.g.
+  {"type":"result","subtype":"success","is_error":false,"result":"...","num_turns":2,
+   "total_cost_usd":0.01,"usage":{"input_tokens":...},"session_id":"..."}
+
+Ignored (no pi equivalent needed): --dangerously-skip-permissions, --session-id,
+--max-turns, --verbose, --permission-mode, --settings, --no-session-persistence.
+Unsupported subcommands (mcp, plugin, --resume) exit 1 with a message.
+Set DEV_TEAM_REAL_CLAUDE=/path/to/claude to pass through to a real Claude Code CLI.
+Stdlib only.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import uuid
+
+IGNORED_WITH_VALUE = {"--session-id", "--max-turns", "--permission-mode", "--settings", "--mcp-config", "--add-dir", "--fallback-model", "--input-format"}
+IGNORED_FLAGS = {"--dangerously-skip-permissions", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--include-partial-messages"}
+TIERS = {"opus", "sonnet", "haiku", "fable", "inherit", "default"}
+TOOL_MAP = {
+    "read": ["read"], "grep": ["grep"], "glob": ["find", "ls"], "ls": ["ls"], "bash": ["bash"],
+    "edit": ["edit"], "multiedit": ["edit"], "write": ["write"], "notebookedit": ["edit"],
+    "skill": ["skill"], "agent": ["subagent"], "task": ["subagent"], "webfetch": ["web_fetch"],
+    "askuserquestion": ["ask_user"],
+}
+
+
+def fail(msg: str, code: int = 1) -> int:
+    print(f"claude (pi-dev-team shim): {msg}", file=sys.stderr)
+    return code
+
+
+def map_tools(spec: str) -> list[str]:
+    out: list[str] = []
+    for raw in spec.replace(",", " ").split():
+        base = raw.split("(", 1)[0].strip().lower()
+        for t in TOOL_MAP.get(base, []):
+            if t not in out:
+                out.append(t)
+    return out
+
+
+def pi_command() -> list[str]:
+    explicit = os.environ.get("DEV_TEAM_PI_BIN")
+    if explicit:
+        return explicit.split()
+    found = shutil.which("pi")
+    return [found] if found else ["pi"]
+
+
+def model_args(model: str | None) -> list[str]:
+    if not model:
+        return []
+    m = model.strip()
+    if "/" in m:
+        return ["--model", m]
+    low = m.lower()
+    if low in TIERS:
+        return [] if low in ("inherit", "default") else ["--dev-team-tier", low]
+    for tier in ("opus", "sonnet", "haiku", "fable"):
+        if tier in low:  # full Claude ids like claude-sonnet-4-5 -> tier
+            return ["--dev-team-tier", tier]
+    return ["--model", m]
+
+
+def main(argv: list[str]) -> int:
+    real = os.environ.get("DEV_TEAM_REAL_CLAUDE")
+    if real:
+        os.execv(real, [real, *argv])
+
+    if argv and argv[0] in ("mcp", "plugin", "config", "update", "doctor", "setup-token", "migrate-installer"):
+        return fail(f"'claude {argv[0]}' has no pi equivalent in this shim (use 'pi {argv[0]}' where it exists).")
+    if "--version" in argv or "-v" in argv:
+        print("2.0.0 (pi-dev-team shim)")
+        return 0
+
+    fmt = "text"
+    agent = None
+    model = None
+    tools: list[str] | None = None
+    append_prompt: list[str] = []
+    system_prompt = None
+    prompt_parts: list[str] = []
+    printing = False
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        nxt = argv[i + 1] if i + 1 < len(argv) else None
+        if a in ("-p", "--print"):
+            printing = True
+        elif a == "--output-format" and nxt is not None:
+            fmt = nxt
+            i += 1
+        elif a.startswith("--output-format="):
+            fmt = a.split("=", 1)[1]
+        elif a == "--agent" and nxt is not None:
+            agent = nxt
+            i += 1
+        elif a == "--model" and nxt is not None:
+            model = nxt
+            i += 1
+        elif a in ("--allowedTools", "--allowed-tools", "--tools") and nxt is not None:
+            tools = (tools or []) + map_tools(nxt)
+            i += 1
+        elif a in ("--disallowedTools", "--disallowed-tools") and nxt is not None:
+            i += 1
+        elif a == "--append-system-prompt" and nxt is not None:
+            append_prompt.append(nxt)
+            i += 1
+        elif a == "--system-prompt" and nxt is not None:
+            system_prompt = nxt
+            i += 1
+        elif a in ("--resume", "-r", "--continue", "-c"):
+            return fail("session resume is not supported by the shim")
+        elif a in IGNORED_WITH_VALUE:
+            i += 1
+        elif a in IGNORED_FLAGS:
+            pass
+        elif a == "--":
+            prompt_parts.extend(argv[i + 1 :])
+            break
+        elif a.startswith("-") and not prompt_parts:
+            pass  # unknown flag: ignore
+        else:
+            prompt_parts.append(a)
+        i += 1
+
+    if not printing:
+        return fail("only non-interactive `claude -p` is supported; run `pi` for an interactive session")
+
+    prompt = " ".join(prompt_parts).strip()
+    if not prompt and not sys.stdin.isatty():
+        prompt = sys.stdin.read().strip()
+    if not prompt:
+        return fail("no prompt given")
+
+    tmp = tempfile.mkdtemp(prefix="pi-dev-team-shim-")
+    cmd = pi_command() + ["--mode", "json", "-p", "--no-session"]
+    try:  # resources/trust of the pi session that set up this shim (extensions loaded with -e, --approve)
+        cmd += [str(x) for x in json.loads(os.environ.get("DEV_TEAM_PI_ARGS", "[]"))]
+    except (ValueError, TypeError):
+        pass
+    if agent:
+        cmd += ["--dev-team-agent", agent.split(":")[-1]]
+    cmd += model_args(model)
+    if tools is not None:
+        cmd += ["--tools", ",".join(tools) if tools else "read"]
+    if system_prompt:
+        path = os.path.join(tmp, "system.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(system_prompt)
+        cmd += ["--system-prompt", path]
+    for n, text in enumerate(append_prompt):
+        path = os.path.join(tmp, f"append-{n}.md")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        cmd += ["--append-system-prompt", path]
+    cmd.append(prompt)
+
+    env = dict(os.environ)
+    env.pop("DEV_TEAM_INTERACTIVE", None)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
+    except FileNotFoundError:
+        return fail("pi executable not found on PATH (set DEV_TEAM_PI_BIN)", 127)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    result_text = ""
+    turns = 0
+    cost = 0.0
+    usage = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
+    stop_reason = None
+    error_message = None
+    stream_lines: list[str] = []
+    for line in proc.stdout.splitlines():
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if fmt == "stream-json":
+            stream_lines.append(line)
+        if ev.get("type") != "message_end":
+            continue
+        msg = ev.get("message") or {}
+        if msg.get("role") != "assistant":
+            continue
+        turns += 1
+        u = msg.get("usage") or {}
+        usage["input_tokens"] += u.get("input", 0) or 0
+        usage["output_tokens"] += u.get("output", 0) or 0
+        usage["cache_read_input_tokens"] += u.get("cacheRead", 0) or 0
+        usage["cache_creation_input_tokens"] += u.get("cacheWrite", 0) or 0
+        c = u.get("cost") or {}
+        cost += (c.get("total", 0) if isinstance(c, dict) else c) or 0
+        stop_reason = msg.get("stopReason") or stop_reason
+        error_message = msg.get("errorMessage") or error_message
+        texts = [b.get("text", "") for b in msg.get("content") or [] if isinstance(b, dict) and b.get("type") == "text"]
+        if "".join(texts).strip():
+            result_text = "\n".join(texts)
+
+    is_error = proc.returncode != 0 or stop_reason in ("error", "aborted")
+    if is_error and not result_text:
+        result_text = error_message or proc.stderr.strip()[-2000:] or f"pi exited with {proc.returncode}"
+
+    envelope = {
+        "type": "result",
+        "subtype": "error_during_execution" if is_error else "success",
+        "is_error": is_error,
+        "result": result_text,
+        "num_turns": turns,
+        "total_cost_usd": round(cost, 6),
+        "usage": usage,
+        "session_id": str(uuid.uuid4()),
+        "stop_reason": stop_reason,
+    }
+    if fmt == "json":
+        print(json.dumps(envelope))
+    elif fmt == "stream-json":
+        for line in stream_lines:
+            print(line)
+        print(json.dumps(envelope))
+    else:
+        print(result_text)
+    if proc.stderr and is_error:
+        sys.stderr.write(proc.stderr[-4000:])
+    return 1 if is_error else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

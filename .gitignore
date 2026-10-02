@@ -1,0 +1,24 @@
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+test/.tmp/
+
+# Local environment and caches
+.env
+.env.*
+!.env.example
+!.env.*.example
+.venv/
+.hypothesis/
+.ruff_cache/
+.mypy_cache/
+.DS_Store
+
+# Personal configuration and agent runtime state
+/.pi/dev-team.local.json
+/.claude/settings.local.json
+/.claude/memory/
+/.claude/metrics/
+/.claude/plans/
+/.claude/worktrees/
