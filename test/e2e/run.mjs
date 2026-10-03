@@ -254,7 +254,7 @@ const scenarios = {
 		assert(dispatch.details.results.every((v) => v.status === "ok" && v.ok && v.turns >= 1), JSON.stringify(dispatch.details));
 	},
 
-	"subagent: project agents need a trust decision"(env) {
+	"subagent: project agents run by default, skipped only when pi trust is declined"(env) {
 		const agentDir = path.join(env.repo, ".claude", "agents");
 		fs.mkdirSync(agentDir, { recursive: true });
 		fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
@@ -262,26 +262,18 @@ const scenarios = {
 		const probe = script([{ inspect: "runtime" }]);
 		const call = script([{ tools: [{ tool: "dev_team_subagent", args: { tasks: [{ agent: "local-only", task: probe }, { agent: "security-review", task: probe }] } }] }]);
 
-		// untrusted (print mode, no saved decision, defaultProjectTrust "ask"): package agents only
+		// default install, no flags, no trust setup: project agents and overrides run
 		let r = pi(env, call, { json: true });
 		let d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
-		assert(d?.details?.untrustedProjectAgents?.sort().join(",") === "local-only,security-review", JSON.stringify(d?.details));
-		assert(d.text.includes('Unknown agent "local-only"') && d.text.includes("project agents not run"), d.text.slice(0, 600));
-		const pkgRun = d.details.results.find((v) => v.agent === "security-review");
-		assert(pkgRun?.ok && pkgRun.source === "package" && !d.text.includes("PROJECT_OVERRIDE_PROMPT"), JSON.stringify(pkgRun));
-
-		// --approve: project agents (and the override) run
-		r = pi(env, call, { json: true, extra: ["--approve"] });
-		d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
 		assert(!d.details.untrustedProjectAgents && d.details.results.every((v) => v.ok && v.source === "project"), JSON.stringify(d.details));
 		assert(d.text.includes("LOCAL_AGENT_PROMPT") && d.text.includes("PROJECT_OVERRIDE_PROMPT"), d.text.slice(0, 600));
 
-		// a saved /trust decision counts too
-		fs.mkdirSync(path.join(env.home, ".pi", "agent"), { recursive: true });
-		fs.writeFileSync(path.join(env.home, ".pi", "agent", "trust.json"), JSON.stringify({ [fs.realpathSync(env.repo)]: true }));
-		r = pi(env, call, { json: true });
+		// pi trust declined (--no-approve): package agents only
+		r = pi(env, call, { json: true, extra: ["--no-approve"] });
 		d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
-		assert(!d.details.untrustedProjectAgents, `saved trust ignored: ${JSON.stringify(d.details)} ${fs.readFileSync(path.join(env.home, ".pi", "agent", "trust.json"), "utf-8")}`);
+		assert(d?.details?.untrustedProjectAgents?.sort().join(",") === "local-only,security-review", JSON.stringify(d?.details));
+		const pkgRun = d.details.results.find((v) => v.agent === "security-review");
+		assert(pkgRun?.ok && pkgRun.source === "package" && !d.text.includes("PROJECT_OVERRIDE_PROMPT"), JSON.stringify(pkgRun));
 	},
 
 	"cost meter row includes main and subagent spend by agent type"(env) {
@@ -312,8 +304,7 @@ const scenarios = {
 		const agentDir = path.join(env.repo, ".pi", "agents");
 		fs.mkdirSync(agentDir, { recursive: true });
 		fs.writeFileSync(path.join(agentDir, "collision-probe.md"), "---\nname: collision-probe\ndescription: Offline mapping probe\ntools: Read, Agent, Task, subagent\n---\nInspect the runtime tools and prompt.\n");
-		// project agents need an explicit trust decision
-		const options = { extra: ["-e", EXTERNAL_SUBAGENT, "--approve"] };
+		const options = { extra: ["-e", EXTERNAL_SUBAGENT] };
 		const parent = pi(env, script([{ inspect: "runtime" }]), options);
 		assert(parent.code === 0, parent.err);
 		const parentRuntime = JSON.parse(parent.out);

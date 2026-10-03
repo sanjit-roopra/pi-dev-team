@@ -16,7 +16,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { Usage } from "@earendil-works/pi-ai";
-import { type ExtensionAPI, type ExtensionContext, getAgentDir, hasTrustRequiringProjectResources, ProjectTrustStore } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
 import type { DevTeamConfig } from "./config.ts";
@@ -179,10 +179,7 @@ export function sumPiUsage(results: { piUsage?: Usage }[]): Usage | undefined {
 	return total;
 }
 
-/**
- * Pi trust-gates project resources; project agents (.pi/agents, .claude/agents) are repo-controlled
- * prompts too. Returns the names among `requested` that resolve to a project agent.
- */
+/** Requested agents that resolve to a project agent (.pi/agents, .claude/agents). */
 export function projectAgentsRequested(agents: Map<string, AgentDef>, requested: string[]): AgentDef[] {
 	const out = new Map<string, AgentDef>();
 	for (const name of requested) {
@@ -190,37 +187,6 @@ export function projectAgentsRequested(agents: Map<string, AgentDef>, requested:
 		if (def?.source === "project") out.set(def.filePath, def);
 	}
 	return [...out.values()];
-}
-
-export type AgentTrust = "trusted" | "untrusted" | "undecided";
-
-/**
- * Whether project agents may run. Pi reports a project as trusted when it has no pi-protected
- * resources (.pi/settings.json, .pi/extensions, ...), but `.pi/agents` and `.claude/agents` are not on
- * that list, so `ctx.isProjectTrusted()` alone would let any repo supply agent prompts. Order, as pi
- * resolves trust: command-line --approve/--no-approve, pi's own decision when protected resources
- * exist, a saved /trust decision, then the defaultProjectTrust setting.
- */
-export function projectAgentTrust(
-	cwd: string,
-	isProjectTrusted: boolean,
-	opts: { argv?: string[]; defaultProjectTrust?: string; savedDecision?: () => boolean | null } = {},
-): AgentTrust {
-	const argv = opts.argv ?? process.argv.slice(2);
-	if (argv.some((a) => a === "--approve" || a === "-a" || a === "--no-approve" || a === "-na")) {
-		return isProjectTrusted ? "trusted" : "untrusted";
-	}
-	if (hasTrustRequiringProjectResources(cwd)) return isProjectTrusted ? "trusted" : "untrusted";
-	let saved: boolean | null = null;
-	try {
-		saved = opts.savedDecision ? opts.savedDecision() : new ProjectTrustStore(getAgentDir()).get(cwd);
-	} catch {
-		saved = null;
-	}
-	if (saved !== null) return saved ? "trusted" : "untrusted";
-	if (opts.defaultProjectTrust === "always") return "trusted";
-	if (opts.defaultProjectTrust === "never") return "untrusted";
-	return "undecided";
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -304,8 +270,6 @@ export const SubagentParams = Type.Object({
 export function registerSubagentTool(deps: SubagentDeps): void {
 	const { pi, packageRoot, getConfig, hooks } = deps;
 	const semaphore = new Semaphore(getConfig().maxParallelAgents);
-	/** Answer to the project-agent prompt, kept for the rest of this process. */
-	let sessionAgentTrust: AgentTrust | undefined;
 
 	async function runOne(
 		input: TaskInput,
@@ -381,7 +345,6 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
 			const args = ["--mode", "json", "-p", "--no-session", ...forwardedArgs()];
-			// Children inherit the parent's trust decision, including one made for project agents only.
 			if (approve) args.push("--approve");
 			if (choice.model) args.push("--model", choice.model);
 			if (thinking) args.push("--thinking", thinking);
@@ -578,31 +541,13 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			const requestedNames = list.map((t) => (t.agent ?? t.subagent_type ?? "").trim()).filter(Boolean);
 			let agents = discoverAgents(ctx.cwd, packageRoot);
 			let untrusted: string[] = [];
-			const settings = pi.getSettings() as { defaultProjectTrust?: string };
-			let trust = sessionAgentTrust ?? projectAgentTrust(ctx.cwd, ctx.isProjectTrusted(), { defaultProjectTrust: settings.defaultProjectTrust });
-			const fromProject = trust === "trusted" ? [] : projectAgentsRequested(agents, requestedNames);
-			if (fromProject.length && trust === "undecided" && ctx.hasUI) {
-				const options = ["Trust this project (saved, like /trust)", "Allow project agents for this session", "Use package agents only"];
-				const choice = await ctx.ui.select(
-					`Run project-local dev-team agents?\nAgents: ${fromProject.map((d) => d.name).join(", ")}\nSource: ${[...new Set(fromProject.map((d) => path.relative(ctx.cwd, path.dirname(d.filePath))))].join(", ")}\n\nProject agents are repo-controlled prompts. Only allow them for repositories you trust.`,
-					options,
-				);
-				if (choice === options[0]) {
-					try {
-						new ProjectTrustStore(getAgentDir()).set(ctx.cwd, true);
-					} catch {
-						/* still allowed for this session */
-					}
-					trust = sessionAgentTrust = "trusted";
-				} else if (choice === options[1]) trust = sessionAgentTrust = "trusted";
-				else trust = sessionAgentTrust = "untrusted";
+			// Only when the user declined pi's own trust prompt for this project: skip its agents too,
+			// as pi skips its other project resources. No extra prompt or setup step.
+			const approve = ctx.isProjectTrusted();
+			if (!approve) {
+				untrusted = projectAgentsRequested(agents, requestedNames).map((d) => d.name);
+				if (untrusted.length) agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: false });
 			}
-			if (fromProject.length && trust !== "trusted") {
-				// As pi does for its own protected project resources: skip them, use package agents only.
-				untrusted = fromProject.map((d) => d.name);
-				agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: false });
-			}
-			const approve = ctx.isProjectTrusted() && trust === "trusted";
 
 			const views: SubagentTaskView[] = list.map((t) => ({
 				agent: (t.agent ?? t.subagent_type ?? "").trim() || "(none)",
@@ -656,7 +601,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				return `${head}\n\n${body}${wtLine}`;
 			};
 			const trustNote = untrusted.length
-				? `\n\n[project agents not run (project not trusted): ${untrusted.join(", ")}. Package agents were used where they exist. Trust the project (/trust, or run pi with --approve) to use them.]`
+				? `\n\n[project agents not run (project not trusted): ${untrusted.join(", ")}. You declined trust for this project in pi; package agents were used where they exist.]`
 				: "";
 			const text =
 				(results.length === 1

@@ -16,7 +16,7 @@ import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev
 import { applyUpdatedInput, claudeToolName, HookBridge, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
 import { AUTOCOMPACT_KEY, autocompactSetting } from "../../extensions/dev-team/lib/metrics.ts";
 import { discoverSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments } from "../../extensions/dev-team/lib/skills.ts";
-import { addPiUsage, buildSystemPrompt, forwardedArgs, projectAgentsRequested, projectAgentTrust, sumPiUsage } from "../../extensions/dev-team/lib/subagent.ts";
+import { addPiUsage, buildSystemPrompt, forwardedArgs, projectAgentsRequested, sumPiUsage } from "../../extensions/dev-team/lib/subagent.ts";
 import { formatUsage, renderSubagentCall, renderSubagentResult } from "../../extensions/dev-team/lib/subagent-render.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -245,25 +245,6 @@ test("subagent system prompt carries runtime notes and skill hints", () => {
 	assert.match(prompt, /Unavailable in this runtime/);
 	assert.match(prompt, /Agent\/Task=dev_team_subagent\./);
 	assert.doesNotMatch(prompt, /Agent\/Task=subagent\b/);
-});
-
-test("project agent trust: pi decision only counts when pi had something to decide", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-trust-"));
-	const none = () => null;
-	// no pi-protected resources: pi says trusted, but nothing was decided
-	assert.equal(projectAgentTrust(dir, true, { argv: [], savedDecision: none }), "undecided");
-	assert.equal(projectAgentTrust(dir, true, { argv: [], savedDecision: none, defaultProjectTrust: "always" }), "trusted");
-	assert.equal(projectAgentTrust(dir, true, { argv: [], savedDecision: none, defaultProjectTrust: "never" }), "untrusted");
-	assert.equal(projectAgentTrust(dir, true, { argv: [], savedDecision: () => true }), "trusted");
-	assert.equal(projectAgentTrust(dir, true, { argv: [], savedDecision: () => false }), "untrusted");
-	assert.equal(projectAgentTrust(dir, true, { argv: ["--approve"], savedDecision: () => false }), "trusted");
-	assert.equal(projectAgentTrust(dir, false, { argv: ["-na"], savedDecision: () => true }), "untrusted");
-	// pi-protected resource present: pi's decision applies
-	fs.mkdirSync(path.join(dir, ".pi"));
-	fs.writeFileSync(path.join(dir, ".pi", "settings.json"), "{}");
-	assert.equal(projectAgentTrust(dir, true, { argv: [], savedDecision: none }), "trusted");
-	assert.equal(projectAgentTrust(dir, false, { argv: [], savedDecision: () => true }), "untrusted");
-	fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("untrusted discovery drops project agents and their overrides", () => {

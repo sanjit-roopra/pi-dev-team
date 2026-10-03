@@ -40,7 +40,7 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 | Slash command `/plan args` | Extension command `/plan` that expands `SKILL.md` with `$ARGUMENTS`, `$0..$N` substituted and sends it as the user turn | `skills.ts` |
 | `Skill` tool (skill chaining, e.g. `/specs` -> `/plan`) | `skill` tool: `{name, args}` returns the expanded skill | `skills.ts` |
 | Skill listing for the model | Compact index (name, command, first ~220 chars of the description) in a `<dev_team>` system-prompt section, like Claude Code's budgeted Skill tool listing. Skills are deliberately *not* registered as native pi skills: pi's full listing of 99 descriptions was 61 KB of system prompt; the compact index keeps the whole prompt at ~26 KB | `skills.ts`, `index.ts` |
-| `Agent` / `Task` tool | `dev_team_subagent` tool: spawns `pi --mode json -p --no-session` with the agent body as appended system prompt, mapped tools, tier-resolved model, thinking level from `effort`. Single, parallel (`tasks[]`), `isolation: "worktree"`. Namespaced to coexist with other extensions such as `pi-subagents`. Follows pi's `examples/extensions/subagent`: child usage is returned as the tool result's `usage` (pi adds it to session totals), project agents need a trust decision, and `renderCall`/`renderResult` draw live per-agent progress in the TUI | `subagent.ts`, `subagent-render.ts` |
+| `Agent` / `Task` tool | `dev_team_subagent` tool: spawns `pi --mode json -p --no-session` with the agent body as appended system prompt, mapped tools, tier-resolved model, thinking level from `effort`. Single, parallel (`tasks[]`), `isolation: "worktree"`. Namespaced to coexist with other extensions such as `pi-subagents`. Follows pi's `examples/extensions/subagent`: child usage is returned as the tool result's `usage` (pi adds it to session totals), project agents are skipped only when pi trust was declined for the project, and `renderCall`/`renderResult` draw live per-agent progress in the TUI | `subagent.ts`, `subagent-render.ts` |
 | `model: opus/sonnet/haiku/fable` | Tier table in `dev-team.json` (per user or project). Default `inherit` = parent's model. Presets for GitHub Copilot, Anthropic, OpenAI | `config.ts`, `/dev-team models` |
 | `effort: low/medium/high` | `--thinking low/medium/high` | `agents.ts` |
 | `tools: Read, Grep, Glob, Bash, Edit, Write` | `read, grep, find, ls, bash, edit, write` (+ `skill`, `dev_team_subagent`, `ask_user`, `web_fetch` when listed) | `agents.ts` |
@@ -79,7 +79,6 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 - Parallel tool calls. Claude Code runs several `Agent` calls in one message in parallel; so does pi. The `dev_team_subagent` tool also accepts `tasks[]`. A global limit (`maxParallelAgents`, default 6) applies across both.
 - Subagent transcripts are not saved as sessions (`--no-session`). Usage is captured from the JSON event stream and recorded.
 - `allowed-tools` in skills is advisory in pi (as in upstream under `bypassPermissions`).
-- Project agents are trust-gated. Claude Code loads `.claude/agents` unconditionally. Pi trust-gates repo-supplied prompts (`.pi/skills`, `.pi/prompts`, ...) but not `.pi/agents` or `.claude/agents`, and reports a project as trusted when it has no pi-protected resources. The port therefore decides itself, in pi's order: `--approve`/`--no-approve`, pi's decision when protected resources exist, a saved `/trust` decision, `defaultProjectTrust`. Undecided: the TUI asks (trust and save, allow for this session, or package agents only); print/json/rpc runs use package agents only and say so in the result. `/setup` activates templates into `.claude/agents`, so trust the project once (`/trust` or `--approve`) after running it.
 - Autocompact timing. Claude Code compacts at `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` between any two turns. The port compacts at that percentage when an agent run ends, because `ctx.compact()` aborts a running turn; within one long run pi's own threshold applies.
 - `skill-injection.jsonl` (v14 instrument stream) is not written. The port injects skill hints natively instead of via `subagent_skill_context.py`, and uptake is computed from Claude subagent transcripts, which pi children do not save.
 
@@ -95,14 +94,14 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 
 - **Byte identity.** `hooks/`, `scripts/`, `tools/`, `knowledge/`, `templates/` and the 46 upstream agents are byte-identical to upstream (`diff -rq`). Only 13 `SKILL.md` files differ, each by a listed patch or note (`UPSTREAM.json`). The upstream Python test suite therefore applies unchanged.
 - **Upstream Python suite** run against the shipped copy (`uv run --with pytest ... pytest plugins/dev-team/tests/{hooks,scripts,lib}` plus the top-level `tests/test_*.py` added in v14): 4293 passed. The single error is `test_durable_runner.py`, which tests the dropped `long-eval` skill.
-- **Unit tests** (`test/unit`, node:test, 25 tests): tool and MCP-name mapping, tier and effort resolution, parsing of every upstream agent and skill, argument substitution, hook wiring, Claude input mapping, the synthetic transcript shape, argument forwarding, SessionStart source matchers, autocompact setting precedence, project-agent trust resolution, untrusted discovery, usage roll-up, and the TUI renderers (also checked against pi's real theme).
+- **Unit tests** (`test/unit`, node:test, 24 tests): tool and MCP-name mapping, tier and effort resolution, parsing of every upstream agent and skill, argument substitution, hook wiring, Claude input mapping, the synthetic transcript shape, argument forwarding, SessionStart source matchers, autocompact setting precedence, untrusted discovery, usage roll-up, and the TUI renderers (also checked against pi's real theme).
 - **Python tests** (`test/py`, 10 tests): sync helpers (description trimming, note insertion, idempotency) and the `claude` shim (flag translation, envelope, error path).
 - **End-to-end** (`test/e2e/run.mjs`, 23 scenarios). These run the real `pi` binary with an offline scripted provider in throwaway git repos, verified on pi 1.0.0:
   - `/commands` with `$0`/`$ARGUMENTS`
   - the plugin env in bash
   - the `autocompact_setup_nudge` advisory, shown only while autocompact is unconfigured
   - subagent usage on the tool result matching the children's usage
-  - project agents skipped without a trust decision, and run with `--approve` or a saved `/trust` decision
+  - project agents running by default, and skipped with `--no-approve`
   - `pre_tool_guard`, `destructive_guard`, freeze scope and `pre_pr_review` blocks
   - PostToolUse advisories reaching the model
   - single and parallel subagents
