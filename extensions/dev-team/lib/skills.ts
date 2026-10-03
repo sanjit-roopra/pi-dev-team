@@ -98,7 +98,9 @@ function byName(defs: SkillDef[]): Map<string, SkillDef> {
 
 /**
  * Skills a call may use. When pi reports the project untrusted, project skills are left out and
- * `skippedProjectSkills` names the requested ones, so the caller can say why they are missing.
+ * `skippedProjectSkills` names the requested ones that therefore cannot run. Unlike
+ * skippedProjectAgents, a project skill that shadows a package skill is not listed: the package
+ * skill runs instead, as pi does when it skips its own project skills.
  */
 export function discoverInvocableSkills(
 	cwd: string,

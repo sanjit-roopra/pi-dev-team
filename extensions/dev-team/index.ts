@@ -60,7 +60,8 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	function applyEnv(ctx: ExtensionContext) {
 		cwd = ctx.cwd;
-		// A project's .pi/dev-team.json can set env and hooks, so it counts only when pi trusts the project.
+		// A project's .pi/dev-team.json counts only when pi trusts the project, and then filtered
+		// (allow-listed env settings, no hooks; see filterProjectConfig).
 		config = loadConfig(cwd, projectConfigOpts(ctx)).config;
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
