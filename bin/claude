@@ -81,6 +81,13 @@ def model_args(model: str | None) -> list[str]:
     return ["--model", m]
 
 
+def trusted_here(trusted_dir: str, cwd: str) -> bool:
+    """pi trusts per directory: the session's grant covers its own directory, nothing else."""
+    if not trusted_dir:
+        return False
+    return os.path.realpath(cwd) == os.path.realpath(trusted_dir)
+
+
 def main(argv: list[str]) -> int:
     real = os.environ.get("DEV_TEAM_REAL_CLAUDE")
     if real:
@@ -154,10 +161,12 @@ def main(argv: list[str]) -> int:
 
     tmp = tempfile.mkdtemp(prefix="pi-dev-team-shim-")
     cmd = pi_command() + ["--mode", "json", "-p", "--no-session"]
-    try:  # resources/trust of the pi session that set up this shim (extensions loaded with -e, --approve)
+    try:  # resources of the pi session that set up this shim (extensions loaded with -e; --no-approve if declined)
         cmd += [str(x) for x in json.loads(os.environ.get("DEV_TEAM_PI_ARGS", "[]"))]
     except (ValueError, TypeError):
         pass
+    if trusted_here(os.environ.get("DEV_TEAM_TRUSTED_DIR", ""), os.getcwd()):
+        cmd.append("--approve")
     if agent:
         cmd += ["--dev-team-agent", agent.split(":")[-1]]
     cmd += model_args(model)

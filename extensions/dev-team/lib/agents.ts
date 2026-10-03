@@ -13,6 +13,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { readSmallFile } from "./safe-read.ts";
+import type { AgentSource } from "./subagent-types.ts";
 
 export const DEV_TEAM_SUBAGENT_TOOL = "dev_team_subagent";
 
@@ -27,7 +29,7 @@ export interface AgentDef {
 	skills: string[];
 	body: string;
 	filePath: string;
-	source: "project" | "package";
+	source: AgentSource;
 }
 
 type AgentFrontmatter = {
@@ -64,13 +66,9 @@ function toStringList(value: unknown): string[] {
 	return [];
 }
 
-export function parseAgentFile(filePath: string, source: AgentDef["source"]): AgentDef | undefined {
-	let content: string;
-	try {
-		content = fs.readFileSync(filePath, "utf-8");
-	} catch {
-		return undefined;
-	}
+export function parseAgentFile(filePath: string, source: AgentSource): AgentDef | undefined {
+	let content = readSmallFile(filePath);
+	if (content === undefined) return undefined;
 	// Upstream files sometimes have a blank line right after the opening '---'.
 	content = content.replace(/^---\r?\n\s*\r?\n/, "---\n");
 	let frontmatter: AgentFrontmatter;
@@ -94,7 +92,7 @@ export function parseAgentFile(filePath: string, source: AgentDef["source"]): Ag
 	};
 }
 
-function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
+function loadDir(dir: string, source: AgentSource): AgentDef[] {
 	let entries: fs.Dirent[];
 	try {
 		entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -110,15 +108,48 @@ function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
 	return out;
 }
 
-export function discoverAgents(cwd: string, packageRoot: string): Map<string, AgentDef> {
+/** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
+export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, AgentDef> {
+	return byName([...(opts.includeProject ? loadProjectAgents(cwd) : []), ...loadDir(path.join(packageRoot, "agents"), "package")]);
+}
+
+function loadProjectAgents(cwd: string): AgentDef[] {
+	return [...loadDir(path.join(cwd, ".pi", "agents"), "project"), ...loadDir(path.join(cwd, ".claude", "agents"), "project")];
+}
+
+/** First definition of each name wins. */
+function byName(defs: AgentDef[]): Map<string, AgentDef> {
 	const map = new Map<string, AgentDef>();
-	const add = (defs: AgentDef[]) => {
-		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
-	};
-	add(loadDir(path.join(cwd, ".pi", "agents"), "project"));
-	add(loadDir(path.join(cwd, ".claude", "agents"), "project"));
-	add(loadDir(path.join(packageRoot, "agents"), "package"));
+	for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	return map;
+}
+
+/** Requested agents that resolve to a project agent (.pi/agents, .claude/agents). */
+export function projectAgentsRequested(agents: Map<string, AgentDef>, requested: string[]): AgentDef[] {
+	const out = new Map<string, AgentDef>();
+	for (const name of requested) {
+		const def = resolveAgentName(agents, name);
+		if (def?.source === "project") out.set(def.filePath, def);
+	}
+	return [...out.values()];
+}
+
+/**
+ * Agents a dispatch may use. When pi reports the project untrusted (the user declined pi's trust
+ * prompt or ran with --no-approve), project agents are dropped and `skippedProjectAgents` names the
+ * requested ones, so the caller can say why they did not run. Each directory is read once.
+ */
+export function discoverDispatchAgents(
+	cwd: string,
+	packageRoot: string,
+	projectTrusted: boolean,
+	requested: string[],
+): { agents: Map<string, AgentDef>; skippedProjectAgents: string[] } {
+	const project = loadProjectAgents(cwd);
+	const packaged = loadDir(path.join(packageRoot, "agents"), "package");
+	const all = byName([...project, ...packaged]);
+	if (projectTrusted) return { agents: all, skippedProjectAgents: [] };
+	return { agents: byName(packaged), skippedProjectAgents: projectAgentsRequested(all, requested.filter(Boolean)).map((d) => d.name) };
 }
 
 /** Accept Claude-style qualified names ("dev-team:security-review") and case differences. */

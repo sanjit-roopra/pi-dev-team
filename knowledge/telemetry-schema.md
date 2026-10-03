@@ -109,7 +109,7 @@ PR-creation time, against the branch's cumulative diff, does not have that
 problem. `hooks/pre_pr_review.py` never emits this event. Existing rows in
 `boundary-events.jsonl` from before the migration remain valid history.
 
-- **Emitter:** `hooks/lib/boundary_events.py::emit_boundary_event()`, called from `destructive_guard.py`, `verify_guard.py`, `pre_pr_review.py` (#1886), `telemetry.py` (intervention keywords), `agent_dispatch_ledger.py` (decision `record`, #1461), `subagent_completion_guard.py` (decision `record`, `tool` `SubagentStop`, #2188), `review_verdict_recorder.py` (decision `record`, `tool` `SubagentStop`, `matched_rule` `missing-scope-marker`\|`unparseable-result`, #2166 Fix #3), `boundary_events_write_guard.py` (decision `block`, `tool` `Write`\|`Edit`\|`Bash`, `matched_rule` `ledger-write-blocked` — the PreToolUse guard blocking a direct Write/Edit/Bash write to this same ledger, #2171), the mechanically-adopted guards (`pre_tool_guard.py`, `context_ceiling_guard.py`, `bash_retry_guard.py`, `refactor_test_freeze_guard.py`, `refactor_test_bash_guard.py`, `refactor_test_revert_guard.py` (decision `revert`, #906), `contract_version_guard.py`, `mutation_testing_smoke_gate.py`, `mutation_gate.py`, `tdd_guard.py`), and `boundary_events.py`'s own CLI (`--event dispatch-failure`, decision `dispatch-failure`, #1763) invoked from `skills/code-review/SKILL.md` Step 4. `--event gate-ran --verdict {allow,block,errored}` (decision `record`, `matched_rule` of `gate-ran-<verdict>`, #2037) is invoked from the repo-root `.husky/pre-commit` git hook — the real, git-native pre-commit gate (distinct from `pre_pr_review.py`, a Claude-Code-level PreToolUse hook gating `gh pr create`) — at every exit point, success or failure alike, so `${CLAUDE_PLUGIN_ROOT}/scripts/session_report.py --profile maintainer` can correlate a commit-attempt Bash record against a nearby `gate_ran` event and classify the previously-unmeasured "the gate silently never ran" population (`gate_ran_absent`) apart from a genuine internal failure (`gate_ran_errored`). This event carries no `session_id` in practice — a real git hook has no Claude Code session_id to attach — so correlation is by time proximity, not session join; see `session_report.py`'s "gate-run correlation (#2037)" section.
+- **Emitter:** `hooks/lib/boundary_events.py::emit_boundary_event()`, called from `destructive_guard.py`, `verify_guard.py`, `pre_pr_review.py` (#1886), `telemetry.py` (intervention keywords), `agent_dispatch_ledger.py` (decision `record`, #1461), `subagent_completion_guard.py` (decision `record`, `tool` `SubagentStop`, #2188), `review_verdict_recorder.py` (decision `record`, `tool` `SubagentStop`, `matched_rule` `missing-scope-marker`\|`unparseable-result`, #2166 Fix #3), `boundary_events_write_guard.py` (decision `block`, `tool` `Write`\|`Edit`\|`Bash`, `matched_rule` `ledger-write-blocked` — the PreToolUse guard blocking a direct Write/Edit/Bash write to this same ledger, #2171), the mechanically-adopted guards (`pre_tool_guard.py`, `bash_retry_guard.py`, `refactor_test_freeze_guard.py`, `refactor_test_bash_guard.py`, `refactor_test_revert_guard.py` (decision `revert`, #906), `contract_version_guard.py`, `mutation_testing_smoke_gate.py`, `mutation_gate.py`, `tdd_guard.py`), and `boundary_events.py`'s own CLI (`--event dispatch-failure`, decision `dispatch-failure`, #1763) invoked from `skills/code-review/SKILL.md` Step 4. `--event gate-ran --verdict {allow,block,errored}` (decision `record`, `matched_rule` of `gate-ran-<verdict>`, #2037) is invoked from the repo-root `.husky/pre-commit` git hook — the real, git-native pre-commit gate (distinct from `pre_pr_review.py`, a Claude-Code-level PreToolUse hook gating `gh pr create`) — at every exit point, success or failure alike, so `${CLAUDE_PLUGIN_ROOT}/scripts/session_report.py --profile maintainer` can correlate a commit-attempt Bash record against a nearby `gate_ran` event and classify the previously-unmeasured "the gate silently never ran" population (`gate_ran_absent`) apart from a genuine internal failure (`gate_ran_errored`). This event carries no `session_id` in practice — a real git hook has no Claude Code session_id to attach — so correlation is by time proximity, not session join; see `session_report.py`'s "gate-run correlation (#2037)" section.
 - **Consent:** ALWAYS-ON — not gated by `DEV_TEAM_TELEMETRY`. Local-only, rule-IDs-only safety/accountability channel; no observability holes by design.
 - **Fail-open:** every exception in the emit helper is swallowed — never changes the calling hook's exit code, stdout, or stderr.
 - **Consumers:** `skills/session-review/SKILL.md`, `skills/harness-audit/SKILL.md`, `agents/session-analysis.md`, `skills/cost-report/`, `skills/run-report/SKILL.md` (#1167), `hooks/lib/review_gate_corroboration.py` (#1461 `record` rows; #1763 also reads `dispatch-failure` rows as negative evidence for the gate veto), future `agent-telemetry` cross-machine aggregation (#178).
@@ -678,6 +678,42 @@ are re-measured every convergence iteration.
 - **Emitter:** `plugins/dev-team/scripts/gherkin_effectiveness_rollup.py`, invoked from `/quality-targets-converge` Step 6b after each convergence iteration's re-measure, when `gherkin.md` exists for the workflow slug.
 - **Consent:** unconditional (derived metrics only; no prompt/file-content capture).
 - **Consumers:** none yet — this is the roll-up a future `/harness-audit`-style review reads to compare BDD-derived vs. hand-written test effectiveness.
+
+---
+
+## Benefit-measurement streams (#2201)
+
+**Added by #2201** (epic #2200, slice 0). Four observational JSONL streams that
+make post-merge benefit numbers for epics #2164 and #2172 exist. Each row is
+written fail-open by `hooks/lib/instrument_log.py` (never affects stdout, exit
+code, or control flow) and carries `ts`, `plugin_version`, and, when the
+emitter has one, `session_id`. They are **separate from `boundary-events.jsonl`**
+on purpose: a `record` row there is read by the review-gate corroboration path,
+so measurement rows must not share it. Counts, enums and lens/agent names only.
+
+| Stream | Emitter | Fields | Answers |
+|---|---|---|---|
+| `subagent-stops.jsonl` | `hooks/subagent_completion_guard.py` (every `SubagentStop`) | `classification` (`clean` \| `empty-final-turn` \| `truncated-final-turn` \| `unreadable`) | The completion-guard divergence rate's denominator. `boundary-events.jsonl` only carries the two non-clean classes, so a rate was not computable before. |
+| `skill-injection.jsonl` | `hooks/subagent_skill_context.py` (when a hint is injected) | `agent_type`, `skills` (list), `added_chars` | Injection overhead (`added_chars`) and the denominator for uptake; uptake itself is read from `Skill` tool calls in the subagent transcripts (`scripts/lib/session_log`). |
+| `ledger-skips.jsonl` | `scripts/verdict_scope.py` (every CLI consult) | `candidate_pairs`, `skipped_pairs`, `fully_skipped_lenses` (list) | Realized delta-scoping skip rate = `skipped_pairs / candidate_pairs`. Previously only printed to stdout. |
+| `checkpoint-aborts.jsonl` | `scripts/checkpoint_abort.py` | `mode: "abort"`: `aborted`, `triggering_agent`, `deferred_lenses`. `mode: "outcome"`: `aborted`, `redispatched`, `findings`, `blocking_findings`, `outcome` | Abort frequency, deferred-lens yield (`outcome` rows with `aborted` and `redispatched`), previously only printed. |
+
+### Instrument audit (#2201)
+
+Static audit of each instrument; the per-session confirmation the issue also
+asks for (≥ 3 real sessions, IDs listed on #2200) must be run on the
+maintainer's machine after these emitters ship.
+
+| Instrument | Finding | Action |
+|---|---|---|
+| `review-verdicts.jsonl` | Rows are written only when the dispatch prompt carries the scope marker (`review_verdict_recorder.py`); a dispatch without it emits a `boundary-events.jsonl` `record` row with `matched_rule: "missing-scope-marker"`. | None; count those `boundary-events.jsonl` rows as the ledger-coverage gap. |
+| `ledgerSkipped` / `fullySkippedLenses` | Returned on stdout only. | New `ledger-skips.jsonl`. |
+| `checkpoint_abort.py` | Outcomes printed only. | New `checkpoint-aborts.jsonl`. |
+| `subagent_skill_context.py` | No signal of injection or of a skill being loaded. | New `skill-injection.jsonl`; "loaded" is derived from subagent transcripts. |
+| `subagent_completion_guard.py` | Emits `empty-final-turn` / `truncated-final-turn` to `boundary-events.jsonl` (`decision: "record"`); `clean`/`unreadable` silent. | New `subagent-stops.jsonl` with every classification. |
+
+Consent gating: none beyond the existing per-project `.claude/metrics/`
+location; rows are local files and are never transmitted.
 
 ---
 

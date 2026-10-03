@@ -133,6 +133,24 @@
       "anchor": "citing-this-file"
     }
   },
+  "plugins/dev-team/knowledge/ai-friendly-repo-guidelines.md": {
+    "Layered Context Architecture": {
+      "summary": "Agents pay for every line of always-loaded context and for every wrong guess made",
+      "anchor": "layered-context-architecture"
+    },
+    "Deterministic Verification & Fast Feedback Loops": {
+      "summary": "An agent can only converge on a correct change if it can check its work quickly",
+      "anchor": "deterministic-verification-fast-feedback-loops"
+    },
+    "Navigable Repository Layout": {
+      "summary": "Agents find code by searching names and paths.",
+      "anchor": "navigable-repository-layout"
+    },
+    "Source": {
+      "summary": "Synthesized from Anthropic's published Claude Code guidance on memory files and",
+      "anchor": "source"
+    }
+  },
   "plugins/dev-team/knowledge/architecture-assessment.md": {
     "Exploration Patterns": {
       "summary": "Map the architectural landscape before detecting issues.",
@@ -1596,6 +1614,14 @@
       "summary": "Per-scenario roll-up correlating a `/gherkin-derive`-discovered surface with",
       "anchor": "gherkin-derive-effectivenessjsonl"
     },
+    "Benefit-measurement streams (#2201)": {
+      "summary": "**Added by #2201** (epic #2200, slice 0).",
+      "anchor": "benefit-measurement-streams-2201"
+    },
+    "Instrument audit (#2201)": {
+      "summary": "Static audit of each instrument; the per-session confirmation the issue also",
+      "anchor": "instrument-audit-2201"
+    },
     "Adding a new stream": {
       "summary": "1.",
       "anchor": "adding-a-new-stream"
@@ -2238,6 +2264,10 @@
       "summary": "This MVP uses **file-presence/heuristic analyzers only** — no CI-platform APIs.",
       "anchor": "scope-mvp-issue-117"
     },
+    "Evidence table": {
+      "summary": "Each scored criterion emits `score` (0-2), `max`, and an `evidence` string.",
+      "anchor": "evidence-table"
+    },
     "Run": {
       "summary": "`REPO_PATH` defaults to the current directory.",
       "anchor": "run"
@@ -2683,7 +2713,7 @@
       "anchor": "410-run-slice-invariants-issue-865"
     },
     "5. Run full test suite": {
-      "summary": "After all steps are complete, run the full test suite.",
+      "summary": "After all steps are complete, delete `.claude/memory/build-phase.json` if a `between-steps` record remains, then run the full test suite.",
       "anchor": "5-run-full-test-suite"
     },
     "6. Run code review": {
@@ -3103,11 +3133,11 @@
       "anchor": "constraints"
     },
     "Enforcement": {
-      "summary": "This protocol is backed by a `PreToolUse` hook — `hooks/context_ceiling_guard.py`",
+      "summary": "No hook blocks or warns on capability loads any more (the former context",
       "anchor": "enforcement"
     },
     "Why 40%": {
-      "summary": "The 40% ceiling is a conservative planning target, not a claimed accuracy cliff.",
+      "summary": "The 40% default is a conservative planning target, not a claimed accuracy cliff.",
       "anchor": "why-40"
     },
     "Loading Decision Procedure": {
@@ -3131,7 +3161,7 @@
       "anchor": "step-3-select-skills"
     },
     "Step 4: Calculate token budget": {
-      "summary": "**Target: total < 40% of the model's context window, capped at 350K absolute tokens.** For Claude with a 200K window, that's < 80K tokens; on a 1M-window model the cap (350K) binds before the percentage would.",
+      "summary": "**Target: total < 40% of the model's context window.** For Claude with a 200K window, that's < 80K tokens; on a 1M-window model it is 400K (there is no absolute cap).",
       "anchor": "step-4-calculate-token-budget"
     },
     "Step 5: Load via tool-based file reads": {
@@ -4287,7 +4317,7 @@
       "anchor": "continue-mode"
     },
     "When to Summarize": {
-      "summary": "The `hooks/context_ceiling_guard.py` hook's graduated bands are keyed to",
+      "summary": "`/handoff` is manual: nothing forces or blocks on it.",
       "anchor": "when-to-summarize"
     },
     "Writing Summaries": {
@@ -5838,6 +5868,10 @@
       "summary": "Wire a PostToolUse hook entry for the project's `.claude/settings.json` that",
       "anchor": "9-generate-posttooluse-formatting-hook"
     },
+    "9b. Configure harness autocompact (#2177)": {
+      "summary": "Replaces the retired context-ceiling hook: the harness compacts the",
+      "anchor": "9b-configure-harness-autocompact-2177"
+    },
     "10. Generate /pr command": {
       "summary": "Create a project-specific `skills/pr/SKILL.md` if one doesn't exist, referencing the project's test/lint/typecheck commands.",
       "anchor": "10-generate-pr-command"
@@ -5889,7 +5923,7 @@
       "anchor": "4-build"
     },
     "5. Review": {
-      "summary": "Invoke `/code-review` over the changes and let its fix loop converge.",
+      "summary": "First check whether `/build`'s checkpoints already reviewed this exact change:",
       "anchor": "5-review"
     },
     "6. PR": {

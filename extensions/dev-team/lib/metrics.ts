@@ -6,15 +6,13 @@
  *   `cost_meter.py regression|pace` and /autoship --max-cost-usd keep working. Uses pi's own
  *   usage.cost (correct for every provider, including GitHub Copilot) instead of a Claude-only
  *   price table. Adds `session_id` (upstream could not, see run_report `joinable:false`).
- * - Context ceiling guard (hooks/context_ceiling_guard.py): same thresholds, env vars, messages and
- *   verdicts, measured with ctx.getContextUsage() which knows every model's window.
  */
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SUBAGENT_USAGE_ENTRY } from "./subagent.ts";
+import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
@@ -97,13 +95,16 @@ export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | u
 			bump(byAgent, "main", msg.usage, 1);
 			any = true;
 		} else if (entry.type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-			const d = entry.data as { agent: string; model?: string; usage: PiUsage & { turns?: number } } | undefined;
+			const d = entry.data as SubagentUsageEntry | undefined;
 			if (!d?.usage) continue;
-			const n = d.usage.turns ?? 0;
-			add(total, d.usage, n);
-			bump(byModel, d.model ?? "unknown", d.usage, n);
-			bump(byThread, "subagent", d.usage, n);
-			bump(byAgent, `dev-team:${d.agent}`, d.usage, n);
+			// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
+			for (const run of creditedRuns(d)) {
+				const n = run.usage.turns ?? 0;
+				add(total, run.usage, n);
+				bump(byModel, run.model ?? "unknown", run.usage, n);
+				bump(byThread, "subagent", run.usage, n);
+				bump(byAgent, `dev-team:${run.agent}`, run.usage, n);
+			}
 			any = true;
 		}
 	}
@@ -134,71 +135,4 @@ export function recordCost(ctx: ExtensionContext): string | undefined {
 	} catch {
 		return undefined;
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Context ceiling guard
-// ---------------------------------------------------------------------------
-
-const RECOVERY_SKILLS = new Set(["handoff", "context-loading-protocol", "continue", "review-summary", "session-review"]);
-
-const BLOCK_FOOTER =
-	"[blocked: context ceiling] Run /handoff to summarize and continue in a fresh context — recovery skills are never gated, so it will run. Set DEV_TEAM_CONTEXT_STRICT=off to warn instead of blocking.";
-const DELEGATION_FOOTER =
-	"[not blocked: delegation] A subagent runs in its own context and returns only its result, so dispatching one is the cheapest way to do this work without growing THIS context — blocking it would push the work inline and cost more. Run /handoff to actually get back under the ceiling. Set DEV_TEAM_CONTEXT_GATE_AGENT=block to block these too.";
-
-const BANDS = [
-	["nudge", "Consider running /handoff (write a memory/ progress file, continue in a fresh context) and defer non-essential agents/skills."],
-	["run-now", "Run /handoff now — write a memory/ progress file and continue in a fresh context."],
-	["full-summary", "Write a full summary to memory/ and start a new conversation now — context is well past the effective ceiling."],
-] as const;
-
-function positiveIntEnv(name: string, def: number): number {
-	const raw = process.env[name];
-	if (!raw || !/^[0-9]+$/.test(raw)) return def;
-	const v = Number(raw);
-	return v > 0 ? v : def;
-}
-
-const lastBucket = new Map<string, number>();
-
-export interface CeilingVerdict {
-	block?: string;
-	warn?: string;
-}
-
-/** @param kind "skill" (blocks) or "agent" (warns unless DEV_TEAM_CONTEXT_GATE_AGENT=block) */
-export function contextCeiling(ctx: ExtensionContext, kind: "skill" | "agent", name: string): CeilingVerdict {
-	if (process.env.DEV_TEAM_CONTEXT_CEILING === "off") return {};
-	if (kind === "skill" && RECOVERY_SKILLS.has(name)) return {};
-	const usage = ctx.getContextUsage();
-	if (!usage || usage.tokens == null) return {};
-	const override = positiveIntEnv("DEV_TEAM_CONTEXT_WINDOW", 0);
-	const window = override || usage.contextWindow;
-	if (!window) return {};
-	const provenance = override ? "override" : "detected";
-	const occ = usage.tokens;
-	const pct = positiveIntEnv("DEV_TEAM_CONTEXT_CEILING_PCT", 40);
-	const abs = positiveIntEnv("DEV_TEAM_CONTEXT_ABS_CEILING", 350_000);
-	const pctTokens = Math.floor((pct * window) / 100);
-	const threshold = Math.min(pctTokens, abs);
-	if (occ < threshold) return {};
-	const bound = pctTokens <= abs ? "percentage" : "absolute";
-	const band = occ >= Math.floor((threshold * 3) / 2) ? 2 : occ >= Math.floor((threshold * 5) / 4) ? 1 : 0;
-	const label = kind === "skill" ? `invoking skill '${name}'` : `loading agent '${name}'`;
-	const diag = `Context at ${occ} of ${window} tokens — over the effective ceiling of ${threshold} tokens (${bound} bound; window ${provenance}) before ${label}.`;
-	const [bandName, action] = BANDS[band];
-	const msg =
-		band === 2
-			? `[${bandName}] ${action}\n${diag}`
-			: `${diag}\n[${bandName}] ${action}\nTune with DEV_TEAM_CONTEXT_WINDOW / DEV_TEAM_CONTEXT_CEILING_PCT / DEV_TEAM_CONTEXT_ABS_CEILING; DEV_TEAM_CONTEXT_CEILING=off disables.`;
-	const strict = (process.env.DEV_TEAM_CONTEXT_STRICT ?? "").trim().toLowerCase() !== "off";
-	const blocks = kind === "skill" || (process.env.DEV_TEAM_CONTEXT_GATE_AGENT ?? "").trim().toLowerCase() === "block";
-	if (strict && blocks) return { block: `${msg}\n${BLOCK_FOOTER}` };
-	const session = ctx.sessionManager.getSessionId();
-	const bucket = Math.max(band * 100, Math.floor(Math.floor((occ * 100) / window) / 5));
-	const last = lastBucket.get(session) ?? 0;
-	lastBucket.set(session, bucket);
-	if (bucket <= last) return {};
-	return { warn: strict && !blocks ? `${msg}\n${DELEGATION_FOOTER}` : msg };
 }

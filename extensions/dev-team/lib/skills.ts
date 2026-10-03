@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import { readSmallFile } from "./safe-read.ts";
 
 export interface SkillDef {
 	name: string;
@@ -30,12 +31,8 @@ type SkillFrontmatter = {
 };
 
 function loadSkill(filePath: string, source: SkillDef["source"]): SkillDef | undefined {
-	let content: string;
-	try {
-		content = fs.readFileSync(filePath, "utf-8");
-	} catch {
-		return undefined;
-	}
+	const content = readSmallFile(filePath);
+	if (content === undefined) return undefined;
 	let fm: SkillFrontmatter;
 	try {
 		fm = parseFrontmatter<SkillFrontmatter>(content).frontmatter;
@@ -74,15 +71,54 @@ function loadDir(dir: string, source: SkillDef["source"]): SkillDef[] {
 	return out;
 }
 
-export function discoverSkills(cwd: string, packageRoot: string): Map<string, SkillDef> {
+/**
+ * Project skills (.pi/skills, .claude/skills) first, then the package's. Project skills are
+ * repo-supplied instructions, so pass `includeProject: ctx.isProjectTrusted()` as pi does for its own.
+ */
+export function discoverSkills(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, SkillDef> {
 	const map = new Map<string, SkillDef>();
 	const add = (defs: SkillDef[]) => {
 		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	};
-	add(loadDir(path.join(cwd, ".pi", "skills"), "project"));
-	add(loadDir(path.join(cwd, ".claude", "skills"), "project"));
+	if (opts.includeProject) add(loadProjectSkills(cwd));
 	add(loadDir(path.join(packageRoot, "skills"), "package"));
 	return map;
+}
+
+function loadProjectSkills(cwd: string): SkillDef[] {
+	return [...loadDir(path.join(cwd, ".pi", "skills"), "project"), ...loadDir(path.join(cwd, ".claude", "skills"), "project")];
+}
+
+/** First definition of each name wins. */
+function byName(defs: SkillDef[]): Map<string, SkillDef> {
+	const map = new Map<string, SkillDef>();
+	for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
+	return map;
+}
+
+/**
+ * Skills a call may use. When pi reports the project untrusted, project skills are left out and
+ * `skippedProjectSkills` names the requested ones that therefore cannot run. Unlike
+ * skippedProjectAgents, a project skill that shadows a package skill is not listed: the package
+ * skill runs instead, as pi does when it skips its own project skills.
+ */
+export function discoverInvocableSkills(
+	cwd: string,
+	packageRoot: string,
+	projectTrusted: boolean,
+	requested: string[],
+): { skills: Map<string, SkillDef>; skippedProjectSkills: string[] } {
+	const skills = discoverSkills(cwd, packageRoot, { includeProject: projectTrusted });
+	if (projectTrusted) return { skills, skippedProjectSkills: [] };
+	// Only the project directories are read again, to name what was left out.
+	const projectOnly = byName(loadProjectSkills(cwd));
+	const skippedProjectSkills = requested.filter((name) => !resolveSkillName(skills, name) && resolveSkillName(projectOnly, name));
+	return { skills, skippedProjectSkills };
+}
+
+/** Why a skill cannot run now: the one wording for the skill tool and /commands. */
+export function unavailableSkillReason(skippedForTrust: boolean): string {
+	return skippedForTrust ? "is a project skill, and this project is not trusted in pi" : "can no longer be found (its SKILL.md is missing or unreadable)";
 }
 
 export function resolveSkillName(skills: Map<string, SkillDef>, requested: string): SkillDef | undefined {
@@ -143,7 +179,10 @@ export function substituteArguments(body: string, args: string): string {
 
 /** The text a model sees when a skill is invoked (same wrapper pi uses for /skill:name). */
 export function expandSkill(skill: SkillDef, args: string): string {
-	const body = stripFrontmatter(fs.readFileSync(skill.filePath, "utf-8")).trim();
+	// Read again with the same guard: the file may have changed since discovery.
+	const raw = readSmallFile(skill.filePath);
+	if (raw === undefined) throw new Error(`Skill "${skill.name}" can no longer be read: ${skill.filePath}`);
+	const body = stripFrontmatter(raw).trim();
 	const substituted = substituteArguments(body, args);
 	const header = `References are relative to ${skill.baseDir}. \${CLAUDE_PLUGIN_ROOT} is set in the shell environment.`;
 	return `<skill name="${skill.name}" location="${skill.filePath}">\n${header}\n\n${substituted}\n</skill>`;

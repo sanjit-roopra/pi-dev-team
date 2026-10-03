@@ -1,9 +1,9 @@
 {
   "repository": "https://github.com/bdfinst/agentic-dev-team",
   "plugin": "dev-team",
-  "version": "13.3.0",
-  "commit": "842286ba8a909c399193ebe0b8f624f2043d9264",
-  "commitDate": "2026-09-23T12:26:18-05:00",
+  "version": "14.0.0",
+  "commit": "2bf3d9852ca13999c9af4a83614935cc07f4503c",
+  "commitDate": "2026-09-30T20:49:31-05:00",
   "droppedSkills": [
     "agent-audit",
     "agent-eval",

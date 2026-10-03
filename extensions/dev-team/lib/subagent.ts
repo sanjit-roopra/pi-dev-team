@@ -15,24 +15,36 @@ import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
+import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
 import type { DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
+import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
+import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
+import {
+	type AgentSource,
+	type DispatchArgs,
+	describeWorktree,
+	dispatchAgent,
+	dispatchTask,
+	emptyPiUsage,
+	type NestedUsage,
+	type ProgressPatch,
+	type SubagentDetails,
+	type SubagentTaskView,
+	sumPiUsage,
+	toUsageTotals,
+	type UsageTotals,
+	type WorktreeInfo,
+} from "./subagent-types.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
-
-export interface UsageTotals {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	turns: number;
-}
+import { type ChildTrust, childTrustOf, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {
 	agent: string;
+	source?: AgentSource;
 	task: string;
 	ok: boolean;
 	output: string;
@@ -40,14 +52,20 @@ export interface SubagentRunResult {
 	model?: string;
 	tier?: string;
 	stopReason?: string;
+	/** The child's own turns. */
 	usage: UsageTotals;
+	/** Agents the child dispatched itself (any depth), credited to those agents. */
+	nested: NestedUsage[];
+	/** Everything the child cost, nested dispatches included, in pi's Usage shape for the tool result. */
+	totalUsage?: Usage;
 	messages: PiMessageLike[];
-	worktree?: { path: string; branch: string; kept: boolean; dirty: boolean; commits: number };
+	worktree?: WorktreeInfo;
 	blocked?: boolean;
 	durationMs: number;
 }
 
-export const SUBAGENT_USAGE_ENTRY = "dev-team-subagent-usage";
+const TASK_PREVIEW_CHARS = 400;
+const STATUS_LINE_TOOLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
 
@@ -116,7 +134,7 @@ function git(cwd: string, args: string[]): { ok: boolean; out: string } {
 	return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 
-function createWorktree(cwd: string, agent: string, id: string): { path: string; branch: string; base: string } {
+function createWorktree(cwd: string, agent: string, id: string): { path: string; branch: string; base: string; repoRoot: string } {
 	const top = git(cwd, ["rev-parse", "--show-toplevel"]);
 	if (!top.ok) throw new Error(`isolation "worktree" needs a git repository: ${top.out}`);
 	const root = top.out.split("\n")[0];
@@ -128,10 +146,10 @@ function createWorktree(cwd: string, agent: string, id: string): { path: string;
 	// Branch from local HEAD (Claude Code's worktree.baseRef=head), so freshly written specs/plans are visible.
 	const add = git(root, ["worktree", "add", "-b", branch, wtPath, "HEAD"]);
 	if (!add.ok) throw new Error(`git worktree add failed: ${add.out}`);
-	return { path: wtPath, branch, base: base.out.split("\n")[0] };
+	return { path: wtPath, branch, base: base.out.split("\n")[0], repoRoot: root };
 }
 
-function finishWorktree(wt: { path: string; branch: string; base: string }): SubagentRunResult["worktree"] {
+function finishWorktree(wt: { path: string; branch: string; base: string }): WorktreeInfo {
 	// Runtime state the hooks write under .claude/ does not count as work.
 	const status = git(wt.path, ["status", "--porcelain", "--", ".", ":(exclude).claude"]);
 	const dirty = status.ok && status.out.length > 0;
@@ -152,18 +170,6 @@ export interface SubagentDeps {
 	hooks: HookBridge;
 	depth: number;
 	onUsage: (r: SubagentRunResult) => void;
-}
-
-interface TaskInput {
-	agent?: string;
-	subagent_type?: string;
-	task?: string;
-	prompt?: string;
-	description?: string;
-	model?: string;
-	thinking?: string;
-	cwd?: string;
-	isolation?: string;
 }
 
 const TaskFields = {
@@ -194,17 +200,18 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 	const semaphore = new Semaphore(getConfig().maxParallelAgents);
 
 	async function runOne(
-		input: TaskInput,
+		input: DispatchArgs,
 		ctx: ExtensionContext,
 		signal: AbortSignal | undefined,
 		agents: Map<string, AgentDef>,
-		progress: (text: string) => void,
+		update: (patch: ProgressPatch) => void,
+		trust: ChildTrust,
 	): Promise<SubagentRunResult> {
 		const started = Date.now();
 		const config = getConfig();
-		const requested = (input.agent ?? input.subagent_type ?? "").trim();
-		let task = (input.task ?? input.prompt ?? "").trim();
-		const empty: UsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
+		const requested = dispatchAgent(input);
+		let task = dispatchTask(input);
+		const empty = toUsageTotals(emptyPiUsage(), 0);
 		const fail = (error: string, extra: Partial<SubagentRunResult> = {}): SubagentRunResult => ({
 			agent: requested || "(none)",
 			task,
@@ -212,6 +219,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			output: "",
 			error,
 			usage: empty,
+			nested: [],
 			messages: [],
 			durationMs: Date.now() - started,
 			...extra,
@@ -221,6 +229,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		if (!def) {
 			return fail(`Unknown agent "${requested}". Available: ${[...agents.keys()].sort().join(", ")}`);
 		}
+		update({ agent: def.name, source: def.source });
 
 		const sessionId = ctx.sessionManager.getSessionId();
 		const baseCwd = input.cwd ? path.resolve(ctx.cwd, input.cwd) : ctx.cwd;
@@ -236,7 +245,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				tool_input: { subagent_type: def.name, prompt: task, description: input.description ?? "" },
 			},
 			baseCwd,
-			{ claudeTool: "Agent" },
+			{ matchTarget: "Agent" },
 		);
 		if (pre.block) return fail(`Dispatch blocked by hook:\n${pre.block}`, { agent: def.name, blocked: true });
 		if (pre.updatedInput) {
@@ -265,7 +274,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
 			const args = ["--mode", "json", "-p", "--no-session", ...forwardedArgs()];
-			if (ctx.isProjectTrusted()) args.push("--approve");
+			args.push(...trustArgs(trust, runCwd, wt?.repoRoot));
 			if (choice.model) args.push("--model", choice.model);
 			if (thinking) args.push("--thinking", thinking);
 			if (tools) args.push("--tools", tools.length ? tools.join(",") : "read");
@@ -282,12 +291,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			};
 			delete env.DEV_TEAM_INTERACTIVE;
 
-			const messages: PiMessageLike[] = [];
-			const usage: UsageTotals = { ...empty };
+			const run = newChildRunState(choice.model);
 			let stderr = "";
-			let model: string | undefined = choice.model;
-			let stopReason: string | undefined;
-			let errorMessage: string | undefined;
 			let aborted = false;
 			let timedOut = false;
 
@@ -297,32 +302,14 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				let buf = "";
 				const onLine = (line: string) => {
 					if (!line.trim()) return;
-					let ev: { type?: string; message?: PiMessageLike & { errorMessage?: string; provider?: string } };
+					let ev: ChildEvent;
 					try {
 						ev = JSON.parse(line);
 					} catch {
 						return;
 					}
-					if (ev.type === "message_end" && ev.message?.role === "assistant") {
-						const m = ev.message;
-						messages.push(m);
-						usage.turns++;
-						const u = (m.usage ?? {}) as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: { total?: number } };
-						usage.input += u.input ?? 0;
-						usage.output += u.output ?? 0;
-						usage.cacheRead += u.cacheRead ?? 0;
-						usage.cacheWrite += u.cacheWrite ?? 0;
-						usage.cost += u.cost?.total ?? 0;
-						if (m.model) model = m.provider ? `${m.provider}/${m.model}` : m.model;
-						if (m.stopReason) stopReason = m.stopReason;
-						if (m.errorMessage) errorMessage = m.errorMessage;
-						const calls = Array.isArray(m.content)
-							? (m.content as { type: string; name?: string }[]).filter((c) => c.type === "toolCall").map((c) => c.name)
-							: [];
-						progress(`${def.name}: turn ${usage.turns}${calls.length ? ` → ${calls.join(", ")}` : ""}`);
-					} else if ((ev.type === "message_end" || ev.type === "tool_result_end") && ev.message?.role === "toolResult") {
-						messages.push(ev.message);
-					}
+					const patch = applyChildEvent(run, ev);
+					if (patch) update(patch);
 				};
 				proc.stdout.on("data", (d) => {
 					buf += d.toString();
@@ -367,10 +354,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			});
 
 			const worktree = wt ? finishWorktree(wt) : undefined;
-			const output = finalText(messages);
-			const ok = exitCode === 0 && !aborted && !timedOut && stopReason !== "error" && stopReason !== "aborted";
+			const output = finalText(run.messages);
+			const ok = exitCode === 0 && !aborted && !timedOut && run.stopReason !== "error" && run.stopReason !== "aborted";
 			const result: SubagentRunResult = {
 				agent: def.name,
+				source: def.source,
 				task,
 				ok,
 				output,
@@ -380,19 +368,21 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 						? `timed out after ${config.subagentTimeoutSec}s`
 						: aborted
 							? "aborted"
-							: errorMessage || stderr.trim().slice(-4000) || `exit code ${exitCode}`,
-				model,
+							: run.errorMessage || stderr.trim().slice(-4000) || `exit code ${exitCode}`,
+				model: run.model,
 				tier: choice.tier,
-				stopReason,
-				usage,
-				messages,
+				stopReason: run.stopReason,
+				usage: toUsageTotals(run.own, run.turns),
+				nested: run.nested,
+				totalUsage: run.turns ? run.total : undefined,
+				messages: run.messages,
 				worktree,
 				durationMs: Date.now() - started,
 			};
 
 			// SubagentStop with a synthetic Claude-format transcript.
 			try {
-				const lines = buildTranscriptLines({ agentName: def.name, agentId, sessionId, cwd: runCwd, prompt: task, messages });
+				const lines = buildTranscriptLines({ agentName: def.name, agentId, sessionId, cwd: runCwd, prompt: task, messages: run.messages });
 				const transcript = writeTranscript(sessionId, agentId, lines);
 				await hooks.run(
 					"SubagentStop",
@@ -436,11 +426,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		parameters: SubagentParams,
 		prepareArguments: (raw: unknown) => {
 			const a = (raw ?? {}) as Record<string, unknown>;
-			const norm = (t: Record<string, unknown>) => ({
-				...t,
-				agent: t.agent ?? t.subagent_type,
-				task: t.task ?? t.prompt,
-			});
+			// Claude Agent/Task aliases, resolved once here by the same rule the tool uses everywhere.
+			const norm = (t: Record<string, unknown>) => ({ ...t, agent: dispatchAgent(t as DispatchArgs), task: dispatchTask(t as DispatchArgs) });
 			const out: Record<string, unknown> = norm(a);
 			if (Array.isArray(a.tasks)) out.tasks = a.tasks.map((t) => norm((t ?? {}) as Record<string, unknown>));
 			return out as never;
@@ -450,53 +437,114 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (deps.depth >= getConfig().maxSubagentDepth) {
 				throw new Error(`Subagent nesting limit reached (maxSubagentDepth=${getConfig().maxSubagentDepth}).`);
 			}
-			const agents = discoverAgents(ctx.cwd, packageRoot);
-			const list = (params.tasks?.length ? params.tasks : [params]) as TaskInput[];
-			const status = new Map<number, string>();
-			const progress = (i: number) => (text: string) => {
-				status.set(i, text);
-				onUpdate?.({ content: [{ type: "text", text: [...status.values()].join("\n") }], details: undefined });
+			const list = (params.tasks?.length ? params.tasks : [params]) as DispatchArgs[];
+			// Project agents are skipped only when the user declined pi's own trust prompt for this
+			// project, as pi skips its other project resources. No extra prompt or setup step.
+			// One trust decision per call, shared by every child.
+			const trust = childTrustOf(ctx);
+			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
+			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined);
+			const results = await Promise.all(
+				list.map(async (t, i) => {
+					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), trust);
+					progress.finish(i, r);
+					return r;
+				}),
+			);
+			const usage = sumPiUsage(results.map((r) => r.totalUsage));
+			return {
+				content: [{ type: "text", text: formatResultText(results, skippedProjectAgents) }],
+				details: progress.snapshot(),
+				...(usage ? { usage } : {}),
+				...(results.length === 1 && !results[0].ok ? { isError: true } : {}),
 			};
-			const results = await Promise.all(list.map((t, i) => runOne(t, ctx, signal, agents, progress(i))));
-
-			const render = (r: SubagentRunResult) => {
-				const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;
-				const wtLine = r.worktree
-					? `\n\nWorktree: ${r.worktree.kept ? `kept at ${r.worktree.path}, branch ${r.worktree.branch} (${r.worktree.commits} commit(s)${r.worktree.dirty ? ", uncommitted changes" : ""})` : "no changes, removed"}`
-					: "";
-				const body = r.ok ? cap(r.output || "(no output)") : `Error: ${r.error}${r.output ? `\n\nLast output:\n${cap(r.output)}` : ""}`;
-				return `${head}\n\n${body}${wtLine}`;
-			};
-			const text =
-				results.length === 1
-					? (() => {
-							const r = results[0];
-							const wt = r.worktree
-								? `\n\n[worktree ${r.worktree.kept ? `kept: ${r.worktree.path} on branch ${r.worktree.branch}, ${r.worktree.commits} commit(s)${r.worktree.dirty ? ", uncommitted changes" : ""}` : "removed: no changes"}]`
-								: "";
-							return r.ok ? `${cap(r.output || "(no output)")}${wt}` : `Agent ${r.agent} failed: ${r.error}${wt}`;
-						})()
-					: `${results.filter((r) => r.ok).length}/${results.length} agents succeeded\n\n${results.map(render).join("\n\n---\n\n")}`;
-			const details = {
-				results: results.map((r) => ({
-					agent: r.agent,
-					ok: r.ok,
-					model: r.model,
-					tier: r.tier,
-					stopReason: r.stopReason,
-					usage: r.usage,
-					durationMs: r.durationMs,
-					worktree: r.worktree,
-					error: r.error,
-				})),
-			};
-			const allFailed = results.every((r) => !r.ok);
-			if (allFailed && results.length === 1) {
-				return { content: [{ type: "text", text }], details, isError: true };
-			}
-			return { content: [{ type: "text", text }], details };
 		},
+		renderCall: (args, theme) => renderSubagentCall(args as DispatchArgs & { tasks?: DispatchArgs[] }, theme),
+		renderResult: (result, options, theme) => renderSubagentResult(result, options, theme),
 	});
+}
+
+/** Live per-task views for the TUI, streamed through onUpdate while children run. */
+export type DispatchUpdate = (r: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void;
+
+export class DispatchProgress {
+	private readonly views: SubagentTaskView[];
+	private readonly skippedProjectAgents: string[];
+	private readonly onUpdate: DispatchUpdate | undefined;
+	constructor(list: DispatchArgs[], skippedProjectAgents: string[], onUpdate: DispatchUpdate | undefined) {
+		this.skippedProjectAgents = skippedProjectAgents;
+		this.onUpdate = onUpdate;
+		this.views = list.map((t) => ({
+			agent: dispatchAgent(t) || "(none)",
+			task: dispatchTask(t).slice(0, TASK_PREVIEW_CHARS),
+			status: "running",
+			ok: false,
+			turns: 0,
+			tools: [],
+		}));
+		this.emit();
+	}
+	snapshot(): SubagentDetails {
+		return {
+			results: this.views.map((v) => ({ ...v, tools: [...v.tools] })),
+			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
+		};
+	}
+	update(taskIndex: number, patch: ProgressPatch): void {
+		this.views[taskIndex] = { ...this.views[taskIndex], ...patch };
+		this.emit();
+	}
+	finish(taskIndex: number, result: SubagentRunResult): void {
+		this.views[taskIndex] = { ...this.views[taskIndex], ...viewFromResult(result) };
+		this.emit();
+	}
+	private emit(): void {
+		this.onUpdate?.({ content: [{ type: "text", text: this.views.map(statusLine).join("\n") }], details: this.snapshot() });
+	}
+}
+
+function statusLine(v: SubagentTaskView): string {
+	if (v.status !== "running") return `${v.agent}: ${v.status}`;
+	const tools = v.tools.length ? ` → ${v.tools.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
+	return `${v.agent}: turn ${v.turns}${tools}`;
+}
+
+export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
+	return {
+		agent: r.agent,
+		source: r.source,
+		status: r.ok ? "ok" : "failed",
+		ok: r.ok,
+		model: r.model,
+		tier: r.tier,
+		turns: r.usage.turns,
+		usage: r.usage,
+		nested: r.nested.length ? r.nested : undefined,
+		durationMs: r.durationMs,
+		stopReason: r.stopReason,
+		error: r.error,
+		output: r.output ? cap(r.output) : undefined,
+		worktree: r.worktree,
+	};
+}
+
+/** The model-facing result text (the TUI draws `details` instead). */
+export function formatResultText(results: SubagentRunResult[], skippedProjectAgents: string[]): string {
+	const skipped = skippedProjectAgents.length
+		? `\n\n[project agents not run (project not trusted): ${skippedProjectAgents.join(", ")}. You declined trust for this project in pi; package agents were used where they exist.]`
+		: "";
+	if (results.length === 1) {
+		const r = results[0];
+		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
+		return `${r.ok ? cap(r.output || "(no output)") : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
+	}
+	const section = (r: SubagentRunResult) => {
+		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;
+		const body = r.ok ? cap(r.output || "(no output)") : `Error: ${r.error}${r.output ? `\n\nLast output:\n${cap(r.output)}` : ""}`;
+		const wt = r.worktree ? `\n\nWorktree: ${describeWorktree(r.worktree)}` : "";
+		return `${head}\n\n${body}${wt}`;
+	};
+	return `${results.filter((r) => r.ok).length}/${results.length} agents succeeded\n\n${results.map(section).join("\n\n---\n\n")}${skipped}`;
 }
 
 export function buildSystemPrompt(def: AgentDef, packageRoot: string, scopedBash: string[], unmapped: string[]): string {

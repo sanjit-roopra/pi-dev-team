@@ -9,13 +9,13 @@ What you get is the whole dev-team:
 - **Guard hooks.** careful / freeze / guard, tests frozen during REFACTOR, the verify-loop guard, the `gh pr create` review gate, and the review-verdict and dispatch ledgers.
 - **Knowledge base, scripts, templates.** Byte-identical to upstream.
 
-Upstream version: see `UPSTREAM.json` (currently dev-team v13.3.0).
+Upstream version: see `UPSTREAM.json` (currently dev-team v14.0.0).
 
 ## Install
 
 Requirements:
 
-- pi ≥ 0.99
+- pi ≥ 1.0
 - git
 - Python ≥ 3.10 (hooks and scripts)
 - `gh` for PRs and issues
@@ -84,7 +84,7 @@ The model uses dev-team through four tools the extension adds:
 
 | Tool | Claude Code equivalent | Notes |
 |---|---|---|
-| `dev_team_subagent` | Agent / Task | Runs the agent in a child `pi` process with its own context, tools and tier model. Single calls, parallel calls (several calls in one message, or `tasks[]`), and `isolation: "worktree"`. Accepts `subagent_type`/`prompt` too. |
+| `dev_team_subagent` | Agent / Task | Runs the agent in a child `pi` process with its own context, tools and tier model. Single calls, parallel calls (several calls in one message, or `tasks[]`), and `isolation: "worktree"`. Accepts `subagent_type`/`prompt` too. Live per-agent progress in the TUI; child spend counts in pi's session totals. |
 | `skill` | Skill | Loads a skill with arguments substituted. This is how skills chain (`/specs` → `/plan`, `/ship` → everything). |
 | `ask_user` | AskUserQuestion | The human gates. In non-interactive runs (`pi -p`, subagents) it tells the model to take the documented default. |
 | `web_fetch` | WebFetch | URL to text. |
@@ -112,12 +112,13 @@ Configuration files are merged in this order, later wins:
   "autoFormat": false,             // run prettier/ruff/black after write/edit (/setup turns this on)
   "skillIndex": "compact",         // compact | full | off — skill list in the system prompt
   "claudeShim": true,              // `claude -p` in upstream scripts runs pi instead
-  "env": { "DEV_TEAM_MAX_PARALLEL_BUILDS": "2" },
+  "env": { "DEV_TEAM_MAX_PARALLEL_BUILDS": "2" },   // in a project file: dev-team tuning settings only
   "hooks": { "enabled": true, "disabled": ["..."], "enable": ["version_check"], "outputToModel": true, "timeoutSec": 60 }
+  // hooks: user config only; a project file's hooks are ignored
 }
 ```
 
-- **Environment variables.** Upstream's `DEV_TEAM_*` variables work unchanged, for example `DEV_TEAM_AUTO_APPROVE=1`, `DEV_TEAM_CONTEXT_STRICT=off` and `DEV_TEAM_COST_METER=off`.
+- **Environment variables.** Upstream's `DEV_TEAM_*` variables work unchanged, for example `DEV_TEAM_AUTO_APPROVE=1`, `DEV_TEAM_AUTOCOMPACT_NUDGE=0` and `DEV_TEAM_COST_METER=off`.
 - **Cost metering.** Needs the same opt-in as upstream: `/telemetry on`, which writes `~/.claude/telemetry.json`. Costs come from pi's own usage accounting, so they are correct for Copilot and every other provider.
 - **Hooks.** `/dev-team hooks` lists every hook and whether it is on.
 

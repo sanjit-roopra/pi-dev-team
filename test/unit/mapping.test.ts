@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { type TestContext, test } from "node:test";
 import {
 	discoverAgents,
 	mapTools,
@@ -14,11 +14,17 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
+
+function tempDir(t: TestContext, prefix: string): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	return dir;
+}
 
 test("splitToolList keeps scoped Bash grants intact", () => {
 	assert.deepEqual(splitToolList("Read, Grep, Bash(npx playwright *), Glob"), ["Read", "Grep", "Bash(npx playwright *)", "Glob"]);
@@ -66,7 +72,7 @@ test("resolveThinking maps effort", () => {
 });
 
 test("every upstream agent parses and maps to at least one pi tool", () => {
-	const agents = discoverAgents(os.tmpdir(), ROOT);
+	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
 	assert.ok(agents.size >= 48, `expected >= 48 agents, got ${agents.size}`);
 	for (const def of agents.values()) {
 		const m = mapTools(def.claudeTools, []);
@@ -78,8 +84,8 @@ test("every upstream agent parses and maps to at least one pi tool", () => {
 	assert.equal(resolveAgentName(agents, "explore")?.name, "Explore");
 });
 
-test("agent file with blank line after frontmatter opener parses", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agt-"));
+test("agent file with blank line after frontmatter opener parses", (t) => {
+	const dir = tempDir(t, "agt-");
 	const f = path.join(dir, "x.md");
 	fs.writeFileSync(f, "---\n\nname: x\ndescription: d\ntools: Read, Grep\nmodel: haiku\neffort: low\nskills:\n  - a\n  - b\n---\nBody text here that is long enough.\n");
 	const def = parseAgentFile(f, "project");
@@ -88,11 +94,12 @@ test("agent file with blank line after frontmatter opener parses", () => {
 	assert.equal(def.model, "haiku");
 });
 
-test("project agents override package agents", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "proj-"));
+test("project agents override package agents", (t) => {
+	const dir = tempDir(t, "proj-");
 	fs.mkdirSync(path.join(dir, ".claude", "agents"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".claude", "agents", "security-review.md"), "---\nname: security-review\ndescription: local\n---\nlocal body\n");
-	assert.equal(discoverAgents(dir, ROOT).get("security-review")?.description, "local");
+	assert.equal(discoverAgents(dir, ROOT, { includeProject: true }).get("security-review")?.description, "local");
+	assert.equal(discoverAgents(dir, ROOT, { includeProject: false }).get("security-review")?.source, "package");
 });
 
 test("splitArgs and Claude argument substitution", () => {
@@ -103,8 +110,8 @@ test("splitArgs and Claude argument substitution", () => {
 	assert.equal(substituteArguments("No placeholder.", ""), "No placeholder.");
 });
 
-test("skills: discovery, qualified names, project override, compact index", () => {
-	const skills = discoverSkills(os.tmpdir(), ROOT);
+test("skills: discovery, qualified names, project override, compact index", (t) => {
+	const skills = discoverSkills(os.tmpdir(), ROOT, { includeProject: false });
 	assert.ok(skills.size >= 90);
 	for (const name of ["specs", "plan", "build", "pr", "code-review", "setup", "help", "version", "upgrade", "headless-run"]) {
 		assert.ok(skills.has(name), `missing skill ${name}`);
@@ -114,14 +121,67 @@ test("skills: discovery, qualified names, project override, compact index", () =
 	const index = skillIndex(skills, "compact", 220);
 	assert.ok(index.length < 40_000, `index too large: ${index.length}`);
 	assert.match(index, /- plan \(\/plan\): /);
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "proj-"));
+	const dir = tempDir(t, "proj-");
 	fs.mkdirSync(path.join(dir, ".claude", "skills", "pr"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".claude", "skills", "pr", "SKILL.md"), "---\nname: pr\ndescription: project pr\n---\nx\n");
-	assert.equal(discoverSkills(dir, ROOT).get("pr")?.source, "project");
+	assert.equal(discoverSkills(dir, ROOT, { includeProject: true }).get("pr")?.source, "project");
+	assert.equal(discoverSkills(dir, ROOT, { includeProject: false }).get("pr")?.source, "package", "project skills need a trusted project");
+});
+
+test("skill files that are not small regular files are skipped unread", (t) => {
+	const dir = tempDir(t, "skl-");
+	const skills = path.join(dir, ".claude", "skills");
+	fs.mkdirSync(path.join(skills, "ok"), { recursive: true });
+	fs.writeFileSync(path.join(skills, "ok", "SKILL.md"), "---\nname: ok\ndescription: d\n---\nbody\n");
+	fs.mkdirSync(path.join(skills, "as-dir", "SKILL.md"), { recursive: true });
+	fs.mkdirSync(path.join(skills, "too-big"), { recursive: true });
+	fs.writeFileSync(path.join(skills, "too-big", "SKILL.md"), `---\nname: too-big\ndescription: d\n---\n${"x".repeat(1024 * 1024)}`);
+	const found = discoverSkills(dir, ROOT, { includeProject: true });
+	assert.ok(found.has("ok"), "the project skills directory is read");
+	assert.equal(found.has("as-dir"), false);
+	assert.equal(found.has("too-big"), false);
+});
+
+function projectSkill(t: TestContext, name: string): string {
+	const dir = tempDir(t, "skl-");
+	fs.mkdirSync(path.join(dir, ".claude", "skills", name), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".claude", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nPROJECT_SKILL_BODY\n`);
+	return dir;
+}
+
+test("invocable skills: an untrusted project's skill is reported as skipped, not unknown", (t) => {
+	const dir = projectSkill(t, "local-skill");
+	const untrusted = discoverInvocableSkills(dir, ROOT, false, ["local-skill", "plan", "nope"]);
+	assert.deepEqual(untrusted.skippedProjectSkills, ["local-skill"]);
+	assert.equal(untrusted.skills.has("local-skill"), false);
+	const trusted = discoverInvocableSkills(dir, ROOT, true, ["local-skill"]);
+	assert.deepEqual(trusted.skippedProjectSkills, []);
+	assert.equal(trusted.skills.get("local-skill")?.source, "project");
+});
+
+test("invocable skills: a project skill shadowing a package skill falls back to the package one when untrusted", (t) => {
+	const dir = projectSkill(t, "pr");
+	const untrusted = discoverInvocableSkills(dir, ROOT, false, ["dev-team:pr"]);
+	assert.deepEqual(untrusted.skippedProjectSkills, []);
+	assert.equal(untrusted.skills.get("pr")?.source, "package");
+});
+
+test("unavailable /command reasons name trust or a missing file", () => {
+	assert.match(unavailableSkillReason(true), /not trusted in pi/);
+	assert.match(unavailableSkillReason(false), /missing or unreadable/);
+});
+
+test("expandSkill reads the skill again and fails clearly when it is gone", (t) => {
+	const dir = projectSkill(t, "vanishing");
+	const skill = discoverSkills(dir, ROOT, { includeProject: true }).get("vanishing");
+	assert.ok(skill);
+	assert.match(expandSkill(skill, ""), /PROJECT_SKILL_BODY/);
+	fs.rmSync(skill.filePath);
+	assert.throws(() => expandSkill(skill, ""), /can no longer be read/);
 });
 
 test("every skill description fits pi's 1024 limit", () => {
-	for (const s of discoverSkills(os.tmpdir(), ROOT).values()) assert.ok(s.description.length <= 1024, `${s.name}: ${s.description.length}`);
+	for (const s of discoverSkills(os.tmpdir(), ROOT, { includeProject: false }).values()) assert.ok(s.description.length <= 1024, `${s.name}: ${s.description.length}`);
 });
 
 test("hooks.json wiring loads with matchers and every script exists", () => {
@@ -202,7 +262,7 @@ test("forwardedArgs keeps resource flags and resolves local paths", () => {
 });
 
 test("subagent system prompt carries runtime notes and skill hints", () => {
-	const agents = discoverAgents(os.tmpdir(), ROOT);
+	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
 	const def = agents.get("software-engineer");
 	assert.ok(def);
 	const prompt = buildSystemPrompt(def, ROOT, [], ["WebSearch"]);

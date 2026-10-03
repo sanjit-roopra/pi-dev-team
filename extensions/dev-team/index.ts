@@ -3,14 +3,15 @@
  *
  * This extension provides the Claude Code runtime contract the upstream content relies on:
  *   env (CLAUDE_PLUGIN_ROOT, ...), /commands for skills, the `skill` and `dev_team_subagent` tools,
- *   `ask_user`, `web_fetch`, the Python hook bridge, native cost meter and context-ceiling guard.
+ *   `ask_user`, `web_fetch`, the Python hook bridge, native cost meter and autocompact.
  * See PORTING.md for the full mapping.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
+import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
+import { autocompactDue } from "./lib/autocompact.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -22,10 +23,12 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
-import { contextCeiling, recordCost } from "./lib/metrics.ts";
-import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex } from "./lib/skills.ts";
-import { buildSystemPrompt, forwardedArgs, registerSubagentTool, SUBAGENT_USAGE_ENTRY } from "./lib/subagent.ts";
+import { recordCost } from "./lib/metrics.ts";
+import { commandText, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
+import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
+import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
+import { childTrustOf, shimTrustEnv } from "./lib/trust.ts";
 
 function packageRootDir(): string {
 	// extensions/dev-team/index.ts -> package root
@@ -33,6 +36,7 @@ function packageRootDir(): string {
 	return path.resolve(here, "..", "..");
 }
 
+const HOOK_NAME_PREFIX = /^\[[\w-]+\] /;
 const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "startup", new: "clear", resume: "resume", fork: "resume" };
 
 export default function devTeam(pi: ExtensionAPI) {
@@ -40,7 +44,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	const isSubagent = process.env.DEV_TEAM_SUBAGENT === "1";
 	const depth = Number(process.env.DEV_TEAM_SUBAGENT_DEPTH || 0) || 0;
 	let cwd = process.cwd();
-	let config: DevTeamConfig = loadConfig(cwd).config;
+	// Project config is read again at session start, once pi's trust decision is known.
+	let config: DevTeamConfig = loadConfig(cwd, { includeProject: false }).config;
 	const getConfig = () => config;
 	const hooks = new HookBridge(packageRoot, getConfig);
 	const pendingAdvisories = new Map<string, string[]>();
@@ -55,16 +60,21 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	function applyEnv(ctx: ExtensionContext) {
 		cwd = ctx.cwd;
-		config = loadConfig(cwd).config;
+		// A project's .pi/dev-team.json counts only when pi trusts the project, and then filtered
+		// (allow-listed env settings, no hooks; see filterProjectConfig).
+		config = loadConfig(cwd, projectConfigOpts(ctx)).config;
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
 		if (ctx.hasUI && !isSubagent) process.env.DEV_TEAM_INTERACTIVE = "1";
 		else delete process.env.DEV_TEAM_INTERACTIVE;
-		const forward = forwardedArgs();
-		if (ctx.isProjectTrusted()) forward.push("--approve");
-		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(forward);
+		// The claude shim's children inherit this session's trust decision as dev_team_subagent's do
+		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_DIR itself.
+		const shim = shimTrustEnv(childTrustOf(ctx), forwardedArgs());
+		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(shim.piArgs);
+		if (shim.trustedDir) process.env.DEV_TEAM_TRUSTED_DIR = shim.trustedDir;
+		else delete process.env.DEV_TEAM_TRUSTED_DIR;
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
 		process.env.PATH = (config.claudeShim ? [bin, ...parts] : parts).join(path.delimiter);
@@ -74,6 +84,18 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (!lines.length || !ctx.hasUI) return;
 		const text = lines.join("\n");
 		ctx.ui.notify(text.length > 1200 ? `${text.slice(0, 1200)}…` : text, level);
+	}
+
+	/** SessionStart hooks for one source; returns their model context with the "[hook] " prefix removed. */
+	async function runSessionStart(ctx: ExtensionContext, source: string): Promise<{ context: string[] }> {
+		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source }, ctx.cwd, { matchTarget: source });
+		notify(ctx, out.notices, "info");
+		return { context: out.advisories.map((a) => a.replace(HOOK_NAME_PREFIX, "")) };
+	}
+
+	/** Project config only for a trusted project (and filtered, see filterProjectConfig). */
+	function projectConfigOpts(ctx: ExtensionContext) {
+		return { includeProject: ctx.isProjectTrusted() };
 	}
 
 	function basePayload(ctx: ExtensionContext): Record<string, unknown> {
@@ -100,7 +122,8 @@ export default function devTeam(pi: ExtensionAPI) {
 				ok: r.ok,
 				durationMs: r.durationMs,
 				usage: { ...r.usage },
-			});
+				...(r.nested.length ? { nested: r.nested } : {}),
+			} satisfies SubagentUsageEntry);
 		},
 	});
 	registerAskUser(pi);
@@ -121,10 +144,14 @@ export default function devTeam(pi: ExtensionAPI) {
 			return { name: a.name ?? a.skill ?? a.command, args: a.args ?? a.arguments ?? "" } as never;
 		},
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const skills = discoverSkills(ctx.cwd, packageRoot);
+			const { skills, skippedProjectSkills } = discoverInvocableSkills(ctx.cwd, packageRoot, ctx.isProjectTrusted(), [params.name]);
 			const skill = resolveSkillName(skills, params.name);
 			if (!skill) {
-				throw new Error(`Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`);
+				throw new Error(
+					skippedProjectSkills.length
+						? `Skill "${params.name}" ${unavailableSkillReason(true)}.`
+						: `Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`,
+				);
 			}
 			return { content: [{ type: "text", text: expandSkill(skill, params.args ?? "") }], details: { skill: skill.name, path: skill.filePath } };
 		},
@@ -132,18 +159,19 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	// ---------------------------------------------------------------- commands (one per user-invocable skill)
 
-	const commandSkills: SkillDef[] = [...discoverSkills(cwd, packageRoot).values()].filter((s) => s.userInvocable);
+	// Commands are registered before pi's trust decision is known, so a project skill's command is
+	// registered by name and resolved again when run, with project skills only for a trusted project.
+	const commandSkills: SkillDef[] = [...discoverSkills(cwd, packageRoot, { includeProject: true }).values()].filter((s) => s.userInvocable);
 	for (const skill of commandSkills) {
 		pi.registerCommand(skill.name, {
 			description: `${skill.description.slice(0, 140)}${skill.argumentHint ? ` ${skill.argumentHint}` : ""}`,
 			handler: async (args, ctx) => {
-				const current = resolveSkillName(discoverSkills(ctx.cwd, packageRoot), skill.name) ?? skill;
-				const verdict = contextCeiling(ctx, "skill", current.name);
-				if (verdict.block) {
-					ctx.ui.notify(verdict.block, "error");
+				const { skills, skippedProjectSkills } = discoverInvocableSkills(ctx.cwd, packageRoot, ctx.isProjectTrusted(), [skill.name]);
+				const current = resolveSkillName(skills, skill.name);
+				if (!current) {
+					ctx.ui.notify(`/${skill.name} ${unavailableSkillReason(skippedProjectSkills.length > 0)}.`, "warning");
 					return;
 				}
-				if (verdict.warn) ctx.ui.notify(verdict.warn, "warning");
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
 				void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: `/${current.name}${args ? ` ${args}` : ""}` }, ctx.cwd);
 				const text = commandText(current, args ?? "");
@@ -180,7 +208,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	function showStatus(ctx: ExtensionContext) {
-		const { config: cfg, sources } = loadConfig(ctx.cwd);
+		const { config: cfg, sources, ignoredProjectSettings } = loadConfig(ctx.cwd, projectConfigOpts(ctx));
 		const upstream = (() => {
 			try {
 				return JSON.parse(fs.readFileSync(path.join(packageRoot, "UPSTREAM.json"), "utf-8"));
@@ -188,13 +216,14 @@ export default function devTeam(pi: ExtensionAPI) {
 				return {};
 			}
 		})();
-		const agents = discoverAgents(ctx.cwd, packageRoot);
-		const skills = discoverSkills(ctx.cwd, packageRoot);
+		const agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
+		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const enabledHooks = hooks.all.filter((h) => isHookEnabled(cfg, h.name));
 		const lines = [
 			`pi-dev-team (upstream dev-team v${upstream.version ?? "?"} @ ${String(upstream.commit ?? "").slice(0, 10)})`,
 			`root: ${packageRoot}`,
 			`config: ${sources.length ? sources.join(", ") : "defaults"}`,
+			...(ignoredProjectSettings.length ? [`project config ignored (see PORTING.md): ${ignoredProjectSettings.join(", ")}`] : []),
 			`tiers: ${Object.entries(cfg.models).map(([k, v]) => `${k}=${v}`).join("  ")}`,
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
@@ -275,7 +304,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			}
 		}
 		updateConfigFile(file, { models });
-		config = loadConfig(ctx.cwd).config;
+		config = loadConfig(ctx.cwd, projectConfigOpts(ctx)).config;
 		ctx.ui.notify(`Saved to ${file}:\n${Object.entries(models).map(([k, v]) => `${k} = ${v}`).join("\n")}`, "info");
 	}
 
@@ -288,9 +317,15 @@ export default function devTeam(pi: ExtensionAPI) {
 		let frontmatterModel: string | undefined;
 		let effort: string | undefined;
 		if (typeof agentName === "string" && agentName) {
-			const def = resolveAgentName(discoverAgents(ctx.cwd, packageRoot), agentName);
+			// Same rule as dev_team_subagent: no project agents when pi trust was declined.
+			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, ctx.isProjectTrusted(), [agentName]);
+			const def = resolveAgentName(agents, agentName);
 			if (!def) {
-				console.error(`dev-team: unknown agent "${agentName}"`);
+				console.error(
+					skippedProjectAgents.length
+						? `dev-team: project agent "${agentName}" not run: this project is not trusted in pi`
+						: `dev-team: unknown agent "${agentName}"`,
+				);
 				return;
 			}
 			agentPrompt = buildSystemPrompt(def, packageRoot, [], []);
@@ -319,14 +354,13 @@ export default function devTeam(pi: ExtensionAPI) {
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
-		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source: SESSION_SOURCE[event.reason] ?? "startup" }, ctx.cwd);
-		sessionContext = out.advisories.map((a) => a.replace(/^\[[\w-]+\] /, ""));
-		notify(ctx, out.notices, "info");
+		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
+		sessionContext = out.context;
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const opts = event.systemPromptOptions;
-		const skills = discoverSkills(ctx.cwd, packageRoot);
+		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const index = config.skillIndex === "off" ? "" : skillIndex(skills, config.skillIndex, config.skillIndexChars);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1") };
 		if (agentPrompt) opts.appendSystemPrompt = `${opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n` : ""}${agentPrompt}`;
@@ -347,16 +381,8 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event, ctx) => {
 		const input = event.input as Record<string, unknown>;
-		if (event.toolName === "skill") {
-			const verdict = contextCeiling(ctx, "skill", String(input.name ?? "").replace(/^\/|^[\w-]+:/g, ""));
-			if (verdict.block) return { block: true, reason: verdict.block };
-			if (verdict.warn) notify(ctx, [verdict.warn]);
-		}
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
-			// PreToolUse(Agent) hooks run per dispatch inside the tool; only the context ceiling applies here.
-			const verdict = contextCeiling(ctx, "agent", String(input.agent ?? input.subagent_type ?? "tasks"));
-			if (verdict.block) return { block: true, reason: verdict.block };
-			if (verdict.warn) notify(ctx, [verdict.warn]);
+			// PreToolUse(Agent) hooks run per dispatch inside the tool.
 			running++;
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", `dev-team: ${running} agent call(s) running`);
 			return undefined;
@@ -366,7 +392,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			"PreToolUse",
 			{ ...basePayload(ctx), tool_name: claudeTool, tool_use_id: event.toolCallId, tool_input: toClaudeInput(event.toolName, input, ctx.cwd) },
 			ctx.cwd,
-			{ claudeTool },
+			{ matchTarget: claudeTool },
 		);
 		notify(ctx, out.notices);
 		if (out.block) return { block: true, reason: out.block };
@@ -387,7 +413,6 @@ export default function devTeam(pi: ExtensionAPI) {
 			.map((c) => (c as { text: string }).text)
 			.join("\n");
 		const structured = (event.structuredContent ?? {}) as Record<string, unknown>;
-		const details = (event.details ?? {}) as Record<string, unknown>;
 		const toolResponse: Record<string, unknown> =
 			event.toolName === "bash"
 				? {
@@ -397,7 +422,7 @@ export default function devTeam(pi: ExtensionAPI) {
 						stderr: "",
 						interrupted: false,
 					}
-				: { output: text, success: !event.isError, ...(typeof details === "object" ? {} : {}) };
+				: { output: text, success: !event.isError };
 		const payload = {
 			...basePayload(ctx),
 			tool_name: claudeTool,
@@ -405,7 +430,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			tool_input: toClaudeInput(event.toolName, input, ctx.cwd),
 			tool_response: toolResponse,
 		};
-		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { claudeTool })];
+		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
 		if (config.autoFormat && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
 			outcomes.push(await hooks.runScript("post_format", "PostToolUse", payload, ctx.cwd));
 		}
@@ -432,6 +457,28 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (isSubagent) return;
 		recordCost(ctx);
 		await hooks.run("Stop", { ...basePayload(ctx), stop_hook_active: false }, ctx.cwd);
+	});
+
+	// Autocompact at the configured percentage. agent_settled, not agent_end: agent_end fires inside the
+	// run, and ctx.compact() aborts a running turn, which would cancel pi's own retry and overflow
+	// recovery. Inside one long run pi's own threshold remains the backstop. Print/json runs end here.
+	pi.on("agent_settled", async (_event, ctx) => {
+		if (isSubagent || (ctx.mode !== "tui" && ctx.mode !== "rpc")) return;
+		const due = autocompactDue(ctx);
+		if (!due) return;
+		notify(ctx, [`dev-team: context at ${Math.round(due.usedPct)}% (autocompact threshold ${due.thresholdPct}%), compacting.`], "info");
+		ctx.compact({ onError: () => {} });
+	});
+
+	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject uses it
+	// to restore /build state. triggerTurn: false adds it to the context (deferred to the end of the turn
+	// when one is running) without starting a model turn, as Claude's additionalContext does.
+	pi.on("session_compact", async (_event, ctx) => {
+		if (isSubagent) return;
+		const out = await runSessionStart(ctx, "compact");
+		if (out.context.length) {
+			pi.sendMessage({ customType: "dev-team-session-start", content: out.context.join("\n\n"), display: true }, { triggerTurn: false });
+		}
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
