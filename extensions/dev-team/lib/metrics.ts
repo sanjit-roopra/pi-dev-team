@@ -6,15 +6,13 @@
  *   `cost_meter.py regression|pace` and /autoship --max-cost-usd keep working. Uses pi's own
  *   usage.cost (correct for every provider, including GitHub Copilot) instead of a Claude-only
  *   price table. Adds `session_id` (upstream could not, see run_report `joinable:false`).
- * - Autocompact: honours upstream's CLAUDE_AUTOCOMPACT_PCT_OVERRIDE (written by /setup) by compacting
- *   the session at that percentage, measured with ctx.getContextUsage() which knows every model's window.
  */
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SUBAGENT_USAGE_ENTRY } from "./subagent.ts";
+import { SUBAGENT_USAGE_ENTRY } from "./subagent-types.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
@@ -134,68 +132,4 @@ export function recordCost(ctx: ExtensionContext): string | undefined {
 	} catch {
 		return undefined;
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Autocompact (replaces upstream's retired context ceiling guard, dev-team v14)
-// ---------------------------------------------------------------------------
-
-export const AUTOCOMPACT_KEY = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
-const PCT_RE = /^(?:100|[1-9][0-9]?)$/;
-
-export interface AutocompactSetting {
-	/** Valid integer 1-100, or undefined when absent/invalid. */
-	pct?: number;
-	raw?: unknown;
-	source?: string;
-}
-
-function envBlock(file: string): Record<string, unknown> | undefined {
-	try {
-		const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-		return data && typeof data === "object" && data.env && typeof data.env === "object" && !Array.isArray(data.env) ? data.env : undefined;
-	} catch {
-		return undefined;
-	}
-}
-
-/**
- * Same precedence as upstream hooks/lib/autocompact_config.py `detect`: process env,
- * `.claude/settings.local.json`, `.claude/settings.json`, then user settings. The first source
- * defining the key decides, so `/setup` (scripts/set_autocompact_env.py) configures pi too.
- */
-export function autocompactSetting(projectDir: string, env: NodeJS.ProcessEnv = process.env): AutocompactSetting {
-	const pick = (raw: unknown, source: string): AutocompactSetting => ({
-		pct: typeof raw === "string" && PCT_RE.test(raw) ? Number(raw) : undefined,
-		raw,
-		source,
-	});
-	if (env[AUTOCOMPACT_KEY] !== undefined) return pick(env[AUTOCOMPACT_KEY], "process env");
-	const userSettings = env.CLAUDE_CONFIG_DIR
-		? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
-		: path.join(env.HOME || os.homedir(), ".claude", "settings.json");
-	const candidates: [string, string][] = [
-		["settings.local.json", path.join(projectDir, ".claude", "settings.local.json")],
-		["settings.json", path.join(projectDir, ".claude", "settings.json")],
-		["user settings.json", userSettings],
-	];
-	for (const [label, file] of candidates) {
-		const block = envBlock(file);
-		if (block && AUTOCOMPACT_KEY in block) return pick(block[AUTOCOMPACT_KEY], label);
-	}
-	return {};
-}
-
-/**
- * Whether the main session should compact now. pi's own auto-compaction only triggers at
- * `contextWindow - reserveTokens`; this lowers the threshold to the configured percentage, the
- * way CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers Claude Code's. Unconfigured repos keep pi's default
- * (and get the autocompact_setup_nudge advisory at session start).
- */
-export function autocompactDue(ctx: ExtensionContext): { pct: number; percent: number } | undefined {
-	const { pct } = autocompactSetting(ctx.cwd);
-	if (pct === undefined) return undefined;
-	const usage = ctx.getContextUsage();
-	if (!usage || usage.percent == null) return undefined;
-	return usage.percent >= pct ? { pct, percent: usage.percent } : undefined;
 }

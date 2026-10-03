@@ -288,9 +288,9 @@ export class HookBridge {
 		event: ClaudeEvent,
 		payload: Record<string, unknown>,
 		cwd: string,
-		opts: { claudeTool?: string; match?: string; extraEnv?: Record<string, string> } = {},
+		opts: { matchTarget?: string; extraEnv?: Record<string, string> } = {},
 	): Promise<HookOutcome> {
-		return this.execute(this.select(event, opts.claudeTool ?? opts.match), event, payload, cwd, opts);
+		return this.execute(this.select(event, opts.matchTarget), event, payload, cwd, opts);
 	}
 
 	private async execute(

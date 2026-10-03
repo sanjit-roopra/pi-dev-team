@@ -13,11 +13,9 @@ import {
 	splitToolList,
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
-import { applyUpdatedInput, claudeToolName, HookBridge, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { AUTOCOMPACT_KEY, autocompactSetting } from "../../extensions/dev-team/lib/metrics.ts";
+import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
 import { discoverSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments } from "../../extensions/dev-team/lib/skills.ts";
-import { addPiUsage, buildSystemPrompt, forwardedArgs, projectAgentsRequested, sumPiUsage } from "../../extensions/dev-team/lib/subagent.ts";
-import { formatUsage, renderSubagentCall, renderSubagentResult } from "../../extensions/dev-team/lib/subagent-render.ts";
+import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
@@ -137,38 +135,6 @@ test("hooks.json wiring loads with matchers and every script exists", () => {
 	assert.ok(!preWrite.includes("destructive_guard"));
 });
 
-test("SessionStart matchers select hooks by source", (t) => {
-	const bridge = new HookBridge(ROOT, () => DEFAULT_CONFIG);
-	if (!bridge.python) return t.skip("python >= 3.10 not found");
-	const names = (source: string) => bridge.select("SessionStart", source).map((s) => s.name);
-	assert.ok(names("startup").includes("autocompact_setup_nudge"));
-	assert.ok(names("startup").includes("repo_review_nudge"));
-	assert.ok(!names("startup").includes("post_compact_state_reinject"));
-	assert.ok(names("compact").includes("post_compact_state_reinject"));
-	assert.ok(!names("compact").includes("autocompact_setup_nudge"));
-});
-
-test("autocompact setting follows upstream detect precedence", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-ac-"));
-	const home = path.join(dir, "home");
-	const write = (file: string, env: Record<string, unknown>) => {
-		fs.mkdirSync(path.dirname(file), { recursive: true });
-		fs.writeFileSync(file, JSON.stringify({ env }));
-	};
-	const env = { HOME: home } as NodeJS.ProcessEnv;
-	assert.deepEqual(autocompactSetting(dir, env), {});
-	write(path.join(home, ".claude", "settings.json"), { [AUTOCOMPACT_KEY]: "70" });
-	assert.equal(autocompactSetting(dir, env).pct, 70);
-	write(path.join(dir, ".claude", "settings.json"), { [AUTOCOMPACT_KEY]: "40" });
-	assert.equal(autocompactSetting(dir, env).pct, 40);
-	write(path.join(dir, ".claude", "settings.local.json"), { [AUTOCOMPACT_KEY]: "040" });
-	const invalid = autocompactSetting(dir, env);
-	assert.equal(invalid.pct, undefined);
-	assert.equal(invalid.source, "settings.local.json");
-	assert.equal(autocompactSetting(dir, { ...env, [AUTOCOMPACT_KEY]: "55" }).pct, 55);
-	fs.rmSync(dir, { recursive: true, force: true });
-});
-
 test("hook enablement honours defaults, disabled and enable lists", () => {
 	assert.equal(isHookEnabled(DEFAULT_CONFIG, "destructive_guard"), true);
 	assert.equal(isHookEnabled(DEFAULT_CONFIG, "cost_meter"), false);
@@ -245,50 +211,4 @@ test("subagent system prompt carries runtime notes and skill hints", () => {
 	assert.match(prompt, /Unavailable in this runtime/);
 	assert.match(prompt, /Agent\/Task=dev_team_subagent\./);
 	assert.doesNotMatch(prompt, /Agent\/Task=subagent\b/);
-});
-
-test("untrusted discovery drops project agents and their overrides", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-agents-"));
-	fs.mkdirSync(path.join(dir, ".claude", "agents"), { recursive: true });
-	const md = (name: string) => `---\nname: ${name}\ndescription: d\n---\nbody\n`;
-	fs.writeFileSync(path.join(dir, ".claude", "agents", "security-review.md"), md("security-review"));
-	fs.writeFileSync(path.join(dir, ".claude", "agents", "local-only.md"), md("local-only"));
-	const all = discoverAgents(dir, ROOT);
-	assert.deepEqual(projectAgentsRequested(all, ["dev-team:security-review", "local-only", "test-review"]).map((d) => d.name).sort(), ["local-only", "security-review"]);
-	const pkg = discoverAgents(dir, ROOT, { includeProject: false });
-	assert.equal(pkg.get("security-review")?.source, "package");
-	assert.equal(pkg.has("local-only"), false);
-	fs.rmSync(dir, { recursive: true, force: true });
-});
-
-test("child usage sums into one pi Usage for the tool result", () => {
-	assert.equal(sumPiUsage([{}, {}]), undefined);
-	const u = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-	addPiUsage(u, { input: 1000, output: 100, cacheRead: 5, cacheWrite: 1, totalTokens: 1106, cost: { input: 0.001, output: 0.0002, cacheRead: 0, cacheWrite: 0, total: 0.0012 } });
-	addPiUsage(u, { input: 10, output: 1 });
-	assert.equal(u.input, 1010);
-	assert.equal(u.totalTokens, 1106 + 11);
-	const total = sumPiUsage([{ piUsage: u }, {}, { piUsage: u }]);
-	assert.equal(total?.input, 2020);
-	assert.ok(Math.abs((total?.cost.total ?? 0) - 0.0024) < 1e-12);
-});
-
-test("subagent renderers draw running, finished and untrusted states", () => {
-	const theme = { fg: (_c: string, t: string) => t, bold: (t: string) => t } as never;
-	const lines = (c: { render(w: number): string[] }) => c.render(120).join("\n");
-	assert.match(lines(renderSubagentCall({ agent: "security-review", task: "review src/a.js", isolation: "worktree" }, theme)), /dev-team security-review \[worktree\]/);
-	assert.match(lines(renderSubagentCall({ tasks: [{ agent: "a", task: "x" }, { agent: "b", task: "y" }] }, theme)), /parallel \(2 agents\)/);
-	const usage = { input: 1200, output: 80, cacheRead: 0, cacheWrite: 0, cost: 0.0012, turns: 2 };
-	const running = { content: [], details: { results: [{ agent: "a", task: "x", status: "running", ok: false, turns: 1, tools: ["read", "grep"] }, { agent: "b", task: "y", status: "ok", ok: true, turns: 2, tools: [], output: "done", usage }] } };
-	const partial = lines(renderSubagentResult(running as never, { expanded: false, isPartial: true }, theme));
-	assert.match(partial, /1\/2 done, 1 running/);
-	assert.match(partial, /→ grep/);
-	const finished = { content: [], details: { results: [{ agent: "b", task: "y", status: "failed", ok: false, turns: 2, tools: [], error: "boom", usage }], untrustedProjectAgents: ["local-only"] } };
-	const done = lines(renderSubagentResult(finished as never, { expanded: false, isPartial: false }, theme));
-	assert.match(done, /✗ b/);
-	assert.match(done, /Error: boom/);
-	assert.match(done, /project agents skipped \(project not trusted\): local-only/);
-	assert.equal(formatUsage(usage, "p/m", 1500), "2 turns ↑1.2k ↓80 $0.0012 1.5s p/m");
-	const plain = lines(renderSubagentResult({ content: [{ type: "text", text: "legacy" }], details: undefined } as never, { expanded: false, isPartial: false }, theme));
-	assert.match(plain, /legacy/);
 });

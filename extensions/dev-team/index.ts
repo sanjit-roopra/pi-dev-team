@@ -11,6 +11,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
+import { autocompactDue } from "./lib/autocompact.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -22,7 +23,7 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
-import { autocompactDue, recordCost } from "./lib/metrics.ts";
+import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex } from "./lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool, SUBAGENT_USAGE_ENTRY } from "./lib/subagent.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
@@ -33,6 +34,7 @@ function packageRootDir(): string {
 	return path.resolve(here, "..", "..");
 }
 
+const HOOK_NAME_PREFIX = /^\[[\w-]+\] /;
 const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "startup", new: "clear", resume: "resume", fork: "resume" };
 
 export default function devTeam(pi: ExtensionAPI) {
@@ -63,7 +65,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (ctx.hasUI && !isSubagent) process.env.DEV_TEAM_INTERACTIVE = "1";
 		else delete process.env.DEV_TEAM_INTERACTIVE;
 		const forward = forwardedArgs();
-		if (ctx.isProjectTrusted()) forward.push("--approve");
+		// The claude shim's children inherit this session's trust decision, declined included.
+		forward.push(ctx.isProjectTrusted() ? "--approve" : "--no-approve");
 		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(forward);
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
@@ -74,6 +77,13 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (!lines.length || !ctx.hasUI) return;
 		const text = lines.join("\n");
 		ctx.ui.notify(text.length > 1200 ? `${text.slice(0, 1200)}…` : text, level);
+	}
+
+	/** SessionStart hooks for one source; returns their model context with the "[hook] " prefix removed. */
+	async function runSessionStart(ctx: ExtensionContext, source: string): Promise<{ context: string[] }> {
+		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source }, ctx.cwd, { matchTarget: source });
+		notify(ctx, out.notices, "info");
+		return { context: out.advisories.map((a) => a.replace(HOOK_NAME_PREFIX, "")) };
 	}
 
 	function basePayload(ctx: ExtensionContext): Record<string, unknown> {
@@ -282,7 +292,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		let frontmatterModel: string | undefined;
 		let effort: string | undefined;
 		if (typeof agentName === "string" && agentName) {
-			const def = resolveAgentName(discoverAgents(ctx.cwd, packageRoot), agentName);
+			// Same rule as dev_team_subagent: no project agents when pi trust was declined.
+			const def = resolveAgentName(discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), agentName);
 			if (!def) {
 				console.error(`dev-team: unknown agent "${agentName}"`);
 				return;
@@ -313,10 +324,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
-		const source = SESSION_SOURCE[event.reason] ?? "startup";
-		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source }, ctx.cwd, { match: source });
-		sessionContext = out.advisories.map((a) => a.replace(/^\[[\w-]+\] /, ""));
-		notify(ctx, out.notices, "info");
+		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
+		sessionContext = out.context;
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
@@ -353,7 +362,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			"PreToolUse",
 			{ ...basePayload(ctx), tool_name: claudeTool, tool_use_id: event.toolCallId, tool_input: toClaudeInput(event.toolName, input, ctx.cwd) },
 			ctx.cwd,
-			{ claudeTool },
+			{ matchTarget: claudeTool },
 		);
 		notify(ctx, out.notices);
 		if (out.block) return { block: true, reason: out.block };
@@ -392,7 +401,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			tool_input: toClaudeInput(event.toolName, input, ctx.cwd),
 			tool_response: toolResponse,
 		};
-		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { claudeTool })];
+		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
 		if (config.autoFormat && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
 			outcomes.push(await hooks.runScript("post_format", "PostToolUse", payload, ctx.cwd));
 		}
@@ -419,25 +428,28 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (isSubagent) return;
 		recordCost(ctx);
 		await hooks.run("Stop", { ...basePayload(ctx), stop_hook_active: false }, ctx.cwd);
-		// ctx.compact() aborts an in-flight run, so the lowered threshold applies between runs;
-		// pi's own threshold remains the backstop inside a long run. Print/json runs end here anyway.
-		if (ctx.mode !== "tui" && ctx.mode !== "rpc") return;
+	});
+
+	// Autocompact at the configured percentage. agent_settled, not agent_end: agent_end fires inside the
+	// run, and ctx.compact() aborts a running turn, which would cancel pi's own retry and overflow
+	// recovery. Inside one long run pi's own threshold remains the backstop. Print/json runs end here.
+	pi.on("agent_settled", async (_event, ctx) => {
+		if (isSubagent || (ctx.mode !== "tui" && ctx.mode !== "rpc")) return;
 		const due = autocompactDue(ctx);
 		if (!due) return;
-		notify(ctx, [`dev-team: context at ${Math.round(due.percent)}% (autocompact threshold ${due.pct}%), compacting.`], "info");
+		notify(ctx, [`dev-team: context at ${Math.round(due.usedPct)}% (autocompact threshold ${due.thresholdPct}%), compacting.`], "info");
 		ctx.compact({ onError: () => {} });
 	});
 
-	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject
-	// uses it to restore /build state. Mid-run compactions get the context as a steer message.
+	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject uses it
+	// to restore /build state. triggerTurn: false adds it to the context (deferred to the end of the turn
+	// when one is running) without starting a model turn, as Claude's additionalContext does.
 	pi.on("session_compact", async (_event, ctx) => {
 		if (isSubagent) return;
-		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source: "compact" }, ctx.cwd, { match: "compact" });
-		notify(ctx, out.notices, "info");
-		const advisories = out.advisories.map((a) => a.replace(/^\[[\w-]+\] /, ""));
-		if (!advisories.length) return;
-		if (ctx.isIdle()) sessionContext.push(...advisories);
-		else pi.sendMessage({ customType: "dev-team-session-start", content: advisories.join("\n\n"), display: true }, { deliverAs: "steer" });
+		const out = await runSessionStart(ctx, "compact");
+		if (out.context.length) {
+			pi.sendMessage({ customType: "dev-team-session-start", content: out.context.join("\n\n"), display: true }, { triggerTurn: false });
+		}
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {

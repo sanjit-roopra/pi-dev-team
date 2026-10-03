@@ -20,6 +20,21 @@ function script(steps) {
 	return `<<script>>${JSON.stringify(steps)}<</script>>`;
 }
 
+/**
+ * Two project agents (one overriding a package agent) that report their system prompt, plus a package
+ * agent that reports the child's own trust decision (DEV_TEAM_PI_ARGS ends in --approve/--no-approve).
+ */
+function projectAgentCall(env) {
+	const agentDir = path.join(env.repo, ".claude", "agents");
+	fs.mkdirSync(agentDir, { recursive: true });
+	fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
+	fs.writeFileSync(path.join(agentDir, "security-review.md"), "---\nname: security-review\ndescription: override\ntools: Read\n---\nPROJECT_OVERRIDE_PROMPT\n");
+	const prompt = script([{ inspect: "runtime" }]);
+	const trust = script([{ tool: "bash", args: { command: 'echo "CHILD_TRUST: $DEV_TEAM_PI_ARGS"' } }]);
+	const tasks = [{ agent: "local-only", task: prompt }, { agent: "security-review", task: prompt }, { agent: "general-purpose", task: trust }];
+	return script([{ tools: [{ tool: "dev_team_subagent", args: { tasks } }] }]);
+}
+
 function setupRepo() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-e2e-"));
 	const repo = path.join(root, "repo");
@@ -39,13 +54,20 @@ function setupRepo() {
 	return { root, repo, home, git };
 }
 
+/** The developer's environment minus anything that would leak their own Claude/pi config into a scenario. */
+function isolatedEnv(env) {
+	const out = { ...process.env, HOME: env.home, PI_CODING_AGENT_DIR: path.join(env.home, ".pi", "agent") };
+	for (const k of ["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CONFIG_DIR", "DEV_TEAM_AUTOCOMPACT_NUDGE"]) delete out[k];
+	return out;
+}
+
 function pi(env, prompt, { json = false, extra = [], usePackageFlag = true } = {}) {
 	const args = ["-e", PROVIDER, ...(usePackageFlag ? ["-e", PKG] : []), "--model", "scripted/s1", "--no-session", ...extra];
 	if (json) args.push("--mode", "json");
 	args.push("-p", prompt);
 	const r = spawnSync("pi", args, {
 		cwd: env.repo,
-		env: { ...process.env, HOME: env.home, PI_CODING_AGENT_DIR: path.join(env.home, ".pi", "agent") },
+		env: isolatedEnv(env),
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
 		timeout: 120_000,
@@ -243,37 +265,43 @@ const scenarios = {
 		assert(ask && ask.text.startsWith("NON-INTERACTIVE"), JSON.stringify(ask));
 	},
 
-	"subagent usage reaches pi session totals through the tool result"(env) {
-		const two = script([{ text: "a" }]);
-		const r = pi(env, script([{ tools: [{ tool: "dev_team_subagent", args: { tasks: [{ agent: "Explore", task: two }, { agent: "Explore", task: two }] } }] }]), { json: true });
+	"subagent tool result carries the summed child usage (pi adds it to session totals)"(env) {
+		const childScript = script([{ text: "a" }]);
+		const r = pi(env, script([{ tools: [{ tool: "dev_team_subagent", args: { tasks: [{ agent: "Explore", task: childScript }, { agent: "Explore", task: childScript }] } }] }]), { json: true });
 		const dispatch = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
-		assert(dispatch && !dispatch.isError, JSON.stringify(dispatch));
-		const childInput = dispatch.details.results.reduce((n, v) => n + v.usage.input, 0);
-		assert(childInput > 0 && dispatch.usage?.input === childInput, `tool result usage ${JSON.stringify(dispatch.usage)} vs children ${childInput}`);
-		assert(typeof dispatch.usage.cost?.total === "number" && dispatch.usage.totalTokens > 0, JSON.stringify(dispatch.usage));
-		assert(dispatch.details.results.every((v) => v.status === "ok" && v.ok && v.turns >= 1), JSON.stringify(dispatch.details));
+		assert(dispatch && !dispatch.isError, `dispatch failed: ${JSON.stringify(dispatch)} ${r.err}`);
+		const views = dispatch.details.results;
+		assert(views.length === 2 && views.every((v) => v.status === "ok" && v.ok && v.turns === 1), `child views: ${JSON.stringify(views)}`);
+		const childInput = views.reduce((n, v) => n + v.usage.input, 0);
+		const childOutput = views.reduce((n, v) => n + v.usage.output, 0);
+		assert(childInput > 0, "children reported no input tokens");
+		assert(dispatch.usage?.input === childInput && dispatch.usage.output === childOutput, `tool result usage ${JSON.stringify(dispatch.usage)} vs children in=${childInput} out=${childOutput}`);
+		assert(dispatch.usage.totalTokens >= childInput + childOutput, `totalTokens ${dispatch.usage.totalTokens}`);
 	},
 
-	"subagent: project agents run by default, skipped only when pi trust is declined"(env) {
-		const agentDir = path.join(env.repo, ".claude", "agents");
-		fs.mkdirSync(agentDir, { recursive: true });
-		fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
-		fs.writeFileSync(path.join(agentDir, "security-review.md"), "---\nname: security-review\ndescription: override\ntools: Read\n---\nPROJECT_OVERRIDE_PROMPT\n");
-		const probe = script([{ inspect: "runtime" }]);
-		const call = script([{ tools: [{ tool: "dev_team_subagent", args: { tasks: [{ agent: "local-only", task: probe }, { agent: "security-review", task: probe }] } }] }]);
+	"subagent: project agents and overrides run by default, child gets --approve"(env) {
+		const r = pi(env, projectAgentCall(env), { json: true });
+		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+		assert(d?.details, `no dispatch result: ${r.err}`);
+		assert(!d.details.untrustedProjectAgents, `nothing should be skipped: ${JSON.stringify(d.details)}`);
+		const projectViews = d.details.results.filter((v) => v.agent !== "general-purpose");
+		assert(projectViews.every((v) => v.ok && v.source === "project"), `project agents did not run: ${JSON.stringify(d.details.results)}`);
+		assert(d.text.includes("LOCAL_AGENT_PROMPT") && d.text.includes("PROJECT_OVERRIDE_PROMPT"), `project prompts missing: ${d.text.slice(0, 600)}`);
+		assert(/CHILD_TRUST: .*"--approve"/.test(d.text), `child should be trusted: ${d.text.slice(-600)}`);
+	},
 
-		// default install, no flags, no trust setup: project agents and overrides run
-		let r = pi(env, call, { json: true });
-		let d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
-		assert(!d.details.untrustedProjectAgents && d.details.results.every((v) => v.ok && v.source === "project"), JSON.stringify(d.details));
-		assert(d.text.includes("LOCAL_AGENT_PROMPT") && d.text.includes("PROJECT_OVERRIDE_PROMPT"), d.text.slice(0, 600));
-
-		// pi trust declined (--no-approve): package agents only
-		r = pi(env, call, { json: true, extra: ["--no-approve"] });
-		d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
-		assert(d?.details?.untrustedProjectAgents?.sort().join(",") === "local-only,security-review", JSON.stringify(d?.details));
-		const pkgRun = d.details.results.find((v) => v.agent === "security-review");
-		assert(pkgRun?.ok && pkgRun.source === "package" && !d.text.includes("PROJECT_OVERRIDE_PROMPT"), JSON.stringify(pkgRun));
+	"subagent: trust declined (--no-approve) runs package agents only and tells the child"(env) {
+		const r = pi(env, projectAgentCall(env), { json: true, extra: ["--no-approve"] });
+		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+		assert(d?.details, `no dispatch result: ${r.err}`);
+		assert(d.details.untrustedProjectAgents?.slice().sort().join(",") === "local-only,security-review", `skipped list: ${JSON.stringify(d.details)}`);
+		const local = d.details.results.find((v) => v.agent === "local-only");
+		assert(local && !local.ok && /Unknown agent "local-only"/.test(local.error), `local-only should not run: ${JSON.stringify(local)}`);
+		const pkg = d.details.results.find((v) => v.agent === "security-review");
+		assert(pkg?.ok && pkg.source === "package", `package agent should run instead: ${JSON.stringify(pkg)}`);
+		assert(!d.text.includes("LOCAL_AGENT_PROMPT") && !d.text.includes("PROJECT_OVERRIDE_PROMPT"), "a project prompt reached a child");
+		assert(d.text.includes("project agents not run (project not trusted)"), `model is not told: ${d.text.slice(-400)}`);
+		assert(/CHILD_TRUST: .*"--no-approve"/.test(d.text), `child not told trust was declined: ${d.text.slice(-600)}`);
 	},
 
 	"cost meter row includes main and subagent spend by agent type"(env) {
@@ -333,7 +361,7 @@ const scenarios = {
 
 	"installed package (no -e) subagent collision keeps child hooks"(env) {
 		const inst = spawnSync("pi", ["install", PKG], {
-			env: { ...process.env, HOME: env.home, PI_CODING_AGENT_DIR: path.join(env.home, ".pi", "agent") },
+			env: isolatedEnv(env),
 			encoding: "utf-8",
 			cwd: env.repo,
 		});

@@ -123,6 +123,35 @@ export function discoverAgents(cwd: string, packageRoot: string, opts: { include
 	return map;
 }
 
+/** Requested agents that resolve to a project agent (.pi/agents, .claude/agents). */
+export function projectAgentsRequested(agents: Map<string, AgentDef>, requested: string[]): AgentDef[] {
+	const out = new Map<string, AgentDef>();
+	for (const name of requested) {
+		const def = resolveAgentName(agents, name);
+		if (def?.source === "project") out.set(def.filePath, def);
+	}
+	return [...out.values()];
+}
+
+/**
+ * Agents a dispatch may use. When pi reports the project untrusted (the user declined pi's trust
+ * prompt or ran with --no-approve), project agents are dropped and `skippedProjectAgents` names the
+ * requested ones, so the caller can say why they did not run.
+ */
+export function discoverDispatchAgents(
+	cwd: string,
+	packageRoot: string,
+	projectTrusted: boolean,
+	requested: string[],
+): { agents: Map<string, AgentDef>; skippedProjectAgents: string[] } {
+	const all = discoverAgents(cwd, packageRoot);
+	if (projectTrusted) return { agents: all, skippedProjectAgents: [] };
+	return {
+		agents: discoverAgents(cwd, packageRoot, { includeProject: false }),
+		skippedProjectAgents: projectAgentsRequested(all, requested.filter(Boolean)).map((d) => d.name),
+	};
+}
+
 /** Accept Claude-style qualified names ("dev-team:security-review") and case differences. */
 export function resolveAgentName(agents: Map<string, AgentDef>, requested: string): AgentDef | undefined {
 	const bare = requested.trim().replace(/^[\w-]+:/, "");
