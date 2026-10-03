@@ -272,3 +272,14 @@ test("subagent system prompt carries runtime notes and skill hints", () => {
 	assert.match(prompt, /Agent\/Task=dev_team_subagent\./);
 	assert.doesNotMatch(prompt, /Agent\/Task=subagent\b/);
 });
+
+test("tools declare pi's safety hints, and ask_user is for the model only", async () => {
+	const { registerAskUser, registerWebFetch } = await import("../../extensions/dev-team/lib/tools-misc.ts");
+	const tools: Record<string, { exposure?: string; annotations?: Record<string, boolean> }> = {};
+	const fakePi = { registerTool: (def: { name: string }) => (tools[def.name] = def) } as never;
+	registerAskUser(fakePi);
+	registerWebFetch(fakePi);
+	assert.equal(tools.ask_user.exposure, "model-only");
+	assert.equal(tools.ask_user.annotations?.readOnlyHint, true);
+	assert.equal(tools.web_fetch.annotations?.openWorldHint, true);
+});

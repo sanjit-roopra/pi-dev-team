@@ -59,7 +59,7 @@ export interface SubagentTaskView {
 	model?: string;
 	tier?: string;
 	turns: number;
-	/** Most recent tool calls, newest last (bounded). */
+	/** Most recent tool calls as shown (`$ npm test`, `read src/a.ts`), newest last (bounded). */
 	tools: string[];
 	/** The agent's own turns. */
 	usage?: UsageTotals;

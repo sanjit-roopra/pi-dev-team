@@ -18,6 +18,27 @@ import {
 import type { PiMessageLike } from "./transcript.ts";
 
 const RECENT_TOOLS_KEPT = 8;
+const TOOL_CALL_CHARS = 80;
+
+/**
+ * A tool call as the progress view shows it, after pi's subagent example: `$ cmd`, `read path`,
+ * `grep /pattern/ in path`, otherwise the tool name and its path or first argument.
+ */
+export function describeToolCall(name: string, args: unknown): string {
+	const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+	const str = (v: unknown) => (typeof v === "string" ? v : undefined);
+	const firstLine = (v: string) => v.split("\n")[0];
+	let text: string;
+	if (name === "bash" && str(a.command)) text = `$ ${firstLine(str(a.command) as string)}`;
+	else if (name === "grep" && str(a.pattern)) text = `grep /${str(a.pattern)}/ in ${str(a.path) ?? "."}`;
+	else if (name === "find" && str(a.pattern)) text = `find ${str(a.pattern)} in ${str(a.path) ?? "."}`;
+	else if (name === "dev_team_subagent") text = `dev-team ${str(a.agent) ?? str(a.subagent_type) ?? (Array.isArray(a.tasks) ? `${a.tasks.length} agents` : "")}`.trim();
+	else {
+		const target = str(a.path) ?? str(a.file_path) ?? str(a.url) ?? str(a.name);
+		text = target ? `${name} ${firstLine(target)}` : name;
+	}
+	return text.length > TOOL_CALL_CHARS ? `${text.slice(0, TOOL_CALL_CHARS - 1)}…` : text;
+}
 
 export interface ChildEvent {
 	type?: string;
@@ -66,7 +87,9 @@ export function applyChildEvent(state: ChildRunState, ev: ChildEvent): ProgressP
 		if (m.stopReason) state.stopReason = m.stopReason;
 		if (m.errorMessage) state.errorMessage = m.errorMessage;
 		const calls = Array.isArray(m.content)
-			? (m.content as { type: string; name?: string }[]).filter((c) => c.type === "toolCall" && !!c.name).map((c) => c.name as string)
+			? (m.content as { type: string; name?: string; arguments?: unknown }[])
+					.filter((c) => c.type === "toolCall" && !!c.name)
+					.map((c) => describeToolCall(c.name as string, c.arguments))
 			: [];
 		state.recentTools = [...state.recentTools, ...calls].slice(-RECENT_TOOLS_KEPT);
 		return { turns: state.turns, tools: state.recentTools, model: state.model, usage: toUsageTotals(state.own, state.turns) };

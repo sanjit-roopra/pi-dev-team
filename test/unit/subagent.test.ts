@@ -4,10 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "../../extensions/dev-team/lib/agents.ts";
-import { applyChildEvent, newChildRunState } from "../../extensions/dev-team/lib/child-run.ts";
+import { applyChildEvent, describeToolCall, newChildRunState } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
-import { DispatchProgress, formatResultText, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { cap, DispatchProgress, formatResultText, saveFullOutput, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -321,4 +321,32 @@ test("viewFromResult carries nested runs only when there are some", () => {
 	const nested = [{ agent: "x", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 } satisfies UsageTotals }];
 	assert.deepEqual(viewFromResult(runResult({ nested })).nested, nested);
 	assert.equal(viewFromResult(runResult({})).nested, undefined);
+});
+
+test("tool calls are shown with their key argument", () => {
+	assert.equal(describeToolCall("bash", { command: "npm test\necho done" }), "$ npm test");
+	assert.equal(describeToolCall("read", { path: "src/a.ts" }), "read src/a.ts");
+	assert.equal(describeToolCall("grep", { pattern: "TODO", path: "src" }), "grep /TODO/ in src");
+	assert.equal(describeToolCall("find", { pattern: "*.ts" }), "find *.ts in .");
+	assert.equal(describeToolCall("dev_team_subagent", { agent: "Explore" }), "dev-team Explore");
+	assert.equal(describeToolCall("dev_team_subagent", { tasks: [{}, {}] }), "dev-team 2 agents");
+	assert.equal(describeToolCall("ask_user", { questions: [] }), "ask_user");
+	assert.equal(describeToolCall("bash", { command: "x".repeat(200) }).length, 80);
+});
+
+test("a long child output is cut, and the cut says where the complete output is", (t) => {
+	const long = "y".repeat(60 * 1024);
+	const file = saveFullOutput(`session-${process.pid}`, "Explore", "abc123", long);
+	assert.ok(file, "saved");
+	t.after(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }));
+	assert.equal(fs.readFileSync(file, "utf-8"), long);
+	assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+	const shown = cap(long, file);
+	assert.ok(shown.length < long.length);
+	assert.match(shown, new RegExp(`complete output is in ${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+});
+
+test("a short child output is neither saved nor cut", () => {
+	assert.equal(saveFullOutput("s", "a", "1", "short"), undefined);
+	assert.equal(cap("short"), "short");
 });

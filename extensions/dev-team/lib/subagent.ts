@@ -48,6 +48,8 @@ export interface SubagentRunResult {
 	task: string;
 	ok: boolean;
 	output: string;
+	/** Where the complete output was saved when it is longer than the tool result may carry. */
+	outputFile?: string;
 	error?: string;
 	model?: string;
 	tier?: string;
@@ -124,9 +126,28 @@ function finalText(messages: PiMessageLike[]): string {
 	return "";
 }
 
-function cap(text: string): string {
+/** The model-facing output, cut at OUTPUT_CAP; when cut, it says where the complete output is. */
+export function cap(text: string, fullOutputFile?: string): string {
 	if (Buffer.byteLength(text, "utf8") <= OUTPUT_CAP) return text;
-	return `${text.slice(0, OUTPUT_CAP)}\n\n[output truncated at ${OUTPUT_CAP} bytes]`;
+	const where = fullOutputFile ? `; the complete output is in ${fullOutputFile} (read it with offset/limit)` : "";
+	return `${text.slice(0, OUTPUT_CAP)}\n\n[output truncated at ${OUTPUT_CAP} bytes${where}]`;
+}
+
+/**
+ * Keep a child's complete output when it is too long for the tool result, so the model can read the
+ * rest. Files live under the OS temp directory, per session, readable only by the user.
+ */
+export function saveFullOutput(sessionId: string, agent: string, agentId: string, output: string): string | undefined {
+	if (Buffer.byteLength(output, "utf8") <= OUTPUT_CAP) return undefined;
+	try {
+		const dir = path.join(os.tmpdir(), "pi-dev-team", "subagent-output", sessionId.replace(/[^\w.-]/g, "_"));
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+		const file = path.join(dir, `${agent.replace(/[^\w.-]/g, "_")}-${agentId}.md`);
+		fs.writeFileSync(file, output, { encoding: "utf-8", mode: 0o600 });
+		return file;
+	} catch {
+		return undefined;
+	}
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -355,6 +376,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 
 			const worktree = wt ? finishWorktree(wt) : undefined;
 			const output = finalText(run.messages);
+			const outputFile = saveFullOutput(sessionId, def.name, agentId, output);
 			const ok = exitCode === 0 && !aborted && !timedOut && run.stopReason !== "error" && run.stopReason !== "aborted";
 			const result: SubagentRunResult = {
 				agent: def.name,
@@ -362,6 +384,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				task,
 				ok,
 				output,
+				outputFile,
 				error: ok
 					? undefined
 					: timedOut
@@ -423,6 +446,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			"Agents: any file in the package agents/ directory (e.g. software-engineer, qa-engineer, architect, security-review, test-review, spec-compliance-review, plan-review-*), project .pi/agents or .claude/agents, plus Explore and general-purpose.",
 		].join(" "),
 		promptSnippet: "Dispatch dev-team agents (Claude Agent/Task tool equivalent)",
+		// Children run with their own tools (edit, write, bash) and call a model provider.
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		parameters: SubagentParams,
 		prepareArguments: (raw: unknown) => {
 			const a = (raw ?? {}) as Record<string, unknown>;
@@ -523,7 +548,7 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		durationMs: r.durationMs,
 		stopReason: r.stopReason,
 		error: r.error,
-		output: r.output ? cap(r.output) : undefined,
+		output: r.output ? cap(r.output, r.outputFile) : undefined,
 		worktree: r.worktree,
 	};
 }
@@ -536,11 +561,11 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	if (results.length === 1) {
 		const r = results[0];
 		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
-		return `${r.ok ? cap(r.output || "(no output)") : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
+		return `${r.ok ? cap(r.output || "(no output)", r.outputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
 	}
 	const section = (r: SubagentRunResult) => {
 		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;
-		const body = r.ok ? cap(r.output || "(no output)") : `Error: ${r.error}${r.output ? `\n\nLast output:\n${cap(r.output)}` : ""}`;
+		const body = r.ok ? cap(r.output || "(no output)", r.outputFile) : `Error: ${r.error}${r.output ? `\n\nLast output:\n${cap(r.output, r.outputFile)}` : ""}`;
 		const wt = r.worktree ? `\n\nWorktree: ${describeWorktree(r.worktree)}` : "";
 		return `${head}\n\n${body}${wt}`;
 	};

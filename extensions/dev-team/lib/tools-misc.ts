@@ -58,6 +58,9 @@ export function registerAskUser(pi: ExtensionAPI): void {
 		promptSnippet: "Ask the human a question (AskUserQuestion equivalent)",
 		parameters: AskParams,
 		executionMode: "sequential",
+		// It asks the human, so only the model may call it, never a codemode script.
+		exposure: "model-only",
+		annotations: { readOnlyHint: true, openWorldHint: false },
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const questions: Q[] = params.questions?.length
 				? (params.questions as Q[])

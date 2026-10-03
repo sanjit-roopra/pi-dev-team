@@ -135,6 +135,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		description:
 			"Run a dev-team skill (Claude Code's Skill tool). Returns the skill's instructions with arguments substituted; then follow them. Use it whenever dev-team instructions say to run a slash command such as /plan, /build, /code-review or /pr, or to load a skill by name.",
 		promptSnippet: "Load and run a dev-team skill / slash command by name",
+		// Returns a skill's instructions; it reads files and changes nothing.
+		annotations: { readOnlyHint: true, openWorldHint: false },
 		parameters: Type.Object({
 			name: Type.String({ description: "Skill name, e.g. plan, code-review, test-driven-development (a leading / or dev-team: prefix is accepted)" }),
 			args: Type.Optional(Type.String({ description: "Arguments, exactly as they would follow the slash command" })),
