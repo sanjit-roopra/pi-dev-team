@@ -37,7 +37,7 @@ test("readSmallFile skips missing files, directories and links to directories", 
 	assert.equal(readSmallFile(path.join(dir, "to-dir")), undefined);
 });
 
-test("readSmallFile skips a FIFO without blocking", (t) => {
+test("readSmallFile skips a FIFO without blocking", { timeout: 5000 }, (t) => {
 	const dir = tempDir(t);
 	const fifo = path.join(dir, "pipe.md");
 	if (process.platform === "win32" || spawnSync("mkfifo", [fifo]).status !== 0) return t.skip("mkfifo unavailable");

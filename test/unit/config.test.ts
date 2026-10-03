@@ -3,10 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
-import { filterProjectConfig, isProjectEnvSettingAllowed, loadConfig } from "../../extensions/dev-team/lib/config.ts";
-
-/** Guard hooks a project may not disable (in the extension: the enabled PreToolUse hooks). */
-const guards = new Set(["destructive_guard", "pre_tool_guard"]);
+import { MAX_REPO_FILE_BYTES } from "../../extensions/dev-team/lib/safe-read.ts";
+import { DEFAULT_CONFIG, filterProjectConfig, isProjectEnvSettingAllowed, loadConfig } from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
 function fixture(t: TestContext) {
@@ -26,11 +24,10 @@ function fixture(t: TestContext) {
 
 test("loadConfig: a trusted project's config is merged over the user config", (t) => {
 	const { project, userConfigFile } = fixture(t);
-	const { config, sources } = loadConfig(project, { includeProject: true, userConfigFile, guardHooks: guards });
+	const { config, sources } = loadConfig(project, { includeProject: true, userConfigFile });
 	assert.equal(config.maxParallelAgents, 4);
 	assert.equal(config.env.DEV_TEAM_MAX_PARALLEL_BUILDS, "2");
-	assert.ok(config.hooks.disabled.includes("repo_review_nudge"), "an advisory hook may be turned off");
-	assert.ok(config.hooks.disabled.includes("cost_meter"), "default-off hooks stay off");
+	assert.deepEqual(config.hooks, DEFAULT_CONFIG.hooks, "a project cannot change hooks");
 	assert.equal(sources.length, 3);
 });
 
@@ -45,13 +42,13 @@ test("loadConfig: an untrusted project's config is not read at all", (t) => {
 
 test("loadConfig: project env cannot set PATH, NODE_OPTIONS, file paths or the programs the port runs", (t) => {
 	const { project, userConfigFile } = fixture(t);
-	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile, guardHooks: guards });
+	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
 	assert.equal(config.env.PATH, "/user/bin", "the user's own value stays");
 	assert.equal(config.env.NODE_OPTIONS, undefined);
 	assert.equal(config.env.DEV_TEAM_PYTHON, undefined);
 	assert.equal(config.env.DEV_TEAM_PY_CACHE, undefined, "hooks/py.sh executes the command stored in this file");
 	assert.equal(config.env.FROM_USER, "1", "user config env is not filtered");
-	assert.deepEqual(ignoredProjectSettings.sort(), ["env.DEV_TEAM_PYTHON", "env.DEV_TEAM_PY_CACHE", "env.NODE_OPTIONS", "env.PATH"]);
+	assert.deepEqual(ignoredProjectSettings.sort(), ["env.DEV_TEAM_PYTHON", "env.DEV_TEAM_PY_CACHE", "env.NODE_OPTIONS", "env.PATH", "hooks"]);
 });
 
 test("project env settings: tuning keys allowed", () => {
@@ -92,51 +89,34 @@ test("filterProjectConfig: an env that is not an object is dropped whole", () =>
 test("loadConfig: a malformed project env does not replace the user's env", (t) => {
 	const { project, userConfigFile } = fixture(t);
 	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ env: ["x"] }));
-	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile, guardHooks: guards });
+	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
 	assert.equal(config.env.FROM_USER, "1");
 	assert.equal(config.env["0"], undefined);
-	assert.deepEqual(ignoredProjectSettings, ["env"]);
+	assert.deepEqual(ignoredProjectSettings.sort(), ["env", "hooks"], "the fixture's local file also carries hooks");
 });
 
 test("loadConfig: an oversized project config file is skipped", (t) => {
 	const { project, userConfigFile } = fixture(t);
-	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ maxParallelAgents: 9, pad: "x".repeat(1024 * 1024) }));
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ maxParallelAgents: 9, pad: "x".repeat(MAX_REPO_FILE_BYTES) }));
 	const userOnly = loadConfig(project, { includeProject: false, userConfigFile }).config.maxParallelAgents;
-	assert.equal(loadConfig(project, { includeProject: true, userConfigFile, guardHooks: guards }).config.maxParallelAgents, userOnly);
+	assert.equal(loadConfig(project, { includeProject: true, userConfigFile }).config.maxParallelAgents, userOnly);
 });
 
-test("project hooks: guards cannot be disabled, advisory hooks can", () => {
-	const { data, ignored } = filterProjectConfig({ hooks: { disabled: ["destructive_guard", "repo_review_nudge"] } }, guards);
-	const disabled = (data.hooks as { disabled: string[] }).disabled;
-	assert.ok(disabled.includes("repo_review_nudge"));
-	assert.ok(!disabled.includes("destructive_guard"));
-	assert.deepEqual(ignored, ["hooks.disabled.destructive_guard"]);
-});
-
-test("project hooks: hooks cannot be switched off, nor the timeout shortened", () => {
-	const { data, ignored } = filterProjectConfig({ hooks: { enabled: false, timeoutSec: 1, enable: ["version_check"] } }, guards);
-	assert.deepEqual(data.hooks, { enable: ["version_check"] });
-	assert.deepEqual(ignored.sort(), ["hooks.enabled", "hooks.timeoutSec"]);
-	assert.deepEqual(filterProjectConfig({ hooks: { timeoutSec: 120 } }, guards).data.hooks, { timeoutSec: 120 }, "a longer timeout is fine");
-});
-
-test("project hooks: without the guard list nothing may be disabled", () => {
-	const { ignored } = filterProjectConfig({ hooks: { disabled: ["repo_review_nudge"] } });
-	assert.deepEqual(ignored, ["hooks.disabled.repo_review_nudge"]);
-});
-
-test("loadConfig: a project's hooks config is filtered, the user's is not", (t) => {
+test("project hooks: ignored whatever their shape; the user's own hooks config stands", (t) => {
+	for (const hooks of [{ enabled: false }, { disabled: ["destructive_guard"] }, { enable: 5 }, { timeoutSec: 1 }, [], "x", null]) {
+		assert.deepEqual(filterProjectConfig({ hooks, maxParallelAgents: 2 }), { data: { maxParallelAgents: 2 }, ignored: ["hooks"] }, JSON.stringify(hooks));
+	}
 	const { project, userConfigFile } = fixture(t);
-	fs.writeFileSync(userConfigFile, JSON.stringify({ hooks: { enabled: false } }));
-	fs.writeFileSync(path.join(project, ".pi", "dev-team.local.json"), JSON.stringify({ hooks: { disabled: ["destructive_guard"] }, env: { NODE_OPTIONS: "x" } }));
-	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile, guardHooks: guards });
-	assert.equal(config.hooks.enabled, false, "the user may switch hooks off for themselves");
-	assert.ok(!config.hooks.disabled.includes("destructive_guard"));
-	assert.ok(ignoredProjectSettings.includes("hooks.disabled.destructive_guard"));
+	fs.writeFileSync(userConfigFile, JSON.stringify({ hooks: { disabled: ["repo_review_nudge"] } }));
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.local.json"), JSON.stringify({ hooks: { disabled: ["destructive_guard"], enable: [] }, env: { NODE_OPTIONS: "x" } }));
+	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
+	assert.deepEqual(config.hooks.disabled, ["repo_review_nudge"], "the user's list, untouched by the project");
+	assert.ok(ignoredProjectSettings.includes("hooks"));
 	assert.ok(ignoredProjectSettings.includes("env.NODE_OPTIONS"), "the local project file is filtered too");
 });
 
 test("project env settings: over-long values and booleans", () => {
 	assert.ok(isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", true));
+	assert.ok(isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", "x".repeat(64)));
 	assert.ok(!isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", "x".repeat(65)));
 });

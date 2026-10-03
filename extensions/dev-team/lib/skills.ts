@@ -80,11 +80,19 @@ export function discoverSkills(cwd: string, packageRoot: string, opts: { include
 	const add = (defs: SkillDef[]) => {
 		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	};
-	if (opts.includeProject) {
-		add(loadDir(path.join(cwd, ".pi", "skills"), "project"));
-		add(loadDir(path.join(cwd, ".claude", "skills"), "project"));
-	}
+	if (opts.includeProject) add(loadProjectSkills(cwd));
 	add(loadDir(path.join(packageRoot, "skills"), "package"));
+	return map;
+}
+
+function loadProjectSkills(cwd: string): SkillDef[] {
+	return [...loadDir(path.join(cwd, ".pi", "skills"), "project"), ...loadDir(path.join(cwd, ".claude", "skills"), "project")];
+}
+
+/** First definition of each name wins. */
+function byName(defs: SkillDef[]): Map<string, SkillDef> {
+	const map = new Map<string, SkillDef>();
+	for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	return map;
 }
 
@@ -100,12 +108,13 @@ export function discoverInvocableSkills(
 ): { skills: Map<string, SkillDef>; skippedProjectSkills: string[] } {
 	const skills = discoverSkills(cwd, packageRoot, { includeProject: projectTrusted });
 	if (projectTrusted) return { skills, skippedProjectSkills: [] };
-	const withProject = discoverSkills(cwd, packageRoot, { includeProject: true });
-	const skippedProjectSkills = requested.filter((name) => !resolveSkillName(skills, name) && resolveSkillName(withProject, name)?.source === "project");
+	// Only the project directories are read again, to name what was left out.
+	const projectOnly = byName(loadProjectSkills(cwd));
+	const skippedProjectSkills = requested.filter((name) => !resolveSkillName(skills, name) && resolveSkillName(projectOnly, name));
 	return { skills, skippedProjectSkills };
 }
 
-/** Why a registered /command's skill cannot run now. */
+/** Why a skill cannot run now: the one wording for the skill tool and /commands. */
 export function unavailableSkillReason(skippedForTrust: boolean): string {
 	return skippedForTrust ? "is a project skill, and this project is not trusted in pi" : "can no longer be found (its SKILL.md is missing or unreadable)";
 }

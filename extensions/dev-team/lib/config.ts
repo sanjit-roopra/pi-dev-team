@@ -172,66 +172,31 @@ export function isProjectEnvSettingAllowed(key: string, value: unknown): boolean
 	return PROJECT_ENV_SETTINGS.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && PLAIN_SETTING_VALUE.test(String(value));
 }
 
-/** The hook timeout a project may not go below (hooks fail open on timeout). */
-const MIN_PROJECT_HOOK_TIMEOUT_SEC = DEFAULT_CONFIG.hooks.timeoutSec;
-
 /**
  * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
- * object is dropped whole), and hooks limited so a project can add hooks and turn off advisory ones,
- * but not switch hooks off, disable a guard (`guardHooks`, the blocking PreToolUse hooks) or shorten
- * the timeout. `ignored` names everything left out, as `env.KEY`, `hooks.enabled`, ...
+ * object is dropped whole), and no `hooks` at all, since hooks include the guards; hooks are set in the
+ * user's own config. `ignored` names everything left out, as `env.KEY`, `env` or `hooks`.
  */
-export function filterProjectConfig(
-	data: Record<string, unknown>,
-	guardHooks: ReadonlySet<string> | "all" = "all",
-): { data: Record<string, unknown>; ignored: string[] } {
+export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
-	const out: Record<string, unknown> = { ...data };
-	if ("env" in data) {
-		if (!isPlainObject(data.env)) {
-			delete out.env;
-			ignored.push("env");
-		} else {
-			const entries = Object.entries(data.env);
-			out.env = Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v)));
-			for (const [k, v] of entries) if (!isProjectEnvSettingAllowed(k, v)) ignored.push(`env.${k}`);
-		}
-	}
-	if ("hooks" in data) {
-		if (!isPlainObject(data.hooks)) {
-			delete out.hooks;
-			ignored.push("hooks");
-		} else {
-			const hooks: Record<string, unknown> = { ...data.hooks };
-			if ("enabled" in hooks) {
-				if (hooks.enabled !== true) ignored.push("hooks.enabled");
-				delete hooks.enabled;
-			}
-			if ("disabled" in hooks) {
-				const listed = Array.isArray(hooks.disabled) ? hooks.disabled.filter((h): h is string => typeof h === "string") : [];
-				const isGuard = (h: string) => guardHooks === "all" || guardHooks.has(h);
-				for (const h of listed.filter(isGuard)) ignored.push(`hooks.disabled.${h}`);
-				// Merge onto the defaults rather than replace them, so default-off hooks stay off.
-				hooks.disabled = [...new Set([...DEFAULT_CONFIG.hooks.disabled, ...listed.filter((h) => !isGuard(h))])];
-			}
-			if ("timeoutSec" in hooks && !(typeof hooks.timeoutSec === "number" && hooks.timeoutSec >= MIN_PROJECT_HOOK_TIMEOUT_SEC)) {
-				ignored.push("hooks.timeoutSec");
-				delete hooks.timeoutSec;
-			}
-			out.hooks = hooks;
-		}
-	}
+	const { env, hooks, ...rest } = data;
+	const out: Record<string, unknown> = rest;
+	if (hooks !== undefined) ignored.push("hooks");
+	if (env === undefined) return { data: out, ignored };
+	if (!isPlainObject(env)) return { data: out, ignored: [...ignored, "env"] };
+	const entries = Object.entries(env);
+	out.env = Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v)));
+	for (const [k, v] of entries) if (!isProjectEnvSettingAllowed(k, v)) ignored.push(`env.${k}`);
 	return { data: out, ignored };
 }
 
 /**
  * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files are
- * filtered (filterProjectConfig), so callers pass `includeProject: ctx.isProjectTrusted()` and the
- * guard hooks the project may not disable.
+ * filtered (filterProjectConfig), so callers pass `includeProject: ctx.isProjectTrusted()`.
  */
 export function loadConfig(
 	cwd: string,
-	opts: { includeProject: boolean; guardHooks?: ReadonlySet<string>; userConfigFile?: string },
+	opts: { includeProject: boolean; userConfigFile?: string },
 ): { config: DevTeamConfig; sources: string[]; ignoredProjectSettings: string[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
@@ -241,7 +206,7 @@ export function loadConfig(
 	for (const file of [userFile, ...projectFiles]) {
 		const raw = readJson(file);
 		if (!raw) continue;
-		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw, opts.guardHooks ?? "all");
+		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);

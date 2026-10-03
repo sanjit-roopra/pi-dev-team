@@ -182,6 +182,14 @@ const scenarios = {
 		assert(r.out.includes("[destructive_guard] BLOCKED"), r.out);
 	},
 
+	"a project's .pi/dev-team.json cannot switch the guards off"(env) {
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ hooks: { enabled: false, disabled: ["destructive_guard", "pre_tool_guard"] } }));
+		const r = pi(env, script([{ tool: "write", args: { path: ".env", content: "SECRET=1" } }]));
+		assert(r.out.includes("[pre_tool_guard] BLOCKED"), `guard did not run: ${r.out.slice(0, 300)} ${r.err}`);
+		assert(!fs.existsSync(path.join(env.repo, ".env")), ".env was written");
+	},
+
 	"freeze mode limits writes to allowed patterns"(env) {
 		fs.mkdirSync(path.join(env.repo, ".claude", "hooks"), { recursive: true });
 		fs.writeFileSync(path.join(env.repo, ".claude", "hooks", "freeze-state.json"), JSON.stringify({ active: true, allowed_patterns: ["src/**"] }));

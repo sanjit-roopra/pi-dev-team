@@ -159,6 +159,13 @@ test("invocable skills: an untrusted project's skill is reported as skipped, not
 	assert.equal(trusted.skills.get("local-skill")?.source, "project");
 });
 
+test("invocable skills: a project skill shadowing a package skill falls back to the package one when untrusted", (t) => {
+	const dir = projectSkill(t, "pr");
+	const untrusted = discoverInvocableSkills(dir, ROOT, false, ["dev-team:pr"]);
+	assert.deepEqual(untrusted.skippedProjectSkills, []);
+	assert.equal(untrusted.skills.get("pr")?.source, "package");
+});
+
 test("unavailable /command reasons name trust or a missing file", () => {
 	assert.match(unavailableSkillReason(true), /not trusted in pi/);
 	assert.match(unavailableSkillReason(false), /missing or unreadable/);

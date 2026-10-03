@@ -114,7 +114,7 @@ Configuration files are merged in this order, later wins:
   "claudeShim": true,              // `claude -p` in upstream scripts runs pi instead
   "env": { "DEV_TEAM_MAX_PARALLEL_BUILDS": "2" },   // in a project file: dev-team tuning settings only
   "hooks": { "enabled": true, "disabled": ["..."], "enable": ["version_check"], "outputToModel": true, "timeoutSec": 60 }
-  // in a project file, hooks can be added and advisory ones turned off; guards stay on
+  // hooks: user config only; a project file's hooks are ignored
 }
 ```
 

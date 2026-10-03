@@ -14,7 +14,6 @@ import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTool
 import { autocompactDue } from "./lib/autocompact.ts";
 import {
 	DEFAULT_CONFIG,
-	DEFAULT_DISABLED_HOOKS,
 	type DevTeamConfig,
 	isHookEnabled,
 	loadConfig,
@@ -93,10 +92,9 @@ export default function devTeam(pi: ExtensionAPI) {
 		return { context: out.advisories.map((a) => a.replace(HOOK_NAME_PREFIX, "")) };
 	}
 
-	/** Project config only for a trusted project, and never able to disable a guard (a blocking PreToolUse hook). */
+	/** Project config only for a trusted project (and filtered, see filterProjectConfig). */
 	function projectConfigOpts(ctx: ExtensionContext) {
-		const guardHooks = new Set(hooks.all.filter((h) => h.event === "PreToolUse" && !DEFAULT_DISABLED_HOOKS.includes(h.name)).map((h) => h.name));
-		return { includeProject: ctx.isProjectTrusted(), guardHooks };
+		return { includeProject: ctx.isProjectTrusted() };
 	}
 
 	function basePayload(ctx: ExtensionContext): Record<string, unknown> {
@@ -150,7 +148,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			if (!skill) {
 				throw new Error(
 					skippedProjectSkills.length
-						? `Project skill "${params.name}" not loaded: this project is not trusted in pi.`
+						? `Skill "${params.name}" ${unavailableSkillReason(true)}.`
 						: `Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`,
 				);
 			}
