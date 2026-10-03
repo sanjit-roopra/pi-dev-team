@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatUsage, renderSubagentCall, renderSubagentResult, sanitizeTerminalText } from "../../extensions/dev-team/lib/subagent-render.ts";
+import { formatToolCall, formatUsage, recentCallLines, renderSubagentCall, renderSubagentResult, sanitizeTerminalText } from "../../extensions/dev-team/lib/subagent-render.ts";
 import type { SubagentDetails, SubagentTaskView, UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // A theme stub that returns text unchanged; the renderers only call fg() and bold().
@@ -9,7 +9,7 @@ const draw = (c: { render(width: number): string[] }) => c.render(120).join("\n"
 const usage: UsageTotals = { input: 1200, output: 80, cacheRead: 0, cacheWrite: 0, cost: 0.0012, turns: 2 };
 
 function taskView(overrides: Partial<SubagentTaskView>): SubagentTaskView {
-	return { agent: "a", task: "do x", status: "ok", ok: true, turns: 1, tools: [], ...overrides };
+	return { agent: "a", task: "do x", status: "ok", ok: true, turns: 1, recentCalls: [], ...overrides };
 }
 
 function result(details: SubagentDetails) {
@@ -31,10 +31,10 @@ test("call: parallel dispatch lists the first agents and counts the rest", () =>
 });
 
 test("result while running: progress count and latest tool calls", () => {
-	const details = { results: [taskView({ status: "running", ok: false, tools: ["read", "grep"] }), taskView({ agent: "b", output: "done", usage })] };
+	const details = { results: [taskView({ status: "running", ok: false, recentCalls: [{ name: "read" }, { name: "grep", args: { pattern: "TODO" } }] }), taskView({ agent: "b", output: "done", usage })] };
 	const out = draw(renderSubagentResult(result(details), { expanded: false, isPartial: true }, theme));
 	assert.match(out, /1\/2 done, 1 running/);
-	assert.match(out, /→ grep/);
+	assert.match(out, /→ grep \/TODO\/ in \./);
 	assert.doesNotMatch(out, /Total:/);
 });
 
@@ -100,7 +100,7 @@ test("sanitizeTerminalText removes escape sequences and controls, keeps tab and 
 const SHOWN: Record<string, string[]> = {
 	agent: ["collapsed", "expanded"],
 	task: ["expanded"],
-	tools: ["collapsed", "expanded"],
+	recentCalls: ["collapsed", "expanded"],
 	tier: ["collapsed", "expanded"],
 	model: ["collapsed", "expanded"],
 	stopReason: ["collapsed", "expanded"],
@@ -113,7 +113,7 @@ test("every child-derived field is sanitized before it is drawn", () => {
 	const fields: [string, Partial<SubagentTaskView>][] = [
 		["agent", { agent: HOSTILE }],
 		["task", { task: HOSTILE }],
-		["tools", { status: "running", ok: false, tools: [HOSTILE] }],
+		["recentCalls", { status: "running", ok: false, recentCalls: [{ name: "bash", args: { command: HOSTILE } }] }],
 		["tier", { tier: HOSTILE }],
 		["model", { model: HOSTILE, usage }],
 		["stopReason", { status: "failed", ok: false, stopReason: HOSTILE, error: "e" }],
@@ -135,4 +135,32 @@ test("every child-derived field is sanitized before it is drawn", () => {
 	assert.doesNotMatch(call, UNSAFE, "call args");
 	const fallback = draw(renderSubagentResult({ content: [{ type: "text", text: HOSTILE }], details: undefined } as never, { expanded: false, isPartial: false }, theme));
 	assert.doesNotMatch(fallback, UNSAFE, "text fallback");
+});
+
+const toolCallCases: [string, Parameters<typeof formatToolCall>[0], string][] = [
+	["bash shows the command", { name: "bash", args: { command: "npm test" } }, "$ npm test"],
+	["read shows the path", { name: "read", args: { path: "src/a.ts" } }, "read src/a.ts"],
+	["edit shows file_path", { name: "edit", args: { file_path: "b.ts" } }, "edit b.ts"],
+	["web_fetch shows the url", { name: "web_fetch", args: { url: "https://x.dev" } }, "web_fetch https://x.dev"],
+	["grep shows pattern and path", { name: "grep", args: { pattern: "TODO", path: "src" } }, "grep /TODO/ in src"],
+	["grep without a path searches .", { name: "grep", args: { pattern: "TODO" } }, "grep /TODO/ in ."],
+	["find shows pattern", { name: "find", args: { pattern: "*.ts" } }, "find *.ts in ."],
+	["bash without a command is just the name", { name: "bash" }, "bash"],
+	["a dispatch names the agent", { name: "dev_team_subagent", args: { subagent_type: "Explore" } }, "dev-team Explore"],
+	["a parallel dispatch counts agents", { name: "dev_team_subagent", args: { tasks: "2" } }, "dev-team 2 agents"],
+	["other tools show their name", { name: "ask_user" }, "ask_user"],
+];
+for (const [title, call, expected] of toolCallCases) {
+	test(`formatToolCall: ${title}`, () => assert.equal(formatToolCall(call), expected));
+}
+
+test("formatToolCall: long calls are cut to 80 characters with an ellipsis", () => {
+	const shown = formatToolCall({ name: "bash", args: { command: "x".repeat(200) } });
+	assert.equal(shown.length, 80);
+	assert.ok(shown.startsWith("$ xxx") && shown.endsWith("…"));
+});
+
+test("recent calls from stored sessions (plain tool names) still render", () => {
+	assert.deepEqual(recentCallLines({ tools: ["read", "grep"] } as never), ["read", "grep"]);
+	assert.deepEqual(recentCallLines({ recentCalls: [{ name: "read", args: { path: "a" } }] } as never), ["read a"]);
 });

@@ -13,11 +13,27 @@ import {
 	type ProgressPatch,
 	type SubagentDetails,
 	type SubagentTaskView,
+	type ToolCallSummary,
 	toUsageTotals,
 } from "./subagent-types.ts";
 import type { PiMessageLike } from "./transcript.ts";
 
-const RECENT_TOOLS_KEPT = 8;
+const RECENT_CALLS_KEPT = 8;
+/** Arguments the progress view shows, by name; anything else in a call is not kept. */
+const SHOWN_ARGS = ["command", "pattern", "path", "file_path", "url", "name", "agent", "subagent_type"] as const;
+const SHOWN_ARG_CHARS = 200;
+
+/** The parts of a tool call the progress view needs, each argument one line and bounded. */
+export function summarizeToolCall(name: string, args: unknown): ToolCallSummary {
+	const record = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+	const shown: Record<string, string> = {};
+	for (const key of SHOWN_ARGS) {
+		const value = record[key];
+		if (typeof value === "string" && value.trim()) shown[key] = value.replace(/\s+/g, " ").trim().slice(0, SHOWN_ARG_CHARS);
+	}
+	if (Array.isArray(record.tasks)) shown.tasks = String(record.tasks.length);
+	return Object.keys(shown).length ? { name, args: shown } : { name };
+}
 
 export interface ChildEvent {
 	type?: string;
@@ -32,14 +48,14 @@ export interface ChildRunState {
 	total: Usage;
 	nested: NestedUsage[];
 	turns: number;
-	recentTools: string[];
+	recentCalls: ToolCallSummary[];
 	model?: string;
 	stopReason?: string;
 	errorMessage?: string;
 }
 
 export function newChildRunState(model?: string): ChildRunState {
-	return { messages: [], own: emptyPiUsage(), total: emptyPiUsage(), nested: [], turns: 0, recentTools: [], model };
+	return { messages: [], own: emptyPiUsage(), total: emptyPiUsage(), nested: [], turns: 0, recentCalls: [], model };
 }
 
 /** Usage of the agents a nested dev_team_subagent result ran, each with its own nested runs. */
@@ -66,10 +82,12 @@ export function applyChildEvent(state: ChildRunState, ev: ChildEvent): ProgressP
 		if (m.stopReason) state.stopReason = m.stopReason;
 		if (m.errorMessage) state.errorMessage = m.errorMessage;
 		const calls = Array.isArray(m.content)
-			? (m.content as { type: string; name?: string }[]).filter((c) => c.type === "toolCall" && !!c.name).map((c) => c.name as string)
+			? (m.content as { type: string; name?: string; arguments?: unknown }[])
+					.filter((c) => c.type === "toolCall" && !!c.name)
+					.map((c) => summarizeToolCall(c.name as string, c.arguments))
 			: [];
-		state.recentTools = [...state.recentTools, ...calls].slice(-RECENT_TOOLS_KEPT);
-		return { turns: state.turns, tools: state.recentTools, model: state.model, usage: toUsageTotals(state.own, state.turns) };
+		state.recentCalls = [...state.recentCalls, ...calls].slice(-RECENT_CALLS_KEPT);
+		return { turns: state.turns, recentCalls: state.recentCalls, model: state.model, usage: toUsageTotals(state.own, state.turns) };
 	}
 	if (m.role === "toolResult") {
 		state.messages.push(m);

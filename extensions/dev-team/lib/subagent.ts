@@ -22,7 +22,7 @@ import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools
 import type { DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
-import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
+import { recentCallLines, renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
 import {
 	type AgentSource,
 	type DispatchArgs,
@@ -39,6 +39,7 @@ import {
 	type UsageTotals,
 	type WorktreeInfo,
 } from "./subagent-types.ts";
+import { saveFullOutput } from "./session-files.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
 import { type ChildTrust, childTrustOf, trustArgs } from "./trust.ts";
 
@@ -48,6 +49,8 @@ export interface SubagentRunResult {
 	task: string;
 	ok: boolean;
 	output: string;
+	/** Where the complete output was saved when it is longer than the tool result may carry. */
+	fullOutputFile?: string;
 	error?: string;
 	model?: string;
 	tier?: string;
@@ -124,9 +127,27 @@ function finalText(messages: PiMessageLike[]): string {
 	return "";
 }
 
-function cap(text: string): string {
-	if (Buffer.byteLength(text, "utf8") <= OUTPUT_CAP) return text;
-	return `${text.slice(0, OUTPUT_CAP)}\n\n[output truncated at ${OUTPUT_CAP} bytes]`;
+/** The one rule for when a child's output is too long to return whole. */
+export function isOversized(text: string): boolean {
+	return Buffer.byteLength(text, "utf8") > OUTPUT_CAP;
+}
+
+/** The first OUTPUT_CAP bytes, cut on a character boundary. */
+function cutOutput(text: string): string {
+	return Buffer.from(text, "utf8").subarray(0, OUTPUT_CAP).toString("utf8").replace(/\uFFFD$/, "");
+}
+
+/** The output as the model gets it: cut when oversized, with where to read the complete text. */
+export function outputForModel(text: string, fullOutputFile?: string): string {
+	if (!isOversized(text)) return text;
+	const fullOutputNote = fullOutputFile ? `; the complete output is in ${fullOutputFile} (read it with offset/limit)` : "";
+	return `${cutOutput(text)}\n\n[output truncated at ${OUTPUT_CAP} bytes${fullOutputNote}]`;
+}
+
+/** The output as the TUI shows it: cut when oversized, naming the file without instructions for the model. */
+export function outputForView(text: string, fullOutputFile?: string): string {
+	if (!isOversized(text)) return text;
+	return `${cutOutput(text)}\n\n[output truncated at ${OUTPUT_CAP} bytes${fullOutputFile ? `; complete output: ${fullOutputFile}` : ""}]`;
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -355,6 +376,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 
 			const worktree = wt ? finishWorktree(wt) : undefined;
 			const output = finalText(run.messages);
+			const fullOutputFile = isOversized(output) ? saveFullOutput(sessionId, def.name, agentId, output) : undefined;
 			const ok = exitCode === 0 && !aborted && !timedOut && run.stopReason !== "error" && run.stopReason !== "aborted";
 			const result: SubagentRunResult = {
 				agent: def.name,
@@ -362,6 +384,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				task,
 				ok,
 				output,
+				fullOutputFile,
 				error: ok
 					? undefined
 					: timedOut
@@ -423,6 +446,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			"Agents: any file in the package agents/ directory (e.g. software-engineer, qa-engineer, architect, security-review, test-review, spec-compliance-review, plan-review-*), project .pi/agents or .claude/agents, plus Explore and general-purpose.",
 		].join(" "),
 		promptSnippet: "Dispatch dev-team agents (Claude Agent/Task tool equivalent)",
+		// Children run with their own tools (edit, write, bash) and call a model provider.
+		annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
 		parameters: SubagentParams,
 		prepareArguments: (raw: unknown) => {
 			const a = (raw ?? {}) as Record<string, unknown>;
@@ -480,13 +505,13 @@ export class DispatchProgress {
 			status: "running",
 			ok: false,
 			turns: 0,
-			tools: [],
+			recentCalls: [],
 		}));
 		this.emit();
 	}
 	snapshot(): SubagentDetails {
 		return {
-			results: this.views.map((v) => ({ ...v, tools: [...v.tools] })),
+			results: this.views.map((v) => ({ ...v, recentCalls: [...v.recentCalls] })),
 			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
 	}
@@ -505,7 +530,8 @@ export class DispatchProgress {
 
 function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
-	const tools = v.tools.length ? ` → ${v.tools.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
+	const calls = recentCallLines(v);
+	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
 	return `${v.agent}: turn ${v.turns}${tools}`;
 }
 
@@ -523,7 +549,7 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		durationMs: r.durationMs,
 		stopReason: r.stopReason,
 		error: r.error,
-		output: r.output ? cap(r.output) : undefined,
+		output: r.output ? outputForView(r.output, r.fullOutputFile) : undefined,
 		worktree: r.worktree,
 	};
 }
@@ -536,11 +562,13 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	if (results.length === 1) {
 		const r = results[0];
 		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
-		return `${r.ok ? cap(r.output || "(no output)") : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
+		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
 	}
 	const section = (r: SubagentRunResult) => {
 		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;
-		const body = r.ok ? cap(r.output || "(no output)") : `Error: ${r.error}${r.output ? `\n\nLast output:\n${cap(r.output)}` : ""}`;
+		const body = r.ok
+			? outputForModel(r.output || "(no output)", r.fullOutputFile)
+			: `Error: ${r.error}${r.output ? `\n\nLast output:\n${outputForModel(r.output, r.fullOutputFile)}` : ""}`;
 		const wt = r.worktree ? `\n\nWorktree: ${describeWorktree(r.worktree)}` : "";
 		return `${head}\n\n${body}${wt}`;
 	};
