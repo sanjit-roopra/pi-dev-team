@@ -13,7 +13,8 @@ import {
 	splitToolList,
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
-import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
+import { applyUpdatedInput, claudeToolName, HookBridge, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
+import { AUTOCOMPACT_KEY, autocompactSetting } from "../../extensions/dev-team/lib/metrics.ts";
 import { discoverSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
@@ -133,6 +134,38 @@ test("hooks.json wiring loads with matchers and every script exists", () => {
 	const preWrite = specs.filter((s) => s.event === "PreToolUse" && s.matcher?.test("Write")).map((s) => s.name);
 	assert.ok(preWrite.includes("pre_tool_guard"));
 	assert.ok(!preWrite.includes("destructive_guard"));
+});
+
+test("SessionStart matchers select hooks by source", (t) => {
+	const bridge = new HookBridge(ROOT, () => DEFAULT_CONFIG);
+	if (!bridge.python) return t.skip("python >= 3.10 not found");
+	const names = (source: string) => bridge.select("SessionStart", source).map((s) => s.name);
+	assert.ok(names("startup").includes("autocompact_setup_nudge"));
+	assert.ok(names("startup").includes("repo_review_nudge"));
+	assert.ok(!names("startup").includes("post_compact_state_reinject"));
+	assert.ok(names("compact").includes("post_compact_state_reinject"));
+	assert.ok(!names("compact").includes("autocompact_setup_nudge"));
+});
+
+test("autocompact setting follows upstream detect precedence", () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-ac-"));
+	const home = path.join(dir, "home");
+	const write = (file: string, env: Record<string, unknown>) => {
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, JSON.stringify({ env }));
+	};
+	const env = { HOME: home } as NodeJS.ProcessEnv;
+	assert.deepEqual(autocompactSetting(dir, env), {});
+	write(path.join(home, ".claude", "settings.json"), { [AUTOCOMPACT_KEY]: "70" });
+	assert.equal(autocompactSetting(dir, env).pct, 70);
+	write(path.join(dir, ".claude", "settings.json"), { [AUTOCOMPACT_KEY]: "40" });
+	assert.equal(autocompactSetting(dir, env).pct, 40);
+	write(path.join(dir, ".claude", "settings.local.json"), { [AUTOCOMPACT_KEY]: "040" });
+	const invalid = autocompactSetting(dir, env);
+	assert.equal(invalid.pct, undefined);
+	assert.equal(invalid.source, "settings.local.json");
+	assert.equal(autocompactSetting(dir, { ...env, [AUTOCOMPACT_KEY]: "55" }).pct, 55);
+	fs.rmSync(dir, { recursive: true, force: true });
 });
 
 test("hook enablement honours defaults, disabled and enable lists", () => {

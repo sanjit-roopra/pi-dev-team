@@ -6,8 +6,8 @@
  *   `cost_meter.py regression|pace` and /autoship --max-cost-usd keep working. Uses pi's own
  *   usage.cost (correct for every provider, including GitHub Copilot) instead of a Claude-only
  *   price table. Adds `session_id` (upstream could not, see run_report `joinable:false`).
- * - Context ceiling guard (hooks/context_ceiling_guard.py): same thresholds, env vars, messages and
- *   verdicts, measured with ctx.getContextUsage() which knows every model's window.
+ * - Autocompact: honours upstream's CLAUDE_AUTOCOMPACT_PCT_OVERRIDE (written by /setup) by compacting
+ *   the session at that percentage, measured with ctx.getContextUsage() which knows every model's window.
  */
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -137,68 +137,65 @@ export function recordCost(ctx: ExtensionContext): string | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Context ceiling guard
+// Autocompact (replaces upstream's retired context ceiling guard, dev-team v14)
 // ---------------------------------------------------------------------------
 
-const RECOVERY_SKILLS = new Set(["handoff", "context-loading-protocol", "continue", "review-summary", "session-review"]);
+export const AUTOCOMPACT_KEY = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
+const PCT_RE = /^(?:100|[1-9][0-9]?)$/;
 
-const BLOCK_FOOTER =
-	"[blocked: context ceiling] Run /handoff to summarize and continue in a fresh context — recovery skills are never gated, so it will run. Set DEV_TEAM_CONTEXT_STRICT=off to warn instead of blocking.";
-const DELEGATION_FOOTER =
-	"[not blocked: delegation] A subagent runs in its own context and returns only its result, so dispatching one is the cheapest way to do this work without growing THIS context — blocking it would push the work inline and cost more. Run /handoff to actually get back under the ceiling. Set DEV_TEAM_CONTEXT_GATE_AGENT=block to block these too.";
-
-const BANDS = [
-	["nudge", "Consider running /handoff (write a memory/ progress file, continue in a fresh context) and defer non-essential agents/skills."],
-	["run-now", "Run /handoff now — write a memory/ progress file and continue in a fresh context."],
-	["full-summary", "Write a full summary to memory/ and start a new conversation now — context is well past the effective ceiling."],
-] as const;
-
-function positiveIntEnv(name: string, def: number): number {
-	const raw = process.env[name];
-	if (!raw || !/^[0-9]+$/.test(raw)) return def;
-	const v = Number(raw);
-	return v > 0 ? v : def;
+export interface AutocompactSetting {
+	/** Valid integer 1-100, or undefined when absent/invalid. */
+	pct?: number;
+	raw?: unknown;
+	source?: string;
 }
 
-const lastBucket = new Map<string, number>();
-
-export interface CeilingVerdict {
-	block?: string;
-	warn?: string;
+function envBlock(file: string): Record<string, unknown> | undefined {
+	try {
+		const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+		return data && typeof data === "object" && data.env && typeof data.env === "object" && !Array.isArray(data.env) ? data.env : undefined;
+	} catch {
+		return undefined;
+	}
 }
 
-/** @param kind "skill" (blocks) or "agent" (warns unless DEV_TEAM_CONTEXT_GATE_AGENT=block) */
-export function contextCeiling(ctx: ExtensionContext, kind: "skill" | "agent", name: string): CeilingVerdict {
-	if (process.env.DEV_TEAM_CONTEXT_CEILING === "off") return {};
-	if (kind === "skill" && RECOVERY_SKILLS.has(name)) return {};
+/**
+ * Same precedence as upstream hooks/lib/autocompact_config.py `detect`: process env,
+ * `.claude/settings.local.json`, `.claude/settings.json`, then user settings. The first source
+ * defining the key decides, so `/setup` (scripts/set_autocompact_env.py) configures pi too.
+ */
+export function autocompactSetting(projectDir: string, env: NodeJS.ProcessEnv = process.env): AutocompactSetting {
+	const pick = (raw: unknown, source: string): AutocompactSetting => ({
+		pct: typeof raw === "string" && PCT_RE.test(raw) ? Number(raw) : undefined,
+		raw,
+		source,
+	});
+	if (env[AUTOCOMPACT_KEY] !== undefined) return pick(env[AUTOCOMPACT_KEY], "process env");
+	const userSettings = env.CLAUDE_CONFIG_DIR
+		? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
+		: path.join(env.HOME || os.homedir(), ".claude", "settings.json");
+	const candidates: [string, string][] = [
+		["settings.local.json", path.join(projectDir, ".claude", "settings.local.json")],
+		["settings.json", path.join(projectDir, ".claude", "settings.json")],
+		["user settings.json", userSettings],
+	];
+	for (const [label, file] of candidates) {
+		const block = envBlock(file);
+		if (block && AUTOCOMPACT_KEY in block) return pick(block[AUTOCOMPACT_KEY], label);
+	}
+	return {};
+}
+
+/**
+ * Whether the main session should compact now. pi's own auto-compaction only triggers at
+ * `contextWindow - reserveTokens`; this lowers the threshold to the configured percentage, the
+ * way CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers Claude Code's. Unconfigured repos keep pi's default
+ * (and get the autocompact_setup_nudge advisory at session start).
+ */
+export function autocompactDue(ctx: ExtensionContext): { pct: number; percent: number } | undefined {
+	const { pct } = autocompactSetting(ctx.cwd);
+	if (pct === undefined) return undefined;
 	const usage = ctx.getContextUsage();
-	if (!usage || usage.tokens == null) return {};
-	const override = positiveIntEnv("DEV_TEAM_CONTEXT_WINDOW", 0);
-	const window = override || usage.contextWindow;
-	if (!window) return {};
-	const provenance = override ? "override" : "detected";
-	const occ = usage.tokens;
-	const pct = positiveIntEnv("DEV_TEAM_CONTEXT_CEILING_PCT", 40);
-	const abs = positiveIntEnv("DEV_TEAM_CONTEXT_ABS_CEILING", 350_000);
-	const pctTokens = Math.floor((pct * window) / 100);
-	const threshold = Math.min(pctTokens, abs);
-	if (occ < threshold) return {};
-	const bound = pctTokens <= abs ? "percentage" : "absolute";
-	const band = occ >= Math.floor((threshold * 3) / 2) ? 2 : occ >= Math.floor((threshold * 5) / 4) ? 1 : 0;
-	const label = kind === "skill" ? `invoking skill '${name}'` : `loading agent '${name}'`;
-	const diag = `Context at ${occ} of ${window} tokens — over the effective ceiling of ${threshold} tokens (${bound} bound; window ${provenance}) before ${label}.`;
-	const [bandName, action] = BANDS[band];
-	const msg =
-		band === 2
-			? `[${bandName}] ${action}\n${diag}`
-			: `${diag}\n[${bandName}] ${action}\nTune with DEV_TEAM_CONTEXT_WINDOW / DEV_TEAM_CONTEXT_CEILING_PCT / DEV_TEAM_CONTEXT_ABS_CEILING; DEV_TEAM_CONTEXT_CEILING=off disables.`;
-	const strict = (process.env.DEV_TEAM_CONTEXT_STRICT ?? "").trim().toLowerCase() !== "off";
-	const blocks = kind === "skill" || (process.env.DEV_TEAM_CONTEXT_GATE_AGENT ?? "").trim().toLowerCase() === "block";
-	if (strict && blocks) return { block: `${msg}\n${BLOCK_FOOTER}` };
-	const session = ctx.sessionManager.getSessionId();
-	const bucket = Math.max(band * 100, Math.floor(Math.floor((occ * 100) / window) / 5));
-	const last = lastBucket.get(session) ?? 0;
-	lastBucket.set(session, bucket);
-	if (bucket <= last) return {};
-	return { warn: strict && !blocks ? `${msg}\n${DELEGATION_FOOTER}` : msg };
+	if (!usage || usage.percent == null) return undefined;
+	return usage.percent >= pct ? { pct, percent: usage.percent } : undefined;
 }

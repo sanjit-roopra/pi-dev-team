@@ -1,6 +1,6 @@
 {
   "name": "pi-dev-team",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "pi port of Bryan Finster's dev-team (bdfinst/agentic-dev-team): persona-driven dev team, reviewer swarm, TDD-gated /specs -> /plan -> /build -> /pr workflow, guard hooks. Works with any pi model provider, including GitHub Copilot.",
   "license": "MIT",
   "keywords": ["pi-package", "agents", "code-review", "tdd", "dev-team"],

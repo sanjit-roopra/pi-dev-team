@@ -27,6 +27,8 @@ function setupRepo() {
 	fs.mkdirSync(repo);
 	fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
 	fs.writeFileSync(path.join(home, ".claude", "telemetry.json"), '{"enabled": true}');
+	// a user who ran /setup: keeps the autocompact_setup_nudge advisory out of the echoed prompt
+	fs.writeFileSync(path.join(home, ".claude", "settings.json"), '{"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"}}');
 	const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "pipe" });
 	git("init", "-q", "-b", "main");
 	git("config", "user.email", "t@example.com");
@@ -111,6 +113,17 @@ const scenarios = {
 	"command /version expands the skill"(env) {
 		const r = pi(env, "/version");
 		assert(r.out.includes('ECHO:<skill name="version"'), `unexpected output: ${r.out.slice(0, 300)} ${r.err}`);
+	},
+
+	"autocompact_setup_nudge reaches the model only when autocompact is unconfigured"(env) {
+		fs.rmSync(path.join(env.home, ".claude", "settings.json"));
+		let r = pi(env, "hello");
+		assert(r.out.includes("context autocompact is not configured"), `nudge missing: ${r.out.slice(0, 300)} ${r.err}`);
+		fs.mkdirSync(path.join(env.repo, ".claude"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".claude", "settings.json"), '{"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"}}');
+		r = pi(env, "hello");
+		assert(!r.out.includes("context autocompact"), `nudge shown when configured: ${r.out.slice(0, 300)}`);
+		assert(r.out.includes("ECHO:hello"), r.out.slice(0, 300));
 	},
 
 	"command argument substitution ($0, $ARGUMENTS)"(env) {

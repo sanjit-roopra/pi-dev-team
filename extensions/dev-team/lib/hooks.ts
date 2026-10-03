@@ -207,13 +207,14 @@ export class HookBridge {
 		return this.specs;
 	}
 
-	select(event: ClaudeEvent, claudeTool?: string): HookSpec[] {
+	/** @param target what hooks.json matchers test: the Claude tool name, or the SessionStart source. */
+	select(event: ClaudeEvent, target?: string): HookSpec[] {
 		const config = this.getConfig();
 		if (!this.python) return [];
 		const seen = new Set<string>();
 		return this.specs.filter((s) => {
 			if (s.event !== event) return false;
-			if (claudeTool !== undefined && s.matcher && !s.matcher.test(claudeTool)) return false;
+			if (target !== undefined && s.matcher && !s.matcher.test(target)) return false;
 			if (!isHookEnabled(config, s.name)) return false;
 			// the same script registered twice for one event+tool (e.g. telemetry) runs once
 			const key = s.name;
@@ -287,9 +288,9 @@ export class HookBridge {
 		event: ClaudeEvent,
 		payload: Record<string, unknown>,
 		cwd: string,
-		opts: { claudeTool?: string; extraEnv?: Record<string, string> } = {},
+		opts: { claudeTool?: string; match?: string; extraEnv?: Record<string, string> } = {},
 	): Promise<HookOutcome> {
-		return this.execute(this.select(event, opts.claudeTool), event, payload, cwd, opts);
+		return this.execute(this.select(event, opts.claudeTool ?? opts.match), event, payload, cwd, opts);
 	}
 
 	private async execute(

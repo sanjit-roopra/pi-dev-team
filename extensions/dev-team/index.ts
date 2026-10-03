@@ -3,7 +3,7 @@
  *
  * This extension provides the Claude Code runtime contract the upstream content relies on:
  *   env (CLAUDE_PLUGIN_ROOT, ...), /commands for skills, the `skill` and `dev_team_subagent` tools,
- *   `ask_user`, `web_fetch`, the Python hook bridge, native cost meter and context-ceiling guard.
+ *   `ask_user`, `web_fetch`, the Python hook bridge, native cost meter and autocompact.
  * See PORTING.md for the full mapping.
  */
 import * as fs from "node:fs";
@@ -22,7 +22,7 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
-import { contextCeiling, recordCost } from "./lib/metrics.ts";
+import { autocompactDue, recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex } from "./lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool, SUBAGENT_USAGE_ENTRY } from "./lib/subagent.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
@@ -138,12 +138,6 @@ export default function devTeam(pi: ExtensionAPI) {
 			description: `${skill.description.slice(0, 140)}${skill.argumentHint ? ` ${skill.argumentHint}` : ""}`,
 			handler: async (args, ctx) => {
 				const current = resolveSkillName(discoverSkills(ctx.cwd, packageRoot), skill.name) ?? skill;
-				const verdict = contextCeiling(ctx, "skill", current.name);
-				if (verdict.block) {
-					ctx.ui.notify(verdict.block, "error");
-					return;
-				}
-				if (verdict.warn) ctx.ui.notify(verdict.warn, "warning");
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
 				void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: `/${current.name}${args ? ` ${args}` : ""}` }, ctx.cwd);
 				const text = commandText(current, args ?? "");
@@ -319,7 +313,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
-		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source: SESSION_SOURCE[event.reason] ?? "startup" }, ctx.cwd);
+		const source = SESSION_SOURCE[event.reason] ?? "startup";
+		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source }, ctx.cwd, { match: source });
 		sessionContext = out.advisories.map((a) => a.replace(/^\[[\w-]+\] /, ""));
 		notify(ctx, out.notices, "info");
 	});
@@ -347,16 +342,8 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	pi.on("tool_call", async (event, ctx) => {
 		const input = event.input as Record<string, unknown>;
-		if (event.toolName === "skill") {
-			const verdict = contextCeiling(ctx, "skill", String(input.name ?? "").replace(/^\/|^[\w-]+:/g, ""));
-			if (verdict.block) return { block: true, reason: verdict.block };
-			if (verdict.warn) notify(ctx, [verdict.warn]);
-		}
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
-			// PreToolUse(Agent) hooks run per dispatch inside the tool; only the context ceiling applies here.
-			const verdict = contextCeiling(ctx, "agent", String(input.agent ?? input.subagent_type ?? "tasks"));
-			if (verdict.block) return { block: true, reason: verdict.block };
-			if (verdict.warn) notify(ctx, [verdict.warn]);
+			// PreToolUse(Agent) hooks run per dispatch inside the tool.
 			running++;
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", `dev-team: ${running} agent call(s) running`);
 			return undefined;
@@ -432,6 +419,25 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (isSubagent) return;
 		recordCost(ctx);
 		await hooks.run("Stop", { ...basePayload(ctx), stop_hook_active: false }, ctx.cwd);
+		// ctx.compact() aborts an in-flight run, so the lowered threshold applies between runs;
+		// pi's own threshold remains the backstop inside a long run. Print/json runs end here anyway.
+		if (ctx.mode !== "tui" && ctx.mode !== "rpc") return;
+		const due = autocompactDue(ctx);
+		if (!due) return;
+		notify(ctx, [`dev-team: context at ${Math.round(due.percent)}% (autocompact threshold ${due.pct}%), compacting.`], "info");
+		ctx.compact({ onError: () => {} });
+	});
+
+	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject
+	// uses it to restore /build state. Mid-run compactions get the context as a steer message.
+	pi.on("session_compact", async (_event, ctx) => {
+		if (isSubagent) return;
+		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source: "compact" }, ctx.cwd, { match: "compact" });
+		notify(ctx, out.notices, "info");
+		const advisories = out.advisories.map((a) => a.replace(/^\[[\w-]+\] /, ""));
+		if (!advisories.length) return;
+		if (ctx.isIdle()) sessionContext.push(...advisories);
+		else pi.sendMessage({ customType: "dev-team-session-start", content: advisories.join("\n\n"), display: true }, { deliverAs: "steer" });
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {

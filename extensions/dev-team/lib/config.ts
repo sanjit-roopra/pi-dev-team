@@ -52,14 +52,13 @@ export interface DevTeamConfig {
 
 /**
  * Hooks off by default. See PORTING.md section 4.
- * - replaced natively by the extension: cost_meter, context_ceiling_guard, subagent_skill_context
+ * - replaced natively by the extension: cost_meter, subagent_skill_context
  * - need Claude transcripts / Claude-only config: code_intelligence_*, phase_marker, session_learning_trigger,
  *   mcp_json_repowise_nudge, version_check
  * - only act inside the upstream monorepo: the rest
  */
 export const DEFAULT_DISABLED_HOOKS = [
 	"cost_meter",
-	"context_ceiling_guard",
 	"subagent_skill_context",
 	"code_intelligence_nudge",
 	"code_intelligence_turn_mark",

@@ -13,7 +13,7 @@ description: >-
   missing tool, or when the user says "setup", "bootstrap", "configure this
   project for dev-team", "install required tools for the dev-team plugin",
   or "activate agent templates".
-argument-hint: "[--yes] [--dry-run]"
+argument-hint: "[--yes] [--dry-run] [--autocompact-pct N] [--no-autocompact]"
 user-invocable: true
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
@@ -30,9 +30,10 @@ This is the pi port of `/setup`. Follow the steps below with these substitutions
 - **Step 7 (agent templates):** activate templates into `.claude/agents/` exactly as written. The pi `dev_team_subagent` tool loads project agents from `.pi/agents/` and `.claude/agents/`, and they take precedence over the package agents.
 - **Step 8 / 8a (project CLAUDE.md):** pi loads context files from the project root and its ancestors (`AGENTS.md`, or `CLAUDE.md`), **not** from `.claude/CLAUDE.md`. Everywhere these steps say `.claude/CLAUDE.md`, use `AGENTS.md` at the repository root instead (if the repo already has a root `CLAUDE.md` and no `AGENTS.md`, use that `CLAUDE.md`). Same merge/skip and marker rules.
 - **Step 9 (formatting hook):** do not write `.claude/settings.json`. Instead set `"autoFormat": true` in `.pi/dev-team.json` (create the file if missing, keep other keys). The pi extension then runs `hooks/post_format.py` (prettier / ruff / black, auto-detected) after every `write`/`edit`.
+- **Step 9b (autocompact):** run `scripts/set_autocompact_env.py` exactly as written. It only merges `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` into `.claude/settings.json` (the one write to that file this port allows); the pi extension reads that value and compacts the session at that percentage of the model's window. pi's own threshold is `contextWindow - reserveTokens`, so the "values above ~83% have no effect" caveat becomes "values above pi's own threshold have no effect".
 - **Step 10 (/pr):** write the generated project command to `.claude/skills/pr/SKILL.md` as written. The pi port resolves project skills in `.pi/skills/` and `.claude/skills/` before the package's own.
 - **Step 11:** also add `.pi/dev-team.local.json` to the `.gitignore` block.
-- **Step 12 (report):** list `AGENTS.md` and `.pi/dev-team.json` instead of `.claude/CLAUDE.md` and `.claude/settings.json`. Add a line recommending `/dev-team models` to map the opus/sonnet/haiku agent tiers to this user's models.
+- **Step 12 (report):** list `AGENTS.md` and `.pi/dev-team.json` instead of `.claude/CLAUDE.md`, and list `.claude/settings.json` only for the Step 9b `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` key. Add a line recommending `/dev-team models` to map the opus/sonnet/haiku agent tiers to this user's models.
 <!-- pi-port-notes -->
 
 
@@ -58,6 +59,10 @@ Arguments: $ARGUMENTS
 - `--yes`: Run unattended — auto-confirm every prompt with its **safe**
   default and pass `--yes` through when invoking `/dev-team:project-init`
   (Step 4). No step waits for input.
+- `--autocompact-pct N`: write `N` (integer 1-100) as the repo's
+  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (Step 9b) instead of the default `40`.
+- `--no-autocompact`: skip Step 9b's settings write and silence the
+  SessionStart nudge that recommends running `/dev-team:setup`.
 
 ### `--yes` semantics (the unattended contract)
 
@@ -899,6 +904,29 @@ already ran it, the formatter should be present. Only if a formatter is
 still missing (check e.g. `npx prettier --version`, `ruff --version`), warn
 the user and re-point them at `/project-init` rather than installing it here.
 
+### 9b. Configure harness autocompact (#2177)
+
+Replaces the retired context-ceiling hook: the harness compacts the
+conversation at a chosen percentage of its window. Merge the env var into the
+project's `.claude/settings.json` — never overwrite the file:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/set_autocompact_env.py" \
+  --project-dir "$PWD" [--yes] [--autocompact-pct N | --no-autocompact]
+```
+
+Forward `--yes` when `/setup` got it, and `--autocompact-pct`/`--no-autocompact`
+when given. The script owns all prompt and `--yes` behavior: it writes
+`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (default `40`) into the `env` block, keeps an
+existing valid value unless `--autocompact-pct` is passed, and aborts without
+touching the file when it is malformed or a symlink (report the stderr line
+and continue with the next step). The harness can only **lower** its
+threshold, so values above its default (~83%) have no effect. The script only
+ever writes the project's `settings.json`; when it warns that a process-env or
+`settings.local.json` entry takes precedence, relay that warning verbatim. Under
+`--dry-run`, report what would be written and skip the script. Report line:
+`Autocompact: <value>% (set | kept | replaced | skipped)`.
+
 ### 10. Generate /pr command
 
 Create a project-specific `skills/pr/SKILL.md` if one doesn't exist, referencing the project's test/lint/typecheck commands.
@@ -1078,7 +1106,7 @@ Repowise's own install/decline state for that run.
 ### Created
 - `.claude/project-stack.json` — stack detection results
 - `.claude/CLAUDE.md` — project conventions   [Step 8a concise-response preference, independent of this line's created/left-unchanged status: concise-preference-added | concise-preference-already-covered | concise-preference-declined | concise-preference-skipped-under-yes | concise-preference-skipped-symlink | concise-preference-write-failed]
-- `.claude/settings.json` — PostToolUse formatting hook (prettier + eslint)
+- `.claude/settings.json` — PostToolUse formatting hook (prettier + eslint); `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (Step 9b)
 - `.gitignore` — dev-team runtime artifacts (.claude/memory/, .claude/metrics/, .claude/plans/, .dev-team-reports/, memory/, reports/, metrics/, plans/, .pr-review-passed)   [downstream only; omit if already covered] plus `.mcp.json` machine-specific-path hygiene (#1376, #1416)   [runs in-repo too, via project-init's Repowise standing check; omit if already covered]
 - Activated templates: ts-enforcer, esm-enforcer, react-testing
 

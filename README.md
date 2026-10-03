@@ -9,7 +9,7 @@ What you get is the whole dev-team:
 - **Guard hooks.** careful / freeze / guard, tests frozen during REFACTOR, the verify-loop guard, the `gh pr create` review gate, and the review-verdict and dispatch ledgers.
 - **Knowledge base, scripts, templates.** Byte-identical to upstream.
 
-Upstream version: see `UPSTREAM.json` (currently dev-team v13.3.0).
+Upstream version: see `UPSTREAM.json` (currently dev-team v14.0.0).
 
 ## Install
 
@@ -117,7 +117,7 @@ Configuration files are merged in this order, later wins:
 }
 ```
 
-- **Environment variables.** Upstream's `DEV_TEAM_*` variables work unchanged, for example `DEV_TEAM_AUTO_APPROVE=1`, `DEV_TEAM_CONTEXT_STRICT=off` and `DEV_TEAM_COST_METER=off`.
+- **Environment variables.** Upstream's `DEV_TEAM_*` variables work unchanged, for example `DEV_TEAM_AUTO_APPROVE=1`, `DEV_TEAM_AUTOCOMPACT_NUDGE=0` and `DEV_TEAM_COST_METER=off`.
 - **Cost metering.** Needs the same opt-in as upstream: `/telemetry on`, which writes `~/.claude/telemetry.json`. Costs come from pi's own usage accounting, so they are correct for Copilot and every other provider.
 - **Hooks.** `/dev-team hooks` lists every hook and whether it is on.
 

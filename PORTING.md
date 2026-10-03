@@ -1,6 +1,6 @@
 # Porting dev-team (Claude Code) to pi
 
-Upstream: `bdfinst/agentic-dev-team`, plugin `plugins/dev-team` v13.3.0 (commit 842286b, 2026-09-23).
+Upstream: `bdfinst/agentic-dev-team`, plugin `plugins/dev-team` v14.0.0 (commit 2bf3d98, 2026-09-30).
 Target: pi coding agent 0.99.x (`@earendil-works/pi-coding-agent`).
 
 ## 1. What upstream is
@@ -11,7 +11,7 @@ Target: pi coding agent 0.99.x (`@earendil-works/pi-coding-agent`).
 |---|---|---|
 | Agents (`agents/*.md`) | 46 | `Agent`/`Task` tool with `subagent_type`, frontmatter `model: opus/sonnet/haiku`, `effort`, `tools`, `skills` |
 | Skills (`skills/*/SKILL.md`) | 99 (95 user-invocable) | Slash commands, `$ARGUMENTS`/`$0` substitution, `Skill` tool for chaining, `AskUserQuestion`, `allowed-tools` |
-| Hooks (`hooks/*.py`, `hooks.json`) | 41 wired | PreToolUse / PostToolUse / SessionStart / Stop / SubagentStop / SessionEnd / UserPromptSubmit, JSON on stdin, exit 2 = block |
+| Hooks (`hooks/*.py`, `hooks.json`) | 42 wired | PreToolUse / PostToolUse / SessionStart / Stop / SubagentStop / SessionEnd / UserPromptSubmit, JSON on stdin, exit 2 = block |
 | Scripts, libs, tools | ~135 Python files | `${CLAUDE_PLUGIN_ROOT}`, `.claude/` project state, 6 call sites of `claude -p` |
 | Knowledge, templates | ~135 files | Plain markdown and JSON, referenced by path |
 
@@ -55,7 +55,8 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 | SessionStart / UserPromptSubmit / Stop / SessionEnd | `session_start` / `input` / `agent_end` / `session_shutdown` | |
 | SubagentStop | Fired by the `dev_team_subagent` tool after each child, with a synthetic Claude-format transcript so `review_verdict_recorder.py` and `subagent_completion_guard.py` run unchanged | `transcript.ts` |
 | `cost_meter.py` (parses Claude transcripts, Claude-only price table) | TypeScript cost meter using pi's own `usage.cost` (works for Copilot and every provider). Same `cost-metering.jsonl` row shape plus `session_id`, so `/cost-report`, `regression`, `pace`, `/autoship --max-cost-usd` keep working | `metrics.ts` |
-| `context_ceiling_guard.py` (transcript tail + Claude window table) | TypeScript guard using `ctx.getContextUsage()` (knows every model's window). Same thresholds and env vars | `metrics.ts` |
+| `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (Claude Code compacts at that % of the window; written by `/setup` via `scripts/set_autocompact_env.py`) | Read with the same precedence as `hooks/lib/autocompact_config.py` (process env, `.claude/settings.local.json`, `.claude/settings.json`, user settings). At `agent_end` the extension calls `ctx.compact()` once usage reaches that % (`ctx.getContextUsage()` knows every model's window). `ctx.compact()` aborts a running turn, so inside one long run pi's own threshold (`contextWindow - reserveTokens`) is the backstop. Unconfigured repos keep pi's default | `metrics.ts` |
+| SessionStart `source: "compact"` (`post_compact_state_reinject.py`) | Fired from pi's `session_compact` event. The re-injected `/build` state reaches the model on the next turn, or as a steer message when compaction happened mid-run. SessionStart matchers are applied to the source | `index.ts` |
 | `claude -p` / `claude --print` in scripts | `bin/claude` shim translating the flags the scripts use into `pi --mode json -p` and printing a Claude-style result envelope. Prepended to `PATH` inside pi only | `bin/claude` |
 | `test -t 0` interactivity check | Always false under a tool shell (would auto-approve every gate). Patched to `DEV_TEAM_INTERACTIVE=1`, which the extension sets when a human UI is attached | sync patch |
 | `.claude/` project state | Kept as is (`.claude/memory`, `.claude/metrics`, `.claude/hooks`). 67 Python files and ~50 skills address it; changing the name buys nothing and breaks resync | – |
@@ -78,6 +79,8 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 - Parallel tool calls. Claude Code runs several `Agent` calls in one message in parallel; so does pi. The `dev_team_subagent` tool also accepts `tasks[]`. A global limit (`maxParallelAgents`, default 6) applies across both.
 - Subagent transcripts are not saved as sessions (`--no-session`). Usage is captured from the JSON event stream and recorded.
 - `allowed-tools` in skills is advisory in pi (as in upstream under `bypassPermissions`).
+- Autocompact timing. Claude Code compacts at `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` between any two turns. The port compacts at that percentage when an agent run ends, because `ctx.compact()` aborts a running turn; within one long run pi's own threshold applies.
+- `skill-injection.jsonl` (v14 instrument stream) is not written. The port injects skill hints natively instead of via `subagent_skill_context.py`, and uptake is computed from Claude subagent transcripts, which pi children do not save.
 
 ## 6. Implementation plan (done)
 
@@ -90,12 +93,13 @@ upstream plugins/dev-team  --sync/sync_upstream.py-->  pi-dev-team package
 ## 7. Verification
 
 - **Byte identity.** `hooks/`, `scripts/`, `tools/`, `knowledge/`, `templates/` and the 46 upstream agents are byte-identical to upstream (`diff -rq`). Only 13 `SKILL.md` files differ, each by a listed patch or note (`UPSTREAM.json`). The upstream Python test suite therefore applies unchanged.
-- **Upstream Python suite** run against the shipped copy (`uv run --with pytest ... pytest plugins/dev-team/tests/{hooks,scripts,lib}`): 4265 passed. The single error is `test_durable_runner.py`, which tests the dropped `long-eval` skill.
-- **Unit tests** (`test/unit`, node:test, 19 tests): tool and MCP-name mapping, tier and effort resolution, parsing of every upstream agent and skill, argument substitution, hook wiring, Claude input mapping, the synthetic transcript shape, argument forwarding.
+- **Upstream Python suite** run against the shipped copy (`uv run --with pytest ... pytest plugins/dev-team/tests/{hooks,scripts,lib}` plus the top-level `tests/test_*.py` added in v14): 4293 passed. The single error is `test_durable_runner.py`, which tests the dropped `long-eval` skill.
+- **Unit tests** (`test/unit`, node:test, 21 tests): tool and MCP-name mapping, tier and effort resolution, parsing of every upstream agent and skill, argument substitution, hook wiring, Claude input mapping, the synthetic transcript shape, argument forwarding, SessionStart source matchers, autocompact setting precedence.
 - **Python tests** (`test/py`, 10 tests): sync helpers (description trimming, note insertion, idempotency) and the `claude` shim (flag translation, envelope, error path).
-- **End-to-end** (`test/e2e/run.mjs`, 20 scenarios). These run the real `pi` binary with an offline scripted provider in throwaway git repos, verified on pi 1.0.0:
+- **End-to-end** (`test/e2e/run.mjs`, 21 scenarios). These run the real `pi` binary with an offline scripted provider in throwaway git repos, verified on pi 1.0.0:
   - `/commands` with `$0`/`$ARGUMENTS`
   - the plugin env in bash
+  - the `autocompact_setup_nudge` advisory, shown only while autocompact is unconfigured
   - `pre_tool_guard`, `destructive_guard`, freeze scope and `pre_pr_review` blocks
   - PostToolUse advisories reaching the model
   - single and parallel subagents
