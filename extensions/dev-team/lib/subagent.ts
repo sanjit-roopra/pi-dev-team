@@ -22,13 +22,15 @@ import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools
 import type { DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
+import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
+import { projectRoot } from "./metrics.ts";
 import {
-	addPiUsage,
 	type DispatchArgs,
 	describeWorktree,
 	dispatchAgent,
 	dispatchTask,
 	emptyPiUsage,
+	type NestedUsage,
 	type SubagentDetails,
 	type SubagentTaskView,
 	sumPiUsage,
@@ -37,9 +39,6 @@ import {
 	type WorktreeInfo,
 } from "./subagent-types.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
-
-export { addPiUsage, SUBAGENT_USAGE_ENTRY, sumPiUsage } from "./subagent-types.ts";
-export type { SubagentDetails, SubagentTaskView, UsageTotals } from "./subagent-types.ts";
 
 export interface SubagentRunResult {
 	agent: string;
@@ -51,8 +50,11 @@ export interface SubagentRunResult {
 	model?: string;
 	tier?: string;
 	stopReason?: string;
+	/** The child's own turns. */
 	usage: UsageTotals;
-	/** The child's usage in pi's own shape (incl. nested dispatches), for the tool result's `usage`. */
+	/** Agents the child dispatched itself (any depth), credited to those agents. */
+	nested: NestedUsage[];
+	/** Everything the child cost, nested dispatches included, in pi's shape for the tool result's `usage`. */
 	piUsage?: Usage;
 	messages: PiMessageLike[];
 	worktree?: WorktreeInfo;
@@ -60,8 +62,6 @@ export interface SubagentRunResult {
 	durationMs: number;
 }
 
-/** Tool calls remembered per child for the progress view. */
-const RECENT_TOOLS_KEPT = 8;
 const TASK_PREVIEW_CHARS = 400;
 const STATUS_LINE_TOOLS = 3;
 
@@ -127,16 +127,32 @@ function cap(text: string): string {
 	return `${text.slice(0, OUTPUT_CAP)}\n\n[output truncated at ${OUTPUT_CAP} bytes]`;
 }
 
+/** The directory a granted trust decision covers: the session's git root (or cwd), symlinks resolved. */
+export function trustedRoot(cwd: string): string {
+	return realpathOr(projectRoot(cwd));
+}
+
+function realpathOr(p: string): string {
+	try {
+		return fs.realpathSync(p);
+	} catch {
+		return path.resolve(p);
+	}
+}
+
+export function isInside(root: string, dir: string): boolean {
+	const rel = path.relative(root, dir);
+	return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
 /**
  * Trust flags for a child pi. A declined decision is forwarded explicitly, so a saved /trust entry or
- * defaultProjectTrust cannot re-trust the child. A granted one is forwarded only for the session's own
- * project (and worktrees inside it); for another directory the child decides on its own.
+ * defaultProjectTrust cannot re-trust the child. A granted one is forwarded only inside the session's
+ * project (`root`, its git root, so worktrees under .claude/worktrees count); elsewhere the child decides.
  */
-export function trustArgs(projectTrusted: boolean, projectCwd: string, runCwd: string): string[] {
+export function trustArgs(projectTrusted: boolean, root: string, runCwd: string): string[] {
 	if (!projectTrusted) return ["--no-approve"];
-	const rel = path.relative(projectCwd, runCwd);
-	const inside = rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
-	return inside ? ["--approve"] : [];
+	return isInside(root, realpathOr(runCwd)) ? ["--approve"] : [];
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -182,8 +198,6 @@ export interface SubagentDeps {
 	onUsage: (r: SubagentRunResult) => void;
 }
 
-type TaskInput = DispatchArgs;
-
 const TaskFields = {
 	agent: Type.Optional(Type.String({ description: "Agent name (Claude: subagent_type), e.g. security-review, software-engineer, Explore" })),
 	task: Type.Optional(Type.String({ description: "Full task prompt for the agent (Claude: prompt). The agent sees only this, not the conversation." })),
@@ -212,11 +226,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 	const semaphore = new Semaphore(getConfig().maxParallelAgents);
 
 	async function runOne(
-		input: TaskInput,
+		input: DispatchArgs,
 		ctx: ExtensionContext,
 		signal: AbortSignal | undefined,
 		agents: Map<string, AgentDef>,
-		update: (patch: Partial<SubagentTaskView>) => void,
+		update: (patch: ProgressPatch) => void,
 		projectTrusted: boolean,
 	): Promise<SubagentRunResult> {
 		const started = Date.now();
@@ -231,6 +245,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			output: "",
 			error,
 			usage: empty,
+			nested: [],
 			messages: [],
 			durationMs: Date.now() - started,
 			...extra,
@@ -285,7 +300,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
 			const args = ["--mode", "json", "-p", "--no-session", ...forwardedArgs()];
-			args.push(...trustArgs(projectTrusted, ctx.cwd, runCwd));
+			args.push(...trustArgs(projectTrusted, trustedRoot(ctx.cwd), runCwd));
 			if (choice.model) args.push("--model", choice.model);
 			if (thinking) args.push("--thinking", thinking);
 			if (tools) args.push("--tools", tools.length ? tools.join(",") : "read");
@@ -302,15 +317,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			};
 			delete env.DEV_TEAM_INTERACTIVE;
 
-			const messages: PiMessageLike[] = [];
-			// One accumulator: the child's own turns plus usage its nested dispatches report on tool results.
-			const piUsage = emptyPiUsage();
-			let turns = 0;
-			let recentTools: string[] = [];
+			const run = newChildRunState(choice.model);
 			let stderr = "";
-			let model: string | undefined = choice.model;
-			let stopReason: string | undefined;
-			let errorMessage: string | undefined;
 			let aborted = false;
 			let timedOut = false;
 
@@ -320,30 +328,14 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				let buf = "";
 				const onLine = (line: string) => {
 					if (!line.trim()) return;
-					let ev: { type?: string; message?: PiMessageLike & { errorMessage?: string; provider?: string } };
+					let ev: ChildEvent;
 					try {
 						ev = JSON.parse(line);
 					} catch {
 						return;
 					}
-					if (ev.type === "message_end" && ev.message?.role === "assistant") {
-						const m = ev.message;
-						messages.push(m);
-						turns++;
-						addPiUsage(piUsage, m.usage as Partial<Usage> | undefined);
-						if (m.model) model = m.provider ? `${m.provider}/${m.model}` : m.model;
-						if (m.stopReason) stopReason = m.stopReason;
-						if (m.errorMessage) errorMessage = m.errorMessage;
-						const calls = Array.isArray(m.content)
-							? (m.content as { type: string; name?: string }[]).filter((c) => c.type === "toolCall").map((c) => c.name)
-							: [];
-						recentTools = [...recentTools, ...calls.filter((c): c is string => !!c)].slice(-RECENT_TOOLS_KEPT);
-						update({ turns, tools: recentTools, model, usage: toUsageTotals(piUsage, turns) });
-					} else if ((ev.type === "message_end" || ev.type === "tool_result_end") && ev.message?.role === "toolResult") {
-						messages.push(ev.message);
-						// A nested dev_team_subagent call reports its children's spend here (pi counts it the same way).
-						addPiUsage(piUsage, ev.message.usage as Partial<Usage> | undefined);
-					}
+					const patch = applyChildEvent(run, ev);
+					if (patch) update(patch);
 				};
 				proc.stdout.on("data", (d) => {
 					buf += d.toString();
@@ -388,8 +380,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			});
 
 			const worktree = wt ? finishWorktree(wt) : undefined;
-			const output = finalText(messages);
-			const ok = exitCode === 0 && !aborted && !timedOut && stopReason !== "error" && stopReason !== "aborted";
+			const output = finalText(run.messages);
+			const ok = exitCode === 0 && !aborted && !timedOut && run.stopReason !== "error" && run.stopReason !== "aborted";
 			const result: SubagentRunResult = {
 				agent: def.name,
 				source: def.source,
@@ -402,20 +394,21 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 						? `timed out after ${config.subagentTimeoutSec}s`
 						: aborted
 							? "aborted"
-							: errorMessage || stderr.trim().slice(-4000) || `exit code ${exitCode}`,
-				model,
+							: run.errorMessage || stderr.trim().slice(-4000) || `exit code ${exitCode}`,
+				model: run.model,
 				tier: choice.tier,
-				stopReason,
-				usage: toUsageTotals(piUsage, turns),
-				piUsage: turns ? piUsage : undefined,
-				messages,
+				stopReason: run.stopReason,
+				usage: toUsageTotals(run.own, run.turns),
+				nested: run.nested,
+				piUsage: run.turns ? run.total : undefined,
+				messages: run.messages,
 				worktree,
 				durationMs: Date.now() - started,
 			};
 
 			// SubagentStop with a synthetic Claude-format transcript.
 			try {
-				const lines = buildTranscriptLines({ agentName: def.name, agentId, sessionId, cwd: runCwd, prompt: task, messages });
+				const lines = buildTranscriptLines({ agentName: def.name, agentId, sessionId, cwd: runCwd, prompt: task, messages: run.messages });
 				const transcript = writeTranscript(sessionId, agentId, lines);
 				await hooks.run(
 					"SubagentStop",
@@ -459,11 +452,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		parameters: SubagentParams,
 		prepareArguments: (raw: unknown) => {
 			const a = (raw ?? {}) as Record<string, unknown>;
-			const norm = (t: Record<string, unknown>) => ({
-				...t,
-				agent: t.agent ?? t.subagent_type,
-				task: t.task ?? t.prompt,
-			});
+			// Claude Agent/Task aliases, resolved once here by the same rule the tool uses everywhere.
+			const norm = (t: Record<string, unknown>) => ({ ...t, agent: dispatchAgent(t as DispatchArgs), task: dispatchTask(t as DispatchArgs) });
 			const out: Record<string, unknown> = norm(a);
 			if (Array.isArray(a.tasks)) out.tasks = a.tasks.map((t) => norm((t ?? {}) as Record<string, unknown>));
 			return out as never;
@@ -473,12 +463,12 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (deps.depth >= getConfig().maxSubagentDepth) {
 				throw new Error(`Subagent nesting limit reached (maxSubagentDepth=${getConfig().maxSubagentDepth}).`);
 			}
-			const list = (params.tasks?.length ? params.tasks : [params]) as TaskInput[];
+			const list = (params.tasks?.length ? params.tasks : [params]) as DispatchArgs[];
 			// Project agents are skipped only when the user declined pi's own trust prompt for this
 			// project, as pi skips its other project resources. No extra prompt or setup step.
 			const projectTrusted = ctx.isProjectTrusted();
 			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, projectTrusted, list.map(dispatchAgent));
-			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate);
+			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined);
 			const results = await Promise.all(
 				list.map(async (t, i) => {
 					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), projectTrusted);
@@ -500,15 +490,16 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 }
 
 /** Live per-task views for the TUI, streamed through onUpdate while children run. */
-class DispatchProgress {
+export type DispatchUpdate = (r: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void;
+
+/** Progress fields a running child reports; status/ok are set only by finish(). */
+export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "tools" | "model" | "usage">>;
+
+export class DispatchProgress {
 	private readonly views: SubagentTaskView[];
 	private readonly skippedProjectAgents: string[];
-	private readonly onUpdate: ((r: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void) | undefined;
-	constructor(
-		list: DispatchArgs[],
-		skippedProjectAgents: string[],
-		onUpdate: ((r: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void) | undefined,
-	) {
+	private readonly onUpdate: DispatchUpdate | undefined;
+	constructor(list: DispatchArgs[], skippedProjectAgents: string[], onUpdate: DispatchUpdate | undefined) {
 		this.skippedProjectAgents = skippedProjectAgents;
 		this.onUpdate = onUpdate;
 		this.views = list.map((t) => ({
@@ -524,15 +515,16 @@ class DispatchProgress {
 	snapshot(): SubagentDetails {
 		return {
 			results: this.views.map((v) => ({ ...v, tools: [...v.tools] })),
-			...(this.skippedProjectAgents.length ? { untrustedProjectAgents: this.skippedProjectAgents } : {}),
+			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
 	}
-	update(i: number, patch: Partial<SubagentTaskView>): void {
+	update(i: number, patch: ProgressPatch): void {
 		this.views[i] = { ...this.views[i], ...patch };
 		this.emit();
 	}
 	finish(i: number, r: SubagentRunResult): void {
-		this.update(i, viewFromResult(r));
+		this.views[i] = { ...this.views[i], ...viewFromResult(r) };
+		this.emit();
 	}
 	private emit(): void {
 		this.onUpdate?.({ content: [{ type: "text", text: this.views.map(statusLine).join("\n") }], details: this.snapshot() });
@@ -545,7 +537,7 @@ function statusLine(v: SubagentTaskView): string {
 	return `${v.agent}: turn ${v.turns}${tools}`;
 }
 
-function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
+export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
 	return {
 		agent: r.agent,
 		source: r.source,
@@ -555,6 +547,7 @@ function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
 		tier: r.tier,
 		turns: r.usage.turns,
 		usage: r.usage,
+		nested: r.nested.length ? r.nested : undefined,
 		durationMs: r.durationMs,
 		stopReason: r.stopReason,
 		error: r.error,
@@ -564,7 +557,7 @@ function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
 }
 
 /** The model-facing result text (the TUI draws `details` instead). */
-function formatResultText(results: SubagentRunResult[], skippedProjectAgents: string[]): string {
+export function formatResultText(results: SubagentRunResult[], skippedProjectAgents: string[]): string {
 	const skipped = skippedProjectAgents.length
 		? `\n\n[project agents not run (project not trusted): ${skippedProjectAgents.join(", ")}. You declined trust for this project in pi; package agents were used where they exist.]`
 		: "";

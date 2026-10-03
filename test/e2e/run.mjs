@@ -30,7 +30,8 @@ function projectAgentCall(env) {
 	fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
 	fs.writeFileSync(path.join(agentDir, "security-review.md"), "---\nname: security-review\ndescription: override\ntools: Read\n---\nPROJECT_OVERRIDE_PROMPT\n");
 	const prompt = script([{ inspect: "runtime" }]);
-	const trust = script([{ tool: "bash", args: { command: 'echo "CHILD_TRUST: $DEV_TEAM_PI_ARGS"' } }]);
+	// DEV_TEAM_PI_ARGS ends in --no-approve when declined; DEV_TEAM_TRUSTED_ROOT is set only when trusted.
+	const trust = script([{ tool: "bash", args: { command: 'echo "CHILD_TRUST: args=$DEV_TEAM_PI_ARGS root=[$DEV_TEAM_TRUSTED_ROOT]"' } }]);
 	const tasks = [{ agent: "local-only", task: prompt }, { agent: "security-review", task: prompt }, { agent: "general-purpose", task: trust }];
 	return script([{ tools: [{ tool: "dev_team_subagent", args: { tasks } }] }]);
 }
@@ -283,25 +284,45 @@ const scenarios = {
 		const r = pi(env, projectAgentCall(env), { json: true });
 		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
 		assert(d?.details, `no dispatch result: ${r.err}`);
-		assert(!d.details.untrustedProjectAgents, `nothing should be skipped: ${JSON.stringify(d.details)}`);
+		assert(!d.details.skippedProjectAgents, `nothing should be skipped: ${JSON.stringify(d.details)}`);
 		const projectViews = d.details.results.filter((v) => v.agent !== "general-purpose");
 		assert(projectViews.every((v) => v.ok && v.source === "project"), `project agents did not run: ${JSON.stringify(d.details.results)}`);
 		assert(d.text.includes("LOCAL_AGENT_PROMPT") && d.text.includes("PROJECT_OVERRIDE_PROMPT"), `project prompts missing: ${d.text.slice(0, 600)}`);
-		assert(/CHILD_TRUST: .*"--approve"/.test(d.text), `child should be trusted: ${d.text.slice(-600)}`);
+		assert(/CHILD_TRUST: args=(?!.*--no-approve).* root=\[\/.+\]/.test(d.text), `child should be trusted: ${d.text.slice(-600)}`);
 	},
 
 	"subagent: trust declined (--no-approve) runs package agents only and tells the child"(env) {
 		const r = pi(env, projectAgentCall(env), { json: true, extra: ["--no-approve"] });
 		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
 		assert(d?.details, `no dispatch result: ${r.err}`);
-		assert(d.details.untrustedProjectAgents?.slice().sort().join(",") === "local-only,security-review", `skipped list: ${JSON.stringify(d.details)}`);
+		assert(d.details.skippedProjectAgents?.slice().sort().join(",") === "local-only,security-review", `skipped list: ${JSON.stringify(d.details)}`);
 		const local = d.details.results.find((v) => v.agent === "local-only");
 		assert(local && !local.ok && /Unknown agent "local-only"/.test(local.error), `local-only should not run: ${JSON.stringify(local)}`);
 		const pkg = d.details.results.find((v) => v.agent === "security-review");
 		assert(pkg?.ok && pkg.source === "package", `package agent should run instead: ${JSON.stringify(pkg)}`);
 		assert(!d.text.includes("LOCAL_AGENT_PROMPT") && !d.text.includes("PROJECT_OVERRIDE_PROMPT"), "a project prompt reached a child");
 		assert(d.text.includes("project agents not run (project not trusted)"), `model is not told: ${d.text.slice(-400)}`);
-		assert(/CHILD_TRUST: .*"--no-approve"/.test(d.text), `child not told trust was declined: ${d.text.slice(-600)}`);
+		assert(/CHILD_TRUST: args=.*"--no-approve".* root=\[\]/.test(d.text), `child not told trust was declined: ${d.text.slice(-600)}`);
+	},
+
+	"--dev-team-agent (claude shim agent mode) uses project agents only when trust was not declined"(env) {
+		projectAgentCall(env); // seeds .claude/agents/security-review.md (PROJECT_OVERRIDE_PROMPT)
+		const probe = script([{ inspect: "runtime" }]);
+		let r = pi(env, probe, { extra: ["--dev-team-agent", "security-review"] });
+		assert(r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent not used: ${r.out.slice(0, 300)} ${r.err}`);
+		r = pi(env, probe, { extra: ["--no-approve", "--dev-team-agent", "security-review"] });
+		assert(!r.out.includes("PROJECT_OVERRIDE_PROMPT") && r.out.includes("security-review"), `project agent used despite --no-approve: ${r.out.slice(0, 300)} ${r.err}`);
+	},
+
+	"cost meter credits a nested dispatch to the agent that ran it"(env) {
+		const grandchild = script([{ text: "deep" }]);
+		const child = script([{ tool: "dev_team_subagent", args: { agent: "Explore", task: grandchild } }]);
+		// orchestrator's tools include Agent, so it can dispatch in turn.
+		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "orchestrator", task: child } }]));
+		const row = readJsonl(path.join(env.repo, ".claude", "metrics", "cost-metering.jsonl")).at(-1);
+		const byAgent = row?.by_agent_type ?? {};
+		assert(byAgent["dev-team:orchestrator"]?.input_tokens > 0, `child missing: ${JSON.stringify(byAgent)}`);
+		assert(byAgent["dev-team:Explore"]?.input_tokens > 0, `grandchild not credited to its own agent: ${JSON.stringify(byAgent)}`);
 	},
 
 	"cost meter row includes main and subagent spend by agent type"(env) {

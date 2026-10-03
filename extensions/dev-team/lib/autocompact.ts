@@ -18,8 +18,7 @@ const MAX_SETTINGS_BYTES = 1024 * 1024;
 export interface AutocompactSetting {
 	/** Valid threshold 1-100, or undefined when absent or invalid. */
 	thresholdPct?: number;
-	raw?: unknown;
-	/** Where the first definition was found, as upstream labels it. */
+	/** Where the first definition was found, as upstream labels it (shown in diagnostics and tests). */
 	origin?: string;
 }
 
@@ -41,12 +40,11 @@ function envBlock(file: string): Record<string, unknown> | undefined {
  */
 export function autocompactSetting(
 	projectDir: string,
-	opts: { env?: NodeJS.ProcessEnv; projectTrusted?: boolean } = {},
+	opts: { env?: NodeJS.ProcessEnv; projectTrusted: boolean },
 ): AutocompactSetting {
 	const env = opts.env ?? process.env;
 	const pick = (raw: unknown, origin: string): AutocompactSetting => ({
 		thresholdPct: typeof raw === "string" && PCT_RE.test(raw) ? Number(raw) : undefined,
-		raw,
 		origin,
 	});
 	if (env[AUTOCOMPACT_KEY] !== undefined) return pick(env[AUTOCOMPACT_KEY], "process env");
@@ -54,7 +52,7 @@ export function autocompactSetting(
 		? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
 		: path.join(env.HOME || os.homedir(), ".claude", "settings.json");
 	const candidates: [string, string][] = [
-		...(opts.projectTrusted === false
+		...(!opts.projectTrusted
 			? []
 			: ([
 					["settings.local.json", path.join(projectDir, ".claude", "settings.local.json")],

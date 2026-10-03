@@ -25,7 +25,8 @@ import {
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex } from "./lib/skills.ts";
-import { buildSystemPrompt, forwardedArgs, registerSubagentTool, SUBAGENT_USAGE_ENTRY } from "./lib/subagent.ts";
+import { buildSystemPrompt, forwardedArgs, registerSubagentTool, trustedRoot } from "./lib/subagent.ts";
+import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 
 function packageRootDir(): string {
@@ -42,7 +43,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	const isSubagent = process.env.DEV_TEAM_SUBAGENT === "1";
 	const depth = Number(process.env.DEV_TEAM_SUBAGENT_DEPTH || 0) || 0;
 	let cwd = process.cwd();
-	let config: DevTeamConfig = loadConfig(cwd).config;
+	// Project config is read again at session start, once pi's trust decision is known.
+	let config: DevTeamConfig = loadConfig(cwd, { includeProject: false }).config;
 	const getConfig = () => config;
 	const hooks = new HookBridge(packageRoot, getConfig);
 	const pendingAdvisories = new Map<string, string[]>();
@@ -57,17 +59,20 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	function applyEnv(ctx: ExtensionContext) {
 		cwd = ctx.cwd;
-		config = loadConfig(cwd).config;
+		// A project's .pi/dev-team.json can set env and hooks, so it counts only when pi trusts the project.
+		config = loadConfig(cwd, { includeProject: ctx.isProjectTrusted() }).config;
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
 		if (ctx.hasUI && !isSubagent) process.env.DEV_TEAM_INTERACTIVE = "1";
 		else delete process.env.DEV_TEAM_INTERACTIVE;
-		const forward = forwardedArgs();
-		// The claude shim's children inherit this session's trust decision, declined included.
-		forward.push(ctx.isProjectTrusted() ? "--approve" : "--no-approve");
-		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(forward);
+		// The claude shim's children inherit this session's trust decision, as dev_team_subagent's do:
+		// a declined one always, a granted one only inside DEV_TEAM_TRUSTED_ROOT (checked by bin/claude).
+		const trusted = ctx.isProjectTrusted();
+		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(trusted ? forwardedArgs() : [...forwardedArgs(), "--no-approve"]);
+		if (trusted) process.env.DEV_TEAM_TRUSTED_ROOT = trustedRoot(ctx.cwd);
+		else delete process.env.DEV_TEAM_TRUSTED_ROOT;
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
 		process.env.PATH = (config.claudeShim ? [bin, ...parts] : parts).join(path.delimiter);
@@ -110,7 +115,8 @@ export default function devTeam(pi: ExtensionAPI) {
 				ok: r.ok,
 				durationMs: r.durationMs,
 				usage: { ...r.usage },
-			});
+				...(r.nested.length ? { nested: r.nested } : {}),
+			} satisfies SubagentUsageEntry);
 		},
 	});
 	registerAskUser(pi);
@@ -184,7 +190,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	function showStatus(ctx: ExtensionContext) {
-		const { config: cfg, sources } = loadConfig(ctx.cwd);
+		const { config: cfg, sources } = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() });
 		const upstream = (() => {
 			try {
 				return JSON.parse(fs.readFileSync(path.join(packageRoot, "UPSTREAM.json"), "utf-8"));
@@ -192,7 +198,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				return {};
 			}
 		})();
-		const agents = discoverAgents(ctx.cwd, packageRoot);
+		const agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const skills = discoverSkills(ctx.cwd, packageRoot);
 		const enabledHooks = hooks.all.filter((h) => isHookEnabled(cfg, h.name));
 		const lines = [
@@ -279,7 +285,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			}
 		}
 		updateConfigFile(file, { models });
-		config = loadConfig(ctx.cwd).config;
+		config = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() }).config;
 		ctx.ui.notify(`Saved to ${file}:\n${Object.entries(models).map(([k, v]) => `${k} = ${v}`).join("\n")}`, "info");
 	}
 
@@ -383,7 +389,6 @@ export default function devTeam(pi: ExtensionAPI) {
 			.map((c) => (c as { text: string }).text)
 			.join("\n");
 		const structured = (event.structuredContent ?? {}) as Record<string, unknown>;
-		const details = (event.details ?? {}) as Record<string, unknown>;
 		const toolResponse: Record<string, unknown> =
 			event.toolName === "bash"
 				? {
@@ -393,7 +398,7 @@ export default function devTeam(pi: ExtensionAPI) {
 						stderr: "",
 						interrupted: false,
 					}
-				: { output: text, success: !event.isError, ...(typeof details === "object" ? {} : {}) };
+				: { output: text, success: !event.isError };
 		const payload = {
 			...basePayload(ctx),
 			tool_name: claudeTool,

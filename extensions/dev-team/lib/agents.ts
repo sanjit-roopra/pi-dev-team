@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import type { AgentSource } from "./subagent-types.ts";
 
 export const DEV_TEAM_SUBAGENT_TOOL = "dev_team_subagent";
 
@@ -27,7 +28,7 @@ export interface AgentDef {
 	skills: string[];
 	body: string;
 	filePath: string;
-	source: "project" | "package";
+	source: AgentSource;
 }
 
 type AgentFrontmatter = {
@@ -64,9 +65,14 @@ function toStringList(value: unknown): string[] {
 	return [];
 }
 
+/** Agent files are small markdown; anything else (a FIFO, /dev/zero, a huge file) is skipped unread. */
+const MAX_AGENT_FILE_BYTES = 1024 * 1024;
+
 export function parseAgentFile(filePath: string, source: AgentDef["source"]): AgentDef | undefined {
 	let content: string;
 	try {
+		const st = fs.statSync(filePath);
+		if (!st.isFile() || st.size > MAX_AGENT_FILE_BYTES) return undefined;
 		content = fs.readFileSync(filePath, "utf-8");
 	} catch {
 		return undefined;
@@ -110,12 +116,13 @@ function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
 	return out;
 }
 
-export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject?: boolean } = {}): Map<string, AgentDef> {
+/** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
+export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, AgentDef> {
 	const map = new Map<string, AgentDef>();
 	const add = (defs: AgentDef[]) => {
 		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	};
-	if (opts.includeProject !== false) {
+	if (opts.includeProject) {
 		add(loadDir(path.join(cwd, ".pi", "agents"), "project"));
 		add(loadDir(path.join(cwd, ".claude", "agents"), "project"));
 	}
@@ -144,7 +151,7 @@ export function discoverDispatchAgents(
 	projectTrusted: boolean,
 	requested: string[],
 ): { agents: Map<string, AgentDef>; skippedProjectAgents: string[] } {
-	const all = discoverAgents(cwd, packageRoot);
+	const all = discoverAgents(cwd, packageRoot, { includeProject: true });
 	if (projectTrusted) return { agents: all, skippedProjectAgents: [] };
 	return {
 		agents: discoverAgents(cwd, packageRoot, { includeProject: false }),

@@ -3,9 +3,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
-import { discoverDispatchAgents, projectAgentsRequested } from "../../extensions/dev-team/lib/agents.ts";
+import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "../../extensions/dev-team/lib/agents.ts";
+import { applyChildEvent, newChildRunState } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
-import { trustArgs } from "../../extensions/dev-team/lib/subagent.ts";
+import { DispatchProgress, formatResultText, type SubagentRunResult, trustArgs, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 
@@ -50,12 +51,41 @@ test("projectAgentsRequested names each project agent once, however it was reque
 	assert.deepEqual(projectAgentsRequested(all, ["local-only", "dev-team:local-only", "LOCAL-ONLY", "test-review"]).map((d) => d.name), ["local-only"]);
 });
 
-test("child trust flags: declined is explicit, granted only for the session's own project", () => {
+test("child trust: declined is always forwarded", () => {
 	assert.deepEqual(trustArgs(false, "/repo", "/repo"), ["--no-approve"]);
+	assert.deepEqual(trustArgs(false, "/repo", "/elsewhere"), ["--no-approve"]);
+});
+
+test("child trust: granted covers the session's git root, its subdirectories and worktrees", () => {
 	assert.deepEqual(trustArgs(true, "/repo", "/repo"), ["--approve"]);
+	assert.deepEqual(trustArgs(true, "/repo", "/repo/sub"), ["--approve"]);
 	assert.deepEqual(trustArgs(true, "/repo", "/repo/.claude/worktrees/x"), ["--approve"]);
+	assert.deepEqual(trustArgs(true, "/repo", "/repo/..foo"), ["--approve"], "a name starting with .. is still inside");
+});
+
+test("child trust: granted is not forwarded outside the project", () => {
 	assert.deepEqual(trustArgs(true, "/repo", "/tmp/other"), []);
 	assert.deepEqual(trustArgs(true, "/repo", "/repo-sibling"), []);
+	assert.deepEqual(trustArgs(true, "/repo", "/repo/../x"), []);
+});
+
+test("child trust: a symlink inside the project to another directory is not inside", (t) => {
+	const dir = tempDir(t, "dt-trust-");
+	const repo = path.join(dir, "repo");
+	const other = path.join(dir, "other");
+	fs.mkdirSync(repo);
+	fs.mkdirSync(other);
+	fs.symlinkSync(other, path.join(repo, "link"));
+	assert.deepEqual(trustArgs(true, fs.realpathSync(repo), path.join(repo, "link")), []);
+});
+
+test("agent files that are not small regular files are skipped unread", (t) => {
+	const dir = tempDir(t, "dt-agentfile-");
+	fs.mkdirSync(path.join(dir, "dir.md"));
+	assert.equal(parseAgentFile(path.join(dir, "dir.md"), "project"), undefined);
+	const big = path.join(dir, "big.md");
+	fs.writeFileSync(big, `---\nname: big\ndescription: d\n---\n${"x".repeat(1024 * 1024)}`);
+	assert.equal(parseAgentFile(big, "project"), undefined);
 });
 
 test("addPiUsage derives totalTokens when a message omits it", () => {
@@ -71,6 +101,36 @@ test("addPiUsage keeps the optional token splits", () => {
 	addPiUsage(u, { input: 1, reasoning: 2 });
 	assert.equal(u.cacheWrite1h, 5);
 	assert.equal(u.reasoning, 5);
+});
+
+const turnUsage = { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: 110, cost: { input: 0.1, output: 0.01, cacheRead: 0, cacheWrite: 0, total: 0.11 } };
+
+test("child events: assistant turns count as the child's own usage and progress", () => {
+	const state = newChildRunState("p/m");
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", name: "read" }], usage: turnUsage, model: "m2", provider: "p" } as never });
+	assert.equal(state.turns, 1);
+	assert.equal(state.own.input, 100);
+	assert.equal(state.total.input, 100);
+	assert.deepEqual(patch?.tools, ["read"]);
+	assert.equal(patch?.model, "p/m2");
+	assert.equal(applyChildEvent(state, { type: "message_start", message: { role: "assistant" } as never }), undefined);
+});
+
+test("child events: a nested dev-team dispatch is credited to the agents it ran", () => {
+	const state = newChildRunState();
+	const nestedView = { agent: "Explore", task: "t", status: "ok", ok: true, turns: 1, tools: [], model: "p/haiku", usage: { input: 40, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0.04, turns: 1 }, nested: [{ agent: "deep", model: "p/x", usage: { input: 60, output: 6, cacheRead: 0, cacheWrite: 0, cost: 0.06, turns: 1 } }] };
+	applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "dev_team_subagent", usage: turnUsage, details: { results: [nestedView] } } as never });
+	assert.equal(state.own.input, 0, "not the child's own spend");
+	assert.equal(state.total.input, 100, "still in the total pi counts");
+	assert.deepEqual(state.nested.map((n) => [n.agent, n.model, n.usage.input]), [["Explore", "p/haiku", 40], ["deep", "p/x", 60]]);
+});
+
+test("child events: usage on other tool results stays with the child", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "subagent", usage: turnUsage } as never });
+	assert.equal(state.own.input, 100);
+	assert.equal(state.total.input, 100);
+	assert.deepEqual(state.nested, []);
 });
 
 test("sumPiUsage: undefined without any usage, otherwise the sum of all children", () => {
@@ -120,4 +180,51 @@ test("shipped hooks.json wires the v14 SessionStart hooks to the right sources",
 	assert.ok(!names("startup").includes("post_compact_state_reinject"));
 	assert.ok(names("compact").includes("post_compact_state_reinject"));
 	assert.ok(!names("compact").includes("autocompact_setup_nudge"));
+});
+
+function runResult(overrides: Partial<SubagentRunResult>): SubagentRunResult {
+	return { agent: "a", task: "t", ok: true, output: "out", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 }, nested: [], messages: [], durationMs: 5, ...overrides };
+}
+
+test("result text: one agent returns its output, or the failure", () => {
+	assert.equal(formatResultText([runResult({})], []), "out");
+	assert.equal(formatResultText([runResult({ ok: false, error: "boom", output: "" })], []), "Agent a failed: boom");
+	const wt = { path: "/r/w", branch: "b", kept: false, dirty: false, commits: 0 };
+	assert.equal(formatResultText([runResult({ worktree: wt })], []), "out\n\n[worktree removed: no changes]");
+});
+
+test("result text: several agents get a summary line and one section each", () => {
+	const text = formatResultText([runResult({ agent: "a", model: "p/m", tier: "sonnet" }), runResult({ agent: "b", ok: false, error: "boom", output: "partial" })], []);
+	assert.match(text, /^1\/2 agents succeeded/);
+	assert.match(text, /### a — completed \(p\/m, tier sonnet\)/);
+	assert.match(text, /### b — failed\n\nError: boom\n\nLast output:\npartial/);
+});
+
+test("result text: tells the model which project agents were skipped", () => {
+	assert.match(formatResultText([runResult({})], ["local-only"]), /\[project agents not run \(project not trusted\): local-only\./);
+});
+
+test("progress: streams running views, then the final result", () => {
+	const updates: { text: string; details: { results: { status: string; ok: boolean; turns: number }[]; skippedProjectAgents?: string[] } }[] = [];
+	const progress = new DispatchProgress([{ agent: "a", task: "t" }, { subagent_type: "b", prompt: "u" }], ["local-only"], (r) =>
+		updates.push({ text: r.content[0].text, details: r.details }),
+	);
+	assert.equal(updates.length, 1, "initial state is emitted");
+	assert.deepEqual(updates[0].details.skippedProjectAgents, ["local-only"]);
+	progress.update(0, { turns: 2, tools: ["read", "grep", "find", "ls"] });
+	assert.equal(updates[1].text, "a: turn 2 → grep, find, ls\nb: turn 0");
+	progress.finish(1, runResult({ agent: "b" }));
+	const last = updates.at(-1);
+	assert.equal(last?.details.results[1].status, "ok");
+	assert.equal(last?.details.results[1].ok, true);
+	const snapshot = progress.snapshot();
+	snapshot.results[0].tools.push("mutated");
+	assert.ok(!progress.snapshot().results[0].tools.includes("mutated"), "snapshots are copies");
+});
+
+test("viewFromResult keeps status and ok in step and carries nested runs", () => {
+	const nested = [{ agent: "x", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 } }];
+	assert.deepEqual([viewFromResult(runResult({ ok: false, error: "e" })).status, viewFromResult(runResult({ ok: false })).ok], ["failed", false]);
+	assert.deepEqual(viewFromResult(runResult({ nested })).nested, nested);
+	assert.equal(viewFromResult(runResult({})).nested, undefined);
 });

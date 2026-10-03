@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SUBAGENT_USAGE_ENTRY } from "./subagent-types.ts";
+import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
@@ -95,13 +95,16 @@ export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | u
 			bump(byAgent, "main", msg.usage, 1);
 			any = true;
 		} else if (entry.type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-			const d = entry.data as { agent: string; model?: string; usage: PiUsage & { turns?: number } } | undefined;
+			const d = entry.data as SubagentUsageEntry | undefined;
 			if (!d?.usage) continue;
-			const n = d.usage.turns ?? 0;
-			add(total, d.usage, n);
-			bump(byModel, d.model ?? "unknown", d.usage, n);
-			bump(byThread, "subagent", d.usage, n);
-			bump(byAgent, `dev-team:${d.agent}`, d.usage, n);
+			// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
+			for (const run of [{ agent: d.agent, model: d.model, usage: d.usage }, ...(d.nested ?? [])]) {
+				const n = run.usage.turns ?? 0;
+				add(total, run.usage, n);
+				bump(byModel, run.model ?? "unknown", run.usage, n);
+				bump(byThread, "subagent", run.usage, n);
+				bump(byAgent, `dev-team:${run.agent}`, run.usage, n);
+			}
 			any = true;
 		}
 	}

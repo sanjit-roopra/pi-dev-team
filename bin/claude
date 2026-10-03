@@ -81,6 +81,14 @@ def model_args(model: str | None) -> list[str]:
     return ["--model", m]
 
 
+def trusted_here(root: str, cwd: str) -> bool:
+    """The session trusted its project; that covers `root` (its git root) and nothing outside it."""
+    if not root:
+        return False
+    root, cwd = os.path.realpath(root), os.path.realpath(cwd)
+    return cwd == root or cwd.startswith(root.rstrip(os.sep) + os.sep)
+
+
 def main(argv: list[str]) -> int:
     real = os.environ.get("DEV_TEAM_REAL_CLAUDE")
     if real:
@@ -154,10 +162,12 @@ def main(argv: list[str]) -> int:
 
     tmp = tempfile.mkdtemp(prefix="pi-dev-team-shim-")
     cmd = pi_command() + ["--mode", "json", "-p", "--no-session"]
-    try:  # resources/trust of the pi session that set up this shim (extensions loaded with -e, --approve)
+    try:  # resources of the pi session that set up this shim (extensions loaded with -e; --no-approve if declined)
         cmd += [str(x) for x in json.loads(os.environ.get("DEV_TEAM_PI_ARGS", "[]"))]
     except (ValueError, TypeError):
         pass
+    if trusted_here(os.environ.get("DEV_TEAM_TRUSTED_ROOT", ""), os.getcwd()):
+        cmd.append("--approve")
     if agent:
         cmd += ["--dev-team-agent", agent.split(":")[-1]]
     cmd += model_args(model)

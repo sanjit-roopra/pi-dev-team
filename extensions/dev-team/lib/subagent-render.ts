@@ -22,17 +22,18 @@ import {
 const COLLAPSED_TOOLS = 3;
 const COLLAPSED_OUTPUT_LINES = 3;
 const CALL_PREVIEW_TASKS = 4;
-const SINGLE_CALL_TASK_CHARS = 80;
-const PARALLEL_CALL_TASK_CHARS = 50;
+const SINGLE_CALL_PREVIEW_CHARS = 80;
+const PARALLEL_CALL_PREVIEW_CHARS = 50;
 const COLLAPSED_ERROR_CHARS = 300;
 
 // ANSI CSI/OSC/other escape sequences, then remaining C0/C1 controls (keeping \t and \n) and the
-// interlinear annotation characters pi's sanitizeBinaryOutput also removes.
+// interlinear annotation characters pi's sanitizeBinaryOutput also removes. A bare \r would let a line
+// overwrite itself, so CR and CRLF become \n first.
 const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
 const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f￹-￻]/g;
 
 export function sanitizeTerminalText(text: string): string {
-	return text.replace(ANSI_RE, "").replace(CONTROL_RE, "");
+	return text.replace(/\r\n?/g, "\n").replace(ANSI_RE, "").replace(CONTROL_RE, "");
 }
 
 function preview(text: string | undefined, maxChars: number): string {
@@ -130,15 +131,15 @@ export function renderSubagentCall(args: DispatchArgs & { tasks?: DispatchArgs[]
 	if (args.tasks?.length) {
 		let text = `${title}${theme.fg("accent", `parallel (${args.tasks.length} agents)`)}`;
 		for (const t of args.tasks.slice(0, CALL_PREVIEW_TASKS)) {
-			text += `\n  ${theme.fg("accent", preview(dispatchAgent(t), PARALLEL_CALL_TASK_CHARS))}${theme.fg("dim", ` ${preview(dispatchTask(t), PARALLEL_CALL_TASK_CHARS)}`)}`;
+			text += `\n  ${theme.fg("accent", preview(dispatchAgent(t), PARALLEL_CALL_PREVIEW_CHARS))}${theme.fg("dim", ` ${preview(dispatchTask(t), PARALLEL_CALL_PREVIEW_CHARS)}`)}`;
 		}
 		const more = args.tasks.length - CALL_PREVIEW_TASKS;
 		if (more > 0) text += `\n  ${theme.fg("muted", `… +${more} more`)}`;
 		return new Text(text, 0, 0);
 	}
-	let text = `${title}${theme.fg("accent", preview(dispatchAgent(args), SINGLE_CALL_TASK_CHARS))}`;
+	let text = `${title}${theme.fg("accent", preview(dispatchAgent(args), SINGLE_CALL_PREVIEW_CHARS))}`;
 	if (args.isolation === "worktree") text += theme.fg("muted", " [worktree]");
-	text += `\n  ${theme.fg("dim", preview(dispatchTask(args), SINGLE_CALL_TASK_CHARS))}`;
+	text += `\n  ${theme.fg("dim", preview(dispatchTask(args), SINGLE_CALL_PREVIEW_CHARS))}`;
 	return new Text(text, 0, 0);
 }
 
@@ -153,8 +154,9 @@ export function renderSubagentResult(
 		return new Text(sanitizeTerminalText(first?.type === "text" ? first.text : "(no output)"), 0, 0);
 	}
 	const views = details.results;
-	const untrustedNote = details.untrustedProjectAgents?.length
-		? theme.fg("warning", `project agents skipped (project not trusted): ${sanitizeTerminalText(details.untrustedProjectAgents.join(", "))}`)
+	const skipped = details.skippedProjectAgents ?? details.untrustedProjectAgents ?? [];
+	const skippedNote = skipped.length
+		? theme.fg("warning", `project agents skipped (project not trusted): ${sanitizeTerminalText(skipped.join(", "))}`)
 		: "";
 
 	if (views.length === 1) {
@@ -162,11 +164,11 @@ export function renderSubagentResult(
 		if (expanded && !isPartial) {
 			const c = new Container();
 			renderExpandedInto(c, v, theme);
-			if (untrustedNote) c.addChild(new Text(untrustedNote, 0, 0));
+			if (skippedNote) c.addChild(new Text(skippedNote, 0, 0));
 			return c;
 		}
 		let text = renderCollapsed(v, theme);
-		if (untrustedNote) text += `\n${untrustedNote}`;
+		if (skippedNote) text += `\n${skippedNote}`;
 		if (!isPartial && v.output && v.output.trim().split("\n").length > COLLAPSED_OUTPUT_LINES) {
 			text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
 		}
@@ -187,7 +189,7 @@ export function renderSubagentResult(
 			c.addChild(new Spacer(1));
 			renderExpandedInto(c, v, theme);
 		}
-		if (untrustedNote) c.addChild(new Text(untrustedNote, 0, 0));
+		if (skippedNote) c.addChild(new Text(skippedNote, 0, 0));
 		if (totalUsageText) {
 			c.addChild(new Spacer(1));
 			c.addChild(new Text(theme.fg("dim", `Total: ${totalUsageText}`), 0, 0));
@@ -196,7 +198,7 @@ export function renderSubagentResult(
 	}
 	let text = summaryLine;
 	for (const v of views) text += `\n\n${renderCollapsed(v, theme)}`;
-	if (untrustedNote) text += `\n\n${untrustedNote}`;
+	if (skippedNote) text += `\n\n${skippedNote}`;
 	if (totalUsageText) text += `\n\n${theme.fg("dim", `Total: ${totalUsageText}`)}`;
 	if (!running) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
 	return new Text(text, 0, 0);

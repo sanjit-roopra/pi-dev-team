@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { type TestContext, test } from "node:test";
 import {
 	discoverAgents,
 	mapTools,
@@ -19,6 +19,12 @@ import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
+
+function tempDir(t: TestContext, prefix: string): string {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	return dir;
+}
 
 test("splitToolList keeps scoped Bash grants intact", () => {
 	assert.deepEqual(splitToolList("Read, Grep, Bash(npx playwright *), Glob"), ["Read", "Grep", "Bash(npx playwright *)", "Glob"]);
@@ -66,7 +72,7 @@ test("resolveThinking maps effort", () => {
 });
 
 test("every upstream agent parses and maps to at least one pi tool", () => {
-	const agents = discoverAgents(os.tmpdir(), ROOT);
+	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
 	assert.ok(agents.size >= 48, `expected >= 48 agents, got ${agents.size}`);
 	for (const def of agents.values()) {
 		const m = mapTools(def.claudeTools, []);
@@ -78,8 +84,8 @@ test("every upstream agent parses and maps to at least one pi tool", () => {
 	assert.equal(resolveAgentName(agents, "explore")?.name, "Explore");
 });
 
-test("agent file with blank line after frontmatter opener parses", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agt-"));
+test("agent file with blank line after frontmatter opener parses", (t) => {
+	const dir = tempDir(t, "agt-");
 	const f = path.join(dir, "x.md");
 	fs.writeFileSync(f, "---\n\nname: x\ndescription: d\ntools: Read, Grep\nmodel: haiku\neffort: low\nskills:\n  - a\n  - b\n---\nBody text here that is long enough.\n");
 	const def = parseAgentFile(f, "project");
@@ -88,11 +94,12 @@ test("agent file with blank line after frontmatter opener parses", () => {
 	assert.equal(def.model, "haiku");
 });
 
-test("project agents override package agents", () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "proj-"));
+test("project agents override package agents", (t) => {
+	const dir = tempDir(t, "proj-");
 	fs.mkdirSync(path.join(dir, ".claude", "agents"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".claude", "agents", "security-review.md"), "---\nname: security-review\ndescription: local\n---\nlocal body\n");
-	assert.equal(discoverAgents(dir, ROOT).get("security-review")?.description, "local");
+	assert.equal(discoverAgents(dir, ROOT, { includeProject: true }).get("security-review")?.description, "local");
+	assert.equal(discoverAgents(dir, ROOT, { includeProject: false }).get("security-review")?.source, "package");
 });
 
 test("splitArgs and Claude argument substitution", () => {
@@ -103,7 +110,7 @@ test("splitArgs and Claude argument substitution", () => {
 	assert.equal(substituteArguments("No placeholder.", ""), "No placeholder.");
 });
 
-test("skills: discovery, qualified names, project override, compact index", () => {
+test("skills: discovery, qualified names, project override, compact index", (t) => {
 	const skills = discoverSkills(os.tmpdir(), ROOT);
 	assert.ok(skills.size >= 90);
 	for (const name of ["specs", "plan", "build", "pr", "code-review", "setup", "help", "version", "upgrade", "headless-run"]) {
@@ -114,7 +121,7 @@ test("skills: discovery, qualified names, project override, compact index", () =
 	const index = skillIndex(skills, "compact", 220);
 	assert.ok(index.length < 40_000, `index too large: ${index.length}`);
 	assert.match(index, /- plan \(\/plan\): /);
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "proj-"));
+	const dir = tempDir(t, "proj-");
 	fs.mkdirSync(path.join(dir, ".claude", "skills", "pr"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".claude", "skills", "pr", "SKILL.md"), "---\nname: pr\ndescription: project pr\n---\nx\n");
 	assert.equal(discoverSkills(dir, ROOT).get("pr")?.source, "project");
@@ -202,7 +209,7 @@ test("forwardedArgs keeps resource flags and resolves local paths", () => {
 });
 
 test("subagent system prompt carries runtime notes and skill hints", () => {
-	const agents = discoverAgents(os.tmpdir(), ROOT);
+	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
 	const def = agents.get("software-engineer");
 	assert.ok(def);
 	const prompt = buildSystemPrompt(def, ROOT, [], ["WebSearch"]);

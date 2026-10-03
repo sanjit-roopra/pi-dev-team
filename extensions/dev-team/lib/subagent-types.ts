@@ -7,6 +7,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 
 export const SUBAGENT_USAGE_ENTRY = "dev-team-subagent-usage";
 
+/** Where an agent definition came from: the project (.pi/agents, .claude/agents) or this package. */
 export type AgentSource = "project" | "package";
 
 /** One child's usage as the cost meter and the renderers read it (cost is the total in USD). */
@@ -17,6 +18,26 @@ export interface UsageTotals {
 	cacheWrite: number;
 	cost: number;
 	turns: number;
+}
+
+/** Spend of an agent dispatched by a child (or deeper), credited to that agent and its model. */
+export interface NestedUsage {
+	agent: string;
+	model?: string;
+	usage: UsageTotals;
+}
+
+/** Payload of the SUBAGENT_USAGE_ENTRY session entry the cost meter reads. */
+export interface SubagentUsageEntry {
+	agent: string;
+	model?: string;
+	tier?: string;
+	ok: boolean;
+	durationMs: number;
+	/** The child's own turns only. */
+	usage: UsageTotals;
+	/** Agents the child dispatched itself, at any depth. */
+	nested?: NestedUsage[];
 }
 
 export interface WorktreeInfo {
@@ -33,14 +54,17 @@ export interface SubagentTaskView {
 	source?: AgentSource;
 	task: string;
 	status: "running" | "ok" | "failed";
-	/** Same as status === "ok"; kept from the earlier details shape. */
+	/** Same as status === "ok"; kept from the earlier details shape (DispatchProgress keeps them in step). */
 	ok: boolean;
 	model?: string;
 	tier?: string;
 	turns: number;
 	/** Most recent tool calls, newest last (bounded). */
 	tools: string[];
+	/** The agent's own turns. */
 	usage?: UsageTotals;
+	/** Agents it dispatched itself, so a parent can credit them in turn. */
+	nested?: NestedUsage[];
 	durationMs?: number;
 	stopReason?: string;
 	error?: string;
@@ -50,7 +74,9 @@ export interface SubagentTaskView {
 
 export interface SubagentDetails {
 	results: SubagentTaskView[];
-	/** Project agents that were requested but not run because the project is not trusted. */
+	/** Project agents that were requested but not run because pi trust was declined for the project. */
+	skippedProjectAgents?: string[];
+	/** Earlier name of skippedProjectAgents, still found in stored sessions. */
 	untrustedProjectAgents?: string[];
 }
 

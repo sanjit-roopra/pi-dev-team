@@ -138,10 +138,15 @@ export function mergeConfig<T>(base: T, override: unknown): T {
 	return out as T;
 }
 
-export function loadConfig(cwd: string): { config: DevTeamConfig; sources: string[] } {
+/**
+ * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files can set
+ * env and hooks, so callers pass `includeProject: ctx.isProjectTrusted()`.
+ */
+export function loadConfig(cwd: string, opts: { includeProject: boolean }): { config: DevTeamConfig; sources: string[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
-	for (const file of [userConfigPath(), projectConfigPath(cwd), projectConfigPath(cwd, true)]) {
+	const files = opts.includeProject ? [userConfigPath(), projectConfigPath(cwd), projectConfigPath(cwd, true)] : [userConfigPath()];
+	for (const file of files) {
 		const data = readJson(file);
 		if (data) {
 			config = mergeConfig(config, data);

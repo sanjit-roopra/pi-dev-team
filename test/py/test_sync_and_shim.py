@@ -76,6 +76,20 @@ class Shim(unittest.TestCase):
         self.assertEqual(shim.model_args("inherit"), [])
         self.assertEqual(shim.model_args(None), [])
 
+    def test_trusted_here_covers_only_the_trusted_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "repo"
+            (root / "sub").mkdir(parents=True)
+            other = Path(d) / "other"
+            other.mkdir()
+            (root / "link").symlink_to(other)
+            self.assertTrue(shim.trusted_here(str(root), str(root)))
+            self.assertTrue(shim.trusted_here(str(root), str(root / "sub")))
+            self.assertFalse(shim.trusted_here(str(root), str(other)))
+            self.assertFalse(shim.trusted_here(str(root), str(Path(d) / "repo-sibling")))
+            self.assertFalse(shim.trusted_here(str(root), str(root / "link")), "symlink out of the root")
+            self.assertFalse(shim.trusted_here("", str(root)), "session not trusted")
+
     def test_map_tools(self):
         self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
         for tool in ("Agent", "Task"):
