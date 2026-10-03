@@ -81,11 +81,11 @@ def model_args(model: str | None) -> list[str]:
     return ["--model", m]
 
 
-def trusted_here(root: str, cwd: str) -> bool:
-    """pi trusts per directory: the session's grant covers its own directory `root`, nothing else."""
-    if not root:
+def trusted_here(trusted_dir: str, cwd: str) -> bool:
+    """pi trusts per directory: the session's grant covers its own directory, nothing else."""
+    if not trusted_dir:
         return False
-    return os.path.realpath(cwd) == os.path.realpath(root)
+    return os.path.realpath(cwd) == os.path.realpath(trusted_dir)
 
 
 def main(argv: list[str]) -> int:

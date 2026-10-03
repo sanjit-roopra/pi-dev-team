@@ -14,6 +14,7 @@ import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTool
 import { autocompactDue } from "./lib/autocompact.ts";
 import {
 	DEFAULT_CONFIG,
+	DEFAULT_DISABLED_HOOKS,
 	type DevTeamConfig,
 	isHookEnabled,
 	loadConfig,
@@ -24,7 +25,7 @@ import {
 } from "./lib/config.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
-import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex } from "./lib/skills.ts";
+import { commandText, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
@@ -61,7 +62,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	function applyEnv(ctx: ExtensionContext) {
 		cwd = ctx.cwd;
 		// A project's .pi/dev-team.json can set env and hooks, so it counts only when pi trusts the project.
-		config = loadConfig(cwd, { includeProject: ctx.isProjectTrusted() }).config;
+		config = loadConfig(cwd, projectConfigOpts(ctx)).config;
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
@@ -90,6 +91,12 @@ export default function devTeam(pi: ExtensionAPI) {
 		const out = await hooks.run("SessionStart", { ...basePayload(ctx), source }, ctx.cwd, { matchTarget: source });
 		notify(ctx, out.notices, "info");
 		return { context: out.advisories.map((a) => a.replace(HOOK_NAME_PREFIX, "")) };
+	}
+
+	/** Project config only for a trusted project, and never able to disable a guard (a blocking PreToolUse hook). */
+	function projectConfigOpts(ctx: ExtensionContext) {
+		const guardHooks = new Set(hooks.all.filter((h) => h.event === "PreToolUse" && !DEFAULT_DISABLED_HOOKS.includes(h.name)).map((h) => h.name));
+		return { includeProject: ctx.isProjectTrusted(), guardHooks };
 	}
 
 	function basePayload(ctx: ExtensionContext): Record<string, unknown> {
@@ -138,10 +145,14 @@ export default function devTeam(pi: ExtensionAPI) {
 			return { name: a.name ?? a.skill ?? a.command, args: a.args ?? a.arguments ?? "" } as never;
 		},
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
+			const { skills, skippedProjectSkills } = discoverInvocableSkills(ctx.cwd, packageRoot, ctx.isProjectTrusted(), [params.name]);
 			const skill = resolveSkillName(skills, params.name);
 			if (!skill) {
-				throw new Error(`Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`);
+				throw new Error(
+					skippedProjectSkills.length
+						? `Project skill "${params.name}" not loaded: this project is not trusted in pi.`
+						: `Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`,
+				);
 			}
 			return { content: [{ type: "text", text: expandSkill(skill, params.args ?? "") }], details: { skill: skill.name, path: skill.filePath } };
 		},
@@ -156,10 +167,10 @@ export default function devTeam(pi: ExtensionAPI) {
 		pi.registerCommand(skill.name, {
 			description: `${skill.description.slice(0, 140)}${skill.argumentHint ? ` ${skill.argumentHint}` : ""}`,
 			handler: async (args, ctx) => {
-				const current = resolveSkillName(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), skill.name);
+				const { skills, skippedProjectSkills } = discoverInvocableSkills(ctx.cwd, packageRoot, ctx.isProjectTrusted(), [skill.name]);
+				const current = resolveSkillName(skills, skill.name);
 				if (!current) {
-					const why = skill.source === "project" && !ctx.isProjectTrusted() ? "is a project skill, and this project is not trusted in pi" : "can no longer be found (its SKILL.md is missing or unreadable)";
-					ctx.ui.notify(`/${skill.name} ${why}.`, "warning");
+					ctx.ui.notify(`/${skill.name} ${unavailableSkillReason(skippedProjectSkills.length > 0)}.`, "warning");
 					return;
 				}
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
@@ -198,7 +209,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	function showStatus(ctx: ExtensionContext) {
-		const { config: cfg, sources, droppedEnvKeys } = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() });
+		const { config: cfg, sources, ignoredProjectSettings } = loadConfig(ctx.cwd, projectConfigOpts(ctx));
 		const upstream = (() => {
 			try {
 				return JSON.parse(fs.readFileSync(path.join(packageRoot, "UPSTREAM.json"), "utf-8"));
@@ -213,7 +224,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			`pi-dev-team (upstream dev-team v${upstream.version ?? "?"} @ ${String(upstream.commit ?? "").slice(0, 10)})`,
 			`root: ${packageRoot}`,
 			`config: ${sources.length ? sources.join(", ") : "defaults"}`,
-			...(droppedEnvKeys.length ? [`project config env ignored (a project may set only dev-team tuning settings): ${droppedEnvKeys.join(", ")}`] : []),
+			...(ignoredProjectSettings.length ? [`project config ignored (see PORTING.md): ${ignoredProjectSettings.join(", ")}`] : []),
 			`tiers: ${Object.entries(cfg.models).map(([k, v]) => `${k}=${v}`).join("  ")}`,
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
@@ -294,7 +305,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			}
 		}
 		updateConfigFile(file, { models });
-		config = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() }).config;
+		config = loadConfig(ctx.cwd, projectConfigOpts(ctx)).config;
 		ctx.ui.notify(`Saved to ${file}:\n${Object.entries(models).map(([k, v]) => `${k} = ${v}`).join("\n")}`, "info");
 	}
 

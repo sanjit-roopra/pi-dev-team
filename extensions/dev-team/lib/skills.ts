@@ -88,6 +88,28 @@ export function discoverSkills(cwd: string, packageRoot: string, opts: { include
 	return map;
 }
 
+/**
+ * Skills a call may use. When pi reports the project untrusted, project skills are left out and
+ * `skippedProjectSkills` names the requested ones, so the caller can say why they are missing.
+ */
+export function discoverInvocableSkills(
+	cwd: string,
+	packageRoot: string,
+	projectTrusted: boolean,
+	requested: string[],
+): { skills: Map<string, SkillDef>; skippedProjectSkills: string[] } {
+	const skills = discoverSkills(cwd, packageRoot, { includeProject: projectTrusted });
+	if (projectTrusted) return { skills, skippedProjectSkills: [] };
+	const withProject = discoverSkills(cwd, packageRoot, { includeProject: true });
+	const skippedProjectSkills = requested.filter((name) => !resolveSkillName(skills, name) && resolveSkillName(withProject, name)?.source === "project");
+	return { skills, skippedProjectSkills };
+}
+
+/** Why a registered /command's skill cannot run now. */
+export function unavailableSkillReason(skippedForTrust: boolean): string {
+	return skippedForTrust ? "is a project skill, and this project is not trusted in pi" : "can no longer be found (its SKILL.md is missing or unreadable)";
+}
+
 export function resolveSkillName(skills: Map<string, SkillDef>, requested: string): SkillDef | undefined {
 	const bare = requested.trim().replace(/^\//, "").replace(/^[\w-]+:/, "");
 	return skills.get(bare) ?? skills.get(bare.toLowerCase());

@@ -14,7 +14,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -131,12 +131,46 @@ test("skills: discovery, qualified names, project override, compact index", (t) 
 test("skill files that are not small regular files are skipped unread", (t) => {
 	const dir = tempDir(t, "skl-");
 	const skills = path.join(dir, ".claude", "skills");
+	fs.mkdirSync(path.join(skills, "ok"), { recursive: true });
+	fs.writeFileSync(path.join(skills, "ok", "SKILL.md"), "---\nname: ok\ndescription: d\n---\nbody\n");
 	fs.mkdirSync(path.join(skills, "as-dir", "SKILL.md"), { recursive: true });
 	fs.mkdirSync(path.join(skills, "too-big"), { recursive: true });
 	fs.writeFileSync(path.join(skills, "too-big", "SKILL.md"), `---\nname: too-big\ndescription: d\n---\n${"x".repeat(1024 * 1024)}`);
 	const found = discoverSkills(dir, ROOT, { includeProject: true });
+	assert.ok(found.has("ok"), "the project skills directory is read");
 	assert.equal(found.has("as-dir"), false);
 	assert.equal(found.has("too-big"), false);
+});
+
+function projectSkill(t: TestContext, name: string): string {
+	const dir = tempDir(t, "skl-");
+	fs.mkdirSync(path.join(dir, ".claude", "skills", name), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".claude", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nPROJECT_SKILL_BODY\n`);
+	return dir;
+}
+
+test("invocable skills: an untrusted project's skill is reported as skipped, not unknown", (t) => {
+	const dir = projectSkill(t, "local-skill");
+	const untrusted = discoverInvocableSkills(dir, ROOT, false, ["local-skill", "plan", "nope"]);
+	assert.deepEqual(untrusted.skippedProjectSkills, ["local-skill"]);
+	assert.equal(untrusted.skills.has("local-skill"), false);
+	const trusted = discoverInvocableSkills(dir, ROOT, true, ["local-skill"]);
+	assert.deepEqual(trusted.skippedProjectSkills, []);
+	assert.equal(trusted.skills.get("local-skill")?.source, "project");
+});
+
+test("unavailable /command reasons name trust or a missing file", () => {
+	assert.match(unavailableSkillReason(true), /not trusted in pi/);
+	assert.match(unavailableSkillReason(false), /missing or unreadable/);
+});
+
+test("expandSkill reads the skill again and fails clearly when it is gone", (t) => {
+	const dir = projectSkill(t, "vanishing");
+	const skill = discoverSkills(dir, ROOT, { includeProject: true }).get("vanishing");
+	assert.ok(skill);
+	assert.match(expandSkill(skill, ""), /PROJECT_SKILL_BODY/);
+	fs.rmSync(skill.filePath);
+	assert.throws(() => expandSkill(skill, ""), /can no longer be read/);
 });
 
 test("every skill description fits pi's 1024 limit", () => {

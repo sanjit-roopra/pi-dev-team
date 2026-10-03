@@ -147,15 +147,14 @@ export function mergeConfig<T>(base: T, override: unknown): T {
  * ...), so a repo with just a .pi/dev-team.json is trusted without a prompt. Its env must therefore not
  * reach PATH, NODE_OPTIONS or PYTHONPATH, any file path the port reads or runs (DEV_TEAM_PY_CACHE is
  * executed by hooks/py.sh), a program choice, or a gate bypass (DEV_TEAM_AUTO_APPROVE,
- * DEV_TEAM_GUARD_OVERRIDE, *_SKIP). Those stay available in the user's own config and environment.
+ * DEV_TEAM_GUARD_OVERRIDE, *_SKIP, a threshold whose 0 disables a guard). Those stay available in the
+ * user's own config and environment.
  */
 export const PROJECT_ENV_SETTINGS: ReadonlySet<string> = new Set([
 	"DEV_TEAM_MAX_PARALLEL_BUILDS",
 	"DEV_TEAM_MAX_PARALLEL_REVIEW_AGENTS",
 	"DEV_TEAM_AUTO_REVIEW",
 	"DEV_TEAM_AUTO_REVIEW_THRESHOLD",
-	"DEV_TEAM_VERIFY_THRESHOLD",
-	"DEV_TEAM_BASH_RETRY_THRESHOLD",
 	"DEV_TEAM_REPO_REVIEW_PERCENT_THRESHOLD",
 	"DEV_TEAM_REPO_REVIEW_MIN_ADDED_LINES",
 	"DEV_TEAM_REPO_REVIEW_MAX_ADDED_LINES",
@@ -173,43 +172,81 @@ export function isProjectEnvSettingAllowed(key: string, value: unknown): boolean
 	return PROJECT_ENV_SETTINGS.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && PLAIN_SETTING_VALUE.test(String(value));
 }
 
+/** The hook timeout a project may not go below (hooks fail open on timeout). */
+const MIN_PROJECT_HOOK_TIMEOUT_SEC = DEFAULT_CONFIG.hooks.timeoutSec;
+
 /**
- * A project config file with only allowed env settings kept; `droppedEnvKeys` names the rest. An env
- * that is not an object is dropped whole (reported as "env"), so it cannot replace the user's env.
+ * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
+ * object is dropped whole), and hooks limited so a project can add hooks and turn off advisory ones,
+ * but not switch hooks off, disable a guard (`guardHooks`, the blocking PreToolUse hooks) or shorten
+ * the timeout. `ignored` names everything left out, as `env.KEY`, `hooks.enabled`, ...
  */
-export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; droppedEnvKeys: string[] } {
-	if (!("env" in data)) return { data, droppedEnvKeys: [] };
-	const { env, ...rest } = data;
-	if (!isPlainObject(env)) return { data: rest, droppedEnvKeys: ["env"] };
-	const entries = Object.entries(env);
-	return {
-		data: { ...rest, env: Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v))) },
-		droppedEnvKeys: entries.filter(([k, v]) => !isProjectEnvSettingAllowed(k, v)).map(([k]) => k),
-	};
+export function filterProjectConfig(
+	data: Record<string, unknown>,
+	guardHooks: ReadonlySet<string> | "all" = "all",
+): { data: Record<string, unknown>; ignored: string[] } {
+	const ignored: string[] = [];
+	const out: Record<string, unknown> = { ...data };
+	if ("env" in data) {
+		if (!isPlainObject(data.env)) {
+			delete out.env;
+			ignored.push("env");
+		} else {
+			const entries = Object.entries(data.env);
+			out.env = Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v)));
+			for (const [k, v] of entries) if (!isProjectEnvSettingAllowed(k, v)) ignored.push(`env.${k}`);
+		}
+	}
+	if ("hooks" in data) {
+		if (!isPlainObject(data.hooks)) {
+			delete out.hooks;
+			ignored.push("hooks");
+		} else {
+			const hooks: Record<string, unknown> = { ...data.hooks };
+			if ("enabled" in hooks) {
+				if (hooks.enabled !== true) ignored.push("hooks.enabled");
+				delete hooks.enabled;
+			}
+			if ("disabled" in hooks) {
+				const listed = Array.isArray(hooks.disabled) ? hooks.disabled.filter((h): h is string => typeof h === "string") : [];
+				const isGuard = (h: string) => guardHooks === "all" || guardHooks.has(h);
+				for (const h of listed.filter(isGuard)) ignored.push(`hooks.disabled.${h}`);
+				// Merge onto the defaults rather than replace them, so default-off hooks stay off.
+				hooks.disabled = [...new Set([...DEFAULT_CONFIG.hooks.disabled, ...listed.filter((h) => !isGuard(h))])];
+			}
+			if ("timeoutSec" in hooks && !(typeof hooks.timeoutSec === "number" && hooks.timeoutSec >= MIN_PROJECT_HOOK_TIMEOUT_SEC)) {
+				ignored.push("hooks.timeoutSec");
+				delete hooks.timeoutSec;
+			}
+			out.hooks = hooks;
+		}
+	}
+	return { data: out, ignored };
 }
 
 /**
- * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files can set
- * hooks and (filtered) env, so callers pass `includeProject: ctx.isProjectTrusted()`.
+ * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files are
+ * filtered (filterProjectConfig), so callers pass `includeProject: ctx.isProjectTrusted()` and the
+ * guard hooks the project may not disable.
  */
 export function loadConfig(
 	cwd: string,
-	opts: { includeProject: boolean; userConfigFile?: string },
-): { config: DevTeamConfig; sources: string[]; droppedEnvKeys: string[] } {
+	opts: { includeProject: boolean; guardHooks?: ReadonlySet<string>; userConfigFile?: string },
+): { config: DevTeamConfig; sources: string[]; ignoredProjectSettings: string[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
-	const droppedEnvKeys: string[] = [];
+	const ignoredProjectSettings: string[] = [];
 	const userFile = opts.userConfigFile ?? userConfigPath();
 	const projectFiles = opts.includeProject ? [projectConfigPath(cwd), projectConfigPath(cwd, true)] : [];
 	for (const file of [userFile, ...projectFiles]) {
 		const raw = readJson(file);
 		if (!raw) continue;
-		const { data, droppedEnvKeys: dropped } = file === userFile ? { data: raw, droppedEnvKeys: [] } : filterProjectConfig(raw);
+		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw, opts.guardHooks ?? "all");
 		config = mergeConfig(config, data);
 		sources.push(file);
-		droppedEnvKeys.push(...dropped);
+		ignoredProjectSettings.push(...ignored);
 	}
-	return { config, sources, droppedEnvKeys };
+	return { config, sources, ignoredProjectSettings };
 }
 
 /** Read-modify-write one config file (used by /dev-team models). */

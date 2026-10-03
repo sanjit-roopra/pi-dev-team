@@ -65,7 +65,8 @@ function setupRepo() {
 /** The developer's environment minus anything that would leak their own Claude/pi config into a scenario. */
 function isolatedEnv(env) {
 	const out = { ...process.env, HOME: env.home, PI_CODING_AGENT_DIR: path.join(env.home, ".pi", "agent") };
-	for (const k of ["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "CLAUDE_CONFIG_DIR", "DEV_TEAM_AUTOCOMPACT_NUDGE"]) delete out[k];
+	for (const k of Object.keys(out)) if (/^(DEV_TEAM_|CLAUDE_)/.test(k)) delete out[k];
+	delete out.NODE_OPTIONS;
 	return out;
 }
 

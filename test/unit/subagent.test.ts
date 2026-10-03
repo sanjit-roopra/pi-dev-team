@@ -8,8 +8,8 @@ import { applyChildEvent, newChildRunState } from "../../extensions/dev-team/lib
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { DispatchProgress, formatResultText, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
-import { addPiUsage, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
-import { type ChildTrust, canonicalDir, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
+import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
+import { type ChildTrust, canonicalDir, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -85,6 +85,14 @@ test("child trust: a symlink to another directory is that directory", (t) => {
 	assert.deepEqual(trustArgs(session, path.join(dir, "repo-link")), ["--approve"], "a link to the session directory is the session directory");
 });
 
+test("childTrustOf: the session's decision for its canonical directory", (t) => {
+	const dir = tempDir(t, "dt-trust-");
+	fs.symlinkSync(dir, `${dir}-link`);
+	t.after(() => fs.rmSync(`${dir}-link`, { force: true }));
+	assert.deepEqual(childTrustOf({ cwd: `${dir}-link`, isProjectTrusted: () => true }), { projectTrusted: true, sessionDir: fs.realpathSync(dir) });
+	assert.equal(childTrustOf({ cwd: dir, isProjectTrusted: () => false }).projectTrusted, false);
+});
+
 test("claude shim trust env: root only when trusted, --no-approve only when declined", () => {
 	assert.deepEqual(shimTrustEnv(trusted, ["-e", "x"]), { piArgs: ["-e", "x"], trustedDir: "/repo" });
 	assert.deepEqual(shimTrustEnv(declined, ["-e", "x"]), { piArgs: ["-e", "x", "--no-approve"] });
@@ -97,6 +105,15 @@ test("agent files that are not small regular files are skipped unread", (t) => {
 	const big = path.join(dir, "big.md");
 	fs.writeFileSync(big, `---\nname: big\ndescription: d\n---\n${"x".repeat(1024 * 1024)}`);
 	assert.equal(parseAgentFile(big, "project"), undefined);
+});
+
+test("creditedRuns: own run first, then nested runs; either may be absent", () => {
+	const u = { input: 1, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 };
+	const nested = [{ agent: "n", usage: u }];
+	assert.deepEqual(creditedRuns({ agent: "a", model: "m", usage: u, nested }), [{ agent: "a", model: "m", usage: u }, ...nested]);
+	assert.deepEqual(creditedRuns({ agent: "a", usage: u }), [{ agent: "a", model: undefined, usage: u }]);
+	assert.deepEqual(creditedRuns({ agent: "a", nested }), nested);
+	assert.deepEqual(creditedRuns({ agent: "a" }), []);
 });
 
 test("addPiUsage derives totalTokens when a message omits it", () => {

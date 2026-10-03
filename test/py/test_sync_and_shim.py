@@ -76,7 +76,7 @@ class Shim(unittest.TestCase):
         self.assertEqual(shim.model_args("inherit"), [])
         self.assertEqual(shim.model_args(None), [])
 
-    def test_trusted_here_covers_only_the_trusted_root(self):
+    def test_trusted_here_covers_only_the_trusted_dir(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "repo"
             (root / "sub").mkdir(parents=True)
@@ -106,7 +106,7 @@ class Shim(unittest.TestCase):
             trusted = {"DEV_TEAM_PI_ARGS": "[]", "DEV_TEAM_TRUSTED_DIR": str(root)}
             self.assertIn("--approve", self._shim_argv(d, root, trusted))
             self.assertNotIn("--approve", self._shim_argv(d, root / "sub", trusted), "only the session directory")
-            self.assertNotIn("--approve", self._shim_argv(d, root, {"DEV_TEAM_PI_ARGS": "[]"}), "no root, no grant")
+            self.assertNotIn("--approve", self._shim_argv(d, root, {"DEV_TEAM_PI_ARGS": "[]"}), "no trusted dir, no grant")
             declined = self._shim_argv(d, root, {"DEV_TEAM_PI_ARGS": json.dumps(["--no-approve"])})
             self.assertIn("--no-approve", declined)
             self.assertNotIn("--approve", declined)
