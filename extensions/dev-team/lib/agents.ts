@@ -110,13 +110,15 @@ function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
 	return out;
 }
 
-export function discoverAgents(cwd: string, packageRoot: string): Map<string, AgentDef> {
+export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject?: boolean } = {}): Map<string, AgentDef> {
 	const map = new Map<string, AgentDef>();
 	const add = (defs: AgentDef[]) => {
 		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	};
-	add(loadDir(path.join(cwd, ".pi", "agents"), "project"));
-	add(loadDir(path.join(cwd, ".claude", "agents"), "project"));
+	if (opts.includeProject !== false) {
+		add(loadDir(path.join(cwd, ".pi", "agents"), "project"));
+		add(loadDir(path.join(cwd, ".claude", "agents"), "project"));
+	}
 	add(loadDir(path.join(packageRoot, "agents"), "package"));
 	return map;
 }

@@ -59,7 +59,7 @@ function toolResults(jsonl) {
 		try {
 			const e = JSON.parse(line);
 			if (e.type === "tool_execution_end") {
-				out.push({ tool: e.toolName, isError: e.isError, text: (e.result?.content ?? []).map((c) => c.text ?? "").join(""), details: e.result?.details });
+				out.push({ tool: e.toolName, isError: e.isError, text: (e.result?.content ?? []).map((c) => c.text ?? "").join(""), details: e.result?.details, usage: e.result?.usage });
 			}
 		} catch {}
 	}
@@ -243,6 +243,47 @@ const scenarios = {
 		assert(ask && ask.text.startsWith("NON-INTERACTIVE"), JSON.stringify(ask));
 	},
 
+	"subagent usage reaches pi session totals through the tool result"(env) {
+		const two = script([{ text: "a" }]);
+		const r = pi(env, script([{ tools: [{ tool: "dev_team_subagent", args: { tasks: [{ agent: "Explore", task: two }, { agent: "Explore", task: two }] } }] }]), { json: true });
+		const dispatch = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+		assert(dispatch && !dispatch.isError, JSON.stringify(dispatch));
+		const childInput = dispatch.details.results.reduce((n, v) => n + v.usage.input, 0);
+		assert(childInput > 0 && dispatch.usage?.input === childInput, `tool result usage ${JSON.stringify(dispatch.usage)} vs children ${childInput}`);
+		assert(typeof dispatch.usage.cost?.total === "number" && dispatch.usage.totalTokens > 0, JSON.stringify(dispatch.usage));
+		assert(dispatch.details.results.every((v) => v.status === "ok" && v.ok && v.turns >= 1), JSON.stringify(dispatch.details));
+	},
+
+	"subagent: project agents need a trust decision"(env) {
+		const agentDir = path.join(env.repo, ".claude", "agents");
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
+		fs.writeFileSync(path.join(agentDir, "security-review.md"), "---\nname: security-review\ndescription: override\ntools: Read\n---\nPROJECT_OVERRIDE_PROMPT\n");
+		const probe = script([{ inspect: "runtime" }]);
+		const call = script([{ tools: [{ tool: "dev_team_subagent", args: { tasks: [{ agent: "local-only", task: probe }, { agent: "security-review", task: probe }] } }] }]);
+
+		// untrusted (print mode, no saved decision, defaultProjectTrust "ask"): package agents only
+		let r = pi(env, call, { json: true });
+		let d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+		assert(d?.details?.untrustedProjectAgents?.sort().join(",") === "local-only,security-review", JSON.stringify(d?.details));
+		assert(d.text.includes('Unknown agent "local-only"') && d.text.includes("project agents not run"), d.text.slice(0, 600));
+		const pkgRun = d.details.results.find((v) => v.agent === "security-review");
+		assert(pkgRun?.ok && pkgRun.source === "package" && !d.text.includes("PROJECT_OVERRIDE_PROMPT"), JSON.stringify(pkgRun));
+
+		// --approve: project agents (and the override) run
+		r = pi(env, call, { json: true, extra: ["--approve"] });
+		d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+		assert(!d.details.untrustedProjectAgents && d.details.results.every((v) => v.ok && v.source === "project"), JSON.stringify(d.details));
+		assert(d.text.includes("LOCAL_AGENT_PROMPT") && d.text.includes("PROJECT_OVERRIDE_PROMPT"), d.text.slice(0, 600));
+
+		// a saved /trust decision counts too
+		fs.mkdirSync(path.join(env.home, ".pi", "agent"), { recursive: true });
+		fs.writeFileSync(path.join(env.home, ".pi", "agent", "trust.json"), JSON.stringify({ [fs.realpathSync(env.repo)]: true }));
+		r = pi(env, call, { json: true });
+		d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
+		assert(!d.details.untrustedProjectAgents, `saved trust ignored: ${JSON.stringify(d.details)} ${fs.readFileSync(path.join(env.home, ".pi", "agent", "trust.json"), "utf-8")}`);
+	},
+
 	"cost meter row includes main and subagent spend by agent type"(env) {
 		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "security-review", task: script([{ text: "{}" }]) } }]));
 		const rows = readJsonl(path.join(env.repo, ".claude", "metrics", "cost-metering.jsonl"));
@@ -271,7 +312,8 @@ const scenarios = {
 		const agentDir = path.join(env.repo, ".pi", "agents");
 		fs.mkdirSync(agentDir, { recursive: true });
 		fs.writeFileSync(path.join(agentDir, "collision-probe.md"), "---\nname: collision-probe\ndescription: Offline mapping probe\ntools: Read, Agent, Task, subagent\n---\nInspect the runtime tools and prompt.\n");
-		const options = { extra: ["-e", EXTERNAL_SUBAGENT] };
+		// project agents need an explicit trust decision
+		const options = { extra: ["-e", EXTERNAL_SUBAGENT, "--approve"] };
 		const parent = pi(env, script([{ inspect: "runtime" }]), options);
 		assert(parent.code === 0, parent.err);
 		const parentRuntime = JSON.parse(parent.out);
