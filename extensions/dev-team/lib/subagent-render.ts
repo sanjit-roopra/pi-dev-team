@@ -57,21 +57,21 @@ export function formatUsage(u: UsageTotals | undefined, model?: string, duration
 	return parts.join(" ");
 }
 
+function addTotals(t: UsageTotals, u: UsageTotals): UsageTotals {
+	return {
+		input: t.input + u.input,
+		output: t.output + u.output,
+		cacheRead: t.cacheRead + u.cacheRead,
+		cacheWrite: t.cacheWrite + u.cacheWrite,
+		cost: t.cost + u.cost,
+		turns: t.turns + u.turns,
+	};
+}
+
+/** Everything the agents cost, including what they dispatched themselves (what pi books for the call). */
 function sumUsageTotals(views: SubagentTaskView[]): UsageTotals {
-	return views.reduce<UsageTotals>(
-		(t, v) =>
-			v.usage
-				? {
-						input: t.input + v.usage.input,
-						output: t.output + v.usage.output,
-						cacheRead: t.cacheRead + v.usage.cacheRead,
-						cacheWrite: t.cacheWrite + v.usage.cacheWrite,
-						cost: t.cost + v.usage.cost,
-						turns: t.turns + v.usage.turns,
-					}
-				: t,
-		{ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 },
-	);
+	const usages = views.flatMap((v) => [...(v.usage ? [v.usage] : []), ...(v.nested ?? []).map((n) => n.usage)]);
+	return usages.reduce(addTotals, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 });
 }
 
 function statusIcon(v: SubagentTaskView, theme: Theme): string {

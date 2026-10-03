@@ -21,9 +21,8 @@ import { Type } from "typebox";
 import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
 import type { DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
-import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
-import { projectRoot } from "./metrics.ts";
+import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
 import {
 	type DispatchArgs,
 	describeWorktree,
@@ -31,6 +30,7 @@ import {
 	dispatchTask,
 	emptyPiUsage,
 	type NestedUsage,
+	type ProgressPatch,
 	type SubagentDetails,
 	type SubagentTaskView,
 	sumPiUsage,
@@ -39,6 +39,7 @@ import {
 	type WorktreeInfo,
 } from "./subagent-types.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
+import { type ChildTrust, canonicalDir, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {
 	agent: string;
@@ -54,8 +55,8 @@ export interface SubagentRunResult {
 	usage: UsageTotals;
 	/** Agents the child dispatched itself (any depth), credited to those agents. */
 	nested: NestedUsage[];
-	/** Everything the child cost, nested dispatches included, in pi's shape for the tool result's `usage`. */
-	piUsage?: Usage;
+	/** Everything the child cost, nested dispatches included, in pi's Usage shape for the tool result. */
+	totalUsage?: Usage;
 	messages: PiMessageLike[];
 	worktree?: WorktreeInfo;
 	blocked?: boolean;
@@ -127,40 +128,12 @@ function cap(text: string): string {
 	return `${text.slice(0, OUTPUT_CAP)}\n\n[output truncated at ${OUTPUT_CAP} bytes]`;
 }
 
-/** The directory a granted trust decision covers: the session's git root (or cwd), symlinks resolved. */
-export function trustedRoot(cwd: string): string {
-	return realpathOr(projectRoot(cwd));
-}
-
-function realpathOr(p: string): string {
-	try {
-		return fs.realpathSync(p);
-	} catch {
-		return path.resolve(p);
-	}
-}
-
-export function isInside(root: string, dir: string): boolean {
-	const rel = path.relative(root, dir);
-	return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
-}
-
-/**
- * Trust flags for a child pi. A declined decision is forwarded explicitly, so a saved /trust entry or
- * defaultProjectTrust cannot re-trust the child. A granted one is forwarded only inside the session's
- * project (`root`, its git root, so worktrees under .claude/worktrees count); elsewhere the child decides.
- */
-export function trustArgs(projectTrusted: boolean, root: string, runCwd: string): string[] {
-	if (!projectTrusted) return ["--no-approve"];
-	return isInside(root, realpathOr(runCwd)) ? ["--approve"] : [];
-}
-
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
 	const r = spawnSync("git", args, { cwd, encoding: "utf-8" });
 	return { ok: r.status === 0, out: `${r.stdout ?? ""}${r.stderr ?? ""}`.trim() };
 }
 
-function createWorktree(cwd: string, agent: string, id: string): { path: string; branch: string; base: string } {
+function createWorktree(cwd: string, agent: string, id: string): { path: string; branch: string; base: string; repoRoot: string } {
 	const top = git(cwd, ["rev-parse", "--show-toplevel"]);
 	if (!top.ok) throw new Error(`isolation "worktree" needs a git repository: ${top.out}`);
 	const root = top.out.split("\n")[0];
@@ -172,7 +145,7 @@ function createWorktree(cwd: string, agent: string, id: string): { path: string;
 	// Branch from local HEAD (Claude Code's worktree.baseRef=head), so freshly written specs/plans are visible.
 	const add = git(root, ["worktree", "add", "-b", branch, wtPath, "HEAD"]);
 	if (!add.ok) throw new Error(`git worktree add failed: ${add.out}`);
-	return { path: wtPath, branch, base: base.out.split("\n")[0] };
+	return { path: wtPath, branch, base: base.out.split("\n")[0], repoRoot: root };
 }
 
 function finishWorktree(wt: { path: string; branch: string; base: string }): WorktreeInfo {
@@ -231,7 +204,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		signal: AbortSignal | undefined,
 		agents: Map<string, AgentDef>,
 		update: (patch: ProgressPatch) => void,
-		projectTrusted: boolean,
+		trust: ChildTrust,
 	): Promise<SubagentRunResult> {
 		const started = Date.now();
 		const config = getConfig();
@@ -300,7 +273,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
 			const args = ["--mode", "json", "-p", "--no-session", ...forwardedArgs()];
-			args.push(...trustArgs(projectTrusted, trustedRoot(ctx.cwd), runCwd));
+			args.push(...trustArgs(trust, runCwd, wt?.repoRoot));
 			if (choice.model) args.push("--model", choice.model);
 			if (thinking) args.push("--thinking", thinking);
 			if (tools) args.push("--tools", tools.length ? tools.join(",") : "read");
@@ -400,7 +373,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				stopReason: run.stopReason,
 				usage: toUsageTotals(run.own, run.turns),
 				nested: run.nested,
-				piUsage: run.turns ? run.total : undefined,
+				totalUsage: run.turns ? run.total : undefined,
 				messages: run.messages,
 				worktree,
 				durationMs: Date.now() - started,
@@ -466,17 +439,18 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			const list = (params.tasks?.length ? params.tasks : [params]) as DispatchArgs[];
 			// Project agents are skipped only when the user declined pi's own trust prompt for this
 			// project, as pi skips its other project resources. No extra prompt or setup step.
-			const projectTrusted = ctx.isProjectTrusted();
-			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, projectTrusted, list.map(dispatchAgent));
+			// One trust decision per call, shared by every child.
+			const trust: ChildTrust = { projectTrusted: ctx.isProjectTrusted(), sessionDir: canonicalDir(ctx.cwd) };
+			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
 			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined);
 			const results = await Promise.all(
 				list.map(async (t, i) => {
-					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), projectTrusted);
+					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), trust);
 					progress.finish(i, r);
 					return r;
 				}),
 			);
-			const usage = sumPiUsage(results.map((r) => r.piUsage));
+			const usage = sumPiUsage(results.map((r) => r.totalUsage));
 			return {
 				content: [{ type: "text", text: formatResultText(results, skippedProjectAgents) }],
 				details: progress.snapshot(),
@@ -491,9 +465,6 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 
 /** Live per-task views for the TUI, streamed through onUpdate while children run. */
 export type DispatchUpdate = (r: { content: { type: "text"; text: string }[]; details: SubagentDetails }) => void;
-
-/** Progress fields a running child reports; status/ok are set only by finish(). */
-export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "tools" | "model" | "usage">>;
 
 export class DispatchProgress {
 	private readonly views: SubagentTaskView[];

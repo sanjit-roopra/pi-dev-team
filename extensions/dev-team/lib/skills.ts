@@ -29,9 +29,14 @@ type SkillFrontmatter = {
 	"user-invocable"?: unknown;
 };
 
+/** SKILL.md files are small markdown; anything else (a FIFO, /dev/zero, a huge file) is skipped unread. */
+const MAX_SKILL_FILE_BYTES = 1024 * 1024;
+
 function loadSkill(filePath: string, source: SkillDef["source"]): SkillDef | undefined {
 	let content: string;
 	try {
+		const st = fs.statSync(filePath);
+		if (!st.isFile() || st.size > MAX_SKILL_FILE_BYTES) return undefined;
 		content = fs.readFileSync(filePath, "utf-8");
 	} catch {
 		return undefined;
@@ -74,13 +79,19 @@ function loadDir(dir: string, source: SkillDef["source"]): SkillDef[] {
 	return out;
 }
 
-export function discoverSkills(cwd: string, packageRoot: string): Map<string, SkillDef> {
+/**
+ * Project skills (.pi/skills, .claude/skills) first, then the package's. Project skills are
+ * repo-supplied instructions, so pass `includeProject: ctx.isProjectTrusted()` as pi does for its own.
+ */
+export function discoverSkills(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, SkillDef> {
 	const map = new Map<string, SkillDef>();
 	const add = (defs: SkillDef[]) => {
 		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	};
-	add(loadDir(path.join(cwd, ".pi", "skills"), "project"));
-	add(loadDir(path.join(cwd, ".claude", "skills"), "project"));
+	if (opts.includeProject) {
+		add(loadDir(path.join(cwd, ".pi", "skills"), "project"));
+		add(loadDir(path.join(cwd, ".claude", "skills"), "project"));
+	}
 	add(loadDir(path.join(packageRoot, "skills"), "package"));
 	return map;
 }

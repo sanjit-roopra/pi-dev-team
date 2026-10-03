@@ -25,9 +25,10 @@ import {
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex } from "./lib/skills.ts";
-import { buildSystemPrompt, forwardedArgs, registerSubagentTool, trustedRoot } from "./lib/subagent.ts";
+import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
+import { canonicalDir, shimTrustEnv } from "./lib/trust.ts";
 
 function packageRootDir(): string {
 	// extensions/dev-team/index.ts -> package root
@@ -67,11 +68,11 @@ export default function devTeam(pi: ExtensionAPI) {
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
 		if (ctx.hasUI && !isSubagent) process.env.DEV_TEAM_INTERACTIVE = "1";
 		else delete process.env.DEV_TEAM_INTERACTIVE;
-		// The claude shim's children inherit this session's trust decision, as dev_team_subagent's do:
-		// a declined one always, a granted one only inside DEV_TEAM_TRUSTED_ROOT (checked by bin/claude).
-		const trusted = ctx.isProjectTrusted();
-		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(trusted ? forwardedArgs() : [...forwardedArgs(), "--no-approve"]);
-		if (trusted) process.env.DEV_TEAM_TRUSTED_ROOT = trustedRoot(ctx.cwd);
+		// The claude shim's children inherit this session's trust decision as dev_team_subagent's do
+		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_ROOT itself.
+		const shim = shimTrustEnv({ projectTrusted: ctx.isProjectTrusted(), sessionDir: canonicalDir(ctx.cwd) }, forwardedArgs());
+		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(shim.piArgs);
+		if (shim.trustedRoot) process.env.DEV_TEAM_TRUSTED_ROOT = shim.trustedRoot;
 		else delete process.env.DEV_TEAM_TRUSTED_ROOT;
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
@@ -137,7 +138,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			return { name: a.name ?? a.skill ?? a.command, args: a.args ?? a.arguments ?? "" } as never;
 		},
 		async execute(_id, params, _signal, _onUpdate, ctx) {
-			const skills = discoverSkills(ctx.cwd, packageRoot);
+			const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 			const skill = resolveSkillName(skills, params.name);
 			if (!skill) {
 				throw new Error(`Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`);
@@ -148,12 +149,18 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	// ---------------------------------------------------------------- commands (one per user-invocable skill)
 
-	const commandSkills: SkillDef[] = [...discoverSkills(cwd, packageRoot).values()].filter((s) => s.userInvocable);
+	// Commands are registered before pi's trust decision is known, so a project skill's command is
+	// registered by name and resolved again when run, with project skills only for a trusted project.
+	const commandSkills: SkillDef[] = [...discoverSkills(cwd, packageRoot, { includeProject: true }).values()].filter((s) => s.userInvocable);
 	for (const skill of commandSkills) {
 		pi.registerCommand(skill.name, {
 			description: `${skill.description.slice(0, 140)}${skill.argumentHint ? ` ${skill.argumentHint}` : ""}`,
 			handler: async (args, ctx) => {
-				const current = resolveSkillName(discoverSkills(ctx.cwd, packageRoot), skill.name) ?? skill;
+				const current = resolveSkillName(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), skill.name);
+				if (!current) {
+					ctx.ui.notify(`/${skill.name} is a project skill, and this project is not trusted in pi.`, "warning");
+					return;
+				}
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
 				void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: `/${current.name}${args ? ` ${args}` : ""}` }, ctx.cwd);
 				const text = commandText(current, args ?? "");
@@ -190,7 +197,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	function showStatus(ctx: ExtensionContext) {
-		const { config: cfg, sources } = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() });
+		const { config: cfg, sources, droppedEnv } = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() });
 		const upstream = (() => {
 			try {
 				return JSON.parse(fs.readFileSync(path.join(packageRoot, "UPSTREAM.json"), "utf-8"));
@@ -199,12 +206,13 @@ export default function devTeam(pi: ExtensionAPI) {
 			}
 		})();
 		const agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
-		const skills = discoverSkills(ctx.cwd, packageRoot);
+		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const enabledHooks = hooks.all.filter((h) => isHookEnabled(cfg, h.name));
 		const lines = [
 			`pi-dev-team (upstream dev-team v${upstream.version ?? "?"} @ ${String(upstream.commit ?? "").slice(0, 10)})`,
 			`root: ${packageRoot}`,
 			`config: ${sources.length ? sources.join(", ") : "defaults"}`,
+			...(droppedEnv.length ? [`project config env ignored (only DEV_TEAM_* settings are allowed there): ${droppedEnv.join(", ")}`] : []),
 			`tiers: ${Object.entries(cfg.models).map(([k, v]) => `${k}=${v}`).join("  ")}`,
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
@@ -336,7 +344,7 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const opts = event.systemPromptOptions;
-		const skills = discoverSkills(ctx.cwd, packageRoot);
+		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const index = config.skillIndex === "off" ? "" : skillIndex(skills, config.skillIndex, config.skillIndexChars);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1") };
 		if (agentPrompt) opts.appendSystemPrompt = `${opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n` : ""}${agentPrompt}`;

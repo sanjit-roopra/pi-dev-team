@@ -9,6 +9,7 @@ import {
 	addPiUsage,
 	emptyPiUsage,
 	type NestedUsage,
+	type ProgressPatch,
 	type SubagentDetails,
 	type SubagentTaskView,
 	toUsageTotals,
@@ -40,8 +41,8 @@ export function newChildRunState(model?: string): ChildRunState {
 	return { messages: [], own: emptyPiUsage(), total: emptyPiUsage(), nested: [], turns: 0, recentTools: [], model };
 }
 
-/** The agents a nested dev_team_subagent result ran, each with its own usage and its own nested runs. */
-function nestedRunsOf(details: unknown): NestedUsage[] {
+/** Usage of the agents a nested dev_team_subagent result ran, each with its own nested runs. */
+function nestedUsageOf(details: unknown): NestedUsage[] {
 	const results = (details as SubagentDetails | undefined)?.results;
 	if (!Array.isArray(results)) return [];
 	return results.flatMap((v: SubagentTaskView) => [
@@ -50,8 +51,12 @@ function nestedRunsOf(details: unknown): NestedUsage[] {
 	]);
 }
 
-/** Apply one event. Returns the progress patch to show when the event changed it. */
-export function applyChildEvent(state: ChildRunState, ev: ChildEvent): Partial<SubagentTaskView> | undefined {
+/**
+ * Apply one event. Returns the progress patch to show when the event changed it. pi's json mode
+ * reports every finished message, tool results included, as `message_end`; other events carry nothing
+ * this needs.
+ */
+export function applyChildEvent(state: ChildRunState, ev: ChildEvent): ProgressPatch | undefined {
 	const m = ev.message;
 	if (ev.type !== "message_end" || !m) return undefined;
 	if (m.role === "assistant") {
@@ -73,7 +78,7 @@ export function applyChildEvent(state: ChildRunState, ev: ChildEvent): Partial<S
 		const usage = m.usage as Partial<Usage> | undefined;
 		addPiUsage(state.total, usage);
 		// A nested dev-team dispatch reports its agents' spend; credit those agents, not this child.
-		const runs = m.toolName === DEV_TEAM_SUBAGENT_TOOL ? nestedRunsOf(m.details) : [];
+		const runs = m.toolName === DEV_TEAM_SUBAGENT_TOOL ? nestedUsageOf(m.details) : [];
 		if (runs.length) state.nested = [...state.nested, ...runs];
 		else addPiUsage(state.own, usage);
 	}

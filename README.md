@@ -112,7 +112,7 @@ Configuration files are merged in this order, later wins:
   "autoFormat": false,             // run prettier/ruff/black after write/edit (/setup turns this on)
   "skillIndex": "compact",         // compact | full | off — skill list in the system prompt
   "claudeShim": true,              // `claude -p` in upstream scripts runs pi instead
-  "env": { "DEV_TEAM_MAX_PARALLEL_BUILDS": "2" },
+  "env": { "DEV_TEAM_MAX_PARALLEL_BUILDS": "2" },   // in a project file: DEV_TEAM_* settings only
   "hooks": { "enabled": true, "disabled": ["..."], "enable": ["version_check"], "outputToModel": true, "timeoutSec": 60 }
 }
 ```

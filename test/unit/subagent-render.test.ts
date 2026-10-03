@@ -56,6 +56,13 @@ test("result expanded, one agent: header, task, full output and worktree", () =>
 	assert.match(out, /worktree kept: \/r\/\.claude\/worktrees\/a on branch dev-team\/a, 1 commit\(s\)/);
 });
 
+test("result total includes what the agents dispatched themselves", () => {
+	const nested = [{ agent: "Explore", usage }];
+	const details = { results: [taskView({ usage, nested }), taskView({ agent: "b", usage })] };
+	const out = draw(renderSubagentResult(result(details), { expanded: false, isPartial: false }, theme));
+	assert.match(out, /Total: 6 turns ↑3\.6k ↓240 \$0\.0036/);
+});
+
 test("result expanded, several agents: totals across them", () => {
 	const details = { results: [taskView({ usage }), taskView({ agent: "b", usage })] };
 	const out = draw(renderSubagentResult(result(details), { expanded: true, isPartial: false }, theme));

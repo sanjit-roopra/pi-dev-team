@@ -139,21 +139,60 @@ export function mergeConfig<T>(base: T, override: unknown): T {
 }
 
 /**
- * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files can set
- * env and hooks, so callers pass `includeProject: ctx.isProjectTrusted()`.
+ * Project config may set only dev-team's own settings variables. pi asks about trust only when a repo
+ * has pi-protected files (.pi/settings.json, .pi/extensions, ...), so a repo with just a
+ * .pi/dev-team.json is trusted without a prompt; its env must not reach PATH, NODE_OPTIONS, PYTHONPATH
+ * or the variables that choose which programs the port runs.
  */
-export function loadConfig(cwd: string, opts: { includeProject: boolean }): { config: DevTeamConfig; sources: string[] } {
+const PROJECT_ENV_KEY = /^DEV_TEAM_[A-Z0-9_]+$/;
+const PROJECT_ENV_DENIED = new Set([
+	"DEV_TEAM_PYTHON",
+	"DEV_TEAM_PI_BIN",
+	"DEV_TEAM_REAL_CLAUDE",
+	"DEV_TEAM_PI_ARGS",
+	"DEV_TEAM_TRUSTED_ROOT",
+	"DEV_TEAM_ROOT",
+	"DEV_TEAM_INTERACTIVE",
+	"DEV_TEAM_SUBAGENT",
+	"DEV_TEAM_SUBAGENT_DEPTH",
+	"DEV_TEAM_AGENT_NAME",
+	"DEV_TEAM_PARENT_SESSION_ID",
+]);
+
+export function isProjectEnvKeyAllowed(key: string): boolean {
+	return PROJECT_ENV_KEY.test(key) && !PROJECT_ENV_DENIED.has(key);
+}
+
+/** A project config file with env keys outside the allowed set removed; `dropped` names them. */
+export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; dropped: string[] } {
+	if (!isPlainObject(data.env)) return { data, dropped: [] };
+	const entries = Object.entries(data.env);
+	const kept = entries.filter(([k]) => isProjectEnvKeyAllowed(k));
+	return { data: { ...data, env: Object.fromEntries(kept) }, dropped: entries.filter(([k]) => !isProjectEnvKeyAllowed(k)).map(([k]) => k) };
+}
+
+/**
+ * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files can set
+ * hooks and (filtered) env, so callers pass `includeProject: ctx.isProjectTrusted()`.
+ */
+export function loadConfig(
+	cwd: string,
+	opts: { includeProject: boolean; userConfigFile?: string },
+): { config: DevTeamConfig; sources: string[]; droppedEnv: string[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
-	const files = opts.includeProject ? [userConfigPath(), projectConfigPath(cwd), projectConfigPath(cwd, true)] : [userConfigPath()];
-	for (const file of files) {
-		const data = readJson(file);
-		if (data) {
-			config = mergeConfig(config, data);
-			sources.push(file);
-		}
+	const droppedEnv: string[] = [];
+	const userFile = opts.userConfigFile ?? userConfigPath();
+	const projectFiles = opts.includeProject ? [projectConfigPath(cwd), projectConfigPath(cwd, true)] : [];
+	for (const file of [userFile, ...projectFiles]) {
+		const raw = readJson(file);
+		if (!raw) continue;
+		const { data, dropped } = file === userFile ? { data: raw, dropped: [] } : filterProjectConfig(raw);
+		config = mergeConfig(config, data);
+		sources.push(file);
+		droppedEnv.push(...dropped);
 	}
-	return { config, sources };
+	return { config, sources, droppedEnv };
 }
 
 /** Read-modify-write one config file (used by /dev-team models). */

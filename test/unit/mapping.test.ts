@@ -111,7 +111,7 @@ test("splitArgs and Claude argument substitution", () => {
 });
 
 test("skills: discovery, qualified names, project override, compact index", (t) => {
-	const skills = discoverSkills(os.tmpdir(), ROOT);
+	const skills = discoverSkills(os.tmpdir(), ROOT, { includeProject: false });
 	assert.ok(skills.size >= 90);
 	for (const name of ["specs", "plan", "build", "pr", "code-review", "setup", "help", "version", "upgrade", "headless-run"]) {
 		assert.ok(skills.has(name), `missing skill ${name}`);
@@ -124,11 +124,12 @@ test("skills: discovery, qualified names, project override, compact index", (t) 
 	const dir = tempDir(t, "proj-");
 	fs.mkdirSync(path.join(dir, ".claude", "skills", "pr"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".claude", "skills", "pr", "SKILL.md"), "---\nname: pr\ndescription: project pr\n---\nx\n");
-	assert.equal(discoverSkills(dir, ROOT).get("pr")?.source, "project");
+	assert.equal(discoverSkills(dir, ROOT, { includeProject: true }).get("pr")?.source, "project");
+	assert.equal(discoverSkills(dir, ROOT, { includeProject: false }).get("pr")?.source, "package", "project skills need a trusted project");
 });
 
 test("every skill description fits pi's 1024 limit", () => {
-	for (const s of discoverSkills(os.tmpdir(), ROOT).values()) assert.ok(s.description.length <= 1024, `${s.name}: ${s.description.length}`);
+	for (const s of discoverSkills(os.tmpdir(), ROOT, { includeProject: false }).values()) assert.ok(s.description.length <= 1024, `${s.name}: ${s.description.length}`);
 });
 
 test("hooks.json wiring loads with matchers and every script exists", () => {

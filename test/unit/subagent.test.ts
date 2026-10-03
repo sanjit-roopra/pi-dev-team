@@ -6,9 +6,10 @@ import { type TestContext, test } from "node:test";
 import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "../../extensions/dev-team/lib/agents.ts";
 import { applyChildEvent, newChildRunState } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
-import { DispatchProgress, formatResultText, type SubagentRunResult, trustArgs, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
-import { addPiUsage, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
+import { DispatchProgress, formatResultText, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { addPiUsage, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
+import { type ChildTrust, canonicalDir, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -51,32 +52,42 @@ test("projectAgentsRequested names each project agent once, however it was reque
 	assert.deepEqual(projectAgentsRequested(all, ["local-only", "dev-team:local-only", "LOCAL-ONLY", "test-review"]).map((d) => d.name), ["local-only"]);
 });
 
+const trusted: ChildTrust = { projectTrusted: true, sessionDir: "/repo" };
+const declined: ChildTrust = { projectTrusted: false, sessionDir: "/repo" };
+
 test("child trust: declined is always forwarded", () => {
-	assert.deepEqual(trustArgs(false, "/repo", "/repo"), ["--no-approve"]);
-	assert.deepEqual(trustArgs(false, "/repo", "/elsewhere"), ["--no-approve"]);
+	assert.deepEqual(trustArgs(declined, "/repo"), ["--no-approve"]);
+	assert.deepEqual(trustArgs(declined, "/elsewhere"), ["--no-approve"]);
 });
 
-test("child trust: granted covers the session's git root, its subdirectories and worktrees", () => {
-	assert.deepEqual(trustArgs(true, "/repo", "/repo"), ["--approve"]);
-	assert.deepEqual(trustArgs(true, "/repo", "/repo/sub"), ["--approve"]);
-	assert.deepEqual(trustArgs(true, "/repo", "/repo/.claude/worktrees/x"), ["--approve"]);
-	assert.deepEqual(trustArgs(true, "/repo", "/repo/..foo"), ["--approve"], "a name starting with .. is still inside");
+test("child trust: granted covers exactly the session directory", () => {
+	assert.deepEqual(trustArgs(trusted, "/repo"), ["--approve"]);
+	assert.deepEqual(trustArgs(trusted, "/repo/sub"), [], "pi decides trust per directory");
+	assert.deepEqual(trustArgs(trusted, "/repo-sibling"), []);
+	assert.deepEqual(trustArgs(trusted, "/repo/../x"), []);
 });
 
-test("child trust: granted is not forwarded outside the project", () => {
-	assert.deepEqual(trustArgs(true, "/repo", "/tmp/other"), []);
-	assert.deepEqual(trustArgs(true, "/repo", "/repo-sibling"), []);
-	assert.deepEqual(trustArgs(true, "/repo", "/repo/../x"), []);
+test("child trust: a worktree inherits only when it was made from the session directory", () => {
+	assert.deepEqual(trustArgs(trusted, "/repo/.claude/worktrees/x", "/repo"), ["--approve"]);
+	assert.deepEqual(trustArgs({ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"), []);
 });
 
-test("child trust: a symlink inside the project to another directory is not inside", (t) => {
+test("child trust: a symlink to another directory is that directory", (t) => {
 	const dir = tempDir(t, "dt-trust-");
 	const repo = path.join(dir, "repo");
 	const other = path.join(dir, "other");
 	fs.mkdirSync(repo);
 	fs.mkdirSync(other);
 	fs.symlinkSync(other, path.join(repo, "link"));
-	assert.deepEqual(trustArgs(true, fs.realpathSync(repo), path.join(repo, "link")), []);
+	fs.symlinkSync(repo, path.join(dir, "repo-link"));
+	const session: ChildTrust = { projectTrusted: true, sessionDir: canonicalDir(repo) };
+	assert.deepEqual(trustArgs(session, path.join(repo, "link")), []);
+	assert.deepEqual(trustArgs(session, path.join(dir, "repo-link")), ["--approve"], "a link to the session directory is the session directory");
+});
+
+test("claude shim trust env: root only when trusted, --no-approve only when declined", () => {
+	assert.deepEqual(shimTrustEnv(trusted, ["-e", "x"]), { piArgs: ["-e", "x"], trustedRoot: "/repo" });
+	assert.deepEqual(shimTrustEnv(declined, ["-e", "x"]), { piArgs: ["-e", "x", "--no-approve"] });
 });
 
 test("agent files that are not small regular files are skipped unread", (t) => {
@@ -123,6 +134,41 @@ test("child events: a nested dev-team dispatch is credited to the agents it ran"
 	assert.equal(state.own.input, 0, "not the child's own spend");
 	assert.equal(state.total.input, 100, "still in the total pi counts");
 	assert.deepEqual(state.nested.map((n) => [n.agent, n.model, n.usage.input]), [["Explore", "p/haiku", 40], ["deep", "p/x", 60]]);
+});
+
+test("child events: a failing turn records the stop reason and error", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "No API key" } as never });
+	assert.equal(state.stopReason, "error");
+	assert.equal(state.errorMessage, "No API key");
+});
+
+test("child events: only the latest 8 tool calls are kept, nameless ones skipped", () => {
+	const state = newChildRunState();
+	const calls = Array.from({ length: 10 }, (_, i) => ({ type: "toolCall", name: `t${i}` }));
+	applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }] } as never });
+	assert.deepEqual(state.recentTools, ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"]);
+});
+
+test("child events: a model without a provider is shown as is", () => {
+	const state = newChildRunState("p/initial");
+	applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [], model: "bare" } as never });
+	assert.equal(state.model, "bare");
+});
+
+test("child events: a dev-team dispatch result without agent details stays with the child", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "dev_team_subagent", usage: turnUsage, details: {} } as never });
+	assert.equal(state.own.input, 100);
+	assert.deepEqual(state.nested, []);
+});
+
+test("child events: other event types change nothing", () => {
+	const state = newChildRunState();
+	assert.equal(applyChildEvent(state, { type: "message_update", message: { role: "assistant", usage: turnUsage } as never }), undefined);
+	assert.equal(applyChildEvent(state, { type: "tool_execution_end" }), undefined);
+	assert.equal(state.turns, 0);
+	assert.equal(state.total.input, 0);
 });
 
 test("child events: usage on other tool results stays with the child", () => {
@@ -222,9 +268,20 @@ test("progress: streams running views, then the final result", () => {
 	assert.ok(!progress.snapshot().results[0].tools.includes("mutated"), "snapshots are copies");
 });
 
-test("viewFromResult keeps status and ok in step and carries nested runs", () => {
-	const nested = [{ agent: "x", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 } }];
-	assert.deepEqual([viewFromResult(runResult({ ok: false, error: "e" })).status, viewFromResult(runResult({ ok: false })).ok], ["failed", false]);
+test("viewFromResult: a failed run is status failed, ok false", () => {
+	const view = viewFromResult(runResult({ ok: false, error: "e" }));
+	assert.equal(view.status, "failed");
+	assert.equal(view.ok, false);
+});
+
+test("viewFromResult: a successful run is status ok, ok true", () => {
+	const view = viewFromResult(runResult({}));
+	assert.equal(view.status, "ok");
+	assert.equal(view.ok, true);
+});
+
+test("viewFromResult carries nested runs only when there are some", () => {
+	const nested = [{ agent: "x", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 1 } satisfies UsageTotals }];
 	assert.deepEqual(viewFromResult(runResult({ nested })).nested, nested);
 	assert.equal(viewFromResult(runResult({})).nested, undefined);
 });

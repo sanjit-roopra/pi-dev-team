@@ -82,11 +82,10 @@ def model_args(model: str | None) -> list[str]:
 
 
 def trusted_here(root: str, cwd: str) -> bool:
-    """The session trusted its project; that covers `root` (its git root) and nothing outside it."""
+    """pi trusts per directory: the session's grant covers its own directory `root`, nothing else."""
     if not root:
         return False
-    root, cwd = os.path.realpath(root), os.path.realpath(cwd)
-    return cwd == root or cwd.startswith(root.rstrip(os.sep) + os.sep)
+    return os.path.realpath(cwd) == os.path.realpath(root)
 
 
 def main(argv: list[str]) -> int:

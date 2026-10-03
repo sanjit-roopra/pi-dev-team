@@ -20,17 +20,24 @@ function script(steps) {
 	return `<<script>>${JSON.stringify(steps)}<</script>>`;
 }
 
-/**
- * Two project agents (one overriding a package agent) that report their system prompt, plus a package
- * agent that reports the child's own trust decision (DEV_TEAM_PI_ARGS ends in --approve/--no-approve).
- */
-function projectAgentCall(env) {
+/** Two project agents: one of its own, one overriding the package's security-review. */
+function seedProjectAgents(env) {
 	const agentDir = path.join(env.repo, ".claude", "agents");
 	fs.mkdirSync(agentDir, { recursive: true });
 	fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
 	fs.writeFileSync(path.join(agentDir, "security-review.md"), "---\nname: security-review\ndescription: override\ntools: Read\n---\nPROJECT_OVERRIDE_PROMPT\n");
+}
+
+/** Text only the package's security-review agent prompt contains. */
+const PACKAGE_SECURITY_REVIEW_MARKER = "# Security Review";
+
+/**
+ * A parallel dispatch: both seeded agents report their system prompt, and a package agent reports the
+ * child's own trust decision (DEV_TEAM_PI_ARGS ends in --no-approve when declined; DEV_TEAM_TRUSTED_ROOT
+ * is set only when trusted).
+ */
+function projectAgentCall() {
 	const prompt = script([{ inspect: "runtime" }]);
-	// DEV_TEAM_PI_ARGS ends in --no-approve when declined; DEV_TEAM_TRUSTED_ROOT is set only when trusted.
 	const trust = script([{ tool: "bash", args: { command: 'echo "CHILD_TRUST: args=$DEV_TEAM_PI_ARGS root=[$DEV_TEAM_TRUSTED_ROOT]"' } }]);
 	const tasks = [{ agent: "local-only", task: prompt }, { agent: "security-review", task: prompt }, { agent: "general-purpose", task: trust }];
 	return script([{ tools: [{ tool: "dev_team_subagent", args: { tasks } }] }]);
@@ -281,7 +288,8 @@ const scenarios = {
 	},
 
 	"subagent: project agents and overrides run by default, child gets --approve"(env) {
-		const r = pi(env, projectAgentCall(env), { json: true });
+		seedProjectAgents(env);
+		const r = pi(env, projectAgentCall(), { json: true });
 		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
 		assert(d?.details, `no dispatch result: ${r.err}`);
 		assert(!d.details.skippedProjectAgents, `nothing should be skipped: ${JSON.stringify(d.details)}`);
@@ -292,7 +300,8 @@ const scenarios = {
 	},
 
 	"subagent: trust declined (--no-approve) runs package agents only and tells the child"(env) {
-		const r = pi(env, projectAgentCall(env), { json: true, extra: ["--no-approve"] });
+		seedProjectAgents(env);
+		const r = pi(env, projectAgentCall(), { json: true, extra: ["--no-approve"] });
 		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
 		assert(d?.details, `no dispatch result: ${r.err}`);
 		assert(d.details.skippedProjectAgents?.slice().sort().join(",") === "local-only,security-review", `skipped list: ${JSON.stringify(d.details)}`);
@@ -306,12 +315,24 @@ const scenarios = {
 	},
 
 	"--dev-team-agent (claude shim agent mode) uses project agents only when trust was not declined"(env) {
-		projectAgentCall(env); // seeds .claude/agents/security-review.md (PROJECT_OVERRIDE_PROMPT)
+		seedProjectAgents(env);
 		const probe = script([{ inspect: "runtime" }]);
 		let r = pi(env, probe, { extra: ["--dev-team-agent", "security-review"] });
 		assert(r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent not used: ${r.out.slice(0, 300)} ${r.err}`);
 		r = pi(env, probe, { extra: ["--no-approve", "--dev-team-agent", "security-review"] });
-		assert(!r.out.includes("PROJECT_OVERRIDE_PROMPT") && r.out.includes("security-review"), `project agent used despite --no-approve: ${r.out.slice(0, 300)} ${r.err}`);
+		assert(!r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent used despite --no-approve: ${r.out.slice(0, 300)}`);
+		assert(r.out.includes(PACKAGE_SECURITY_REVIEW_MARKER), `package agent not used instead: ${r.out.slice(0, 300)} ${r.err}`);
+	},
+
+	"project .pi/dev-team.json: dev-team settings apply, PATH-like env does not, nothing when trust is declined"(env) {
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_PROBE: "set", NODE_OPTIONS: "--title=hijacked" } }));
+		const probe = script([{ tool: "bash", args: { command: 'echo "PROBE=[$DEV_TEAM_PROBE] NODE=[$NODE_OPTIONS]"' } }]);
+		let r = pi(env, probe);
+		assert(r.out.includes("PROBE=[set]"), `dev-team setting from the project was not applied: ${r.out.slice(0, 300)} ${r.err}`);
+		assert(!r.out.includes("hijacked"), `NODE_OPTIONS from the project reached the shell: ${r.out.slice(0, 300)}`);
+		r = pi(env, probe, { extra: ["--no-approve"] });
+		assert(r.out.includes("PROBE=[]"), `project config applied although trust was declined: ${r.out.slice(0, 300)}`);
 	},
 
 	"cost meter credits a nested dispatch to the agent that ran it"(env) {

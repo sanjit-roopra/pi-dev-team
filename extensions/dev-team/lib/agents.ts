@@ -117,16 +117,19 @@ function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
 }
 
 /** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
+/** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
 export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, AgentDef> {
+	return byName([...(opts.includeProject ? loadProjectAgents(cwd) : []), ...loadDir(path.join(packageRoot, "agents"), "package")]);
+}
+
+function loadProjectAgents(cwd: string): AgentDef[] {
+	return [...loadDir(path.join(cwd, ".pi", "agents"), "project"), ...loadDir(path.join(cwd, ".claude", "agents"), "project")];
+}
+
+/** First definition of each name wins. */
+function byName(defs: AgentDef[]): Map<string, AgentDef> {
 	const map = new Map<string, AgentDef>();
-	const add = (defs: AgentDef[]) => {
-		for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
-	};
-	if (opts.includeProject) {
-		add(loadDir(path.join(cwd, ".pi", "agents"), "project"));
-		add(loadDir(path.join(cwd, ".claude", "agents"), "project"));
-	}
-	add(loadDir(path.join(packageRoot, "agents"), "package"));
+	for (const d of defs) if (!map.has(d.name)) map.set(d.name, d);
 	return map;
 }
 
@@ -143,7 +146,7 @@ export function projectAgentsRequested(agents: Map<string, AgentDef>, requested:
 /**
  * Agents a dispatch may use. When pi reports the project untrusted (the user declined pi's trust
  * prompt or ran with --no-approve), project agents are dropped and `skippedProjectAgents` names the
- * requested ones, so the caller can say why they did not run.
+ * requested ones, so the caller can say why they did not run. Each directory is read once.
  */
 export function discoverDispatchAgents(
 	cwd: string,
@@ -151,12 +154,11 @@ export function discoverDispatchAgents(
 	projectTrusted: boolean,
 	requested: string[],
 ): { agents: Map<string, AgentDef>; skippedProjectAgents: string[] } {
-	const all = discoverAgents(cwd, packageRoot, { includeProject: true });
+	const project = loadProjectAgents(cwd);
+	const packaged = loadDir(path.join(packageRoot, "agents"), "package");
+	const all = byName([...project, ...packaged]);
 	if (projectTrusted) return { agents: all, skippedProjectAgents: [] };
-	return {
-		agents: discoverAgents(cwd, packageRoot, { includeProject: false }),
-		skippedProjectAgents: projectAgentsRequested(all, requested.filter(Boolean)).map((d) => d.name),
-	};
+	return { agents: byName(packaged), skippedProjectAgents: projectAgentsRequested(all, requested.filter(Boolean)).map((d) => d.name) };
 }
 
 /** Accept Claude-style qualified names ("dev-team:security-review") and case differences. */

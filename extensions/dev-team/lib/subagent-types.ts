@@ -72,6 +72,9 @@ export interface SubagentTaskView {
 	worktree?: WorktreeInfo;
 }
 
+/** Progress fields a running child reports; status/ok are set only from the final result. */
+export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "tools" | "model" | "usage">>;
+
 export interface SubagentDetails {
 	results: SubagentTaskView[];
 	/** Project agents that were requested but not run because pi trust was declined for the project. */

@@ -83,12 +83,33 @@ class Shim(unittest.TestCase):
             other = Path(d) / "other"
             other.mkdir()
             (root / "link").symlink_to(other)
+            (Path(d) / "repo-link").symlink_to(root)
             self.assertTrue(shim.trusted_here(str(root), str(root)))
-            self.assertTrue(shim.trusted_here(str(root), str(root / "sub")))
+            self.assertTrue(shim.trusted_here(str(root), str(Path(d) / "repo-link")), "a link to the root is the root")
+            self.assertFalse(shim.trusted_here(str(root), str(root / "sub")), "pi trusts per directory")
             self.assertFalse(shim.trusted_here(str(root), str(other)))
-            self.assertFalse(shim.trusted_here(str(root), str(Path(d) / "repo-sibling")))
             self.assertFalse(shim.trusted_here(str(root), str(root / "link")), "symlink out of the root")
             self.assertFalse(shim.trusted_here("", str(root)), "session not trusted")
+
+    def _shim_argv(self, d, cwd, extra_env):
+        pi, log = self._fake_pi(d, [{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}], "stopReason": "stop"}}])
+        env = {k: v for k, v in os.environ.items() if k not in ("DEV_TEAM_PI_ARGS", "DEV_TEAM_TRUSTED_ROOT")}
+        env.update({"DEV_TEAM_PI_BIN": str(pi), **extra_env})
+        out = subprocess.run([sys.executable, str(ROOT / "bin" / "claude"), "-p", "x"], capture_output=True, text=True, env=env, cwd=cwd)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(log.read_text())
+
+    def test_shim_forwards_the_session_trust_decision(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d) / "repo"
+            (root / "sub").mkdir(parents=True)
+            trusted = {"DEV_TEAM_PI_ARGS": "[]", "DEV_TEAM_TRUSTED_ROOT": str(root)}
+            self.assertIn("--approve", self._shim_argv(d, root, trusted))
+            self.assertNotIn("--approve", self._shim_argv(d, root / "sub", trusted), "only the session directory")
+            self.assertNotIn("--approve", self._shim_argv(d, root, {"DEV_TEAM_PI_ARGS": "[]"}), "no root, no grant")
+            declined = self._shim_argv(d, root, {"DEV_TEAM_PI_ARGS": json.dumps(["--no-approve"])})
+            self.assertIn("--no-approve", declined)
+            self.assertNotIn("--approve", declined)
 
     def test_map_tools(self):
         self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
