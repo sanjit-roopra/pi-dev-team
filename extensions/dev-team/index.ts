@@ -28,6 +28,7 @@ import { commandText, discoverInvocableSkills, discoverSkills, expandSkill, reso
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
+import { removeProcessFiles } from "./lib/session-files.ts";
 import { childTrustOf, shimTrustEnv } from "./lib/trust.ts";
 
 function packageRootDir(): string {
@@ -484,8 +485,13 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
-		if (isSubagent) return;
-		await hooks.run("SessionEnd", { ...basePayload(ctx), reason: event.reason === "quit" ? "prompt_input_exit" : "other" }, ctx.cwd);
+		try {
+			if (isSubagent) return;
+			await hooks.run("SessionEnd", { ...basePayload(ctx), reason: event.reason === "quit" ? "prompt_input_exit" : "other" }, ctx.cwd);
+		} finally {
+			// Only on quit: after a reload, new, resume or fork, tool results may still name these files.
+			if (event.reason === "quit") removeProcessFiles();
+		}
 	});
 }
 

@@ -7,9 +7,7 @@
  * `message.stop_reason` and `message.usage`. pi children run with --no-session, so the subagent tool
  * records the child's JSON event stream and writes this equivalent file before firing SubagentStop.
  */
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
+import { writeSessionFile } from "./session-files.ts";
 
 interface PiContentBlock {
 	type: string;
@@ -107,14 +105,6 @@ export function buildTranscriptLines(opts: {
 	return lines;
 }
 
-export function transcriptDir(sessionId: string): string {
-	const dir = path.join(os.tmpdir(), "pi-dev-team", sessionId.replace(/[^\w.-]/g, "_"), "subagents");
-	fs.mkdirSync(dir, { recursive: true });
-	return dir;
-}
-
 export function writeTranscript(sessionId: string, agentId: string, lines: string[]): string {
-	const file = path.join(transcriptDir(sessionId), `agent-${agentId}.jsonl`);
-	fs.writeFileSync(file, `${lines.join("\n")}\n`, "utf-8");
-	return file;
+	return writeSessionFile(sessionId, "subagents", `agent-${agentId}.jsonl`, `${lines.join("\n")}\n`);
 }

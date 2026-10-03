@@ -194,19 +194,22 @@ export class HookBridge {
 	private specs: HookSpec[];
 	private readonly packageRoot: string;
 	private readonly getConfig: () => DevTeamConfig;
+	private readonly resolveInterpreter: () => string | null;
 
-	constructor(packageRoot: string, getConfig: () => DevTeamConfig) {
+	constructor(packageRoot: string, getConfig: () => DevTeamConfig, resolveInterpreter: () => string | null = resolvePython) {
 		this.packageRoot = packageRoot;
 		this.getConfig = getConfig;
+		this.resolveInterpreter = resolveInterpreter;
 		this.specs = loadHookSpecs(packageRoot);
 	}
 
 	/**
-	 * The Python interpreter hooks run with, probed on first use: pi loads extensions in invocations
-	 * that never start a session, so the extension factory must not start processes.
+	 * The Python interpreter hooks run with, probed on first use (resolvePython caches it): pi loads
+	 * extensions in invocations that never start a session, so the extension factory must not start
+	 * processes.
 	 */
 	get python(): string | null {
-		return resolvePython();
+		return this.resolveInterpreter();
 	}
 
 	get all(): HookSpec[] {

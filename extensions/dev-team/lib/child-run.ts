@@ -13,31 +13,26 @@ import {
 	type ProgressPatch,
 	type SubagentDetails,
 	type SubagentTaskView,
+	type ToolCallSummary,
 	toUsageTotals,
 } from "./subagent-types.ts";
 import type { PiMessageLike } from "./transcript.ts";
 
-const RECENT_TOOLS_KEPT = 8;
-const TOOL_CALL_CHARS = 80;
+const RECENT_CALLS_KEPT = 8;
+/** Arguments the progress view shows, by name; anything else in a call is not kept. */
+const SHOWN_ARGS = ["command", "pattern", "path", "file_path", "url", "name", "agent", "subagent_type"] as const;
+const SHOWN_ARG_CHARS = 200;
 
-/**
- * A tool call as the progress view shows it, after pi's subagent example: `$ cmd`, `read path`,
- * `grep /pattern/ in path`, otherwise the tool name and its path or first argument.
- */
-export function describeToolCall(name: string, args: unknown): string {
-	const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
-	const str = (v: unknown) => (typeof v === "string" ? v : undefined);
-	const firstLine = (v: string) => v.split("\n")[0];
-	let text: string;
-	if (name === "bash" && str(a.command)) text = `$ ${firstLine(str(a.command) as string)}`;
-	else if (name === "grep" && str(a.pattern)) text = `grep /${str(a.pattern)}/ in ${str(a.path) ?? "."}`;
-	else if (name === "find" && str(a.pattern)) text = `find ${str(a.pattern)} in ${str(a.path) ?? "."}`;
-	else if (name === "dev_team_subagent") text = `dev-team ${str(a.agent) ?? str(a.subagent_type) ?? (Array.isArray(a.tasks) ? `${a.tasks.length} agents` : "")}`.trim();
-	else {
-		const target = str(a.path) ?? str(a.file_path) ?? str(a.url) ?? str(a.name);
-		text = target ? `${name} ${firstLine(target)}` : name;
+/** The parts of a tool call the progress view needs, each argument one line and bounded. */
+export function summarizeToolCall(name: string, args: unknown): ToolCallSummary {
+	const record = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+	const shown: Record<string, string> = {};
+	for (const key of SHOWN_ARGS) {
+		const value = record[key];
+		if (typeof value === "string" && value.trim()) shown[key] = value.replace(/\s+/g, " ").trim().slice(0, SHOWN_ARG_CHARS);
 	}
-	return text.length > TOOL_CALL_CHARS ? `${text.slice(0, TOOL_CALL_CHARS - 1)}…` : text;
+	if (Array.isArray(record.tasks)) shown.tasks = String(record.tasks.length);
+	return Object.keys(shown).length ? { name, args: shown } : { name };
 }
 
 export interface ChildEvent {
@@ -53,14 +48,14 @@ export interface ChildRunState {
 	total: Usage;
 	nested: NestedUsage[];
 	turns: number;
-	recentTools: string[];
+	recentCalls: ToolCallSummary[];
 	model?: string;
 	stopReason?: string;
 	errorMessage?: string;
 }
 
 export function newChildRunState(model?: string): ChildRunState {
-	return { messages: [], own: emptyPiUsage(), total: emptyPiUsage(), nested: [], turns: 0, recentTools: [], model };
+	return { messages: [], own: emptyPiUsage(), total: emptyPiUsage(), nested: [], turns: 0, recentCalls: [], model };
 }
 
 /** Usage of the agents a nested dev_team_subagent result ran, each with its own nested runs. */
@@ -89,10 +84,10 @@ export function applyChildEvent(state: ChildRunState, ev: ChildEvent): ProgressP
 		const calls = Array.isArray(m.content)
 			? (m.content as { type: string; name?: string; arguments?: unknown }[])
 					.filter((c) => c.type === "toolCall" && !!c.name)
-					.map((c) => describeToolCall(c.name as string, c.arguments))
+					.map((c) => summarizeToolCall(c.name as string, c.arguments))
 			: [];
-		state.recentTools = [...state.recentTools, ...calls].slice(-RECENT_TOOLS_KEPT);
-		return { turns: state.turns, tools: state.recentTools, model: state.model, usage: toUsageTotals(state.own, state.turns) };
+		state.recentCalls = [...state.recentCalls, ...calls].slice(-RECENT_CALLS_KEPT);
+		return { turns: state.turns, recentCalls: state.recentCalls, model: state.model, usage: toUsageTotals(state.own, state.turns) };
 	}
 	if (m.role === "toolResult") {
 		state.messages.push(m);

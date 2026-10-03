@@ -20,6 +20,15 @@ export interface UsageTotals {
 	turns: number;
 }
 
+/**
+ * A child's tool call as kept for the progress view: the tool and the few arguments the view shows
+ * (command, pattern, path, ...), each one line and bounded, so stored details stay small.
+ */
+export interface ToolCallSummary {
+	name: string;
+	args?: Record<string, string>;
+}
+
 /** Spend of an agent dispatched by a child (or deeper), credited to that agent and its model. */
 export interface NestedUsage {
 	agent: string;
@@ -59,8 +68,10 @@ export interface SubagentTaskView {
 	model?: string;
 	tier?: string;
 	turns: number;
-	/** Most recent tool calls as shown (`$ npm test`, `read src/a.ts`), newest last (bounded). */
-	tools: string[];
+	/** Most recent tool calls, newest last (bounded); the renderer formats them. */
+	recentCalls: ToolCallSummary[];
+	/** Earlier details shape (tool names only), still found in stored sessions. */
+	tools?: string[];
 	/** The agent's own turns. */
 	usage?: UsageTotals;
 	/** Agents it dispatched itself, so a parent can credit them in turn. */
@@ -73,7 +84,7 @@ export interface SubagentTaskView {
 }
 
 /** Progress fields a running child reports; status/ok are set only from the final result. */
-export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "tools" | "model" | "usage">>;
+export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage">>;
 
 export interface SubagentDetails {
 	results: SubagentTaskView[];

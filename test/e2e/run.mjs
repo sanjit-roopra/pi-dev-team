@@ -80,6 +80,8 @@ function pi(env, prompt, { json = false, extra = [], usePackageFlag = true } = {
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
 		timeout: 120_000,
+		// The scripted provider echoes long prompts; the 1 MB default would kill pi before it shuts down.
+		maxBuffer: 64 * 1024 * 1024,
 	});
 	return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
 }

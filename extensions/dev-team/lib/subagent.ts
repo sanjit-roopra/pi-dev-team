@@ -22,7 +22,7 @@ import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools
 import type { DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
-import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
+import { recentCallLines, renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
 import {
 	type AgentSource,
 	type DispatchArgs,
@@ -39,6 +39,7 @@ import {
 	type UsageTotals,
 	type WorktreeInfo,
 } from "./subagent-types.ts";
+import { saveFullOutput } from "./session-files.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
 import { type ChildTrust, childTrustOf, trustArgs } from "./trust.ts";
 
@@ -49,7 +50,7 @@ export interface SubagentRunResult {
 	ok: boolean;
 	output: string;
 	/** Where the complete output was saved when it is longer than the tool result may carry. */
-	outputFile?: string;
+	fullOutputFile?: string;
 	error?: string;
 	model?: string;
 	tier?: string;
@@ -126,28 +127,27 @@ function finalText(messages: PiMessageLike[]): string {
 	return "";
 }
 
-/** The model-facing output, cut at OUTPUT_CAP; when cut, it says where the complete output is. */
-export function cap(text: string, fullOutputFile?: string): string {
-	if (Buffer.byteLength(text, "utf8") <= OUTPUT_CAP) return text;
-	const where = fullOutputFile ? `; the complete output is in ${fullOutputFile} (read it with offset/limit)` : "";
-	return `${text.slice(0, OUTPUT_CAP)}\n\n[output truncated at ${OUTPUT_CAP} bytes${where}]`;
+/** The one rule for when a child's output is too long to return whole. */
+export function isOversized(text: string): boolean {
+	return Buffer.byteLength(text, "utf8") > OUTPUT_CAP;
 }
 
-/**
- * Keep a child's complete output when it is too long for the tool result, so the model can read the
- * rest. Files live under the OS temp directory, per session, readable only by the user.
- */
-export function saveFullOutput(sessionId: string, agent: string, agentId: string, output: string): string | undefined {
-	if (Buffer.byteLength(output, "utf8") <= OUTPUT_CAP) return undefined;
-	try {
-		const dir = path.join(os.tmpdir(), "pi-dev-team", "subagent-output", sessionId.replace(/[^\w.-]/g, "_"));
-		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-		const file = path.join(dir, `${agent.replace(/[^\w.-]/g, "_")}-${agentId}.md`);
-		fs.writeFileSync(file, output, { encoding: "utf-8", mode: 0o600 });
-		return file;
-	} catch {
-		return undefined;
-	}
+/** The first OUTPUT_CAP bytes, cut on a character boundary. */
+function cutOutput(text: string): string {
+	return Buffer.from(text, "utf8").subarray(0, OUTPUT_CAP).toString("utf8").replace(/\uFFFD$/, "");
+}
+
+/** The output as the model gets it: cut when oversized, with where to read the complete text. */
+export function outputForModel(text: string, fullOutputFile?: string): string {
+	if (!isOversized(text)) return text;
+	const fullOutputNote = fullOutputFile ? `; the complete output is in ${fullOutputFile} (read it with offset/limit)` : "";
+	return `${cutOutput(text)}\n\n[output truncated at ${OUTPUT_CAP} bytes${fullOutputNote}]`;
+}
+
+/** The output as the TUI shows it: cut when oversized, naming the file without instructions for the model. */
+export function outputForView(text: string, fullOutputFile?: string): string {
+	if (!isOversized(text)) return text;
+	return `${cutOutput(text)}\n\n[output truncated at ${OUTPUT_CAP} bytes${fullOutputFile ? `; complete output: ${fullOutputFile}` : ""}]`;
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
@@ -376,7 +376,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 
 			const worktree = wt ? finishWorktree(wt) : undefined;
 			const output = finalText(run.messages);
-			const outputFile = saveFullOutput(sessionId, def.name, agentId, output);
+			const fullOutputFile = isOversized(output) ? saveFullOutput(sessionId, def.name, agentId, output) : undefined;
 			const ok = exitCode === 0 && !aborted && !timedOut && run.stopReason !== "error" && run.stopReason !== "aborted";
 			const result: SubagentRunResult = {
 				agent: def.name,
@@ -384,7 +384,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				task,
 				ok,
 				output,
-				outputFile,
+				fullOutputFile,
 				error: ok
 					? undefined
 					: timedOut
@@ -505,13 +505,13 @@ export class DispatchProgress {
 			status: "running",
 			ok: false,
 			turns: 0,
-			tools: [],
+			recentCalls: [],
 		}));
 		this.emit();
 	}
 	snapshot(): SubagentDetails {
 		return {
-			results: this.views.map((v) => ({ ...v, tools: [...v.tools] })),
+			results: this.views.map((v) => ({ ...v, recentCalls: [...v.recentCalls] })),
 			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
 	}
@@ -530,7 +530,8 @@ export class DispatchProgress {
 
 function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
-	const tools = v.tools.length ? ` → ${v.tools.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
+	const calls = recentCallLines(v);
+	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
 	return `${v.agent}: turn ${v.turns}${tools}`;
 }
 
@@ -548,7 +549,7 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		durationMs: r.durationMs,
 		stopReason: r.stopReason,
 		error: r.error,
-		output: r.output ? cap(r.output, r.outputFile) : undefined,
+		output: r.output ? outputForView(r.output, r.fullOutputFile) : undefined,
 		worktree: r.worktree,
 	};
 }
@@ -561,11 +562,13 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	if (results.length === 1) {
 		const r = results[0];
 		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
-		return `${r.ok ? cap(r.output || "(no output)", r.outputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
+		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
 	}
 	const section = (r: SubagentRunResult) => {
 		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;
-		const body = r.ok ? cap(r.output || "(no output)", r.outputFile) : `Error: ${r.error}${r.output ? `\n\nLast output:\n${cap(r.output, r.outputFile)}` : ""}`;
+		const body = r.ok
+			? outputForModel(r.output || "(no output)", r.fullOutputFile)
+			: `Error: ${r.error}${r.output ? `\n\nLast output:\n${outputForModel(r.output, r.fullOutputFile)}` : ""}`;
 		const wt = r.worktree ? `\n\nWorktree: ${describeWorktree(r.worktree)}` : "";
 		return `${head}\n\n${body}${wt}`;
 	};

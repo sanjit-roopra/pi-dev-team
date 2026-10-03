@@ -4,10 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "../../extensions/dev-team/lib/agents.ts";
-import { applyChildEvent, describeToolCall, newChildRunState } from "../../extensions/dev-team/lib/child-run.ts";
+import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
-import { cap, DispatchProgress, formatResultText, saveFullOutput, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { DispatchProgress, formatResultText, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -135,18 +135,18 @@ const turnUsage = { input: 100, output: 10, cacheRead: 0, cacheWrite: 0, totalTo
 
 test("child events: assistant turns count as the child's own usage and progress", () => {
 	const state = newChildRunState("p/m");
-	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", name: "read" }], usage: turnUsage, model: "m2", provider: "p" } as never });
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: "src/a.ts" } }], usage: turnUsage, model: "m2", provider: "p" } as never });
 	assert.equal(state.turns, 1);
 	assert.equal(state.own.input, 100);
 	assert.equal(state.total.input, 100);
-	assert.deepEqual(patch?.tools, ["read"]);
+	assert.deepEqual(patch?.recentCalls, [{ name: "read", args: { path: "src/a.ts" } }], "the call and its key argument");
 	assert.equal(patch?.model, "p/m2");
 	assert.equal(applyChildEvent(state, { type: "message_start", message: { role: "assistant" } as never }), undefined);
 });
 
 test("child events: a nested dev-team dispatch is credited to the agents it ran", () => {
 	const state = newChildRunState();
-	const nestedView = { agent: "Explore", task: "t", status: "ok", ok: true, turns: 1, tools: [], model: "p/haiku", usage: { input: 40, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0.04, turns: 1 }, nested: [{ agent: "deep", model: "p/x", usage: { input: 60, output: 6, cacheRead: 0, cacheWrite: 0, cost: 0.06, turns: 1 } }] };
+	const nestedView = { agent: "Explore", task: "t", status: "ok", ok: true, turns: 1, recentCalls: [], model: "p/haiku", usage: { input: 40, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0.04, turns: 1 }, nested: [{ agent: "deep", model: "p/x", usage: { input: 60, output: 6, cacheRead: 0, cacheWrite: 0, cost: 0.06, turns: 1 } }] };
 	applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "dev_team_subagent", usage: turnUsage, details: { results: [nestedView] } } as never });
 	assert.equal(state.own.input, 0, "not the child's own spend");
 	assert.equal(state.total.input, 100, "still in the total pi counts");
@@ -164,7 +164,7 @@ test("child events: only the latest 8 tool calls are kept, nameless ones skipped
 	const state = newChildRunState();
 	const calls = Array.from({ length: 10 }, (_, i) => ({ type: "toolCall", name: `t${i}` }));
 	applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }] } as never });
-	assert.deepEqual(state.recentTools, ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"]);
+	assert.deepEqual(state.recentCalls.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"]);
 });
 
 test("child events: a model without a provider is shown as is", () => {
@@ -270,7 +270,7 @@ test("result text: tells the model which project agents were skipped", () => {
 	assert.match(formatResultText([runResult({})], ["local-only"]), /\[project agents not run \(project not trusted\): local-only\./);
 });
 
-type Emitted = { text: string; details: { results: { status: string; ok: boolean; turns: number; tools: string[] }[]; skippedProjectAgents?: string[] } };
+type Emitted = { text: string; details: { results: { status: string; ok: boolean; turns: number; recentCalls: { name: string }[] }[]; skippedProjectAgents?: string[] } };
 
 function recordedProgress(skipped: string[] = []) {
 	const updates: Emitted[] = [];
@@ -287,8 +287,8 @@ test("progress: the initial state is emitted, with skipped project agents", () =
 
 test("progress: an update streams the turn and the latest tool calls", () => {
 	const { progress, updates } = recordedProgress();
-	progress.update(0, { turns: 2, tools: ["read", "grep", "find", "ls"] });
-	assert.equal(updates.at(-1)?.text, "a: turn 2 → grep, find, ls\nb: turn 0");
+	progress.update(0, { turns: 2, recentCalls: [{ name: "read" }, { name: "bash", args: { command: "npm test" } }, { name: "find" }, { name: "ls" }] });
+	assert.equal(updates.at(-1)?.text, "a: turn 2 → $ npm test, find, ls\nb: turn 0");
 });
 
 test("progress: finish sets status and ok from the result", () => {
@@ -301,8 +301,8 @@ test("progress: finish sets status and ok from the result", () => {
 
 test("progress: snapshots are copies", () => {
 	const { progress } = recordedProgress();
-	progress.snapshot().results[0].tools.push("mutated");
-	assert.ok(!progress.snapshot().results[0].tools.includes("mutated"));
+	progress.snapshot().results[0].recentCalls.push({ name: "mutated" });
+	assert.ok(!progress.snapshot().results[0].recentCalls.some((c) => c.name === "mutated"));
 });
 
 test("viewFromResult: a failed run is status failed, ok false", () => {
@@ -323,30 +323,47 @@ test("viewFromResult carries nested runs only when there are some", () => {
 	assert.equal(viewFromResult(runResult({})).nested, undefined);
 });
 
-test("tool calls are shown with their key argument", () => {
-	assert.equal(describeToolCall("bash", { command: "npm test\necho done" }), "$ npm test");
-	assert.equal(describeToolCall("read", { path: "src/a.ts" }), "read src/a.ts");
-	assert.equal(describeToolCall("grep", { pattern: "TODO", path: "src" }), "grep /TODO/ in src");
-	assert.equal(describeToolCall("find", { pattern: "*.ts" }), "find *.ts in .");
-	assert.equal(describeToolCall("dev_team_subagent", { agent: "Explore" }), "dev-team Explore");
-	assert.equal(describeToolCall("dev_team_subagent", { tasks: [{}, {}] }), "dev-team 2 agents");
-	assert.equal(describeToolCall("ask_user", { questions: [] }), "ask_user");
-	assert.equal(describeToolCall("bash", { command: "x".repeat(200) }).length, 80);
+test("a tool call keeps only the arguments the view shows, one line and bounded", () => {
+	assert.deepEqual(summarizeToolCall("write", { path: "a.ts", content: "x".repeat(10_000) }), { name: "write", args: { path: "a.ts" } });
+	assert.deepEqual(summarizeToolCall("grep", { pattern: "a\nb", path: "src" }), { name: "grep", args: { pattern: "a b", path: "src" } });
+	assert.equal(summarizeToolCall("bash", { command: "x".repeat(500) }).args?.command.length, 200);
+	assert.deepEqual(summarizeToolCall("dev_team_subagent", { tasks: [{}, {}] }), { name: "dev_team_subagent", args: { tasks: "2" } });
+	assert.deepEqual(summarizeToolCall("ask_user", null), { name: "ask_user" });
 });
 
-test("a long child output is cut, and the cut says where the complete output is", (t) => {
-	const long = "y".repeat(60 * 1024);
-	const file = saveFullOutput(`session-${process.pid}`, "Explore", "abc123", long);
-	assert.ok(file, "saved");
-	t.after(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }));
-	assert.equal(fs.readFileSync(file, "utf-8"), long);
-	assert.equal(fs.statSync(file).mode & 0o777, 0o600);
-	const shown = cap(long, file);
-	assert.ok(shown.length < long.length);
-	assert.match(shown, new RegExp(`complete output is in ${file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+const OUTPUT_CAP = 50 * 1024;
+const big = "y".repeat(OUTPUT_CAP + 1);
+
+test("output at the cap is returned whole; one byte over is cut", () => {
+	const atCap = "y".repeat(OUTPUT_CAP);
+	assert.equal(outputForModel(atCap), atCap);
+	assert.ok(outputForModel(big).startsWith("y".repeat(OUTPUT_CAP)));
+	assert.ok(outputForModel(big).endsWith(`[output truncated at ${OUTPUT_CAP} bytes]`));
 });
 
-test("a short child output is neither saved nor cut", () => {
-	assert.equal(saveFullOutput("s", "a", "1", "short"), undefined);
-	assert.equal(cap("short"), "short");
+test("the model is told where the complete output is", () => {
+	assert.ok(outputForModel(big, "/tmp/x.md").endsWith(`[output truncated at ${OUTPUT_CAP} bytes; the complete output is in /tmp/x.md (read it with offset/limit)]`));
+});
+
+test("the TUI names the file without the model's read instruction", () => {
+	const shown = outputForView(big, "/tmp/x.md");
+	assert.ok(shown.endsWith(`[output truncated at ${OUTPUT_CAP} bytes; complete output: /tmp/x.md]`));
+	assert.ok(!shown.includes("offset/limit"));
+});
+
+test("multibyte output is cut by bytes, on a character boundary", () => {
+	// "€" is 3 bytes and the cap is not a multiple of 3, so the byte cut lands inside a character.
+	assert.notEqual(OUTPUT_CAP % 3, 0);
+	const shown = outputForModel("€".repeat(20_000));
+	const body = shown.slice(0, shown.lastIndexOf("\n\n[output truncated"));
+	assert.equal(body, "€".repeat(Math.floor(OUTPUT_CAP / 3)));
+});
+
+test("result text and view carry the saved file for single and parallel results", () => {
+	const file = "/tmp/full.md";
+	const oversized = runResult({ output: big, fullOutputFile: file });
+	assert.match(formatResultText([oversized], []), /complete output is in \/tmp\/full\.md/);
+	assert.match(formatResultText([oversized, runResult({ agent: "b" })], []), /complete output is in \/tmp\/full\.md/);
+	assert.match(formatResultText([runResult({ ok: false, error: "e", output: big, fullOutputFile: file }), runResult({ agent: "b" })], []), /Last output:[\s\S]*complete output is in \/tmp\/full\.md/);
+	assert.match(viewFromResult(oversized).output ?? "", /complete output: \/tmp\/full\.md/);
 });

@@ -17,6 +17,7 @@ import {
 	dispatchTask,
 	type SubagentDetails,
 	type SubagentTaskView,
+	type ToolCallSummary,
 	type UsageTotals,
 } from "./subagent-types.ts";
 
@@ -92,6 +93,33 @@ function worktreeLine(v: SubagentTaskView, theme: Theme): string {
 	return v.worktree ? theme.fg("muted", `worktree ${sanitizeTerminalText(describeWorktree(v.worktree))}`) : "";
 }
 
+const TOOL_CALL_CHARS = 80;
+
+/**
+ * A tool call as the progress view shows it, after pi's subagent example: `$ cmd`, `read path`,
+ * `grep /pattern/ in path`, otherwise the tool name and its path, file_path, url or name argument.
+ */
+export function formatToolCall(call: ToolCallSummary): string {
+	const a = call.args ?? {};
+	let text: string;
+	if (call.name === "bash" && a.command) text = `$ ${a.command}`;
+	else if (call.name === "grep" && a.pattern) text = `grep /${a.pattern}/ in ${a.path ?? "."}`;
+	else if (call.name === "find" && a.pattern) text = `find ${a.pattern} in ${a.path ?? "."}`;
+	else if (call.name === "dev_team_subagent") {
+		const who = a.agent ?? a.subagent_type ?? (a.tasks ? `${a.tasks} agents` : undefined);
+		text = who ? `dev-team ${who}` : "dev-team";
+	} else {
+		const target = a.path ?? a.file_path ?? a.url ?? a.name;
+		text = target ? `${call.name} ${target}` : call.name;
+	}
+	return text.length > TOOL_CALL_CHARS ? `${text.slice(0, TOOL_CALL_CHARS - 1)}…` : text;
+}
+
+/** A view's recent calls as display lines; stored sessions may still carry plain tool names. */
+export function recentCallLines(v: Pick<SubagentTaskView, "recentCalls" | "tools">): string[] {
+	return v.recentCalls ? v.recentCalls.map(formatToolCall) : (v.tools ?? []);
+}
+
 function toolLines(tools: string[], theme: Theme): string {
 	return tools.map((t) => `${theme.fg("muted", "→ ")}${theme.fg("accent", sanitizeTerminalText(t))}`).join("\n");
 }
@@ -100,7 +128,10 @@ function toolLines(tools: string[], theme: Theme): string {
 function renderCollapsed(v: SubagentTaskView, theme: Theme): string {
 	const lines = [headerLine(v, theme)];
 	if (v.status === "failed" && v.error) lines.push(theme.fg("error", `Error: ${preview(v.error, COLLAPSED_ERROR_CHARS)}`));
-	else if (v.status === "running") lines.push(v.tools.length ? toolLines(v.tools.slice(-COLLAPSED_TOOLS), theme) : theme.fg("muted", "(starting…)"));
+	else if (v.status === "running") {
+		const calls = recentCallLines(v);
+		lines.push(calls.length ? toolLines(calls.slice(-COLLAPSED_TOOLS), theme) : theme.fg("muted", "(starting…)"));
+	}
 	else if (v.output) {
 		lines.push(theme.fg("toolOutput", sanitizeTerminalText(v.output).trim().split("\n").slice(0, COLLAPSED_OUTPUT_LINES).join("\n")));
 	} else lines.push(theme.fg("muted", "(no output)"));
@@ -115,7 +146,8 @@ function renderCollapsed(v: SubagentTaskView, theme: Theme): string {
 function renderExpandedInto(container: Container, v: SubagentTaskView, theme: Theme): void {
 	container.addChild(new Text(headerLine(v, theme), 0, 0));
 	container.addChild(new Text(`${theme.fg("muted", "Task: ")}${theme.fg("dim", sanitizeTerminalText(v.task))}`, 0, 0));
-	if (v.tools.length) container.addChild(new Text(toolLines(v.tools, theme), 0, 0));
+	const calls = recentCallLines(v);
+	if (calls.length) container.addChild(new Text(toolLines(calls, theme), 0, 0));
 	if (v.status === "failed" && v.error) container.addChild(new Text(theme.fg("error", `Error: ${sanitizeTerminalText(v.error)}`), 0, 0));
 	if (v.output) {
 		container.addChild(new Spacer(1));
