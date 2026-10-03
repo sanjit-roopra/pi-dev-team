@@ -1,156 +1,153 @@
 # pi-dev-team
 
-A port of Bryan Finster's **dev-team** plugin ([bdfinst/agentic-dev-team](https://github.com/bdfinst/agentic-dev-team), Claude Code) to the [pi coding agent](https://pi.dev). It works with any model provider pi supports, including GitHub Copilot.
+pi-dev-team gives the [pi coding agent](https://pi.dev) a team of AI agents. The team writes a specification, makes a plan, builds the change with tests, reviews the code, and opens a pull request. You approve each important step.
 
-What you get is the whole dev-team:
+The package is a port of the dev-team plugin by Bryan Finster ([bdfinst/agentic-dev-team](https://github.com/bdfinst/agentic-dev-team)), which was written for Claude Code. It works with every model provider that pi supports, for example GitHub Copilot, Anthropic, and OpenAI.
 
-- **Agents (48).** An orchestrator, team personas (software engineer, QA, architect, product manager, security, platform, tech writer, UX), about 25 review lenses and 5 plan critics. Explore and general-purpose agents are added.
-- **Skills (92).** The `/specs → /plan → /build → /pr` workflow plus `/code-review`, `/ship`, `/triage`, `/fix`, `/test-improve`, `/continue`, mutation testing and the rest.
-- **Guard hooks.** careful / freeze / guard, tests frozen during REFACTOR, the verify-loop guard, the `gh pr create` review gate, and the review-verdict and dispatch ledgers.
-- **Knowledge base, scripts, templates.** Byte-identical to upstream.
+## Quick start
 
-Upstream version: see `UPSTREAM.json` (currently dev-team v14.0.0).
+The installation takes about 5 minutes if Node.js and Python are already on your computer.
 
-## Install
+1. Install pi, if you do not have it: `npm install -g @earendil-works/pi-coding-agent`
+2. Install this package: `pi install git:github.com/sanjit-roopra/pi-dev-team`
+3. Go to a Git repository and start pi: `cd my-project && pi`
+4. In pi, log in to a model provider: `/login`
+5. Check the installation: `/dev-team doctor`
+6. Prepare the repository for the team: `/setup`
+7. Give the team its first task: `/specs add rate limiting to the public API`
 
-Requirements:
+After step 5, each line of the report starts with `ok` or `MISSING`. If a line shows `MISSING`, install that tool (see [Requirements](#requirements)).
 
-- pi ≥ 1.0
-- git
-- Python ≥ 3.10 (hooks and scripts)
-- `gh` for PRs and issues
-- `jq` recommended
+## Requirements
 
-```bash
-pi install git:github.com/sanjit-roopra/pi-dev-team  # user-wide from GitHub
-pi install ./pi-dev-team            # or from a local checkout
-pi install -l ./pi-dev-team         # or for one project (.pi/settings.json)
+| Tool | Version | The team uses it to | If it is missing |
+|---|---|---|---|
+| [Node.js](https://nodejs.org) | 22.19 or later | Run pi | pi does not start. |
+| [pi](https://pi.dev) | 1.0 or later | Run the agents | The package does not load. |
+| Git | Any recent version | Track changes, make worktrees | Most commands do not work. |
+| Python | 3.10 or later | Run the guard hooks and scripts | The guards are off. pi shows a warning. |
+| [GitHub CLI](https://cli.github.com) (`gh`) | Any recent version | Open pull requests and read issues | `/pr` and `/ship` cannot open a pull request. |
+| `jq` | Any version | Run some quality gates | Those gates do not run. |
+
+A guard hook is a small script that runs before or after a tool call. It can stop an unsafe action, for example a pull request without a code review.
+
+## How the team works
+
+A normal change goes through four commands. Each command stops and asks you before it continues.
+
+| Command | What it does | What it leaves behind |
+|---|---|---|
+| `/specs <task>` | Asks you questions until the task is clear. Then it writes the intent, the architecture notes, and the acceptance criteria. | A spec file or a GitHub issue |
+| `/plan` | Splits the work into small steps. Each step has its own tests. | `plans/<task>.md` |
+| `/build` | Does the plan one step at a time. It writes a test, makes the test pass, and then cleans up the code. | Commits on your branch |
+| `/pr` | Runs the tests, the linter, and the code review. Then it opens a pull request. | A pull request |
+
+To do all four steps with one command, use `/ship <task>`. It stops at the same approval points.
+
+### Other commands
+
+- `/code-review`: About 25 review agents read your change at the same time. Each agent checks one topic, for example security, tests, or naming. Then the team can fix what they find.
+- `/triage <bug>`: Finds the root cause of a bug and writes a fix plan.
+- `/fix <bug>`: Does `/triage`, proves the bug, fixes it with tests, and opens a pull request.
+- `/continue`: Continues the work from your last session.
+- `/help`: Shows the main commands. `/help --all` shows all commands.
+
+## Choose the models
+
+Each agent has a tier. The tier tells the agent how strong a model it needs:
+
+| Tier | Used for |
+|---|---|
+| `opus` | Deep reviews and difficult design work |
+| `sonnet` | Most work |
+| `haiku` | Small, cheap checks |
+| `fable` | The strongest model. No agent uses this tier by default. |
+
+By default, every tier uses the model that you selected in pi. To use a different model for each tier, run `/dev-team models` and select a preset:
+
+- `github-copilot`: Uses the Claude models that GitHub Copilot gives you.
+- `anthropic`: Uses the Claude models from the Anthropic API.
+- `inherit`: Every agent uses your current model. This is the default.
+
+If you use GitHub Copilot and your plan counts premium requests, keep `inherit`. A code review can start more than 20 agents.
+
+## Safety and cost
+
+The agents can do the same things that you can do in a terminal.
+
+- They can read and change files in your repository.
+- They can run shell commands, for example your tests.
+- They can make many model calls. Up to 6 agents run at the same time by default.
+
+The guard hooks reduce the risk. For example, they stop `gh pr create` until a code review passes, and they keep the tests fixed while the team cleans up code. The guards need Python.
+
+To limit the work, set these values in `~/.pi/agent/dev-team.json`:
+
+```json
+{
+  "maxParallelAgents": 2,
+  "subagentTimeoutSec": 900
+}
 ```
 
-To update an existing Git installation:
+To see what the team spends, run `/telemetry on`. Then run `/cost-report`. The numbers come from pi, so they are correct for every provider.
+
+## Configuration
+
+The package reads three configuration files. A later file overrides an earlier file.
+
+1. `~/.pi/agent/dev-team.json`: Your settings for all projects
+2. `<project>/.pi/dev-team.json`: The settings for one project, shared in Git
+3. `<project>/.pi/dev-team.local.json`: Your own settings for one project, not in Git
+
+All settings, with the default values:
+
+```jsonc
+{
+  "models": { "opus": "inherit", "sonnet": "inherit", "haiku": "inherit", "fable": "inherit" },
+  "thinking": { "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" }, // agent effort -> pi thinking level
+  "maxParallelAgents": 6,      // agents that run at the same time
+  "maxSubagentDepth": 2,       // agents can start other agents, 2 levels deep
+  "subagentTimeoutSec": 3600,  // stop an agent after this time
+  "autoFormat": false,         // format files after each edit (/setup turns this on)
+  "skillIndex": "compact",     // compact, full, or off: the command list in the system prompt
+  "skillIndexChars": 220,      // the maximum length of each description in the compact list
+  "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
+  "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
+  "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
+}
+```
+
+Some hooks are off by default. A project file cannot change the `hooks` setting. Only your own file in `~/.pi/agent/` can change it. In a project file, `env` accepts only `DEV_TEAM_*` tuning settings. These rules stop a cloned repository from turning off your guards or from changing your `PATH`.
+
+To see which guard hooks are on, run `/dev-team hooks`.
+
+## Update
+
+To get the newest version, run:
 
 ```bash
 pi update git:github.com/sanjit-roopra/pi-dev-team
 ```
 
-Then, inside pi:
+To install the package for one project only, run `pi install -l git:github.com/sanjit-roopra/pi-dev-team` in that project. pi writes the package to `.pi/settings.json`.
 
-```
-/dev-team doctor      # checks python, git, gh, jq and your model tiers
-/dev-team models      # map the opus/sonnet/haiku/fable agent tiers to your models
-/setup                # provision the current repo (AGENTS.md, stack detection, .gitignore, ...)
-```
+## Troubleshooting
 
-### GitHub Copilot
-
-1. Log in: `/login github-copilot` (or `pi` → `/login`).
-2. Pick a main model: `/model github-copilot/claude-sonnet-5.5` (any Copilot model works).
-3. `/dev-team models` → `preset: github-copilot`. Upstream routes agents by tier: opus for deep reviews, sonnet for most work, haiku for cheap lenses. The preset maps those tiers to the Copilot Claude models:
-
-```json
-{
-  "models": {
-    "opus": "github-copilot/claude-opus-5.5",
-    "sonnet": "github-copilot/claude-sonnet-5.5",
-    "haiku": "github-copilot/claude-haiku-4.5",
-    "fable": "github-copilot/claude-fable-5.1"
-  }
-}
-```
-
-The default is `"inherit"` for every tier, meaning every agent runs on the model you are using. That is the safe choice when a provider has no cheap and expensive variants, or when Copilot premium-request multipliers matter more to you than per-agent routing.
-
-## Use
-
-The same as upstream:
-
-```
-/specs add rate limiting to the public API
-/plan
-/build
-/pr
-```
-
-Other useful commands:
-
-- `/code-review`: the reviewer swarm plus the fix loop.
-- `/ship`: runs the whole pipeline.
-- `/triage` and `/fix`: bug work.
-- `/help` and `/help --all`: the command list.
-
-Every user-invocable upstream skill is a `/command`.
-
-The model uses dev-team through four tools the extension adds:
-
-| Tool | Claude Code equivalent | Notes |
+| What you see | Cause | What to do |
 |---|---|---|
-| `dev_team_subagent` | Agent / Task | Runs the agent in a child `pi` process with its own context, tools and tier model. Single calls, parallel calls (several calls in one message, or `tasks[]`), and `isolation: "worktree"`. Accepts `subagent_type`/`prompt` too. Live per-agent progress in the TUI; child spend counts in pi's session totals. |
-| `skill` | Skill | Loads a skill with arguments substituted. This is how skills chain (`/specs` → `/plan`, `/ship` → everything). |
-| `ask_user` | AskUserQuestion | The human gates. In non-interactive runs (`pi -p`, subagents) it tells the model to take the documented default. |
-| `web_fetch` | WebFetch | URL to text. |
+| `dev-team: python >= 3.10 not found — hook guards are disabled.` | pi cannot find Python 3.10 or later. | Install Python 3.10 or later. Then restart pi. |
+| `/dev-team doctor` shows `NO AUTH (/login)` | You are not logged in to the provider of that tier. | Run `/login`, or set that tier to `inherit`. |
+| `/dev-team doctor` shows `UNKNOWN MODEL` | pi does not know the model name of that tier. | Run `/dev-team models` and select a preset again. |
+| `gh pr create` is blocked | The review gate needs a passed code review first. | Run `/code-review`, or use `/pr`, which runs the review for you. |
+| An agent stops after one hour | The agent reached `subagentTimeoutSec`. | Make the task smaller, or increase the value. |
 
-The dispatch tool is named `dev_team_subagent` so this package can coexist with
-`pi-subagents`, which registers `subagent`. Dev-team workflows use their own
-dispatch tool for model tiers, hooks, and metrics. Other workflows can still use
-the other package's `subagent` tool.
+## More information
 
-## Configure
-
-Configuration files are merged in this order, later wins:
-
-1. `~/.pi/agent/dev-team.json`
-2. `<project>/.pi/dev-team.json`
-3. `<project>/.pi/dev-team.local.json`
-
-```jsonc
-{
-  "models": { "opus": "inherit", "sonnet": "inherit", "haiku": "inherit", "fable": "inherit" },
-  "thinking": { "low": "low", "medium": "medium", "high": "high" },   // agent `effort` -> pi thinking level
-  "maxParallelAgents": 6,          // concurrent child processes across all subagent calls
-  "maxSubagentDepth": 2,           // orchestrator -> reviewer is depth 2
-  "subagentTimeoutSec": 3600,
-  "autoFormat": false,             // run prettier/ruff/black after write/edit (/setup turns this on)
-  "skillIndex": "compact",         // compact | full | off — skill list in the system prompt
-  "claudeShim": true,              // `claude -p` in upstream scripts runs pi instead
-  "env": { "DEV_TEAM_MAX_PARALLEL_BUILDS": "2" },   // in a project file: dev-team tuning settings only
-  "hooks": { "enabled": true, "disabled": ["..."], "enable": ["version_check"], "outputToModel": true, "timeoutSec": 60 }
-  // hooks: user config only; a project file's hooks are ignored
-}
-```
-
-- **Environment variables.** Upstream's `DEV_TEAM_*` variables work unchanged, for example `DEV_TEAM_AUTO_APPROVE=1`, `DEV_TEAM_AUTOCOMPACT_NUDGE=0` and `DEV_TEAM_COST_METER=off`.
-- **Cost metering.** Needs the same opt-in as upstream: `/telemetry on`, which writes `~/.claude/telemetry.json`. Costs come from pi's own usage accounting, so they are correct for Copilot and every other provider.
-- **Hooks.** `/dev-team hooks` lists every hook and whether it is on.
-
-## How it is built
-
-The port is a **compatibility runtime** rather than a rewrite. `sync/sync_upstream.py` copies upstream's agents, skills, hooks, scripts and knowledge. The Python code and knowledge stay byte-identical. The sync then applies a small set of listed patches and notes, and the TypeScript extension in `extensions/dev-team/` provides the Claude Code contract that content expects.
-
-[PORTING.md](PORTING.md) has the full analysis, the concept mapping, what was dropped and why, and the known differences.
-
-Update to a new upstream release:
-
-```bash
-git clone https://github.com/bdfinst/agentic-dev-team ../agentic-dev-team   # or pull
-python3 sync/sync_upstream.py --upstream ../agentic-dev-team
-```
-
-The sync fails loudly if a patch no longer matches.
-
-## Tests
-
-```bash
-./test/link-deps.sh            # once: links the globally installed pi packages for the unit tests
-npm test                       # TypeScript unit tests + Python tests (sync, claude shim)
-npm run e2e                    # real pi binary + offline scripted model: commands, guards, subagents,
-                               # worktrees, ledgers, cost meter, claude shim, installed-package children
-
-# upstream Python suite against this package (uses uv, no pip):
-# copy the package dirs into an agentic-dev-team checkout's plugins/dev-team, then
-uv run --no-project --with pytest --with pytest-asyncio --with hypothesis --with pytest-xdist \
-  --with jsonschema --with pyyaml python -m pytest -n 8 plugins/dev-team/tests/{hooks,scripts,lib}
-```
+- [PORTING.md](PORTING.md): How the port works, what is different from the Claude Code plugin, and what is not ported
+- [CONTRIBUTING.md](CONTRIBUTING.md): How to run the tests and update to a new upstream version
+- `UPSTREAM.json`: The upstream version of this package (now dev-team v14.0.0)
 
 ## License
 
-MIT. The upstream content is © Bryan Finster (see LICENSE). This package is an unofficial port and is not affiliated with Anthropic or the pi project.
+MIT. The upstream content is copyright Bryan Finster (see [LICENSE](LICENSE)). This package is an unofficial port. It is not part of Anthropic or the pi project.
