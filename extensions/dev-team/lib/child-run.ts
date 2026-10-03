@@ -7,6 +7,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import { DEV_TEAM_SUBAGENT_TOOL } from "./agents.ts";
 import {
 	addPiUsage,
+	creditedRuns,
 	emptyPiUsage,
 	type NestedUsage,
 	type ProgressPatch,
@@ -45,10 +46,7 @@ export function newChildRunState(model?: string): ChildRunState {
 function nestedUsageOf(details: unknown): NestedUsage[] {
 	const results = (details as SubagentDetails | undefined)?.results;
 	if (!Array.isArray(results)) return [];
-	return results.flatMap((v: SubagentTaskView) => [
-		...(v.usage ? [{ agent: v.agent, model: v.model, usage: v.usage }] : []),
-		...(Array.isArray(v.nested) ? v.nested : []),
-	]);
+	return results.flatMap((v: SubagentTaskView) => creditedRuns({ ...v, nested: Array.isArray(v.nested) ? v.nested : undefined }));
 }
 
 /**

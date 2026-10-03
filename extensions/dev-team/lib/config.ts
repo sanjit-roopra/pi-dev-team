@@ -10,6 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { readSmallFile } from "./safe-read.ts";
 
 export type Tier = "opus" | "sonnet" | "haiku" | "fable" | string;
 
@@ -115,8 +116,10 @@ export function projectConfigPath(cwd: string, local = false): string {
 }
 
 function readJson(file: string): Record<string, unknown> | undefined {
+	const text = readSmallFile(file);
+	if (text === undefined) return undefined;
 	try {
-		const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
+		const parsed = JSON.parse(text);
 		return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
 	} catch {
 		return undefined;
@@ -139,36 +142,50 @@ export function mergeConfig<T>(base: T, override: unknown): T {
 }
 
 /**
- * Project config may set only dev-team's own settings variables. pi asks about trust only when a repo
- * has pi-protected files (.pi/settings.json, .pi/extensions, ...), so a repo with just a
- * .pi/dev-team.json is trusted without a prompt; its env must not reach PATH, NODE_OPTIONS, PYTHONPATH
- * or the variables that choose which programs the port runs.
+ * A project's config may set only these dev-team tuning settings, each to a plain number, word or
+ * flag. pi asks about trust only when a repo has pi-protected files (.pi/settings.json, .pi/extensions,
+ * ...), so a repo with just a .pi/dev-team.json is trusted without a prompt. Its env must therefore not
+ * reach PATH, NODE_OPTIONS or PYTHONPATH, any file path the port reads or runs (DEV_TEAM_PY_CACHE is
+ * executed by hooks/py.sh), a program choice, or a gate bypass (DEV_TEAM_AUTO_APPROVE,
+ * DEV_TEAM_GUARD_OVERRIDE, *_SKIP). Those stay available in the user's own config and environment.
  */
-const PROJECT_ENV_KEY = /^DEV_TEAM_[A-Z0-9_]+$/;
-const PROJECT_ENV_DENIED = new Set([
-	"DEV_TEAM_PYTHON",
-	"DEV_TEAM_PI_BIN",
-	"DEV_TEAM_REAL_CLAUDE",
-	"DEV_TEAM_PI_ARGS",
-	"DEV_TEAM_TRUSTED_ROOT",
-	"DEV_TEAM_ROOT",
-	"DEV_TEAM_INTERACTIVE",
-	"DEV_TEAM_SUBAGENT",
-	"DEV_TEAM_SUBAGENT_DEPTH",
-	"DEV_TEAM_AGENT_NAME",
-	"DEV_TEAM_PARENT_SESSION_ID",
+export const PROJECT_ENV_SETTINGS: ReadonlySet<string> = new Set([
+	"DEV_TEAM_MAX_PARALLEL_BUILDS",
+	"DEV_TEAM_MAX_PARALLEL_REVIEW_AGENTS",
+	"DEV_TEAM_AUTO_REVIEW",
+	"DEV_TEAM_AUTO_REVIEW_THRESHOLD",
+	"DEV_TEAM_VERIFY_THRESHOLD",
+	"DEV_TEAM_BASH_RETRY_THRESHOLD",
+	"DEV_TEAM_REPO_REVIEW_PERCENT_THRESHOLD",
+	"DEV_TEAM_REPO_REVIEW_MIN_ADDED_LINES",
+	"DEV_TEAM_REPO_REVIEW_MAX_ADDED_LINES",
+	"DEV_TEAM_REVIEW_CONTEXT_PACK",
+	"DEV_TEAM_WORKTREE_BASE_FRESH",
+	"DEV_TEAM_AUTOCOMPACT_NUDGE",
+	"DEV_TEAM_COST_METER",
+	"DEV_TEAM_TASK_METRICS",
+	"DEV_TEAM_REVIEW_VALUE",
+	"DEV_TEAM_TELEMETRY",
 ]);
+const PLAIN_SETTING_VALUE = /^[A-Za-z0-9._-]{0,64}$/;
 
-export function isProjectEnvKeyAllowed(key: string): boolean {
-	return PROJECT_ENV_KEY.test(key) && !PROJECT_ENV_DENIED.has(key);
+export function isProjectEnvSettingAllowed(key: string, value: unknown): boolean {
+	return PROJECT_ENV_SETTINGS.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && PLAIN_SETTING_VALUE.test(String(value));
 }
 
-/** A project config file with env keys outside the allowed set removed; `dropped` names them. */
-export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; dropped: string[] } {
-	if (!isPlainObject(data.env)) return { data, dropped: [] };
-	const entries = Object.entries(data.env);
-	const kept = entries.filter(([k]) => isProjectEnvKeyAllowed(k));
-	return { data: { ...data, env: Object.fromEntries(kept) }, dropped: entries.filter(([k]) => !isProjectEnvKeyAllowed(k)).map(([k]) => k) };
+/**
+ * A project config file with only allowed env settings kept; `droppedEnvKeys` names the rest. An env
+ * that is not an object is dropped whole (reported as "env"), so it cannot replace the user's env.
+ */
+export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; droppedEnvKeys: string[] } {
+	if (!("env" in data)) return { data, droppedEnvKeys: [] };
+	const { env, ...rest } = data;
+	if (!isPlainObject(env)) return { data: rest, droppedEnvKeys: ["env"] };
+	const entries = Object.entries(env);
+	return {
+		data: { ...rest, env: Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v))) },
+		droppedEnvKeys: entries.filter(([k, v]) => !isProjectEnvSettingAllowed(k, v)).map(([k]) => k),
+	};
 }
 
 /**
@@ -178,21 +195,21 @@ export function filterProjectConfig(data: Record<string, unknown>): { data: Reco
 export function loadConfig(
 	cwd: string,
 	opts: { includeProject: boolean; userConfigFile?: string },
-): { config: DevTeamConfig; sources: string[]; droppedEnv: string[] } {
+): { config: DevTeamConfig; sources: string[]; droppedEnvKeys: string[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
-	const droppedEnv: string[] = [];
+	const droppedEnvKeys: string[] = [];
 	const userFile = opts.userConfigFile ?? userConfigPath();
 	const projectFiles = opts.includeProject ? [projectConfigPath(cwd), projectConfigPath(cwd, true)] : [];
 	for (const file of [userFile, ...projectFiles]) {
 		const raw = readJson(file);
 		if (!raw) continue;
-		const { data, dropped } = file === userFile ? { data: raw, dropped: [] } : filterProjectConfig(raw);
+		const { data, droppedEnvKeys: dropped } = file === userFile ? { data: raw, droppedEnvKeys: [] } : filterProjectConfig(raw);
 		config = mergeConfig(config, data);
 		sources.push(file);
-		droppedEnv.push(...dropped);
+		droppedEnvKeys.push(...dropped);
 	}
-	return { config, sources, droppedEnv };
+	return { config, sources, droppedEnvKeys };
 }
 
 /** Read-modify-write one config file (used by /dev-team models). */

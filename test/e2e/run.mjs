@@ -33,12 +33,12 @@ const PACKAGE_SECURITY_REVIEW_MARKER = "# Security Review";
 
 /**
  * A parallel dispatch: both seeded agents report their system prompt, and a package agent reports the
- * child's own trust decision (DEV_TEAM_PI_ARGS ends in --no-approve when declined; DEV_TEAM_TRUSTED_ROOT
+ * child's own trust decision (DEV_TEAM_PI_ARGS ends in --no-approve when declined; DEV_TEAM_TRUSTED_DIR
  * is set only when trusted).
  */
 function projectAgentCall() {
 	const prompt = script([{ inspect: "runtime" }]);
-	const trust = script([{ tool: "bash", args: { command: 'echo "CHILD_TRUST: args=$DEV_TEAM_PI_ARGS root=[$DEV_TEAM_TRUSTED_ROOT]"' } }]);
+	const trust = script([{ tool: "bash", args: { command: 'echo "CHILD_TRUST: args=$DEV_TEAM_PI_ARGS root=[$DEV_TEAM_TRUSTED_DIR]"' } }]);
 	const tasks = [{ agent: "local-only", task: prompt }, { agent: "security-review", task: prompt }, { agent: "general-purpose", task: trust }];
 	return script([{ tools: [{ tool: "dev_team_subagent", args: { tasks } }] }]);
 }
@@ -287,7 +287,7 @@ const scenarios = {
 		assert(dispatch.usage.totalTokens >= childInput + childOutput, `totalTokens ${dispatch.usage.totalTokens}`);
 	},
 
-	"subagent: project agents and overrides run by default, child gets --approve"(env) {
+	"subagent: project agents and overrides run by default; the child is trusted (DEV_TEAM_TRUSTED_DIR set, no --no-approve)"(env) {
 		seedProjectAgents(env);
 		const r = pi(env, projectAgentCall(), { json: true });
 		const d = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
@@ -326,13 +326,14 @@ const scenarios = {
 
 	"project .pi/dev-team.json: dev-team settings apply, PATH-like env does not, nothing when trust is declined"(env) {
 		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
-		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_PROBE: "set", NODE_OPTIONS: "--title=hijacked" } }));
-		const probe = script([{ tool: "bash", args: { command: 'echo "PROBE=[$DEV_TEAM_PROBE] NODE=[$NODE_OPTIONS]"' } }]);
+		const projectEnv = { DEV_TEAM_MAX_PARALLEL_BUILDS: "7", NODE_OPTIONS: "--title=hijacked", DEV_TEAM_PY_CACHE: "docs/py" };
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: projectEnv }));
+		const probe = script([{ tool: "bash", args: { command: 'echo "BUILDS=[$DEV_TEAM_MAX_PARALLEL_BUILDS] NODE=[$NODE_OPTIONS] CACHE=[$DEV_TEAM_PY_CACHE]"' } }]);
 		let r = pi(env, probe);
-		assert(r.out.includes("PROBE=[set]"), `dev-team setting from the project was not applied: ${r.out.slice(0, 300)} ${r.err}`);
-		assert(!r.out.includes("hijacked"), `NODE_OPTIONS from the project reached the shell: ${r.out.slice(0, 300)}`);
+		assert(r.out.includes("BUILDS=[7]"), `dev-team setting from the project was not applied: ${r.out.slice(0, 300)} ${r.err}`);
+		assert(r.out.includes("NODE=[]") && r.out.includes("CACHE=[]"), `refused env from the project reached the shell: ${r.out.slice(0, 300)}`);
 		r = pi(env, probe, { extra: ["--no-approve"] });
-		assert(r.out.includes("PROBE=[]"), `project config applied although trust was declined: ${r.out.slice(0, 300)}`);
+		assert(r.out.includes("BUILDS=[]"), `project config applied although trust was declined: ${r.out.slice(0, 300)}`);
 	},
 
 	"cost meter credits a nested dispatch to the agent that ran it"(env) {

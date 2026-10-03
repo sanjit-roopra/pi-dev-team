@@ -86,7 +86,7 @@ test("child trust: a symlink to another directory is that directory", (t) => {
 });
 
 test("claude shim trust env: root only when trusted, --no-approve only when declined", () => {
-	assert.deepEqual(shimTrustEnv(trusted, ["-e", "x"]), { piArgs: ["-e", "x"], trustedRoot: "/repo" });
+	assert.deepEqual(shimTrustEnv(trusted, ["-e", "x"]), { piArgs: ["-e", "x"], trustedDir: "/repo" });
 	assert.deepEqual(shimTrustEnv(declined, ["-e", "x"]), { piArgs: ["-e", "x", "--no-approve"] });
 });
 
@@ -196,8 +196,11 @@ test("toUsageTotals projects pi usage onto the cost-meter shape", () => {
 	assert.deepEqual(toUsageTotals(u, 4), { input: 5, output: 2, cacheRead: 3, cacheWrite: 1, cost: 0.5, turns: 4 });
 });
 
-test("describeWorktree", () => {
+test("describeWorktree: a kept worktree lists path, branch, commits and uncommitted changes", () => {
 	assert.equal(describeWorktree({ path: "/r/.claude/worktrees/a", branch: "dev-team/a", kept: true, dirty: true, commits: 2 }), "kept: /r/.claude/worktrees/a on branch dev-team/a, 2 commit(s), uncommitted changes");
+});
+
+test("describeWorktree: a removed worktree says there were no changes", () => {
 	assert.equal(describeWorktree({ path: "/p", branch: "b", kept: false, dirty: false, commits: 0 }), "removed: no changes");
 });
 
@@ -250,22 +253,39 @@ test("result text: tells the model which project agents were skipped", () => {
 	assert.match(formatResultText([runResult({})], ["local-only"]), /\[project agents not run \(project not trusted\): local-only\./);
 });
 
-test("progress: streams running views, then the final result", () => {
-	const updates: { text: string; details: { results: { status: string; ok: boolean; turns: number }[]; skippedProjectAgents?: string[] } }[] = [];
-	const progress = new DispatchProgress([{ agent: "a", task: "t" }, { subagent_type: "b", prompt: "u" }], ["local-only"], (r) =>
-		updates.push({ text: r.content[0].text, details: r.details }),
-	);
-	assert.equal(updates.length, 1, "initial state is emitted");
+type Emitted = { text: string; details: { results: { status: string; ok: boolean; turns: number; tools: string[] }[]; skippedProjectAgents?: string[] } };
+
+function recordedProgress(skipped: string[] = []) {
+	const updates: Emitted[] = [];
+	const progress = new DispatchProgress([{ agent: "a", task: "t" }, { subagent_type: "b", prompt: "u" }], skipped, (r) => updates.push({ text: r.content[0].text, details: r.details }));
+	return { progress, updates };
+}
+
+test("progress: the initial state is emitted, with skipped project agents", () => {
+	const { updates } = recordedProgress(["local-only"]);
+	assert.equal(updates.length, 1);
+	assert.equal(updates[0].text, "a: turn 0\nb: turn 0");
 	assert.deepEqual(updates[0].details.skippedProjectAgents, ["local-only"]);
+});
+
+test("progress: an update streams the turn and the latest tool calls", () => {
+	const { progress, updates } = recordedProgress();
 	progress.update(0, { turns: 2, tools: ["read", "grep", "find", "ls"] });
-	assert.equal(updates[1].text, "a: turn 2 → grep, find, ls\nb: turn 0");
+	assert.equal(updates.at(-1)?.text, "a: turn 2 → grep, find, ls\nb: turn 0");
+});
+
+test("progress: finish sets status and ok from the result", () => {
+	const { progress, updates } = recordedProgress();
 	progress.finish(1, runResult({ agent: "b" }));
-	const last = updates.at(-1);
-	assert.equal(last?.details.results[1].status, "ok");
-	assert.equal(last?.details.results[1].ok, true);
-	const snapshot = progress.snapshot();
-	snapshot.results[0].tools.push("mutated");
-	assert.ok(!progress.snapshot().results[0].tools.includes("mutated"), "snapshots are copies");
+	const view = updates.at(-1)?.details.results[1];
+	assert.equal(view?.status, "ok");
+	assert.equal(view?.ok, true);
+});
+
+test("progress: snapshots are copies", () => {
+	const { progress } = recordedProgress();
+	progress.snapshot().results[0].tools.push("mutated");
+	assert.ok(!progress.snapshot().results[0].tools.includes("mutated"));
 });
 
 test("viewFromResult: a failed run is status failed, ok false", () => {

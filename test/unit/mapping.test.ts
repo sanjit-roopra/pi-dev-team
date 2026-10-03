@@ -128,6 +128,17 @@ test("skills: discovery, qualified names, project override, compact index", (t) 
 	assert.equal(discoverSkills(dir, ROOT, { includeProject: false }).get("pr")?.source, "package", "project skills need a trusted project");
 });
 
+test("skill files that are not small regular files are skipped unread", (t) => {
+	const dir = tempDir(t, "skl-");
+	const skills = path.join(dir, ".claude", "skills");
+	fs.mkdirSync(path.join(skills, "as-dir", "SKILL.md"), { recursive: true });
+	fs.mkdirSync(path.join(skills, "too-big"), { recursive: true });
+	fs.writeFileSync(path.join(skills, "too-big", "SKILL.md"), `---\nname: too-big\ndescription: d\n---\n${"x".repeat(1024 * 1024)}`);
+	const found = discoverSkills(dir, ROOT, { includeProject: true });
+	assert.equal(found.has("as-dir"), false);
+	assert.equal(found.has("too-big"), false);
+});
+
 test("every skill description fits pi's 1024 limit", () => {
 	for (const s of discoverSkills(os.tmpdir(), ROOT, { includeProject: false }).values()) assert.ok(s.description.length <= 1024, `${s.name}: ${s.description.length}`);
 });

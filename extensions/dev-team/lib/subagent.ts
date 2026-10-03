@@ -24,6 +24,7 @@ import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
 import { renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
 import {
+	type AgentSource,
 	type DispatchArgs,
 	describeWorktree,
 	dispatchAgent,
@@ -39,11 +40,11 @@ import {
 	type WorktreeInfo,
 } from "./subagent-types.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
-import { type ChildTrust, canonicalDir, trustArgs } from "./trust.ts";
+import { type ChildTrust, childTrustOf, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {
 	agent: string;
-	source?: AgentDef["source"];
+	source?: AgentSource;
 	task: string;
 	ok: boolean;
 	output: string;
@@ -440,7 +441,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			// Project agents are skipped only when the user declined pi's own trust prompt for this
 			// project, as pi skips its other project resources. No extra prompt or setup step.
 			// One trust decision per call, shared by every child.
-			const trust: ChildTrust = { projectTrusted: ctx.isProjectTrusted(), sessionDir: canonicalDir(ctx.cwd) };
+			const trust = childTrustOf(ctx);
 			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
 			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined);
 			const results = await Promise.all(
@@ -489,12 +490,12 @@ export class DispatchProgress {
 			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
 	}
-	update(i: number, patch: ProgressPatch): void {
-		this.views[i] = { ...this.views[i], ...patch };
+	update(taskIndex: number, patch: ProgressPatch): void {
+		this.views[taskIndex] = { ...this.views[taskIndex], ...patch };
 		this.emit();
 	}
-	finish(i: number, r: SubagentRunResult): void {
-		this.views[i] = { ...this.views[i], ...viewFromResult(r) };
+	finish(taskIndex: number, result: SubagentRunResult): void {
+		this.views[taskIndex] = { ...this.views[taskIndex], ...viewFromResult(result) };
 		this.emit();
 	}
 	private emit(): void {

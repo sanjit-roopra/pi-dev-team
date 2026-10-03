@@ -93,7 +93,7 @@ class Shim(unittest.TestCase):
 
     def _shim_argv(self, d, cwd, extra_env):
         pi, log = self._fake_pi(d, [{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}], "stopReason": "stop"}}])
-        env = {k: v for k, v in os.environ.items() if k not in ("DEV_TEAM_PI_ARGS", "DEV_TEAM_TRUSTED_ROOT")}
+        env = {k: v for k, v in os.environ.items() if k not in ("DEV_TEAM_PI_ARGS", "DEV_TEAM_TRUSTED_DIR")}
         env.update({"DEV_TEAM_PI_BIN": str(pi), **extra_env})
         out = subprocess.run([sys.executable, str(ROOT / "bin" / "claude"), "-p", "x"], capture_output=True, text=True, env=env, cwd=cwd)
         self.assertEqual(out.returncode, 0, out.stderr)
@@ -103,7 +103,7 @@ class Shim(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d) / "repo"
             (root / "sub").mkdir(parents=True)
-            trusted = {"DEV_TEAM_PI_ARGS": "[]", "DEV_TEAM_TRUSTED_ROOT": str(root)}
+            trusted = {"DEV_TEAM_PI_ARGS": "[]", "DEV_TEAM_TRUSTED_DIR": str(root)}
             self.assertIn("--approve", self._shim_argv(d, root, trusted))
             self.assertNotIn("--approve", self._shim_argv(d, root / "sub", trusted), "only the session directory")
             self.assertNotIn("--approve", self._shim_argv(d, root, {"DEV_TEAM_PI_ARGS": "[]"}), "no root, no grant")

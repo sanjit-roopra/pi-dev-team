@@ -7,6 +7,7 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 /** The directory as pi sees it: symlinks resolved, or just resolved when it does not exist. */
 export function canonicalDir(dir: string): string {
@@ -24,23 +25,28 @@ export interface ChildTrust {
 	sessionDir: string;
 }
 
+/** This session's decision, as children inherit it. */
+export function childTrustOf(ctx: Pick<ExtensionContext, "cwd" | "isProjectTrusted">): ChildTrust {
+	return { projectTrusted: ctx.isProjectTrusted(), sessionDir: canonicalDir(ctx.cwd) };
+}
+
 /**
- * Flags for a child pi running in `runCwd`. `worktreeOf` is the repository root a worktree was
- * created from when the child runs in one this session made; it inherits trust only when that root
- * is the session's own directory.
+ * Flags for a child pi running in `runCwd`. `worktreeRepoRoot` is the repository a worktree was made
+ * from when the child runs in one this session created; it inherits trust only when that repository
+ * root is the session's own directory.
  */
-export function trustArgs(trust: ChildTrust, runCwd: string, worktreeOf?: string): string[] {
+export function trustArgs(trust: ChildTrust, runCwd: string, worktreeRepoRoot?: string): string[] {
 	if (!trust.projectTrusted) return ["--no-approve"];
 	const here = canonicalDir(runCwd) === trust.sessionDir;
-	const ownWorktree = worktreeOf !== undefined && canonicalDir(worktreeOf) === trust.sessionDir;
+	const ownWorktree = worktreeRepoRoot !== undefined && canonicalDir(worktreeRepoRoot) === trust.sessionDir;
 	return here || ownWorktree ? ["--approve"] : [];
 }
 
 /**
- * Environment for the claude shim (bin/claude): DEV_TEAM_TRUSTED_ROOT is set only when trusted, and
+ * Environment for the claude shim (bin/claude): DEV_TEAM_TRUSTED_DIR is set only when trusted, and
  * the shim adds --approve only when it runs in exactly that directory; --no-approve rides in
  * DEV_TEAM_PI_ARGS when declined.
  */
-export function shimTrustEnv(trust: ChildTrust, forwarded: string[]): { piArgs: string[]; trustedRoot?: string } {
-	return trust.projectTrusted ? { piArgs: forwarded, trustedRoot: trust.sessionDir } : { piArgs: [...forwarded, "--no-approve"] };
+export function shimTrustEnv(trust: ChildTrust, forwarded: string[]): { piArgs: string[]; trustedDir?: string } {
+	return trust.projectTrusted ? { piArgs: forwarded, trustedDir: trust.sessionDir } : { piArgs: [...forwarded, "--no-approve"] };
 }

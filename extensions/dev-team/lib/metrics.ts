@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
+import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
@@ -98,7 +98,7 @@ export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | u
 			const d = entry.data as SubagentUsageEntry | undefined;
 			if (!d?.usage) continue;
 			// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
-			for (const run of [{ agent: d.agent, model: d.model, usage: d.usage }, ...(d.nested ?? [])]) {
+			for (const run of creditedRuns(d)) {
 				const n = run.usage.turns ?? 0;
 				add(total, run.usage, n);
 				bump(byModel, run.model ?? "unknown", run.usage, n);

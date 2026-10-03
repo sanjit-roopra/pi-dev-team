@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { readSmallFile } from "./safe-read.ts";
 import type { AgentSource } from "./subagent-types.ts";
 
 export const DEV_TEAM_SUBAGENT_TOOL = "dev_team_subagent";
@@ -65,18 +66,9 @@ function toStringList(value: unknown): string[] {
 	return [];
 }
 
-/** Agent files are small markdown; anything else (a FIFO, /dev/zero, a huge file) is skipped unread. */
-const MAX_AGENT_FILE_BYTES = 1024 * 1024;
-
-export function parseAgentFile(filePath: string, source: AgentDef["source"]): AgentDef | undefined {
-	let content: string;
-	try {
-		const st = fs.statSync(filePath);
-		if (!st.isFile() || st.size > MAX_AGENT_FILE_BYTES) return undefined;
-		content = fs.readFileSync(filePath, "utf-8");
-	} catch {
-		return undefined;
-	}
+export function parseAgentFile(filePath: string, source: AgentSource): AgentDef | undefined {
+	let content = readSmallFile(filePath);
+	if (content === undefined) return undefined;
 	// Upstream files sometimes have a blank line right after the opening '---'.
 	content = content.replace(/^---\r?\n\s*\r?\n/, "---\n");
 	let frontmatter: AgentFrontmatter;
@@ -100,7 +92,7 @@ export function parseAgentFile(filePath: string, source: AgentDef["source"]): Ag
 	};
 }
 
-function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
+function loadDir(dir: string, source: AgentSource): AgentDef[] {
 	let entries: fs.Dirent[];
 	try {
 		entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -116,7 +108,6 @@ function loadDir(dir: string, source: AgentDef["source"]): AgentDef[] {
 	return out;
 }
 
-/** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
 /** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
 export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, AgentDef> {
 	return byName([...(opts.includeProject ? loadProjectAgents(cwd) : []), ...loadDir(path.join(packageRoot, "agents"), "package")]);

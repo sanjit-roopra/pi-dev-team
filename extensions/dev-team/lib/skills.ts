@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import { readSmallFile } from "./safe-read.ts";
 
 export interface SkillDef {
 	name: string;
@@ -29,18 +30,9 @@ type SkillFrontmatter = {
 	"user-invocable"?: unknown;
 };
 
-/** SKILL.md files are small markdown; anything else (a FIFO, /dev/zero, a huge file) is skipped unread. */
-const MAX_SKILL_FILE_BYTES = 1024 * 1024;
-
 function loadSkill(filePath: string, source: SkillDef["source"]): SkillDef | undefined {
-	let content: string;
-	try {
-		const st = fs.statSync(filePath);
-		if (!st.isFile() || st.size > MAX_SKILL_FILE_BYTES) return undefined;
-		content = fs.readFileSync(filePath, "utf-8");
-	} catch {
-		return undefined;
-	}
+	const content = readSmallFile(filePath);
+	if (content === undefined) return undefined;
 	let fm: SkillFrontmatter;
 	try {
 		fm = parseFrontmatter<SkillFrontmatter>(content).frontmatter;
@@ -154,7 +146,10 @@ export function substituteArguments(body: string, args: string): string {
 
 /** The text a model sees when a skill is invoked (same wrapper pi uses for /skill:name). */
 export function expandSkill(skill: SkillDef, args: string): string {
-	const body = stripFrontmatter(fs.readFileSync(skill.filePath, "utf-8")).trim();
+	// Read again with the same guard: the file may have changed since discovery.
+	const raw = readSmallFile(skill.filePath);
+	if (raw === undefined) throw new Error(`Skill "${skill.name}" can no longer be read: ${skill.filePath}`);
+	const body = stripFrontmatter(raw).trim();
 	const substituted = substituteArguments(body, args);
 	const header = `References are relative to ${skill.baseDir}. \${CLAUDE_PLUGIN_ROOT} is set in the shell environment.`;
 	return `<skill name="${skill.name}" location="${skill.filePath}">\n${header}\n\n${substituted}\n</skill>`;

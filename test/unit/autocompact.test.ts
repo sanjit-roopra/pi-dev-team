@@ -132,9 +132,10 @@ test("autocompactDue ignores a project's own threshold when the project is not t
 	const box = sandbox(t);
 	box.writeUserSetting("90");
 	box.writeSharedSetting("1");
-	const ctx = (trusted: boolean) => ({ cwd: box.project, isProjectTrusted: () => trusted, getContextUsage: () => ({ tokens: 50, contextWindow: 100, percent: 50 }) });
-	assert.deepEqual(autocompactDue(ctx(true), box.env), { thresholdPct: 1, usedPct: 50 });
-	assert.equal(autocompactDue(ctx(false), box.env), undefined, "user threshold 90 applies");
+	const ctx = (trusted: boolean, percent: number) => ({ cwd: box.project, isProjectTrusted: () => trusted, getContextUsage: () => ({ tokens: percent, contextWindow: 100, percent }) });
+	assert.deepEqual(autocompactDue(ctx(true, 50), box.env), { thresholdPct: 1, usedPct: 50 });
+	assert.equal(autocompactDue(ctx(false, 50), box.env), undefined);
+	assert.deepEqual(autocompactDue(ctx(false, 95), box.env), { thresholdPct: 90, usedPct: 95 }, "the user's threshold applies");
 });
 
 test("autocompactDue is off when nothing configures a threshold", (t) => {

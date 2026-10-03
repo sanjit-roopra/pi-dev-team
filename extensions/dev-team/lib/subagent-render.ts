@@ -10,6 +10,7 @@ import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getMarkdownTheme, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
 import {
+	creditedRuns,
 	type DispatchArgs,
 	describeWorktree,
 	dispatchAgent,
@@ -70,7 +71,7 @@ function addTotals(t: UsageTotals, u: UsageTotals): UsageTotals {
 
 /** Everything the agents cost, including what they dispatched themselves (what pi books for the call). */
 function sumUsageTotals(views: SubagentTaskView[]): UsageTotals {
-	const usages = views.flatMap((v) => [...(v.usage ? [v.usage] : []), ...(v.nested ?? []).map((n) => n.usage)]);
+	const usages = views.flatMap((v) => creditedRuns(v).map((run) => run.usage));
 	return usages.reduce(addTotals, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 });
 }
 
@@ -133,8 +134,8 @@ export function renderSubagentCall(args: DispatchArgs & { tasks?: DispatchArgs[]
 		for (const t of args.tasks.slice(0, CALL_PREVIEW_TASKS)) {
 			text += `\n  ${theme.fg("accent", preview(dispatchAgent(t), PARALLEL_CALL_PREVIEW_CHARS))}${theme.fg("dim", ` ${preview(dispatchTask(t), PARALLEL_CALL_PREVIEW_CHARS)}`)}`;
 		}
-		const more = args.tasks.length - CALL_PREVIEW_TASKS;
-		if (more > 0) text += `\n  ${theme.fg("muted", `… +${more} more`)}`;
+		const hiddenTaskCount = args.tasks.length - CALL_PREVIEW_TASKS;
+		if (hiddenTaskCount > 0) text += `\n  ${theme.fg("muted", `… +${hiddenTaskCount} more`)}`;
 		return new Text(text, 0, 0);
 	}
 	let text = `${title}${theme.fg("accent", preview(dispatchAgent(args), SINGLE_CALL_PREVIEW_CHARS))}`;
@@ -175,14 +176,14 @@ export function renderSubagentResult(
 		return new Text(text, 0, 0);
 	}
 
-	const running = views.filter((v) => v.status === "running").length;
-	const failed = views.filter((v) => v.status === "failed").length;
-	const summaryLine = running
-		? `${theme.fg("warning", "⏳")} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", `${views.length - running}/${views.length} done, ${running} running`)}`
-		: `${failed ? theme.fg("warning", "◐") : theme.fg("success", "✓")} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", `${views.length - failed}/${views.length} succeeded`)}`;
-	const totalUsageText = running ? "" : formatUsage(sumUsageTotals(views));
+	const runningCount = views.filter((v) => v.status === "running").length;
+	const failedCount = views.filter((v) => v.status === "failed").length;
+	const summaryLine = runningCount
+		? `${theme.fg("warning", "⏳")} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", `${views.length - runningCount}/${views.length} done, ${runningCount} running`)}`
+		: `${failedCount ? theme.fg("warning", "◐") : theme.fg("success", "✓")} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", `${views.length - failedCount}/${views.length} succeeded`)}`;
+	const totalUsageText = runningCount ? "" : formatUsage(sumUsageTotals(views));
 
-	if (expanded && !running) {
+	if (expanded && !runningCount) {
 		const c = new Container();
 		c.addChild(new Text(summaryLine, 0, 0));
 		for (const v of views) {
@@ -200,6 +201,6 @@ export function renderSubagentResult(
 	for (const v of views) text += `\n\n${renderCollapsed(v, theme)}`;
 	if (skippedNote) text += `\n\n${skippedNote}`;
 	if (totalUsageText) text += `\n\n${theme.fg("dim", `Total: ${totalUsageText}`)}`;
-	if (!running) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+	if (!runningCount) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
 	return new Text(text, 0, 0);
 }

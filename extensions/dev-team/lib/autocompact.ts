@@ -4,16 +4,14 @@
  * pi only compacts at `contextWindow - reserveTokens`, so the extension lowers that to the configured
  * percentage, measured with ctx.getContextUsage(), which knows every model's window.
  */
-import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { readSmallFile } from "./safe-read.ts";
 
 export const AUTOCOMPACT_KEY = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
 /** Plain integer 1-100: no sign, no whitespace, no decimal point, no leading zero (as upstream). */
 const PCT_RE = /^(?:100|[1-9][0-9]?)$/;
-/** Settings files are small; anything larger is not one (and must not stall the session). */
-const MAX_SETTINGS_BYTES = 1024 * 1024;
 
 export interface AutocompactSetting {
 	/** Valid threshold 1-100, or undefined when absent or invalid. */
@@ -23,10 +21,10 @@ export interface AutocompactSetting {
 }
 
 function envBlock(file: string): Record<string, unknown> | undefined {
+	const text = readSmallFile(file);
+	if (text === undefined) return undefined;
 	try {
-		const st = fs.statSync(file);
-		if (!st.isFile() || st.size > MAX_SETTINGS_BYTES) return undefined;
-		const data = JSON.parse(fs.readFileSync(file, "utf-8"));
+		const data = JSON.parse(text);
 		return data && typeof data === "object" && data.env && typeof data.env === "object" && !Array.isArray(data.env) ? data.env : undefined;
 	} catch {
 		return undefined;
@@ -43,11 +41,11 @@ export function autocompactSetting(
 	opts: { env?: NodeJS.ProcessEnv; projectTrusted: boolean },
 ): AutocompactSetting {
 	const env = opts.env ?? process.env;
-	const pick = (raw: unknown, origin: string): AutocompactSetting => ({
+	const settingFrom = (raw: unknown, origin: string): AutocompactSetting => ({
 		thresholdPct: typeof raw === "string" && PCT_RE.test(raw) ? Number(raw) : undefined,
 		origin,
 	});
-	if (env[AUTOCOMPACT_KEY] !== undefined) return pick(env[AUTOCOMPACT_KEY], "process env");
+	if (env[AUTOCOMPACT_KEY] !== undefined) return settingFrom(env[AUTOCOMPACT_KEY], "process env");
 	const userSettings = env.CLAUDE_CONFIG_DIR
 		? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
 		: path.join(env.HOME || os.homedir(), ".claude", "settings.json");
@@ -62,7 +60,7 @@ export function autocompactSetting(
 	];
 	for (const [label, file] of candidates) {
 		const block = envBlock(file);
-		if (block && AUTOCOMPACT_KEY in block) return pick(block[AUTOCOMPACT_KEY], label);
+		if (block && AUTOCOMPACT_KEY in block) return settingFrom(block[AUTOCOMPACT_KEY], label);
 	}
 	return {};
 }

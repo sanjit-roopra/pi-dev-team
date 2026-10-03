@@ -165,7 +165,7 @@ def main(argv: list[str]) -> int:
         cmd += [str(x) for x in json.loads(os.environ.get("DEV_TEAM_PI_ARGS", "[]"))]
     except (ValueError, TypeError):
         pass
-    if trusted_here(os.environ.get("DEV_TEAM_TRUSTED_ROOT", ""), os.getcwd()):
+    if trusted_here(os.environ.get("DEV_TEAM_TRUSTED_DIR", ""), os.getcwd()):
         cmd.append("--approve")
     if agent:
         cmd += ["--dev-team-agent", agent.split(":")[-1]]

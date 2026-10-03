@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
+import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
 import { autocompactDue } from "./lib/autocompact.ts";
 import {
 	DEFAULT_CONFIG,
@@ -28,7 +28,7 @@ import { commandText, discoverSkills, expandSkill, resolveSkillName, type SkillD
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
-import { canonicalDir, shimTrustEnv } from "./lib/trust.ts";
+import { childTrustOf, shimTrustEnv } from "./lib/trust.ts";
 
 function packageRootDir(): string {
 	// extensions/dev-team/index.ts -> package root
@@ -69,11 +69,11 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (ctx.hasUI && !isSubagent) process.env.DEV_TEAM_INTERACTIVE = "1";
 		else delete process.env.DEV_TEAM_INTERACTIVE;
 		// The claude shim's children inherit this session's trust decision as dev_team_subagent's do
-		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_ROOT itself.
-		const shim = shimTrustEnv({ projectTrusted: ctx.isProjectTrusted(), sessionDir: canonicalDir(ctx.cwd) }, forwardedArgs());
+		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_DIR itself.
+		const shim = shimTrustEnv(childTrustOf(ctx), forwardedArgs());
 		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(shim.piArgs);
-		if (shim.trustedRoot) process.env.DEV_TEAM_TRUSTED_ROOT = shim.trustedRoot;
-		else delete process.env.DEV_TEAM_TRUSTED_ROOT;
+		if (shim.trustedDir) process.env.DEV_TEAM_TRUSTED_DIR = shim.trustedDir;
+		else delete process.env.DEV_TEAM_TRUSTED_DIR;
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
 		process.env.PATH = (config.claudeShim ? [bin, ...parts] : parts).join(path.delimiter);
@@ -158,7 +158,8 @@ export default function devTeam(pi: ExtensionAPI) {
 			handler: async (args, ctx) => {
 				const current = resolveSkillName(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), skill.name);
 				if (!current) {
-					ctx.ui.notify(`/${skill.name} is a project skill, and this project is not trusted in pi.`, "warning");
+					const why = skill.source === "project" && !ctx.isProjectTrusted() ? "is a project skill, and this project is not trusted in pi" : "can no longer be found (its SKILL.md is missing or unreadable)";
+					ctx.ui.notify(`/${skill.name} ${why}.`, "warning");
 					return;
 				}
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
@@ -197,7 +198,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	function showStatus(ctx: ExtensionContext) {
-		const { config: cfg, sources, droppedEnv } = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() });
+		const { config: cfg, sources, droppedEnvKeys } = loadConfig(ctx.cwd, { includeProject: ctx.isProjectTrusted() });
 		const upstream = (() => {
 			try {
 				return JSON.parse(fs.readFileSync(path.join(packageRoot, "UPSTREAM.json"), "utf-8"));
@@ -212,7 +213,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			`pi-dev-team (upstream dev-team v${upstream.version ?? "?"} @ ${String(upstream.commit ?? "").slice(0, 10)})`,
 			`root: ${packageRoot}`,
 			`config: ${sources.length ? sources.join(", ") : "defaults"}`,
-			...(droppedEnv.length ? [`project config env ignored (only DEV_TEAM_* settings are allowed there): ${droppedEnv.join(", ")}`] : []),
+			...(droppedEnvKeys.length ? [`project config env ignored (a project may set only dev-team tuning settings): ${droppedEnvKeys.join(", ")}`] : []),
 			`tiers: ${Object.entries(cfg.models).map(([k, v]) => `${k}=${v}`).join("  ")}`,
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
@@ -307,9 +308,14 @@ export default function devTeam(pi: ExtensionAPI) {
 		let effort: string | undefined;
 		if (typeof agentName === "string" && agentName) {
 			// Same rule as dev_team_subagent: no project agents when pi trust was declined.
-			const def = resolveAgentName(discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), agentName);
+			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, ctx.isProjectTrusted(), [agentName]);
+			const def = resolveAgentName(agents, agentName);
 			if (!def) {
-				console.error(`dev-team: unknown agent "${agentName}"`);
+				console.error(
+					skippedProjectAgents.length
+						? `dev-team: project agent "${agentName}" not run: this project is not trusted in pi`
+						: `dev-team: unknown agent "${agentName}"`,
+				);
 				return;
 			}
 			agentPrompt = buildSystemPrompt(def, packageRoot, [], []);

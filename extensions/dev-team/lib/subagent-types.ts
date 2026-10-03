@@ -110,6 +110,14 @@ export function describeWorktree(wt: WorktreeInfo): string {
 	return `kept: ${wt.path} on branch ${wt.branch}, ${wt.commits} commit(s)${wt.dirty ? ", uncommitted changes" : ""}`;
 }
 
+/**
+ * The spend one dispatched agent accounts for: its own run (when it reported usage), then every run it
+ * dispatched itself. The single rule the cost meter, the parent's crediting and the TUI total share.
+ */
+export function creditedRuns(run: { agent: string; model?: string; usage?: UsageTotals; nested?: NestedUsage[] }): NestedUsage[] {
+	return [...(run.usage ? [{ agent: run.agent, model: run.model, usage: run.usage }] : []), ...(run.nested ?? [])];
+}
+
 export function emptyPiUsage(): Usage {
 	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 }

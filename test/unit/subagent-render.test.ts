@@ -88,13 +88,26 @@ test("formatUsage: turns, tokens in k, cache, cost, duration and model", () => {
 
 // Escape and control characters that must never reach the terminal (BEL, ESC, other C0, C1, CR).
 const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
-const HOSTILE = "x\x1b]52;c;ZXZpbA==\x07\x1b[2J\x1b]8;;https://x\x1b\\y\x1b]8;;\x1b\\\x9b31m\rFAKE\x00";
+const HOSTILE = "x\x1b[31m\x1b]52;c;ZXZpbA==\x07\x1b[2J\x1b]8;;https://x\x1b\\y\x1b]8;;\x1b\\\x9b31m\rFAKE\x00";
 
 test("sanitizeTerminalText removes escape sequences and controls, keeps tab and newline", () => {
 	assert.equal(sanitizeTerminalText(HOSTILE), "xy31m\nFAKE");
 	assert.equal(sanitizeTerminalText("a\tb\nc\r\nd"), "a\tb\nc\nd");
 	assert.equal(sanitizeTerminalText("a\ufff9b\ufffbc"), "abc");
 });
+
+// Where each field is drawn, so the sanitizer checks cannot pass just because a field was left out.
+const SHOWN: Record<string, string[]> = {
+	agent: ["collapsed", "expanded"],
+	task: ["expanded"],
+	tools: ["collapsed", "expanded"],
+	tier: ["collapsed", "expanded"],
+	model: ["collapsed", "expanded"],
+	stopReason: ["collapsed", "expanded"],
+	error: ["collapsed", "expanded"],
+	output: ["collapsed", "expanded"],
+	worktree: ["collapsed", "expanded"],
+};
 
 test("every child-derived field is sanitized before it is drawn", () => {
 	const fields: [string, Partial<SubagentTaskView>][] = [
@@ -111,7 +124,9 @@ test("every child-derived field is sanitized before it is drawn", () => {
 	for (const [field, view] of fields) {
 		for (const expanded of [false, true]) {
 			const out = draw(renderSubagentResult(result({ results: [taskView(view)] }), { expanded, isPartial: false }, theme));
-			assert.doesNotMatch(out.replace(/\x1b\[[0-9;]*m/g, ""), UNSAFE, `${field} (${expanded ? "expanded" : "collapsed"})`);
+			const label = `${field} (${expanded ? "expanded" : "collapsed"})`;
+			assert.doesNotMatch(out, UNSAFE, label);
+			if (SHOWN[field]?.includes(expanded ? "expanded" : "collapsed")) assert.match(out, /FAKE/, `${label}: the field is drawn, sanitized`);
 		}
 	}
 	const skipped = draw(renderSubagentResult(result({ results: [taskView({})], skippedProjectAgents: [HOSTILE] }), { expanded: false, isPartial: false }, theme));
