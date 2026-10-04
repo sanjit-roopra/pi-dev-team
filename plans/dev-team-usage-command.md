@@ -2,7 +2,7 @@
 
 **Created**: 2026-10-04
 **Branch**: main (build on new branch `dev-team-usage`)
-**Status**: in-progress
+**Status**: implemented
 **Gherkin persistence**: plan-file-only
 
 ## Goal
