@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { barChartLines, type BarChartOptions, type ChartRow } from "../../extensions/dev-team/lib/usage-chart.ts";
+import { barChartLines, type BarChartOptions, type ChartRow, splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/dev-team/lib/usage-chart.ts";
 
 const identity = (text: string) => text;
 const style = { bar: identity, muted: identity };
@@ -98,4 +98,62 @@ test("a limit of one folds everything into other", () => {
 	const lines = barChartLines(countdown, options(60, { maxRows: 1 }));
 	assert.equal(lines.length, 1);
 	assert.ok(lines[0].startsWith("other (10)"), lines[0]);
+});
+
+const splitStyle = { segment: (_label: string, text: string) => text, muted: identity };
+const splitOptions = (width: number, extra: Partial<SplitBarOptions> = {}): SplitBarOptions => ({ width, formatValue: String, style: splitStyle, ...extra });
+const split = (main: number, subagents: number, overhead: number): SplitPart[] => [
+	{ label: "main", credits: main },
+	{ label: "subagents", credits: subagents },
+	{ label: "overhead", credits: overhead },
+];
+
+test("split bar: segments in main, subagents, overhead order with a legend of credits", () => {
+	assert.deepEqual(splitBarLines(split(30, 60, 10), splitOptions(80, { maxBarCells: 10 })), [
+		"███▓▓▓▓▓▓░",
+		"█ main 30 · ▓ subagents 60 · ░ overhead 10",
+	]);
+});
+
+test("split bar: input order does not matter", () => {
+	const [bar] = splitBarLines(split(30, 60, 10).reverse(), splitOptions(10));
+	assert.equal(bar, "███▓▓▓▓▓▓░");
+});
+
+test("split bar: a zero or missing thread is omitted from bar and legend", () => {
+	assert.deepEqual(splitBarLines(split(40, 0, 10), splitOptions(80, { maxBarCells: 10 })), ["████████░░", "█ main 40 · ░ overhead 10"]);
+	assert.deepEqual(splitBarLines([{ label: "main", credits: 5 }], splitOptions(80, { maxBarCells: 4 })), ["████", "█ main 5"]);
+});
+
+test("split bar: nothing to show when no thread has credits", () => {
+	assert.deepEqual(splitBarLines(split(0, 0, 0), splitOptions(10)), []);
+	assert.deepEqual(splitBarLines([], splitOptions(10)), []);
+});
+
+test("split bar: an uneven split fills the bar exactly, by largest remainder", () => {
+	const [bar] = splitBarLines(split(1, 1, 1), splitOptions(10));
+	assert.equal(bar, "████▓▓▓░░░");
+	const [skewed] = splitBarLines(split(5, 3, 1), splitOptions(10)); // ideal 5.56, 3.33, 1.11
+	assert.equal(skewed, "██████▓▓▓░");
+});
+
+test("split bar: a tiny part keeps at least one cell", () => {
+	const [bar] = splitBarLines(split(99, 0, 1), splitOptions(10));
+	assert.equal(bar, "█████████░");
+});
+
+test("split bar: a narrow width wraps the legend between entries", () => {
+	const lines = splitBarLines(split(30, 60, 10), splitOptions(30));
+	assert.deepEqual(lines, ["█".repeat(9) + "▓".repeat(18) + "░".repeat(3), "█ main 30 · ▓ subagents 60", "░ overhead 10"]);
+});
+
+test("split bar: an entry wider than the width is truncated", () => {
+	const lines = splitBarLines(split(1234567, 0, 0), splitOptions(8, { formatValue: (n) => n.toLocaleString("en-US") })).map(plain);
+	assert.deepEqual(lines, ["████████", "█ main …"]);
+});
+
+test("split bar: no line is wider than the width, at every width", () => {
+	for (let width = 0; width <= 100; width++) {
+		for (const l of splitBarLines(split(30, 60, 10), splitOptions(width))) assert.ok(visibleWidth(l) <= width, `${width}: ${l}`);
+	}
 });

@@ -115,3 +115,99 @@ export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, fo
 		return truncateToWidth(cells.join(COLUMN_GAP), width, "");
 	});
 }
+
+export interface SplitPart {
+	/** "main", "subagents" or "overhead"; any other label is ignored. */
+	label: string;
+	credits: number;
+}
+
+export interface SplitStyle {
+	/** Colours the glyphs of the segment named `label` ("main", "subagents" or "overhead"). */
+	segment(label: string, text: string): string;
+	/** De-emphasises the legend separators. */
+	muted(text: string): string;
+}
+
+export interface SplitBarOptions {
+	width: number;
+	formatValue(credits: number): string;
+	style: SplitStyle;
+	/** Cap on the bar; it also never exceeds `width`. */
+	maxBarCells?: number;
+}
+
+/** Thread order, left to right, and the glyph that tells them apart without colour. */
+const SPLIT_SEGMENTS = [
+	{ label: "main", glyph: "█" },
+	{ label: "subagents", glyph: "▓" },
+	{ label: "overhead", glyph: "░" },
+] as const;
+type Segment = { label: string; glyph: string; credits: number };
+const MAX_SPLIT_BAR_CELLS = 40;
+const LEGEND_SEPARATOR = " · ";
+/** A legend entry starts with its glyph and a space. */
+const GLYPH_AND_SPACE_WIDTH = 2;
+
+/**
+ * Splits `cells` across the weights by largest remainder, so the result always sums to `cells`
+ * (ties go to the earlier weight). A part that would get no cell borrows one from the largest part,
+ * so a small non-zero thread stays visible, as long as there are cells to go round.
+ */
+function allocateCells(weights: readonly number[], cells: number): number[] {
+	const total = weights.reduce((sum, w) => sum + w, 0);
+	const ideal = weights.map((w) => (w * cells) / total);
+	const allocated = ideal.map(Math.floor);
+	const byRemainder = ideal.map((x, i) => i).sort((a, b) => ideal[b] - allocated[b] - (ideal[a] - allocated[a]) || a - b);
+	for (let left = cells - allocated.reduce((sum, n) => sum + n, 0), i = 0; left > 0; left--, i++) allocated[byRemainder[i]]++;
+	for (let i = 0; i < allocated.length; i++) {
+		if (allocated[i] > 0) continue;
+		const largest = allocated.indexOf(Math.max(...allocated));
+		if (allocated[largest] < 2) break;
+		allocated[largest]--;
+		allocated[i]++;
+	}
+	return allocated;
+}
+
+/** A bar split into main █, subagents ▓ and overhead ░ by credits, then a legend naming each with its credits. */
+export function splitBarLines(parts: readonly SplitPart[], { width, formatValue, style, maxBarCells = MAX_SPLIT_BAR_CELLS }: SplitBarOptions): string[] {
+	const segments = SPLIT_SEGMENTS.flatMap((s): Segment[] => {
+		const credits = parts.filter((p) => p.label === s.label).reduce((sum, p) => sum + p.credits, 0);
+		return credits > 0 ? [{ ...s, credits }] : [];
+	});
+	if (!segments.length) return [];
+
+	const cells = allocateCells(segments.map((s) => s.credits), Math.max(0, Math.min(width, maxBarCells)));
+	const bar = segments.map((s, i) => style.segment(s.label, s.glyph.repeat(cells[i]))).join("");
+	return [bar, ...legendLines(segments, { width, formatValue, style })];
+}
+
+/**
+ * The legend ("█ main 30 · ▓ subagents 60"), packed onto as few lines as fit `width`. An entry
+ * never splits across lines; one wider than `width` on its own is truncated.
+ */
+function legendLines(
+	segments: readonly Segment[],
+	{ width, formatValue, style }: Pick<SplitBarOptions, "width" | "formatValue" | "style">,
+): string[] {
+	const separatorWidth = visibleWidth(LEGEND_SEPARATOR);
+	const lines: string[] = [];
+	let line = "";
+	let lineWidth = 0;
+	for (const s of segments) {
+		const caption = truncateToWidth(`${s.label} ${formatValue(s.credits)}`, Math.max(0, width - GLYPH_AND_SPACE_WIDTH), ELLIPSIS);
+		const entry = `${style.segment(s.label, s.glyph)} ${caption}`;
+		const entryWidth = GLYPH_AND_SPACE_WIDTH + visibleWidth(caption);
+		if (line && lineWidth + separatorWidth + entryWidth <= width) {
+			line += style.muted(LEGEND_SEPARATOR) + entry;
+			lineWidth += separatorWidth + entryWidth;
+			continue;
+		}
+		if (line) lines.push(line);
+		line = entry;
+		lineWidth = entryWidth;
+	}
+	lines.push(line);
+	return lines.map((l) => truncateToWidth(l, width, ""));
+}
