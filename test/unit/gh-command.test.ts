@@ -60,27 +60,47 @@ const literalValueCases: { name: string; command: string; expected: Partial<GhTe
 	{ name: "--body-file - with a here-string", command: `gh pr comment 1 -F - <<< "Short note."`, expected: { body: "Short note.\n" } },
 	{ name: "a title from $(...) is unknown and does not take the body's heredoc", command: heredocCommand(`gh pr create --title "$(git log -1 --format=%s)"`, BODY), expected: { title: undefined, body: BODY } },
 	{ name: "flag-like text inside a value is not a flag", command: heredocCommand(`gh pr create --title "Fix --body parsing"`, "Real."), expected: { title: "Fix --body parsing", body: "Real." } },
+	{ name: "--body-file=- with a heredoc", command: "gh issue create -t T --body-file=- <<'EOF'\nInline flag.\nEOF", expected: { body: "Inline flag." } },
+	{ name: "a <<\\EOF heredoc as literal", command: "gh issue create -t T -F - <<\\EOF\nCost: $5.\nEOF", expected: { body: "Cost: $5." } },
+	{ name: "a partly quoted <<E\"OF\" heredoc as literal", command: 'gh issue create -t T -F - <<E"OF"\nCost: $5.\nEOF', expected: { body: "Cost: $5." } },
+	{ name: "the last body flag: --body after a too-large file", command: "gh pr create --body-file big.md --body x", expected: { body: "x", bodyFileTooLarge: undefined } },
 	{ name: "-t inside a heredoc is not the title", command: `gh pr create --body "$(cat <<'EOF'\nRun npm test -t foo.\nEOF\n)" --title Real`, expected: { title: "Real", body: "Run npm test -t foo." } },
 ];
 
-for (const c of literalValueCases) {
-	test(`extractGhTexts reads ${c.name}`, () => {
-		const [text] = extractGhTexts(c.command, "/");
-		for (const [key, value] of Object.entries(c.expected)) assert.equal(text?.[key as keyof GhText], value, key);
+for (const valueCase of literalValueCases) {
+	test(`extractGhTexts reads ${valueCase.name}`, (t) => {
+		const dir = tempDir(t);
+		fs.writeFileSync(path.join(dir, "big.md"), "x".repeat(MAX_BODY_FILE_BYTES + 1));
+		const [ghText] = extractGhTexts(valueCase.command, dir);
+		for (const [key, value] of Object.entries(valueCase.expected)) assert.equal(ghText?.[key as keyof GhText], value, key);
 	});
 }
 
-test("extractGhTexts finds gh after shell keywords, wrappers, cd && and NAME=value prefixes", () => {
+test("extractGhTexts finds gh after shell keywords, wrappers, cd &&, NAME=value prefixes and by path", () => {
+	const ghCall = "gh issue create -t T -b 'B'";
 	for (const command of [
-		"cd repo && GH_PAGER= gh issue create -t T -b 'B'",
-		"if gh issue create -t T -b 'B'; then echo ok; fi",
-		"! gh issue create -t T -b 'B'",
-		"{ gh issue create -t T -b 'B'; }",
-		"env GH_HOST=x gh issue create -t T -b 'B'",
-		"time gh issue create -t T -b 'B'",
+		`cd repo && GH_PAGER= ${ghCall}`,
+		`GH_TOKEN=$TOKEN ${ghCall}`,
+		`GH_REPO=$(git remote get-url origin) ${ghCall}`,
+		`if ${ghCall}; then echo ok; fi`,
+		`if true; then ${ghCall}; else ${ghCall}; fi`,
+		`while false; do ${ghCall}; done`,
+		`! ${ghCall}`,
+		`{ ${ghCall}; }`,
+		`env GH_HOST=x ${ghCall}`,
+		`time ${ghCall}`,
+		`command ${ghCall}`,
+		`nohup ${ghCall}`,
+		`exec ${ghCall}`,
+		`/usr/local/bin/${ghCall}`,
 	]) {
 		assert.equal(extractGhTexts(command, "/")[0]?.body, "B", command);
 	}
+});
+
+test("extractGhTexts does not look inside bash -c or xargs (documented limit)", () => {
+	assert.deepEqual(extractGhTexts(`bash -c "gh issue create -t T -b 'x — y'"`, "/"), []);
+	assert.deepEqual(extractGhTexts("echo 1 | xargs gh issue comment -b 'x — y'", "/"), []);
 });
 
 test("extractGhTexts returns every chained gh command", () => {
@@ -88,21 +108,23 @@ test("extractGhTexts returns every chained gh command", () => {
 	assert.deepEqual(texts.map((t) => t.body), ["one", "two"]);
 });
 
-const unseenCases: { name: string; command: string }[] = [
-	{ name: "a variable", command: `gh pr create --title T --body "$BODY"` },
-	{ name: "a variable as the body file", command: `gh pr create --title T --body-file "$F"` },
-	{ name: "a command substitution", command: `gh pr create --title T --body "$(generate_body)"` },
-	{ name: "a backtick substitution", command: "gh pr create --title T --body `generate_body`" },
-	{ name: "an unclosed quote", command: `gh pr create --title T --body "never closed` },
-	{ name: "an unquoted heredoc that expands $", command: "gh pr create --title T --body \"$(cat <<EOF\n$(cat notes.md)\nEOF\n)\"" },
-	{ name: "an unquoted stdin heredoc that expands $", command: "gh issue create -t T -F - <<EOF\nSee $URL\nEOF" },
+const unseenCases: { name: string; command: string; kind: GhText["kind"] }[] = [
+	{ name: "a variable", command: `gh pr create --title T --body "$BODY"`, kind: "pr" },
+	{ name: "a variable as the body file", command: `gh pr create --title T --body-file "$F"`, kind: "pr" },
+	{ name: "a command substitution", command: `gh pr create --title T --body "$(generate_body)"`, kind: "pr" },
+	{ name: "a backtick substitution", command: "gh pr create --title T --body `generate_body`", kind: "pr" },
+	{ name: "ANSI-C quoting", command: "gh pr create --title T --body $'## Summary\\n- a'", kind: "pr" },
+	{ name: "an unclosed quote", command: `gh pr create --title T --body "never closed`, kind: "pr" },
+	{ name: "an unquoted heredoc that expands $", command: "gh pr create --title T --body \"$(cat <<EOF\n$(cat notes.md)\nEOF\n)\"", kind: "pr" },
+	{ name: "an unquoted stdin heredoc that expands $", command: "gh issue create -t T -F - <<EOF\nSee $URL\nEOF", kind: "issue" },
+	{ name: "a here-string that expands $", command: `gh issue comment 1 -F - <<< "$NOTE"`, kind: "comment" },
 ];
 
-for (const c of unseenCases) {
-	test(`extractGhTexts leaves the body unchecked when it comes from ${c.name}`, () => {
-		const [text] = extractGhTexts(c.command, "/");
-		assert.equal(text?.kind, c.command.includes("issue") ? "issue" : "pr");
-		assert.equal(text?.body, undefined);
+for (const unseenCase of unseenCases) {
+	test(`extractGhTexts leaves the body unchecked when it comes from ${unseenCase.name}`, () => {
+		const [ghText] = extractGhTexts(unseenCase.command, "/");
+		assert.equal(ghText?.kind, unseenCase.kind);
+		assert.equal(ghText?.body, undefined);
 	});
 }
 
@@ -110,23 +132,36 @@ test("extractGhTexts: an unquoted heredoc without $ or backtick is literal", () 
 	assert.equal(extractGhTexts("gh issue create -t T -F - <<EOF\nPlain text.\nEOF", "/")[0]?.body, "Plain text.");
 });
 
-test("extractGhTexts reads --body-file relative to cwd; a missing file is unchecked", (t) => {
+test("extractGhTexts reads --body-file relative to cwd, in both flag spellings", (t) => {
 	const dir = tempDir(t);
 	fs.writeFileSync(path.join(dir, "body.md"), "From a file.");
-	assert.equal(extractGhTexts("gh pr create --title T --body-file body.md", dir)[0]?.body, "From a file.");
-	assert.equal(extractGhTexts("gh pr create --title T --body-file=body.md", dir)[0]?.body, "From a file.");
-	assert.deepEqual(extractGhTexts("gh pr create --title T --body-file missing.md", dir), [{ kind: "pr", title: "T", body: undefined }]);
+	for (const command of ["gh pr create --title T --body-file body.md", "gh pr create --title T --body-file=body.md"]) {
+		assert.equal(extractGhTexts(command, dir)[0]?.body, "From a file.", command);
+	}
 });
 
-test("extractGhTexts marks a body file over MAX_BODY_FILE_BYTES as too large", (t) => {
-	const dir = tempDir(t);
-	fs.writeFileSync(path.join(dir, "big.md"), "x".repeat(MAX_BODY_FILE_BYTES + 1));
-	assert.deepEqual(extractGhTexts("gh pr create --title T --body-file big.md", dir), [{ kind: "pr", title: "T", body: undefined, bodyFileTooLarge: true }]);
+test("extractGhTexts leaves a missing body file unchecked", (t) => {
+	assert.deepEqual(extractGhTexts("gh pr create --title T --body-file missing.md", tempDir(t)), [{ kind: "pr", title: "T", body: undefined }]);
 });
 
-test("extractGhTexts does not throw on deeply nested substitutions, many heredocs or open quotes", () => {
+const bodyFileSizeCases: { name: string; flags: string; expected: Partial<GhText> }[] = [
+	{ name: "a lone too-large file", flags: "--body-file big.md", expected: { body: undefined, bodyFileTooLarge: true } },
+	{ name: "a too-large file, then a small one", flags: "--body-file big.md --body-file small.md", expected: { body: "Small." } },
+	{ name: "a body, then a too-large file", flags: "--body x --body-file big.md", expected: { body: undefined, bodyFileTooLarge: true } },
+];
+
+for (const sizeCase of bodyFileSizeCases) {
+	test(`extractGhTexts: body file size with ${sizeCase.name}`, (t) => {
+		const dir = tempDir(t);
+		fs.writeFileSync(path.join(dir, "big.md"), "x".repeat(MAX_BODY_FILE_BYTES + 1));
+		fs.writeFileSync(path.join(dir, "small.md"), "Small.");
+		assert.deepEqual(extractGhTexts(`gh pr create ${sizeCase.flags}`, dir), [{ kind: "pr", ...sizeCase.expected }]);
+	});
+}
+
+test("extractGhTexts finishes on deeply nested substitutions, many heredocs or open quotes", { timeout: 10_000 }, () => {
 	const deep = `gh pr create --body "${'$("'.repeat(MAX_SUBSTITUTION_DEPTH * 100)}`;
-	assert.equal(extractGhTexts(deep, "/")[0]?.body, undefined);
-	assert.doesNotThrow(() => extractGhTexts(`gh pr create ${"<<EOF ".repeat(10_000)}\n`, "/"));
-	assert.doesNotThrow(() => extractGhTexts(`gh pr create ${`"'`.repeat(10_000)}`, "/"));
+	assert.deepEqual(extractGhTexts(deep, "/"), [{ kind: "pr", body: undefined }]);
+	assert.deepEqual(extractGhTexts(`gh pr create ${"<<EOF ".repeat(10_000)}\n`, "/"), [{ kind: "pr" }]);
+	assert.deepEqual(extractGhTexts(`gh pr create -b ${`"'`.repeat(10_000)}`, "/"), [{ kind: "pr", body: undefined }]);
 });

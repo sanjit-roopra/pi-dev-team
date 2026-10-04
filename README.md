@@ -102,7 +102,7 @@ The team writes pull requests, issues and comments for a reader who skims. The r
 - The first sentence of the body says what changes and why.
 - The visible body has 250 words or fewer (a comment has 150). Sentences have 25 words or fewer. Lists have 5 items or fewer.
 - The text has no em-dashes, bold, hedges (should, may, might) or filler (robust, seamlessly, leverage).
-- Long required content, for example the evidence bundle of `/pr`, goes at the end in one collapsed `<details>` block. Code, tables, headings and `<details>` blocks do not count toward the word limit.
+- Long required content, for example the evidence bundle of `/pr`, goes at the end in one collapsed `<details>` block. Code, URLs, HTML comments, tables, headings and `<details>` blocks do not count toward the word limit.
 - Headings and markers that a skill needs, for example the sections of a `/specs` issue, stay as they are.
 
 Before a `gh pr` or `gh issue` command creates, edits or comments, the extension checks the title and the body. If the text breaks a rule, the extension blocks the command one time and tells the agent what to fix. If the agent sends the same command again, it runs. To only show the problems, set `"githubStyle": "warn"`. To turn off the check and the rules, set `"githubStyle": "off"`.

@@ -133,7 +133,7 @@ test("loadConfig: githubStyle keeps a valid mode and falls back to the default f
 	assert.equal(load("warn"), "warn");
 	assert.equal(load("off"), "off");
 	const OSC_CLIPBOARD_ESCAPE = "\u001b]52;c;x\u0007";
-	for (const invalid of ["Block", false, 1, OSC_CLIPBOARD_ESCAPE]) assert.equal(load(invalid), "block", JSON.stringify(invalid));
+	for (const invalid of ["Block", false, 1, null, OSC_CLIPBOARD_ESCAPE]) assert.equal(load(invalid), "block", JSON.stringify(invalid));
 });
 
 test("loadConfig: an invalid project githubStyle does not override a valid user value", (t) => {
@@ -144,4 +144,6 @@ test("loadConfig: an invalid project githubStyle does not override a valid user 
 	fs.mkdirSync(path.join(dir, ".pi"));
 	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ githubStyle: "loud" }));
 	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "warn");
+	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ githubStyle: "off" }));
+	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "off", "a valid project value wins");
 });

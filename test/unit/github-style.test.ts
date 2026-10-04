@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { test } from "node:test";
 import {
 	createStyleGate,
@@ -93,23 +96,30 @@ const ruleCases: { rule: string; bad: string; good: string; problem: RegExp }[] 
 	{ rule: "hedge", bad: "You should rerun it.", good: "You must rerun it.", problem: /"should"/ },
 	{ rule: "upper-case hedge", bad: "Clients MUST retry and SHOULD log.", good: "Clients MUST retry and log.", problem: /"should"/ },
 	{ rule: "'May' as a hedge, not as a month", bad: "May fail on CI.", good: "Released in May 2026.", problem: /"may"/ },
+	{ rule: "'May' as a month after several spaces", bad: "It may fail.", good: "Released in May      2026.", problem: /"may"/ },
 	{ rule: "hedge outside inline code, not inside", bad: "Run `x`, it might fail.", good: "Run `--might-fail` again.", problem: /"might"/ },
 	{ rule: "multi-word filler", bad: "Cache it in order to save time.", good: "Cache it to save time.", problem: /"in order to"/ },
 ];
 
-for (const c of ruleCases) {
-	test(`lintGhText rule: ${c.rule}`, () => {
-		assert.ok(has(lintGhText({ kind: "pr", body: c.bad }), c.problem), c.bad);
-		assert.deepEqual(lintGhText({ kind: "pr", body: c.good }), [], c.good);
+for (const ruleCase of ruleCases) {
+	test(`lintGhText rule: ${ruleCase.rule}`, () => {
+		assert.ok(has(lintGhText({ kind: "pr", body: ruleCase.bad }), ruleCase.problem), ruleCase.bad);
+		assert.deepEqual(lintGhText({ kind: "pr", body: ruleCase.good }), [], ruleCase.good);
 	});
 }
 
 for (const term of FILLER_TERMS) {
-	test(`lintGhText rejects the filler term "${term}" and the guide names it`, () => {
+	test(`lintGhText rejects the filler term "${term}"`, () => {
 		assert.ok(has(lintGhText({ kind: "pr", body: `A ${term} fix.` }), new RegExp(`"${term}"`)));
-		assert.ok(GITHUB_STYLE_GUIDE.includes(term));
 	});
 }
+
+test("the filler words README names are rejected and named in the guide", () => {
+	for (const term of ["robust", "seamlessly", "leverage"]) {
+		assert.ok(has(lintGhText({ kind: "pr", body: `A ${term} fix.` }), new RegExp(`"${term}"`)), term);
+		assert.ok(GITHUB_STYLE_GUIDE.includes(term), term);
+	}
+});
 
 test("lintGhText: filler terms match whole words only", () => {
 	assert.deepEqual(lintGhText({ kind: "pr", body: "The robustness tests and the simplyfied path." }), []);
@@ -126,11 +136,12 @@ test("lintGhText measures a hard-wrapped sentence whole, also inside a list item
 	assert.ok(has(lintGhText({ kind: "pr", body: `- [x] ${wrapped.replace(/\n/g, "\n  ")}` }), /Split 1 sentence/));
 });
 
-test("lintGhText: visible words at the limit pass, one more fails; comments have a lower limit", () => {
-	assert.deepEqual(lintGhText({ kind: "pr", body: textOfWords(WORD_LIMITS.pr) }), []);
-	assert.ok(has(lintGhText({ kind: "pr", body: textOfWords(WORD_LIMITS.pr + 1) }), new RegExp(`${WORD_LIMITS.pr + 1} visible words`)));
-	assert.ok(has(lintGhText({ kind: "comment", body: textOfWords(WORD_LIMITS.comment + 1) }), new RegExp(`${WORD_LIMITS.comment + 1} visible words`)));
-});
+for (const kind of ["pr", "issue", "comment"] as const) {
+	test(`lintGhText: visible words at the ${kind} limit pass, one more fails`, () => {
+		assert.deepEqual(lintGhText({ kind, body: textOfWords(WORD_LIMITS[kind]) }), []);
+		assert.ok(has(lintGhText({ kind, body: textOfWords(WORD_LIMITS[kind] + 1) }), new RegExp(`${WORD_LIMITS[kind] + 1} visible words`)));
+	});
+}
 
 const hiddenPadding: { where: string; wrap: (padding: string) => string }[] = [
 	{ where: "<details>", wrap: (p) => `<details><summary>Evidence</summary>\n\n${p}\n</details>` },
@@ -140,12 +151,23 @@ const hiddenPadding: { where: string; wrap: (padding: string) => string }[] = [
 	{ where: "a heading", wrap: (p) => `## ${p}` },
 ];
 
-for (const c of hiddenPadding) {
-	test(`lintGhText: words in ${c.where} do not count`, () => {
+for (const paddingCase of hiddenPadding) {
+	test(`lintGhText: words in ${paddingCase.where} do not count`, () => {
 		const padding = textOfWords(WORD_LIMITS.pr + 50);
-		assert.deepEqual(lintGhText({ kind: "pr", body: `Short visible text.\n${c.wrap(padding)}` }), []);
+		assert.deepEqual(lintGhText({ kind: "pr", body: `Short visible text.\n${paddingCase.wrap(padding)}` }), []);
 	});
 }
+
+test("lintGhText: a code block between two lists keeps them apart", () => {
+	const nearCap = listOf(MAX_LIST_ITEMS - 1);
+	assert.deepEqual(lintGhText({ kind: "pr", body: `${nearCap}\n\`\`\`\nlog\n\`\`\`\n${nearCap}` }), []);
+	assert.deepEqual(lintGhText({ kind: "pr", body: `${nearCap}\n<details>x</details>\n${nearCap}` }), []);
+});
+
+test("lintGhText: a code block ends the paragraph before it", () => {
+	const halfSentence = Array.from({ length: MAX_SENTENCE_WORDS - 5 }, () => "word").join(" ");
+	assert.deepEqual(lintGhText({ kind: "pr", body: `${halfSentence}:\n\`\`\`\nnpm test\n\`\`\`\n${halfSentence}.` }), []);
+});
 
 const listOf = (count: number, indent = "") => Array.from({ length: count }, (_, i) => `${indent}- item ${i}\n${indent}  wrapped`).join("\n\n");
 
@@ -165,6 +187,13 @@ test("lintGhText: two lists split by a paragraph count apart", () => {
 test("lintGhText: sub-bullets do not count toward the parent list", () => {
 	const nested = Array.from({ length: MAX_LIST_ITEMS }, (_, i) => `- item ${i}\n  - sub a\n  - sub b`).join("\n");
 	assert.deepEqual(lintGhText({ kind: "pr", body: nested }), []);
+});
+
+test("lintGhText: numbered lists and tab-indented sub-lists follow the same cap", () => {
+	const numbered = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `${i + 1}. step`).join("\n");
+	assert.ok(has(lintGhText({ kind: "pr", body: numbered }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)));
+	const tabNested = Array.from({ length: MAX_LIST_ITEMS }, (_, i) => `- item ${i}\n\t- sub a\n\t- sub b`).join("\n");
+	assert.deepEqual(lintGhText({ kind: "pr", body: tabNested }), []);
 });
 
 test("lintGhText: a sub-list over the cap fails on its own", () => {
@@ -199,6 +228,18 @@ test("gate in block mode lets the same command pass when sent again", () => {
 	const gate = createStyleGate();
 	gate("block", BAD_COMMAND, "/");
 	assert.deepEqual(gate("block", BAD_COMMAND, "/"), {});
+});
+
+test("gate in block mode checks the same command again when its body file changed", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-gate-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const command = "gh pr create --title T --body-file body.md";
+	const gate = createStyleGate();
+	fs.writeFileSync(path.join(dir, "body.md"), "It works — mostly.");
+	assert.ok(gate("block", command, dir).block);
+	fs.writeFileSync(path.join(dir, "body.md"), "It works — mostly, and simply.");
+	assert.ok(gate("block", command, dir).block, "new text, so blocked again");
+	assert.deepEqual(gate("block", command, dir), {}, "same text sent again passes");
 });
 
 test("gate in block mode checks a changed command again", () => {

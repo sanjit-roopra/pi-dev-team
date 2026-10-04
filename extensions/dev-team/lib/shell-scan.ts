@@ -29,6 +29,12 @@ interface PendingHeredoc {
 	quoted: boolean;
 }
 
+/** Index of `needle` at or after `from`, or the end of `source` when there is none. */
+function indexOrEnd(source: string, needle: string, from: number): number {
+	const index = source.indexOf(needle, from);
+	return index < 0 ? source.length : index;
+}
+
 /** A `$` or backtick that starts an expansion, so the word's final text is computed by the shell. */
 const SHELL_EXPANSION_START = /[A-Za-z_{0-9@*#?$!-]/;
 function startsExpansion(source: string, i: number): boolean {
@@ -41,9 +47,9 @@ function readHeredocBodies(source: string, start: number, pending: PendingHeredo
 	for (const heredoc of pending) {
 		const lines: string[] = [];
 		while (i < source.length) {
-			const nl = source.indexOf("\n", i);
-			const raw = source.slice(i, nl < 0 ? source.length : nl);
-			i = nl < 0 ? source.length : nl + 1;
+			const lineEnd = indexOrEnd(source, "\n", i);
+			const raw = source.slice(i, lineEnd);
+			i = lineEnd + 1;
 			const line = heredoc.stripTabs ? raw.replace(/^\t+/, "") : raw;
 			if (line === heredoc.delimiter) break;
 			lines.push(line);
@@ -62,15 +68,24 @@ function readHeredocOperator(source: string, start: number, segment: ShellSegmen
 	const stripTabs = source[i] === "-";
 	if (stripTabs) i++;
 	while (source[i] === " " || source[i] === "\t") i++;
+	// Any quoting in the delimiter word (<<'EOF', <<"EOF", <<\EOF, <<E"OF") makes the body literal.
 	let delimiter = "";
-	const quote = source[i];
-	const quoted = quote === "'" || quote === '"';
-	if (quoted) {
-		const end = source.indexOf(quote, i + 1);
-		delimiter = source.slice(i + 1, end < 0 ? source.length : end);
-		i = end < 0 ? source.length : end + 1;
-	} else {
-		while (i < source.length && !/[\s;&|<>()]/.test(source[i])) delimiter += source[i++];
+	let quoted = false;
+	while (i < source.length && !/[\s;&|<>()]/.test(source[i])) {
+		const char = source[i];
+		if (char === "'" || char === '"') {
+			const end = indexOrEnd(source, char, i + 1);
+			delimiter += source.slice(i + 1, end);
+			quoted = true;
+			i = end + 1;
+		} else if (char === "\\") {
+			delimiter += source[i + 1] ?? "";
+			quoted = true;
+			i += 2;
+		} else {
+			delimiter += char;
+			i++;
+		}
 	}
 	const word: ShellWord = { text: "<<", dynamic: false, redirect: "heredoc", heredocBody: "" };
 	segment.push(word);
@@ -146,16 +161,22 @@ function scanSegments(source: string, start: number, depth: number): { segments:
 			if (inSubstitution) return { segments, end: i + 1 };
 			i++;
 		} else if (char === "#" && !word) {
-			const nl = source.indexOf("\n", i);
-			i = nl < 0 ? source.length : nl;
+			i = indexOrEnd(source, "\n", i);
 		} else if (char === "\\") {
 			if (source[i + 1] !== "\n") wordInProgress().text += source[i + 1] ?? "";
 			i += 2;
 		} else if (char === "'") {
-			const end = source.indexOf("'", i + 1);
-			wordInProgress().text += source.slice(i + 1, end < 0 ? source.length : end);
-			if (end < 0) wordInProgress().dynamic = true;
-			i = end < 0 ? source.length : end + 1;
+			const end = indexOrEnd(source, "'", i + 1);
+			wordInProgress().text += source.slice(i + 1, end);
+			if (end === source.length) wordInProgress().dynamic = true;
+			i = end + 1;
+		} else if (char === "$" && source[i + 1] === "'") {
+			// ANSI-C quoting ($'a\nb'): the escapes are decoded by the shell, so the text is not taken literally.
+			let end = i + 2;
+			while (end < source.length && source[end] !== "'") end += source[end] === "\\" ? 2 : 1;
+			wordInProgress().text += source.slice(i, end + 1);
+			wordInProgress().dynamic = true;
+			i = end + 1;
 		} else if (char === '"') {
 			i = readDoubleQuoted(source, i + 1, wordInProgress(), depth);
 		} else if (char === "$" && source[i + 1] === "(") {

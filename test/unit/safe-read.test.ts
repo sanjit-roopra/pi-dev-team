@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
-import { MAX_REPO_FILE_BYTES, readSmallFile } from "../../extensions/dev-team/lib/safe-read.ts";
+import { MAX_REPO_FILE_BYTES, readBoundedFile, readSmallFile } from "../../extensions/dev-team/lib/safe-read.ts";
 
 function tempDir(t: TestContext): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-read-"));
@@ -37,11 +37,19 @@ test("readSmallFile skips missing files, directories and links to directories", 
 	assert.equal(readSmallFile(path.join(dir, "to-dir")), undefined);
 });
 
+/** A FIFO in a fresh temp dir, or undefined (and the test skipped) where mkfifo is unavailable. */
+function makeFifo(t: TestContext): string | undefined {
+	const fifo = path.join(tempDir(t), "pipe");
+	if (process.platform === "win32" || spawnSync("mkfifo", [fifo]).status !== 0) {
+		t.skip("mkfifo unavailable");
+		return undefined;
+	}
+	return fifo;
+}
+
 test("readSmallFile skips a FIFO without blocking", { timeout: 5000 }, (t) => {
-	const dir = tempDir(t);
-	const fifo = path.join(dir, "pipe.md");
-	if (process.platform === "win32" || spawnSync("mkfifo", [fifo]).status !== 0) return t.skip("mkfifo unavailable");
-	assert.equal(readSmallFile(fifo), undefined);
+	const fifo = makeFifo(t);
+	if (fifo) assert.equal(readSmallFile(fifo), undefined);
 });
 
 test("readSmallFile: an explicit maxBytes is the limit, at and one byte over", (t) => {
@@ -52,11 +60,25 @@ test("readSmallFile: an explicit maxBytes is the limit, at and one byte over", (
 });
 
 test("readSmallFile skips a symlink to a FIFO without blocking", { timeout: 5000 }, (t) => {
+	const fifo = makeFifo(t);
+	if (!fifo) return;
+	const link = path.join(path.dirname(fifo), "link.md");
+	fs.symlinkSync(fifo, link);
+	assert.equal(readSmallFile(link), undefined);
+});
+
+test("readSmallFile skips a device without reading it", { timeout: 5000 }, (t) => {
+	if (process.platform === "win32") return t.skip("no /dev/zero");
+	assert.equal(readSmallFile("/dev/zero"), undefined);
+});
+
+test("readBoundedFile says why a file was skipped", (t) => {
 	const dir = tempDir(t);
-	const fifo = path.join(dir, "pipe");
-	if (process.platform === "win32" || spawnSync("mkfifo", [fifo]).status !== 0) return t.skip("mkfifo unavailable");
-	fs.symlinkSync(fifo, path.join(dir, "link.md"));
-	assert.equal(readSmallFile(path.join(dir, "link.md")), undefined);
+	fs.writeFileSync(path.join(dir, "ten.md"), "x".repeat(10));
+	assert.deepEqual(readBoundedFile(path.join(dir, "ten.md"), 10), { text: "x".repeat(10) });
+	assert.deepEqual(readBoundedFile(path.join(dir, "ten.md"), 9), { skipped: "too-large" });
+	assert.deepEqual(readBoundedFile(dir), { skipped: "not-a-file" });
+	assert.deepEqual(readBoundedFile(path.join(dir, "missing")), { skipped: "unreadable" });
 });
 
 test("readSmallFile stops at maxBytes on a file that reports size 0 (Linux /proc)", (t) => {

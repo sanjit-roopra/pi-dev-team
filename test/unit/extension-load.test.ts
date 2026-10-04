@@ -72,6 +72,13 @@ test("ask_user is for the model only", async () => {
 	assert.equal(tools.ask_user.exposure, "model-only");
 });
 
+test("the system prompt carries the GitHub style guide in block mode", async () => {
+	const { handlers } = await loaded;
+	const opts: { sections?: Record<string, string> } = {};
+	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	assert.match(opts.sections?.dev_team ?? "", /GitHub text style/);
+});
+
 test("tool_call blocks a breaking gh command before the guard hooks run; the same command sent again reaches them", async () => {
 	const { handlers, probed } = await loaded;
 	assert.equal(handlers.tool_call?.length, 1);
