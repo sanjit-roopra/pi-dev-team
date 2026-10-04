@@ -2,7 +2,7 @@
 
 **Created**: 2026-10-04
 **Branch**: main (build on new branch `dev-team-usage`)
-**Status**: approved
+**Status**: in-progress
 **Gherkin persistence**: plan-file-only
 
 ## Goal
@@ -600,8 +600,8 @@ Round 1 verdicts: Parallelization approve; Strategic, UX, Acceptance, Design nee
   - [x] Step 3.2: De-duplicate shared entries and support abort
 
 #### Wave 2
-- [ ] Slice 4: `/dev-team usage` overlay, text fallback and wiring
-  - [ ] Step 4.1: Pure state reducer
-  - [ ] Step 4.2: Overlay component rendering
-  - [ ] Step 4.3: Load orchestration and cancel
-  - [ ] Step 4.4: Text summary, command wiring, docs
+- [x] Slice 4: `/dev-team usage` overlay, text fallback and wiring
+  - [x] Step 4.1: Pure state reducer
+  - [x] Step 4.2: Overlay component rendering
+  - [x] Step 4.3: Load orchestration and cancel
+  - [x] Step 4.4: Text summary, command wiring, docs
