@@ -148,6 +148,20 @@ const scenarios = {
 		assert(r.out.includes('ECHO:<skill name="version"'), `unexpected output: ${r.out.slice(0, 300)} ${r.err}`);
 	},
 
+	// The scripted provider is not GitHub Copilot, so a session of it has no AI credits to show.
+	// pi sends an extension's console.log to stderr in print mode, so these read both streams.
+	"/dev-team usage prints the session summary in print mode"(env) {
+		const r = pi(env, "/dev-team usage");
+		const said = `${r.out}${r.err}`;
+		assert(r.code === 0 && said.includes("No GitHub Copilot usage in this session"), `unexpected output: ${JSON.stringify(said.slice(0, 300))} code=${r.code}`);
+	},
+
+	"/dev-team usage month prints the month summary in print mode"(env) {
+		const r = pi(env, "/dev-team usage month");
+		const said = `${r.out}${r.err}`;
+		assert(r.code === 0 && said.includes("No GitHub Copilot usage this month"), `unexpected month output: ${JSON.stringify(said.slice(0, 300))} code=${r.code}`);
+	},
+
 	"autocompact_setup_nudge reaches the model only when autocompact is unconfigured"(env) {
 		fs.rmSync(path.join(env.home, ".claude", "settings.json"));
 		let r = pi(env, "hello");
