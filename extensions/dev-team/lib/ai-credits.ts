@@ -20,12 +20,14 @@ export function isCopilotModel(model: string | undefined): boolean {
 	return !!model && model.startsWith(`${COPILOT_PROVIDER}/`);
 }
 
+/** One run's AI credits: its USD cost x 100 when Copilot served it, else 0. */
+export function runCredits(run: { model?: string; usage: PiUsage }): number {
+	return isCopilotModel(run.model) ? costUsd(run.usage) * CREDITS_PER_USD : 0;
+}
+
 /** The AI credits of the runs served by Copilot; every other run counts 0. */
 export function runsAiCredits(runs: Iterable<{ model?: string; usage: PiUsage }>): number {
-	const copilotUsd = Array.from(runs)
-		.filter((run) => isCopilotModel(run.model))
-		.reduce((usd, run) => usd + costUsd(run.usage), 0);
-	return copilotUsd * CREDITS_PER_USD;
+	return Array.from(runs).reduce((credits, run) => credits + runCredits(run), 0);
 }
 
 /** Decimal places for a credits value: 2 below 10, 1 below 1000, else 0, judged after rounding. */
@@ -34,12 +36,17 @@ function creditDigits(credits: number): number {
 	return Number(credits.toFixed(1)) < 1000 ? 1 : 0;
 }
 
-/** "0.12 AI credits", "12.3 AI credits", "1,234 AI credits": fewer decimals as the number grows. */
-export function formatAiCredits(credits: number): string {
+/** "0.12", "12.3", "1,234": a credits value without its unit, fewer decimals as the number grows. */
+export function formatCredits(credits: number): string {
 	const digits = creditDigits(credits);
 	// Print the value the tier was judged on: Intl rounds some halves the other way than toFixed.
 	const shown = Number(credits.toFixed(digits));
-	return `${shown.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })} AI credits`;
+	return shown.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+/** "0.12 AI credits", "12.3 AI credits", "1,234 AI credits": fewer decimals as the number grows. */
+export function formatAiCredits(credits: number): string {
+	return `${formatCredits(credits)} AI credits`;
 }
 
 /**

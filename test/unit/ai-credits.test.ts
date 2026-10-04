@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus, formatAiCredits, isCopilotModel, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
+import { aiCreditsStatus, formatAiCredits, formatCredits, isCopilotModel, runCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
 import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // GitHub bills 1 AI credit per $0.01 of token cost (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
@@ -20,6 +20,12 @@ test("isCopilotModel: only the github-copilot provider", () => {
 	assert.equal(isCopilotModel(undefined), false);
 });
 
+test("runCredits: a Copilot run at 100 credits per USD, any other run 0", () => {
+	close(runCredits({ model: "github-copilot/m", usage: usage(0.25) }), 0.25 * CREDITS_PER_USD);
+	close(runCredits({ model: "anthropic/m", usage: usage(3) }), 0);
+	close(runCredits({ usage: usage(1) }), 0);
+});
+
 test("runsAiCredits: Copilot runs at 100 credits per USD", () => {
 	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(0.25) }]), 0.25 * CREDITS_PER_USD);
 });
@@ -35,6 +41,13 @@ test("formatAiCredits: fewer decimals as the number grows", () => {
 	assert.equal(formatAiCredits(12.345), "12.3 AI credits");
 	assert.equal(formatAiCredits(1000), "1,000 AI credits");
 	assert.equal(formatAiCredits(1234.5), "1,235 AI credits");
+});
+
+test("formatCredits: the bare number, with the same digit tiers", () => {
+	assert.equal(formatCredits(1234.5), "1,235");
+	assert.equal(formatCredits(12.345), "12.3");
+	assert.equal(formatCredits(0.1234), "0.12");
+	assert.equal(formatAiCredits(1234.5), `${formatCredits(1234.5)} AI credits`);
 });
 
 test("formatAiCredits: the number of decimals follows the rounded value at the tier edges", () => {
