@@ -49,6 +49,12 @@ const SESSION_FILE = ".jsonl";
 
 const isNotFound = (err: unknown): boolean => (err as { code?: string } | undefined)?.code === "ENOENT";
 
+const byName = (entries: readonly Dirent[]): Dirent[] => [...entries].sort((a, b) => a.name.localeCompare(b.name));
+
+/** The session files among a folder's entries, in name order. */
+const sessionFilesIn = (dir: string, entries: readonly Dirent[]): string[] =>
+	byName(entries).filter((entry) => entry.isFile() && entry.name.endsWith(SESSION_FILE)).map((entry) => path.join(dir, entry.name));
+
 /**
  * Session files directly under the root (`<root>/*.jsonl`, a flat custom session dir) or one folder
  * down (`<root>/<project>/*.jsonl`, pi's default layout), and nothing deeper: another extension keeps
@@ -77,12 +83,6 @@ async function listSessionFiles(root: string): Promise<{ files: string[]; unlist
 	}
 	return { files, unlistable };
 }
-
-const byName = (entries: readonly Dirent[]): Dirent[] => [...entries].sort((a, b) => a.name.localeCompare(b.name));
-
-/** The session files among a folder's entries, in name order. */
-const sessionFilesIn = (dir: string, entries: readonly Dirent[]): string[] =>
-	byName(entries).filter((entry) => entry.isFile() && entry.name.endsWith(SESSION_FILE)).map((entry) => path.join(dir, entry.name));
 
 /** The JSON objects among a file's lines; a truncated last line or any other non-JSON line is ignored. */
 function parseEntries(text: string): Record<string, unknown>[] {
@@ -114,18 +114,29 @@ function* entrySpend(entries: readonly Record<string, unknown>[]): Generator<{ e
 }
 
 /**
- * One session file's runs of spend since `since`. Throws when the file cannot be read or holds an
- * entry sessionSpend() cannot make sense of; no partial result is returned, so a skipped file adds nothing.
+ * Identifies an entry across session files: a fork or clone copies entries verbatim, id and timestamp
+ * included, so the same pair in two files is one piece of spend. Undefined for an entry without an id.
  */
-async function readRecords(file: string, since: Date): Promise<UsageRecord[]> {
+const entryKey = (entry: Record<string, unknown>): string | undefined => (typeof entry.id === "string" ? `${entry.id}|${entry.timestamp}` : undefined);
+
+/**
+ * One session file's runs of spend since `since`, leaving out entries whose key is in `seen`, and the
+ * keys of the entries it kept. Throws when the file cannot be read or holds an entry sessionSpend()
+ * cannot make sense of; nothing partial is returned, so a skipped file adds no records and claims no keys.
+ */
+async function readRecords(file: string, since: Date, seen: ReadonlySet<string>): Promise<{ records: UsageRecord[]; keys: string[] }> {
 	const records: UsageRecord[] = [];
+	const keys: string[] = [];
 	for (const { entry, runs } of entrySpend(parseEntries(await readFile(file, "utf8")))) {
 		const { timestamp } = entry;
 		// An entry with no usable time cannot be placed in the month, so it is left out.
 		if (typeof timestamp !== "string" || !(Date.parse(timestamp) >= since.getTime())) continue;
+		const key = entryKey(entry);
+		if (runs.length === 0 || (key !== undefined && seen.has(key))) continue;
+		if (key !== undefined) keys.push(key);
 		for (const run of runs) records.push({ timestamp, run });
 	}
-	return records;
+	return { records, keys };
 }
 
 export interface LoadOptions {
@@ -135,17 +146,22 @@ export interface LoadOptions {
 	since: Date;
 	/** Called after each file that was read (or failed to be), over the files modified since `since`. */
 	onProgress?: (done: number, total: number) => void;
+	/** Stops the load between files; the result is then `aborted`, with what was read so far. */
+	signal?: AbortSignal;
 }
 
 /**
  * Every run of spend in the saved session files under `root`, with the time of the entry that spent
  * it. A file last modified before `since` cannot hold an entry from after it, so it is never opened.
+ * An entry shared by several files (a fork or clone of a session) is counted once, from the first
+ * file read: root-level files by name, then each project folder's by name.
  */
-export async function loadUsageHistory({ root, since, onProgress }: LoadOptions): Promise<UsageHistory> {
+export async function loadUsageHistory({ root, since, onProgress, signal }: LoadOptions): Promise<UsageHistory> {
 	const { files, unlistable } = await listSessionFiles(root);
 	const recent: string[] = [];
 	let skipped = unlistable;
 	for (const file of files) {
+		if (signal?.aborted) return { records: [], skipped, aborted: true };
 		try {
 			if ((await stat(file)).mtimeMs >= since.getTime()) recent.push(file);
 		} catch {
@@ -153,9 +169,13 @@ export async function loadUsageHistory({ root, since, onProgress }: LoadOptions)
 		}
 	}
 	const records: UsageRecord[] = [];
+	const seen = new Set<string>();
 	for (const [i, file] of recent.entries()) {
+		if (signal?.aborted) return { records, skipped, aborted: true };
 		try {
-			for (const record of await readRecords(file, since)) records.push(record);
+			const read = await readRecords(file, since, seen);
+			for (const record of read.records) records.push(record);
+			for (const key of read.keys) seen.add(key);
 		} catch {
 			skipped++;
 		}

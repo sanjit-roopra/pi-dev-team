@@ -186,3 +186,61 @@ test("loadUsageHistory: the same id with different timestamps are both returned"
 		assert.equal((await load(root)).records.length, 2);
 	});
 });
+
+test("loadUsageHistory: an entry copied into a fork with the same id and timestamp counts once", async () => {
+	const shared = turn("same", "2026-10-02T00:00:00Z", 0.1, "shared");
+	await withRoot(
+		{
+			"--p--/1_orig.jsonl": [shared, turn("o", "2026-10-03T00:00:00Z", 0.1, "orig-only")],
+			"--p--/2_fork.jsonl": [shared, turn("f", "2026-10-04T00:00:00Z", 0.1, "fork-only")],
+			"--q--/3_clone.jsonl": [shared],
+		},
+		async (root) => {
+			assert.deepEqual(shown(await load(root)), ["2026-10-02T00:00:00Z github-copilot/shared", "2026-10-03T00:00:00Z github-copilot/orig-only", "2026-10-04T00:00:00Z github-copilot/fork-only"]);
+		},
+	);
+});
+
+test("loadUsageHistory: entries without an id are never merged", async () => {
+	const { id: _id, ...anonymous } = turn("x", "2026-10-02T00:00:00Z", 0.1, "anon");
+	await withRoot({ "--p--/a.jsonl": [anonymous], "--p--/b.jsonl": [anonymous] }, async (root) => {
+		assert.equal((await load(root)).records.length, 2);
+	});
+});
+
+test("loadUsageHistory: a file that fails midway does not claim its entries from later copies", async () => {
+	const shared = turn("same", "2026-10-02T00:00:00Z", 0.1, "shared");
+	const broken = { type: "custom", customType: SUBAGENT_USAGE_ENTRY, id: "x", timestamp: "2026-10-02T00:00:00Z", data: { agent: "a", usage: { cost: 0.1 }, nested: 5 } };
+	await withRoot({ "--p--/1_broken.jsonl": [shared, broken], "--p--/2_good.jsonl": [shared] }, async (root) => {
+		const h = await load(root);
+		assert.deepEqual([shown(h), h.skipped], [["2026-10-02T00:00:00Z github-copilot/shared"], 1]);
+	});
+});
+
+test("loadUsageHistory: an abort between files stops the load as aborted, keeping what was read", async () => {
+	await withRoot({ "--p--/1.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "first")], "--p--/2.jsonl": [turn("b", "2026-10-03T00:00:00Z", 0.1, "second")] }, async (root) => {
+		const controller = new AbortController();
+		const calls: number[] = [];
+		const h = await loadUsageHistory({ root, since: SINCE, signal: controller.signal, onProgress: (done) => { calls.push(done); controller.abort(); } });
+		assert.deepEqual([shown(h), h.aborted, calls], [["2026-10-02T00:00:00Z github-copilot/first"], true, [1]]);
+	});
+});
+
+test("loadUsageHistory: a signal already aborted reads nothing", async () => {
+	await withRoot({ "--p--/1.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "first")] }, async (root) => {
+		const h = await loadUsageHistory({ root, since: SINCE, signal: AbortSignal.abort() });
+		assert.deepEqual(h, { records: [], skipped: 0, aborted: true });
+	});
+});
+
+test("loadUsageHistory: a load nobody aborts is not aborted", async () => {
+	await withRoot({ "--p--/1.jsonl": [turn("a", "2026-10-02T00:00:00Z")] }, async (root) => {
+		assert.equal((await loadUsageHistory({ root, since: SINCE, signal: new AbortController().signal })).aborted, false);
+	});
+});
+
+test("loadUsageHistory: the same id at different timestamps in two files is two entries", async () => {
+	await withRoot({ "--p--/1.jsonl": [turn("same", "2026-10-02T00:00:00Z", 0.1, "x")], "--p--/2.jsonl": [turn("same", "2026-10-03T00:00:00Z", 0.1, "x")] }, async (root) => {
+		assert.equal((await load(root)).records.length, 2);
+	});
+});
