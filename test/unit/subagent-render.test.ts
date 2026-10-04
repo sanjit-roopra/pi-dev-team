@@ -86,6 +86,29 @@ test("formatUsage: turns, tokens in k, cache, cost, duration and model", () => {
 	assert.equal(formatUsage(undefined), "");
 });
 
+test("formatUsage: GitHub Copilot models also show the cost in AI credits", () => {
+	assert.equal(formatUsage(usage, "github-copilot/claude-opus-5.5"), "2 turns ↑1.2k ↓80 $0.0012 (0.12 AI credits) github-copilot/claude-opus-5.5");
+	assert.equal(formatUsage(usage, "anthropic/claude-opus-5-5"), "2 turns ↑1.2k ↓80 $0.0012 anthropic/claude-opus-5-5");
+	assert.equal(formatUsage({ ...usage, cost: 1 }, undefined, undefined, 25), "2 turns ↑1.2k ↓80 $1.0000 (25.0 AI credits)", "a mixed total names only the Copilot share");
+});
+
+test("parallel total: AI credits count only the runs served by Copilot", () => {
+	const out = draw(
+		renderSubagentResult(
+			result({
+				mode: "parallel",
+				results: [
+					taskView({ agent: "a", model: "github-copilot/gpt-5-mini", usage: { ...usage, cost: 0.02 } }),
+					taskView({ agent: "b", model: "anthropic/claude-haiku-4-5", usage: { ...usage, cost: 1 } }),
+				],
+			} as SubagentDetails),
+			{ expanded: false, isPartial: false } as never,
+			theme,
+		),
+	);
+	assert.match(out, /Total: .*\$1\.0200 \(2\.00 AI credits\)/);
+});
+
 // Escape and control characters that must never reach the terminal (BEL, ESC, other C0, C1, CR).
 const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
 const HOSTILE = "x\x1b[31m\x1b]52;c;ZXZpbA==\x07\x1b[2J\x1b]8;;https://x\x1b\\y\x1b]8;;\x1b\\\x9b31m\rFAKE\x00";

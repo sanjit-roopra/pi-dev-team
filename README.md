@@ -69,7 +69,7 @@ By default, every tier uses the model that you selected in pi. To use a differen
 - `anthropic`: Uses the Claude models from the Anthropic API.
 - `inherit`: Every agent uses your current model. This is the default.
 
-If you use GitHub Copilot and your plan counts premium requests, keep `inherit`. A code review can start more than 20 agents.
+If you use GitHub Copilot, every agent uses AI credits for the tokens it sends and receives. A code review can start more than 20 agents, so a less expensive model for the lower tiers can reduce the cost a lot.
 
 ## Safety and cost
 
@@ -91,6 +91,8 @@ To limit the work, set these values in `~/.pi/agent/dev-team.json`:
 ```
 
 To see what the team spends, run `/telemetry on`. Then run `/cost-report`. The numbers come from pi, so they are correct for every provider.
+
+pi's footer shows the cost of the whole session in USD, including the agents. If you use GitHub Copilot models, the status line also shows `GitHub Copilot: N AI credits` for the session, and the agent view shows the AI credits of each agent next to its USD cost. GitHub bills 1 AI credit for each $0.01 of token cost ([models and pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)). The number is an estimate: it does not include your plan's monthly allowance.
 
 ## Configuration
 

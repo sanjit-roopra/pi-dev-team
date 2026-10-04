@@ -23,6 +23,7 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
+import { formatAiCredits, sessionAiCredits } from "./lib/ai-credits.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
@@ -350,6 +351,13 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 	let agentPrompt: string | undefined;
 
+	/** GitHub Copilot AI credits the session has spent, as a status line under pi's footer (hidden at 0). */
+	function showAiCredits(ctx: ExtensionContext): void {
+		if (isSubagent || !ctx.hasUI) return;
+		const credits = sessionAiCredits(ctx.sessionManager.getEntries() as unknown as Record<string, unknown>[]);
+		ctx.ui.setStatus("dev-team-ai-credits", credits > 0 ? `GitHub Copilot: ${formatAiCredits(credits)}` : undefined);
+	}
+
 	// ---------------------------------------------------------------- lifecycle
 
 	pi.on("session_start", async (event, ctx) => {
@@ -357,6 +365,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
+		showAiCredits(ctx);
 		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
 		sessionContext = out.context;
 	});
@@ -408,6 +417,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			running = Math.max(0, running - 1);
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", running ? `dev-team: ${running} agent call(s) running` : undefined);
+			showAiCredits(ctx);
 		}
 		const claudeTool = claudeToolName(event.toolName);
 		const input = event.input as Record<string, unknown>;
@@ -456,6 +466,10 @@ export default function devTeam(pi: ExtensionAPI) {
 		};
 	});
 
+	pi.on("turn_end", async (_event, ctx) => {
+		showAiCredits(ctx);
+	});
+
 	pi.on("agent_end", async (_event, ctx) => {
 		if (isSubagent) return;
 		recordCost(ctx);
@@ -478,6 +492,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	// when one is running) without starting a model turn, as Claude's additionalContext does.
 	pi.on("session_compact", async (_event, ctx) => {
 		if (isSubagent) return;
+		showAiCredits(ctx);
 		const out = await runSessionStart(ctx, "compact");
 		if (out.context.length) {
 			pi.sendMessage({ customType: "dev-team-session-start", content: out.context.join("\n\n"), display: true }, { triggerTurn: false });
