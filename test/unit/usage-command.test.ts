@@ -48,13 +48,13 @@ test("without a UI the session summary is printed, no overlay is opened", async 
 	const { deps, emitted } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: false, entries: [copilotTurn("a", 40), copilotTurn("b", 20)] }), "", deps);
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This session · 60.0 AI credits\nmain 60.0"), emitted[0]);
+	assert.ok(emitted[0].startsWith("This session · $0.60 · 60.0 AI credits\nProviders  github-copilot $0.60 100.0%\nThreads  main $0.60"), emitted[0]);
 });
 
 test("without a UI and without Copilot spend it prints the empty state", async () => {
 	const { deps, emitted } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: false }), "", deps);
-	assert.deepEqual(emitted, ["No GitHub Copilot usage in this session"]);
+	assert.deepEqual(emitted, ["No usage in this session"]);
 });
 
 test("a UI whose custom() is a stub that never runs the factory (RPC) gets the text summary", async () => {
@@ -62,7 +62,7 @@ test("a UI whose custom() is a stub that never runs the factory (RPC) gets the t
 	const custom: Custom = async () => undefined;
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This session · 40.0 AI credits"));
+	assert.ok(emitted[0].startsWith("This session · $0.40 · 40.0 AI credits"));
 });
 
 test("a stub custom() that never runs the factory (RPC) gets this month's text summary, loaded from the session root", async () => {
@@ -72,7 +72,7 @@ test("a stub custom() that never runs the factory (RPC) gets this month's text s
 	assert.equal(loads.length, 1);
 	assert.equal(loads[0].root, "/home/u/.pi/agent/sessions");
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This month (Oct 1 – Oct 4) · 30.0 AI credits"), emitted[0]);
+	assert.ok(emitted[0].startsWith("This month (Oct 1 – Oct 4) · $0.30 · 30.0 AI credits"), emitted[0]);
 });
 
 test("a custom() that rejects falls back to the text summary instead of throwing", async () => {
@@ -80,7 +80,7 @@ test("a custom() that rejects falls back to the text summary instead of throwing
 	const custom: Custom = () => Promise.reject(new Error("tui is gone"));
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This session · 40.0 AI credits"), emitted[0]);
+	assert.ok(emitted[0].startsWith("This session · $0.40 · 40.0 AI credits"), emitted[0]);
 });
 
 test("when the overlay opened and closed, no text is printed", async () => {
@@ -106,7 +106,7 @@ test("the overlay component renders this session, themed, within the terminal he
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	const lines: string[] = view.render(80);
 	assert.ok(lines.length <= Math.floor((20 * OVERLAY_HEIGHT_PERCENT) / 100));
-	assert.ok(lines[0].includes("This session · By model · 40.0 AI credits"), lines[0]);
+	assert.ok(lines[0].includes("This session · By model · $0.40 · 40.0 AI credits"), lines[0]);
 	assert.ok(lines.some((l) => l.includes("<accent>")), "bars use the accent colour");
 	view.handleInput("q");
 	assert.equal(closed, 1);
@@ -131,14 +131,14 @@ test("in text mode this month is loaded without progress and summarised", async 
 	assert.equal(loads[0].onProgress, undefined);
 	assert.equal(loads[0].since.toISOString(), "2026-10-01T00:00:00.000Z");
 	const lines = emitted[0].split("\n");
-	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · 30.0 AI credits · as of 14:05");
+	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · $0.30 · 30.0 AI credits · as of 14:05");
 	assert.equal(lines.at(-1), "1 session file could not be read");
 });
 
 test("a month with no Copilot spend prints the empty state", async () => {
 	const { deps, emitted } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: false }), "month", deps);
-	assert.deepEqual(emitted, ["No GitHub Copilot usage this month"]);
+	assert.deepEqual(emitted, ["No usage this month"]);
 });
 
 test("a history load that fails in text mode prints the reason and does not throw", async () => {

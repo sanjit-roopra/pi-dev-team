@@ -21,3 +21,20 @@ export const mixed = usageBreakdown([
 	run("claude-sonnet-4.5", 10, "subagent", "orchestrator"),
 	run("gpt-5", 5, "overhead", "compaction"),
 ]);
+
+/** A run on any provider: `model` is "provider/model", `usd` its cost, `tokens` its input tokens. */
+export const providerRun = (model: string, usd: number, thread: SpendRun["thread"] = "main", agent = "main", tokens = 0): SpendRun => ({
+	thread,
+	agent: thread === "main" ? "main" : agent,
+	model,
+	usage: { cost: { total: usd }, input: tokens },
+	messages: 1,
+});
+
+/** $2.00: the main session on OpenAI, agents on Copilot and OpenAI, and a free local model. */
+export const multiProvider = usageBreakdown([
+	providerRun("openai/gpt-5.5", 0.8),
+	providerRun("github-copilot/claude-sonnet-5.5", 0.9, "subagent", "software-engineer"),
+	providerRun("openai/gpt-5.5", 0.3, "subagent", "arch-review"),
+	providerRun("ollama/qwen3", 0, "subagent", "Explore", 850_000),
+]);

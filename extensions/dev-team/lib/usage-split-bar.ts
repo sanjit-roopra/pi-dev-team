@@ -1,44 +1,41 @@
 /**
- * The stacked thread split for the AI credits overlay (splitBarLines): one bar cut into main █,
- * subagents ▓ and overhead ░ segments by credits, then a legend. Like the bar chart (usage-chart.ts)
- * it is pure string rendering: plain text is measured and cut first, then styled.
+ * A stacked split for the /dev-team usage overlay (splitBarLines): one bar cut into segments by
+ * amount, then a legend. The overlay draws two: threads (main, subagents, overhead) and providers.
+ * Segments keep the order the caller gives; each position has its own glyph (█ ▓ ▒ ░), so the split
+ * reads without colour, and parts beyond the last glyph fold into one "other" segment. Like the bar
+ * chart (usage-chart.ts) it is pure string rendering: plain text is measured and cut first, then
+ * styled.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { cutToWidth } from "./terminal-text.ts";
-import type { ThreadLabel } from "./usage-breakdown.ts";
+import { cutToWidth, toSingleLine } from "./terminal-text.ts";
 import { FULL_BLOCK } from "./usage-chart.ts";
 
-/** A segment is named by its thread's label; there is one vocabulary for the threads. */
-export type SplitLabel = ThreadLabel;
-
-/** One input to the split bar: credits spent by one thread, which becomes (part of) a segment. */
+/** One input to the split bar: an amount, which becomes (part of) a segment. */
 export interface SplitPart {
-	label: SplitLabel;
-	credits: number;
+	label: string;
+	amount: number;
 }
 
 export interface SplitStyle {
-	/** Colours the glyphs of the segment named `label`. */
-	segment(label: SplitLabel, text: string): string;
+	/** Colours the glyphs of the segment at `position` (0 is the first segment). */
+	segment(position: number, text: string): string;
 	/** De-emphasises the legend separators. */
 	muted(text: string): string;
 }
 
 export interface SplitBarOptions {
 	width: number;
-	formatValue(credits: number): string;
+	/** The legend's text for a part's amount; `share` is its fraction of the bar's total. */
+	formatValue(amount: number, share: number): string;
 	style: SplitStyle;
 	/** Cap on the bar; it also never exceeds `width`. */
 	maxBarCells?: number;
 }
 
-/** Segment order, left to right, and the glyph that tells them apart without colour. */
-const SPLIT_SEGMENTS: readonly { label: SplitLabel; glyph: string }[] = [
-	{ label: "main", glyph: FULL_BLOCK },
-	{ label: "subagents", glyph: "▓" },
-	{ label: "overhead", glyph: "░" },
-];
-type Segment = { label: SplitLabel; glyph: string; credits: number };
+/** The glyph of each segment position; there are as many segments as glyphs at most. */
+export const SPLIT_GLYPHS: readonly string[] = [FULL_BLOCK, "▓", "▒", "░"];
+const OTHER_LABEL = "other";
+type Segment = { label: string; glyph: string; amount: number };
 const MAX_SPLIT_BAR_CELLS = 40;
 const LEGEND_SEPARATOR = " · ";
 
@@ -72,21 +69,28 @@ function keepVisible(allocated: readonly number[]): number[] {
 	);
 }
 
-/** A bar split into main █, subagents ▓ and overhead ░ segments by credits, then a legend naming each with its credits. */
+/** The parts with an amount, in the given order; those past the last glyph folded into "other". */
+function toSegments(parts: readonly SplitPart[]): Segment[] {
+	const positive = parts.filter((p) => p.amount > 0);
+	const fits = positive.length <= SPLIT_GLYPHS.length;
+	const kept = fits ? positive : positive.slice(0, SPLIT_GLYPHS.length - 1);
+	const folded = fits ? [] : [{ label: OTHER_LABEL, amount: positive.slice(kept.length).reduce((sum, p) => sum + p.amount, 0) }];
+	// Labels can come from session files, so they are made one line before they are measured.
+	return [...kept, ...folded].map((p, i) => ({ label: toSingleLine(p.label), amount: p.amount, glyph: SPLIT_GLYPHS[i] }));
+}
+
+/** A bar split into segments by amount, in the given order, then a legend naming each with its value. */
 export function splitBarLines(parts: readonly SplitPart[], { width, formatValue, style, maxBarCells = MAX_SPLIT_BAR_CELLS }: SplitBarOptions): string[] {
-	const segments = SPLIT_SEGMENTS.flatMap((s): Segment[] => {
-		const credits = parts.filter((p) => p.label === s.label).reduce((sum, p) => sum + p.credits, 0);
-		return credits > 0 ? [{ ...s, credits }] : [];
-	});
+	const segments = toSegments(parts);
 	if (!segments.length) return [];
 
-	const segmentCells = allocateCells(segments.map((s) => s.credits), Math.max(0, Math.min(width, maxBarCells)));
-	const bar = segments.map((s, i) => style.segment(s.label, s.glyph.repeat(segmentCells[i]))).join("");
+	const segmentCells = allocateCells(segments.map((s) => s.amount), Math.max(0, Math.min(width, maxBarCells)));
+	const bar = segments.map((s, i) => style.segment(i, s.glyph.repeat(segmentCells[i]))).join("");
 	return [bar, ...legendLines(segments, { width, formatValue, style })];
 }
 
 /**
- * The legend ("█ main 30 · ▓ subagents 60"), packed onto as few lines as fit `width`. An entry
+ * The legend ("█ main $0.30 · ▓ subagents $0.60"), packed onto as few lines as fit `width`. An entry
  * never splits across lines; one wider than `width` on its own is cut to it. Each entry is cut as
  * plain text, then its glyph is styled.
  */
@@ -95,12 +99,13 @@ function legendLines(
 	{ width, formatValue, style }: Pick<SplitBarOptions, "width" | "formatValue" | "style">,
 ): string[] {
 	const separatorWidth = visibleWidth(LEGEND_SEPARATOR);
+	const total = segments.reduce((sum, s) => sum + s.amount, 0);
 	const lines: string[] = [];
 	let line = "";
 	let lineWidth = 0;
-	for (const s of segments) {
-		const plain = cutToWidth(`${s.glyph} ${s.label} ${formatValue(s.credits)}`, width);
-		const entry = plain && style.segment(s.label, plain.slice(0, s.glyph.length)) + plain.slice(s.glyph.length);
+	for (const [position, s] of segments.entries()) {
+		const plain = cutToWidth(`${s.glyph} ${s.label} ${formatValue(s.amount, s.amount / total)}`, width);
+		const entry = plain && style.segment(position, plain.slice(0, s.glyph.length)) + plain.slice(s.glyph.length);
 		const entryWidth = visibleWidth(plain);
 		if (line && lineWidth + separatorWidth + entryWidth <= width) {
 			line += style.muted(LEGEND_SEPARATOR) + entry;

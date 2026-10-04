@@ -5,10 +5,10 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { type UsageBreakdown, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 import { renderUsage, type UsageStyle, type UsageViewModel } from "../../extensions/dev-team/lib/usage-render.ts";
 import type { UsageState } from "../../extensions/dev-team/lib/usage-state.ts";
-import { mixed, NOW, run } from "../helpers/usage-fixtures.ts";
+import { mixed, multiProvider, NOW, providerRun, run } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_label, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_position, text) => text };
 
 const breakdown = (...runs: ReturnType<typeof run>[]): UsageBreakdown => usageBreakdown(runs);
 const state = (scope: UsageState["scope"], view: UsageState["view"], load: UsageState["load"] = { kind: scope === "month" ? "ready" : "idle" }): UsageState => ({ scope, view, load });
@@ -23,41 +23,60 @@ const viewModel = (s: UsageState, extra: Partial<UsageViewModel> = {}): UsageVie
 const render = (m: UsageViewModel, width = 80, height = 40) => renderUsage(m, { width, height, style });
 
 test("the header names the scope, the view and the total", () => {
-	assert.equal(render(viewModel(sessionModel))[0], "This session · By model · 105.0 AI credits");
+	assert.equal(render(viewModel(sessionModel))[0], "This session · By model · $1.05 · 105.0 AI credits");
 });
 
 test("the footer offers the other scope", () => {
 	assert.equal(render(viewModel(sessionModel)).at(-1), "Tab view · s this month · Esc close");
 });
 
-test("a split bar shows main, subagent and overhead segments, then a legend with their credits", () => {
+test("a thread split bar shows main, subagent and overhead segments, then a legend with their USD", () => {
 	const lines = render(viewModel(sessionModel));
-	assert.ok(lines.some((l) => /^█+▓+░+$/.test(l.trim())), `split bar missing:\n${lines.join("\n")}`);
-	assert.ok(lines.some((l) => l.includes("█ main 60.0 · ▓ subagents 40.0 · ░ overhead 5.00")));
+	assert.ok(lines.some((l) => /^█+▓+▒+$/.test(l.trim())), `split bar missing:\n${lines.join("\n")}`);
+	assert.ok(lines.some((l) => l.includes("█ main $0.60 · ▓ subagents $0.40 · ▒ overhead $0.05")));
 });
 
-test("By model ranks the models with credits and share", () => {
-	const chart = render(viewModel(sessionModel)).filter((l) => /^(claude-sonnet-4\.5|gpt-5) /.test(l));
+test("one provider with a cost draws no provider split bar", () => {
+	const lines = render(viewModel(sessionModel));
+	assert.equal(lines.filter((l) => /^[█▓▒░]+$/.test(l)).length, 1, lines.join("\n"));
+	const withFreeModel = breakdown(run("m", 10), providerRun("ollama/qwen3", 0, "main", "main", 100));
+	assert.ok(!render(viewModel(sessionModel, { session: withFreeModel })).some((l) => l.includes("ollama 0")));
+});
+
+test("two providers with a cost draw a provider split bar with their USD shares, above the thread split", () => {
+	const lines = render(viewModel(sessionModel, { session: multiProvider }));
+	const providerLegend = lines.findIndex((l) => l === "█ openai 55.0% · ▓ github-copilot 45.0%");
+	const threadLegend = lines.findIndex((l) => l === "█ main $0.80 · ▓ subagents $1.20");
+	assert.ok(providerLegend > 0 && threadLegend > providerLegend, lines.join("\n"));
+	assert.ok(/^█+▓+$/.test(lines[providerLegend - 1]), lines[providerLegend - 1]);
+});
+
+test("By model ranks the models by USD, with credits and share, labelled with their provider", () => {
+	const chart = render(viewModel(sessionModel)).filter((l) => l.startsWith("github-copilot/"));
 	assert.equal(chart.length, 2);
-	assert.ok(chart[0].startsWith("claude-sonnet-4.5") && chart[0].includes("70.0") && chart[0].includes("66.7%"), chart[0]);
+	assert.ok(chart[0].startsWith("github-copilot/claude-sonnet-4.5") && chart[0].includes("$0.70") && chart[0].includes("70.0 cr") && chart[0].includes("66.7%"), chart[0]);
 });
 
-test("model labels drop the provider prefix", () => {
-	assert.ok(!render(viewModel(sessionModel)).join("\n").includes("github-copilot/"));
+test("By provider ranks the providers; a free provider shows its tokens and a 0% share", () => {
+	const lines = render(viewModel(state("session", "provider"), { session: multiProvider }));
+	assert.equal(lines[0], "This session · By provider · $2.00 · 90.0 AI credits");
+	const chart = lines.filter((l) => /^(openai|github-copilot|ollama) /.test(l));
+	assert.deepEqual(chart.map((l) => l.split(" ")[0]), ["openai", "github-copilot", "ollama"]);
+	assert.ok(chart[1].includes("$0.90") && chart[1].includes("90.0 cr") && chart[1].includes("45.0%"), chart[1]);
+	assert.ok(chart[2].includes("$0.00") && chart[2].includes("850k tok") && chart[2].endsWith("0%"), chart[2]);
+	assert.ok(!chart[0].includes("cr"), chart[0]);
 });
 
-test("By agent ranks the subagents and keeps the split bar", () => {
-	const lines = render(viewModel(state("session", "agent")));
-	assert.equal(lines[0], "This session · By agent · 105.0 AI credits");
-	const chart = lines.filter((l) => /^(Explore|orchestrator) /.test(l));
-	assert.equal(chart.length, 2);
-	assert.ok(chart[0].startsWith("Explore") && chart[0].includes("75.0%"), chart[0]);
-	assert.ok(lines.some((l) => l.includes("█ main 60.0")));
+test("By agent ranks each agent per provider and keeps the split bars", () => {
+	const lines = render(viewModel(state("session", "agent"), { session: multiProvider }));
+	const chart = lines.filter((l) => / · (openai|github-copilot|ollama) /.test(l));
+	assert.deepEqual(chart.map((l) => l.split("  ")[0]), ["software-engineer · github-copilot", "arch-review · openai", "Explore · ollama"]);
+	assert.ok(lines.some((l) => l.includes("█ main $0.80")));
 });
 
 test("this month's header names the dates and the snapshot time, and the footer offers this session", () => {
 	const lines = render(viewModel(state("month", "model")));
-	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · By model · 105.0 AI credits · as of 14:05");
+	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · By model · $1.05 · 105.0 AI credits · as of 14:05");
 	assert.equal(lines.at(-1), "Tab view · s this session · Esc close");
 });
 
@@ -67,9 +86,9 @@ const mainOnly = breakdown(run("gpt-5", 20), run("gpt-5", 10, "overhead", "compa
 test("an empty session says so, points at this month and shows no split bar", () => {
 	const lines = render(viewModel(sessionModel, { session: empty }));
 	assert.deepEqual(lines, [
-		"This session · By model · 0.00 AI credits",
+		"This session · By model · $0.00",
 		"",
-		"No GitHub Copilot usage in this session — press s for this month",
+		"No usage in this session — press s for this month",
 		"",
 		"Tab view · s this month · Esc close",
 	]);
@@ -77,30 +96,28 @@ test("an empty session says so, points at this month and shows no split bar", ()
 
 test("an empty month says so", () => {
 	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, unreadable: 0, loadedAt: NOW } }));
-	assert.ok(lines.includes("No GitHub Copilot usage this month"), lines.join("\n"));
+	assert.ok(lines.includes("No usage this month"), lines.join("\n"));
 	assert.ok(!lines.join("\n").includes("press s"));
-	assert.ok(!lines.some((l) => /[█▓░]/.test(l)));
+	assert.ok(!lines.some((l) => /[█▓▒░]/.test(l)));
 });
 
-test("spend that rounds to 0.00 credits is shown as none, with no split bar, as the status line hides it", () => {
-	const tiny = breakdown(run("gpt-5", 0.004));
-	const session = render(viewModel(state("session", "model"), { session: tiny }));
-	assert.ok(session.includes("No GitHub Copilot usage in this session — press s for this month"), session.join("\n"));
-	assert.ok(!session.some((l) => /[█▓░]/.test(l)));
-	const month = render(viewModel(state("month", "model"), { month: { breakdown: tiny, unreadable: 0, loadedAt: NOW } }));
-	assert.ok(month.includes("No GitHub Copilot usage this month"), month.join("\n"));
+test("a cost under a cent is usage: it shows as <$0.01 with its row", () => {
+	const tiny = breakdown(providerRun("openai/gpt-5.5", 0.004));
+	const lines = render(viewModel(state("session", "model"), { session: tiny }));
+	assert.equal(lines[0], "This session · By model · <$0.01");
+	assert.ok(lines.some((l) => l.startsWith("openai/gpt-5.5") && l.includes("<$0.01")), lines.join("\n"));
 });
 
 test("an empty month still notes the files that could not be read", () => {
 	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, unreadable: 3, loadedAt: NOW } }));
-	assert.ok(lines.includes("No GitHub Copilot usage this month"), lines.join("\n"));
+	assert.ok(lines.includes("No usage this month"), lines.join("\n"));
 	assert.ok(lines.includes("3 session files could not be read"), lines.join("\n"));
 });
 
 test("By agent with main-only spend says there is no subagent usage and keeps the split bar", () => {
 	const lines = render(viewModel(state("session", "agent"), { session: mainOnly }));
 	assert.ok(lines.includes("No subagent usage in this session"), lines.join("\n"));
-	assert.ok(lines.some((l) => l.includes("█ main 20.0 · ░ overhead 10.0")));
+	assert.ok(lines.some((l) => l.includes("█ main $0.20 · ▓ overhead $0.10")));
 	const month = render(viewModel(state("month", "agent"), { month: { breakdown: mainOnly, unreadable: 0, loadedAt: NOW } }));
 	assert.ok(month.includes("No subagent usage this month"), month.join("\n"));
 });
@@ -146,15 +163,17 @@ test("unreadable files get a footnote under this month's chart, and none under t
 	assert.ok(!render(viewModel(sessionModel, { month: { breakdown: mixed, unreadable: 2, loadedAt: NOW } })).join("\n").includes("could not be read"));
 });
 
-test("a narrow header drops the snapshot time, then the dates, before the scope and view", () => {
-	const full = "This month (Oct 1 – Oct 4) · By model · 105.0 AI credits · as of 14:05";
-	const noClock = "This month (Oct 1 – Oct 4) · By model · 105.0 AI credits";
-	const noDates = "This month · By model · 105.0 AI credits";
+test("a narrow header drops the snapshot time, then the dates, then the credits, before the scope, view and USD", () => {
+	const full = "This month (Oct 1 – Oct 4) · By model · $1.05 · 105.0 AI credits · as of 14:05";
+	const noClock = "This month (Oct 1 – Oct 4) · By model · $1.05 · 105.0 AI credits";
+	const noDates = "This month · By model · $1.05 · 105.0 AI credits";
+	const noCredits = "This month · By model · $1.05";
 	const header = (width: number) => render(viewModel(state("month", "model")), width)[0];
 	assert.equal(header(full.length), full);
 	assert.equal(header(full.length - 1), noClock);
 	assert.equal(header(noClock.length - 1), noDates);
-	assert.equal(header(noDates.length), noDates);
+	assert.equal(header(noDates.length - 1), noCredits);
+	assert.equal(header(noCredits.length), noCredits);
 	assert.equal(header(10), "This mont…");
 });
 
@@ -181,9 +200,11 @@ function everyViewModel(): [string, UsageViewModel][] {
 	const many = breakdown(...Array.from({ length: 14 }, (_, i) => run(`model-with-a-long-name-${i}`, 100 - i, i % 3 === 0 ? "subagent" : "main", `agent-${i}`)), run("x", 3, "overhead", "compaction"));
 	const readyMonth = (breakdownOf: UsageBreakdown, unreadable = 0) => ({ breakdown: breakdownOf, unreadable, loadedAt: NOW });
 	const out: [string, UsageViewModel][] = [];
-	for (const view of ["model", "agent"] as const) {
+	for (const view of ["model", "provider", "agent"] as const) {
 		out.push([`session ${view} data`, viewModel(state("session", view), { session: many })]);
 		out.push([`session ${view} mixed`, viewModel(state("session", view))]);
+		out.push([`session ${view} multi-provider`, viewModel(state("session", view), { session: multiProvider })]);
+		out.push([`month ${view} multi-provider`, viewModel(state("month", view), { month: readyMonth(multiProvider, 2) })]);
 		out.push([`session ${view} empty`, viewModel(state("session", view), { session: empty })]);
 		out.push([`month ${view} data`, viewModel(state("month", view), { month: readyMonth(many, 3) })]);
 		out.push([`month ${view} empty`, viewModel(state("month", view), { month: readyMonth(empty) })]);
@@ -216,4 +237,17 @@ test("rows beyond the height fold into other (N) while the header and footer sta
 	assert.ok(lines.some((l) => l.startsWith("other (")), lines.join("\n"));
 	assert.ok(lines[0].startsWith("This session"));
 	assert.equal(lines.at(-1), "Tab view · s this month · Esc close");
+});
+
+test("with little height, split legends give way before split bars, and both bars stay in order", () => {
+	const isBar = (l: string) => /^[█▓▒░]+$/.test(l);
+	const isLegend = (l: string) => /^[█▓▒░] /.test(l);
+	for (let height = 4; height <= 14; height++) {
+		const lines = render(viewModel(sessionModel, { session: multiProvider }), 80, height);
+		const bars = lines.filter(isBar).length;
+		const legends = lines.filter(isLegend).length;
+		if (legends > 0) assert.equal(bars, 2, `height ${height}: a legend shows before both bars\n${lines.join("\n")}`);
+		const providerBar = lines.findIndex(isBar);
+		if (providerBar >= 0 && legends > 0) assert.equal(lines[providerBar + 1], "█ openai 55.0% · ▓ github-copilot 45.0%", `height ${height}`);
+	}
 });

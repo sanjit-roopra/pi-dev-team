@@ -15,17 +15,19 @@ test("opening on this month starts the load", () => {
 	assert.deepEqual(openUsage("month"), { state: monthLoading, effects: ["start-load"] });
 });
 
-test("Tab and Shift+Tab move between the views and wrap", () => {
-	const onAgent = reduce(sessionIdle, key("next-view"));
-	assert.deepEqual(onAgent, { state: { ...sessionIdle, view: "agent" }, effects: [] });
-	assert.equal(reduce(onAgent.state, key("next-view")).state.view, "model");
-	assert.equal(reduce(onAgent.state, key("previous-view")).state.view, "model");
+test("Tab walks model, provider, agent and wraps; Shift+Tab walks back", () => {
+	const onProvider = reduce(sessionIdle, key("next-view"));
+	assert.deepEqual(onProvider, { state: { ...sessionIdle, view: "provider" }, effects: [] });
+	const onAgent = reduce(onProvider.state, key("next-view")).state;
+	assert.equal(onAgent.view, "agent");
+	assert.equal(reduce(onAgent, key("next-view")).state.view, "model");
+	assert.equal(reduce(onAgent, key("previous-view")).state.view, "provider");
 	assert.equal(reduce(sessionIdle, key("previous-view")).state.view, "agent");
 });
 
 test("switching views while loading keeps the load running", () => {
 	const t = reduce(monthLoading, key("next-view"));
-	assert.deepEqual(t, { state: { ...monthLoading, view: "agent" }, effects: [] });
+	assert.deepEqual(t, { state: { ...monthLoading, view: "provider" }, effects: [] });
 });
 
 test("s from this session starts a load and shows progress, then the result", () => {
@@ -53,10 +55,10 @@ test("s again after a completed load reuses its result", () => {
 });
 
 test("the view persists across scope toggles", () => {
-	const onAgent = reduce(sessionIdle, key("next-view")).state;
-	const loading = reduce(onAgent, key("toggle-scope")).state;
-	assert.equal(loading.view, "agent");
-	assert.equal(reduce(loading, { type: "loaded" }).state.view, "agent");
+	const onProvider = reduce(sessionIdle, key("next-view")).state;
+	const loading = reduce(onProvider, key("toggle-scope")).state;
+	assert.equal(loading.view, "provider");
+	assert.equal(reduce(loading, { type: "loaded" }).state.view, "provider");
 });
 
 test("a failed load shows the reason, and s goes back and can retry", () => {

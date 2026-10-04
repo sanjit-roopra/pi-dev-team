@@ -2,31 +2,78 @@ process.env.TZ = "UTC"; // "as of" is local time; pin it so the expected strings
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
-import { errorReason, loadFailedMessage, modelRows, usageSummary } from "../../extensions/dev-team/lib/usage-text.ts";
-import { mixed, NOW, run } from "../helpers/usage-fixtures.ts";
+import { errorReason, loadFailedMessage, totalParts, usageSummary, viewRows } from "../../extensions/dev-team/lib/usage-text.ts";
+import { mixed, multiProvider, NOW, providerRun, run } from "../helpers/usage-fixtures.ts";
 
-test("this session: header, split line, then models and agents ranked with credits and share", () => {
+test("this session, Copilot only: USD and credits, both splits, then models, providers and agents", () => {
 	assert.equal(
 		usageSummary({ scope: "session", breakdown: mixed, now: NOW }),
 		[
-			"This session · 105.0 AI credits",
-			"main 60.0 · subagents 40.0 · overhead 5.00",
+			"This session · $1.05 · 105.0 AI credits",
+			"Providers  github-copilot $1.05 100.0%",
+			"Threads  main $0.60 57.1% · subagents $0.40 38.1% · overhead $0.05 4.8%",
 			"",
 			"By model",
-			"  claude-sonnet-4.5  70.0  66.7%",
-			"  gpt-5              35.0  33.3%",
+			"  github-copilot/claude-sonnet-4.5  $0.70  70.0 cr  66.7%",
+			"  github-copilot/gpt-5              $0.35  35.0 cr  33.3%",
+			"",
+			"By provider",
+			"  github-copilot  $1.05  105.0 cr  100.0%",
 			"",
 			"By agent",
-			"  Explore       30.0  75.0%",
-			"  orchestrator  10.0  25.0%",
+			"  Explore · github-copilot       $0.30  30.0 cr  75.0%",
+			"  orchestrator · github-copilot  $0.10  10.0 cr  25.0%",
 		].join("\n"),
 	);
+});
+
+test("mixed providers: USD for all, credits only on Copilot rows, tokens when a row cost nothing", () => {
+	assert.equal(
+		usageSummary({ scope: "session", breakdown: multiProvider, now: NOW }),
+		[
+			"This session · $2.00 · 90.0 AI credits",
+			"Providers  openai $1.10 55.0% · github-copilot $0.90 45.0% · ollama $0.00 0%",
+			"Threads  subagents $1.20 60.0% · main $0.80 40.0%",
+			"",
+			"By model",
+			"  openai/gpt-5.5                    $1.10              0 tok  55.0%",
+			"  github-copilot/claude-sonnet-5.5  $0.90  90.0 cr     0 tok  45.0%",
+			"  ollama/qwen3                      $0.00           850k tok     0%",
+			"",
+			"By provider",
+			"  openai          $1.10              0 tok  55.0%",
+			"  github-copilot  $0.90  90.0 cr     0 tok  45.0%",
+			"  ollama          $0.00           850k tok     0%",
+			"",
+			"By agent",
+			"  software-engineer · github-copilot  $0.90  90.0 cr     0 tok  75.0%",
+			"  arch-review · openai                $0.30              0 tok  25.0%",
+			"  Explore · ollama                    $0.00           850k tok     0%",
+		].join("\n"),
+	);
+});
+
+test("no Copilot at all: the header has no credits and no row has a credits column", () => {
+	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([providerRun("openai/gpt-5.5", 1.5), providerRun("anthropic/claude", 0.5, "subagent", "a")]), now: NOW });
+	assert.equal(text.split("\n")[0], "This session · $2.00");
+	assert.ok(!text.includes("cr") && !text.includes("AI credits"), text);
+});
+
+test("totalParts: USD, then credits only when Copilot spend shows", () => {
+	assert.deepEqual(totalParts({ usd: 2, credits: 90, tokens: 0 }), ["$2.00", "90.0 AI credits"]);
+	assert.deepEqual(totalParts({ usd: 2, credits: 0, tokens: 0 }), ["$2.00"]);
+});
+
+test("viewRows: models, providers or agents, as ranked in the breakdown", () => {
+	assert.deepEqual(viewRows("model", multiProvider).map((r) => r.label), ["openai/gpt-5.5", "github-copilot/claude-sonnet-5.5", "ollama/qwen3"]);
+	assert.deepEqual(viewRows("provider", multiProvider).map((r) => r.label), ["openai", "github-copilot", "ollama"]);
+	assert.deepEqual(viewRows("agent", multiProvider).map((r) => r.label), ["software-engineer · github-copilot", "arch-review · openai", "Explore · ollama"]);
 });
 
 test("this month names the dates and when it was read, and notes unreadable files", () => {
 	const text = usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { unreadable: 2, loadedAt: NOW } });
 	const lines = text.split("\n");
-	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · 105.0 AI credits · as of 14:05");
+	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · $1.05 · 105.0 AI credits · as of 14:05");
 	assert.equal(lines.at(-1), "2 session files could not be read");
 	assert.ok(!usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { unreadable: 0, loadedAt: NOW } }).includes("could not be read"));
 });
@@ -38,28 +85,29 @@ test("the month heading shows UTC dates while 'as of' shows the local clock", ()
 		// 02:00 UTC on Oct 1 is still Sep 30 in Los Angeles, but the billing month has begun.
 		const firstOfMonth = new Date(Date.UTC(2026, 9, 1, 2, 0));
 		const text = usageSummary({ scope: "month", breakdown: mixed, now: firstOfMonth, month: { unreadable: 0, loadedAt: firstOfMonth } });
-		assert.equal(text.split("\n")[0], "This month (Oct 1 – Oct 1) · 105.0 AI credits · as of 19:00");
+		assert.equal(text.split("\n")[0], "This month (Oct 1 – Oct 1) · $1.05 · 105.0 AI credits · as of 19:00");
 	} finally {
 		if (tz === undefined) delete process.env.TZ;
 		else process.env.TZ = tz;
 	}
 });
 
-test("no Copilot spend keeps the unreadable-files note, as the overlay does", () => {
+test("no usage keeps the unreadable-files note, as the overlay does", () => {
 	assert.equal(
 		usageSummary({ scope: "month", breakdown: usageBreakdown([]), now: NOW, month: { unreadable: 3, loadedAt: NOW } }),
-		"No GitHub Copilot usage this month\n\n3 session files could not be read",
+		"No usage this month\n\n3 session files could not be read",
 	);
 });
 
-test("spend that rounds to 0.00 credits counts as none, like the status line", () => {
-	assert.equal(usageSummary({ scope: "session", breakdown: usageBreakdown([run("gpt-5", 0.004)]), now: NOW }), "No GitHub Copilot usage in this session");
+test("a tiny cost still counts as usage; it shows as under a cent", () => {
+	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([providerRun("openai/gpt-5.5", 0.004)]), now: NOW });
+	assert.equal(text.split("\n")[0], "This session · <$0.01");
 });
 
-test("no Copilot spend prints just the empty-state sentence", () => {
+test("no usage prints just the empty-state sentence", () => {
 	const none = usageBreakdown([]);
-	assert.equal(usageSummary({ scope: "session", breakdown: none, now: NOW }), "No GitHub Copilot usage in this session");
-	assert.equal(usageSummary({ scope: "month", breakdown: none, now: NOW, month: { unreadable: 0, loadedAt: NOW } }), "No GitHub Copilot usage this month");
+	assert.equal(usageSummary({ scope: "session", breakdown: none, now: NOW }), "No usage in this session");
+	assert.equal(usageSummary({ scope: "month", breakdown: none, now: NOW, month: { unreadable: 0, loadedAt: NOW } }), "No usage this month");
 });
 
 test("main-only spend lists no agents", () => {
@@ -71,13 +119,6 @@ test("labels from session files cannot carry control characters", () => {
 	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([run("gpt-5", 20, "subagent", "bad\x1b[31m\nname")]), now: NOW });
 	assert.ok(!/[\u0000-\u0009\u000b-\u001f]/.test(text));
 	assert.ok(text.includes("badname"));
-});
-
-test("modelRows ranks as the breakdown does and drops the provider prefix from the labels", () => {
-	assert.deepEqual(
-		modelRows(mixed).map((r) => r.label),
-		["claude-sonnet-4.5", "gpt-5"],
-	);
 });
 
 test("a load failure message turns each run of control characters into one space", () => {

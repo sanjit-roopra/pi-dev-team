@@ -10,7 +10,7 @@ import { OVERLAY_HEIGHT_PERCENT, UsageView, type UsageViewDeps } from "../../ext
 import { NOW, run } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_label, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_position, text) => text };
 
 /** A UsageView on stub deps, recording what it asked of the host. */
 function viewOn(runs: SpendRun[], extra: Partial<UsageViewDeps> = {}) {
@@ -38,7 +38,7 @@ const manyRuns = manyCredits.map((credits, i) => run(`model-${i}`, credits));
 
 test("the component renders this session by model, headed with the session's total", () => {
 	const total = manyCredits.reduce((sum, credits) => sum + credits, 0);
-	assert.equal(viewOn(manyRuns).view.render(80)[0], `This session · By model · ${total.toLocaleString("en-US")} AI credits`);
+	assert.equal(viewOn(manyRuns).view.render(80)[0], `This session · By model · $${(total / 100).toFixed(2)} · ${total.toLocaleString("en-US")} AI credits`);
 });
 
 test("the component fits the overlay's share of the terminal height at any width", () => {
@@ -61,8 +61,11 @@ test("the component keeps the header and the close hint when the terminal is sma
 test("Tab and Shift+Tab switch the view and ask for a re-render; the split bar stays", () => {
 	const { view, calls } = viewOn([run("gpt-5", 30, "subagent", "Explore"), run("gpt-5", 20)]);
 	view.handleInput(tab);
+	assert.ok(view.render(80)[0].includes("By provider"));
+	view.handleInput(tab);
 	assert.ok(view.render(80)[0].includes("By agent"));
-	assert.ok(view.render(80).some((l) => l.includes("█ main 20.0")), "split bar still shown");
+	assert.ok(view.render(80).some((l) => l.includes("█ main $0.20")), "split bar still shown");
+	view.handleInput(shiftTab);
 	view.handleInput(shiftTab);
 	assert.ok(view.render(80)[0].includes("By model"));
 	assert.ok(calls.renders >= 1);
@@ -142,7 +145,7 @@ test("a finished load shows this month with the time it finished", async () => {
 	await settle();
 	assert.equal(calls.renders, rendersBefore + 1, "the finished load asks for a re-render");
 	const lines = monthLines(view);
-	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · By model · 50.0 AI credits · as of 14:09");
+	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · By model · $0.50 · 50.0 AI credits · as of 14:09");
 	assert.ok(lines.includes("2 session files could not be read"));
 	assert.equal(lines.at(-1), "Tab view · s this session · Esc close");
 });
@@ -270,8 +273,9 @@ test("s again after a completed load reuses it instead of reading the files agai
 
 test("the view persists across scope toggles, and Tab while loading keeps the loading line", async () => {
 	const { view, loader } = monthViewOn([run("gpt-5", 20, "subagent", "Explore")], "session");
-	view.handleInput(tab);
+	view.handleInput(shiftTab);
 	view.handleInput("s");
+	view.handleInput(tab);
 	view.handleInput(tab);
 	view.handleInput(tab);
 	assert.ok(monthLines(view)[0].includes("By agent"));
@@ -279,7 +283,7 @@ test("the view persists across scope toggles, and Tab while loading keeps the lo
 	loader.loads[0].resolve({ records: records(run("gpt-5", 7, "subagent", "Explore")) });
 	await settle();
 	assert.ok(monthLines(view)[0].includes("By agent"));
-	assert.ok(monthLines(view).some((l) => l.startsWith("Explore")));
+	assert.ok(monthLines(view).some((l) => l.startsWith("Explore · github-copilot")));
 });
 
 test("a loader that throws synchronously is a failed load", async () => {
