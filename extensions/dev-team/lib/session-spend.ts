@@ -1,7 +1,8 @@
 /**
  * What a session spent, one run at a time: the single walk over session entries that both the cost
  * meter (metrics.ts) and the GitHub Copilot AI credits status line (ai-credits.ts) read, so the two
- * cannot disagree on which entries count.
+ * classify entries the same way. Each reader chooses which threads it counts: the cost meter leaves
+ * out "overhead" runs, the AI credits count them.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
@@ -18,9 +19,10 @@ export interface PiUsage {
 export interface SpendRun {
 	/**
 	 * "main": one of the session's own assistant turns. "subagent": a dispatched agent's own turns, or
-	 * an agent it dispatched itself. "usage": spend pi records outside any turn, such as cache warming.
+	 * an agent it dispatched itself. "overhead": spend pi records outside any turn, such as cache
+	 * warming.
 	 */
-	thread: "main" | "subagent" | "usage";
+	thread: "main" | "subagent" | "overhead";
 	/** "main", the dispatched agent's name, or the usage entry's kind (e.g. "cache_warm"). */
 	agent: string;
 	/** "provider/model", or "unknown" when the entry does not name one. */
@@ -59,7 +61,7 @@ export function* sessionSpend(entries: readonly Record<string, unknown>[]): Gene
 				yield { thread: "subagent", agent: run.agent, model: run.model ?? "unknown", usage: run.usage, messages: run.usage.turns ?? 0 };
 			}
 		} else if (entry.type === "usage" && entry.usage) {
-			yield { thread: "usage", agent: String(entry.kind ?? "usage"), model: modelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 };
+			yield { thread: "overhead", agent: String(entry.kind ?? "usage"), model: modelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 };
 		}
 	}
 }

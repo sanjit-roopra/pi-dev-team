@@ -5,13 +5,15 @@ import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry, type UsageTotals } from 
 
 const usage = (input: number, cost: number): UsageTotals => ({ input, output: 1, cacheRead: 0, cacheWrite: 0, cost, turns: 1 });
 
+const mainTurn = { type: "message", message: { role: "assistant", provider: "p", model: "main", usage: { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total: 0.1 } } } };
+
+function ctxFrom(entries: unknown[]) {
+	return { sessionManager: { getEntries: () => entries, getSessionId: () => "s1", getSessionFile: () => "/x/s1.jsonl" } } as never;
+}
+
 /** A session with one main-thread turn and one dev-team dispatch entry. */
 function ctxWith(entry: SubagentUsageEntry) {
-	const entries = [
-		{ type: "message", message: { role: "assistant", provider: "p", model: "main", usage: { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total: 0.1 } } } },
-		{ type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: entry },
-	];
-	return { sessionManager: { getEntries: () => entries, getSessionId: () => "s1", getSessionFile: () => "/x/s1.jsonl" } } as never;
+	return ctxFrom([mainTurn, { type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: entry }]);
 }
 
 test("cost row: a nested dispatch is booked under the agent and model that ran it", () => {
@@ -33,12 +35,9 @@ test("cost row: entries written before nested crediting still count", () => {
 });
 
 test("cost row: pi's own usage entries (cache warming) stay out of the upstream row shape", () => {
-	const entries = [
-		{ type: "message", message: { role: "assistant", provider: "p", model: "main", usage: { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total: 0.1 } } } },
-		{ type: "usage", kind: "cache_warm", provider: "p", model: "main", usage: { input: 500, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 5 } } },
-	];
-	const ctx = { sessionManager: { getEntries: () => entries, getSessionId: () => "s1", getSessionFile: () => "/x/s1.jsonl" } } as never;
-	const row = buildCostRow(ctx) as { total: { input_tokens: number; cost_usd: number }; by_thread: Record<string, unknown> };
+	// The shape pi's SessionManager.appendUsage writes (UsageEntry in pi-coding-agent's session-manager.d.ts).
+	const cacheWarm = { type: "usage", kind: "cache_warm", provider: "p", model: "main", usage: { input: 500, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 5 } } };
+	const row = buildCostRow(ctxFrom([mainTurn, cacheWarm])) as { total: { input_tokens: number; cost_usd: number }; by_thread: Record<string, unknown> };
 	assert.equal(row.total.input_tokens, 10);
 	assert.equal(row.total.cost_usd, 0.1);
 	assert.deepEqual(Object.keys(row.by_thread), ["main"]);

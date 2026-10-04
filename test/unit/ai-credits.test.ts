@@ -20,8 +20,11 @@ test("isCopilotModel: only the github-copilot provider", () => {
 	assert.equal(isCopilotModel(undefined), false);
 });
 
-test("runsAiCredits: Copilot runs at 100 credits per USD, other providers 0", () => {
+test("runsAiCredits: Copilot runs at 100 credits per USD", () => {
 	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(0.25) }]), 0.25 * CREDITS_PER_USD);
+});
+
+test("runsAiCredits: other providers and runs without a model count 0", () => {
 	close(runsAiCredits([{ model: "anthropic/m", usage: usage(3) }, { usage: usage(1) }]), 0);
 });
 
@@ -36,6 +39,7 @@ test("formatAiCredits: fewer decimals as the number grows", () => {
 
 test("formatAiCredits: the number of decimals follows the rounded value at the tier edges", () => {
 	assert.equal(formatAiCredits(9.994), "9.99 AI credits");
+	assert.equal(formatAiCredits(9.995), "9.99 AI credits", "the double below 9.995 must not print as 10.00");
 	assert.equal(formatAiCredits(9.996), "10.0 AI credits");
 	assert.equal(formatAiCredits(999.94), "999.9 AI credits");
 	assert.equal(formatAiCredits(999.96), "1,000 AI credits");
@@ -58,13 +62,25 @@ test("sessionAiCredits: a Copilot subagent and its Copilot nested runs count, ot
 	close(sessionAiCredits([entry]), (0.25 + 0.01) * CREDITS_PER_USD);
 });
 
+// The shape pi's SessionManager.appendUsage writes (UsageEntry in pi-coding-agent's session-manager.d.ts).
 test("sessionAiCredits: pi's Copilot usage entries (cache warming) count", () => {
 	const warm = (provider: string) => ({ type: "usage", kind: "cache_warm", provider, model: "m", usage: { cost: { total: 0.03 } } });
 	close(sessionAiCredits([warm("github-copilot"), warm("anthropic")]), 0.03 * CREDITS_PER_USD);
 });
 
-test("aiCreditsStatus: labelled credits, hidden while they round to 0.00", () => {
+test("aiCreditsStatus: labels the session's credits", () => {
 	assert.equal(aiCreditsStatus([turn("github-copilot", 0.5)]), "GitHub Copilot: 50.0 AI credits");
-	assert.equal(aiCreditsStatus([turn("github-copilot", 0.00004)]), undefined);
+});
+
+test("aiCreditsStatus: hidden while the credits round to 0.00", () => {
+	const subCentUsd = 0.00004; // 0.004 AI credits
+	assert.equal(aiCreditsStatus([turn("github-copilot", subCentUsd)]), undefined);
+});
+
+test("aiCreditsStatus: shown from the smallest value that rounds to 0.01", () => {
+	assert.equal(aiCreditsStatus([turn("github-copilot", 0.0001)]), "GitHub Copilot: 0.01 AI credits");
+});
+
+test("aiCreditsStatus: hidden when no Copilot model ran", () => {
 	assert.equal(aiCreditsStatus([turn("anthropic", 1)]), undefined);
 });

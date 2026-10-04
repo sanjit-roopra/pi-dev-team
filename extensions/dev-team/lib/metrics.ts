@@ -78,7 +78,7 @@ export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | u
 	let any = false;
 	for (const run of sessionSpend(sessionEntries(ctx))) {
 		// Rows keep upstream's shape: model turns only, so pi's other usage entries (cache warming) stay out.
-		if (run.thread === "usage") continue;
+		if (run.thread === "overhead") continue;
 		add(total, run.usage, run.messages);
 		bump(byModel, run.model, run.usage, run.messages);
 		bump(byThread, run.thread, run.usage, run.messages);

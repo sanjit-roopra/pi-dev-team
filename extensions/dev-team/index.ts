@@ -352,7 +352,10 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 	let agentPrompt: string | undefined;
 
-	/** Refresh the session's GitHub Copilot AI credits status line under pi's footer (hidden at 0). */
+	/**
+	 * Refresh the session's GitHub Copilot AI credits status line under pi's footer (hidden at 0). Runs
+	 * at turn end and dispatch end, so spend pi records while idle (cache warming) shows from the next turn.
+	 */
 	function refreshAiCreditsStatus(ctx: ExtensionContext): void {
 		if (isSubagent || !ctx.hasUI) return;
 		ctx.ui.setStatus("dev-team-ai-credits", aiCreditsStatus(sessionEntries(ctx)));
