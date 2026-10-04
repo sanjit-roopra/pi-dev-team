@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import type { SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
+import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.ts";
 import { type UsageBreakdown, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 import { openUsage, type UsageState } from "../../extensions/dev-team/lib/usage-state.ts";
 import { renderUsage, type UsageModel, UsageView, type UsageViewDeps, type UsageStyle } from "../../extensions/dev-team/lib/usage-view.ts";
@@ -202,6 +203,7 @@ function viewOn(runs: SpendRun[], extra: Partial<UsageViewDeps> = {}) {
 		style,
 		requestRender: () => void calls.renders++,
 		close: () => void calls.closes++,
+		loadHistory: () => Promise.reject(new Error("no loader in this test")),
 		...extra,
 	};
 	return { view: new UsageView(deps, openUsage("session")), calls, deps };
@@ -258,4 +260,157 @@ test("invalidate rebuilds the session's breakdown from the runs; until then it i
 	assert.ok(view.render(80)[0].includes("20.0 AI credits"), "cached");
 	view.invalidate();
 	assert.ok(view.render(80)[0].includes("50.0 AI credits"), "rebuilt");
+});
+
+// ---------------------------------------------------------------------------------------------- this-month load
+
+/** A loader the test settles by hand, remembering how it was called. */
+function stubLoader() {
+	const loads: { since: Date; signal: AbortSignal; onProgress(done: number, total: number): void; resolve(h: Partial<SpendHistory>): void; reject(e: unknown): void }[] = [];
+	const loadHistory: UsageViewDeps["loadHistory"] = (options) =>
+		new Promise<SpendHistory>((resolve, reject) => {
+			loads.push({
+				...options,
+				resolve: (h) => resolve({ records: [], skipped: 0, aborted: false, ...h }),
+				reject,
+			});
+		});
+	return { loads, loadHistory };
+}
+const records = (...runs: SpendRun[]) => runs.map((r) => ({ timestamp: "2026-10-02T10:00:00.000Z", run: r }));
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+const monthLines = (view: UsageView) => view.render(80);
+
+function monthViewOn(runs: SpendRun[] = [], opening: "session" | "month" = "month", extra: Partial<UsageViewDeps> = {}) {
+	const loader = stubLoader();
+	const { calls, deps } = viewOn(runs, { loadHistory: loader.loadHistory, ...extra });
+	const view = new UsageView(deps, openUsage(opening));
+	return { view, calls, loader, deps };
+}
+
+test("opening on this month loads from the billing period start and shows the loading line", () => {
+	const { view, loader } = monthViewOn();
+	assert.equal(loader.loads.length, 1);
+	assert.equal(loader.loads[0].since.toISOString(), "2026-10-01T00:00:00.000Z");
+	assert.deepEqual(monthLines(view), ["This month (Oct 1 – Oct 4) · By model", "", "Reading sessions…", "", "Tab view · s cancel · Esc close"]);
+});
+
+test("progress updates the loading line and asks for a re-render", () => {
+	const { view, loader, calls } = monthViewOn();
+	loader.loads[0].onProgress(3, 12);
+	assert.ok(monthLines(view).includes("Reading sessions… 3/12 files"));
+	assert.equal(calls.renders, 1);
+});
+
+test("a finished load shows this month with the time it finished", async () => {
+	let clock = NOW;
+	const { view, loader } = monthViewOn([], "month", { now: () => clock });
+	clock = new Date(Date.UTC(2026, 9, 4, 14, 9));
+	loader.loads[0].resolve({ records: records(run("gpt-5", 40), run("gpt-5", 10, "subagent", "Explore")), skipped: 2 });
+	await settle();
+	const lines = monthLines(view);
+	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · By model · 50.0 AI credits · as of 14:09");
+	assert.ok(lines.includes("2 session files could not be read"));
+	assert.equal(lines.at(-1), "Tab view · s this session · Esc close");
+});
+
+test("a rejected load shows the error, s goes back, and s again retries", async () => {
+	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month");
+	loader.loads[0].reject(new Error("EACCES"));
+	await settle();
+	assert.ok(monthLines(view).includes("Could not load history: EACCES"));
+	assert.equal(monthLines(view).at(-1), "s back · Esc close");
+	view.handleInput("s");
+	assert.ok(monthLines(view)[0].startsWith("This session"));
+	assert.equal(loader.loads.length, 1);
+	view.handleInput("s");
+	assert.equal(loader.loads.length, 2, "retried");
+	assert.ok(monthLines(view).includes("Reading sessions…"));
+});
+
+test("s while loading cancels the load and shows this session; a late result is ignored", async () => {
+	const { view, loader } = monthViewOn([run("gpt-5", 20)], "session");
+	view.handleInput("s");
+	assert.equal(loader.loads.length, 1);
+	assert.equal(loader.loads[0].signal.aborted, false);
+	view.handleInput("S");
+	assert.equal(loader.loads[0].signal.aborted, true);
+	assert.ok(monthLines(view)[0].startsWith("This session"));
+	loader.loads[0].onProgress(5, 6);
+	loader.loads[0].resolve({ records: records(run("gpt-5", 999)), aborted: true });
+	await settle();
+	assert.ok(monthLines(view)[0].includes("20.0 AI credits"), "still this session");
+	view.handleInput("s");
+	assert.equal(loader.loads.length, 2, "a cancelled load restarts");
+	assert.equal(loader.loads[1].signal.aborted, false);
+});
+
+test("a result from a cancelled load cannot replace the restarted one", async () => {
+	const { view, loader } = monthViewOn([], "month");
+	view.handleInput("s");
+	view.handleInput("s");
+	assert.equal(loader.loads.length, 2);
+	loader.loads[0].resolve({ records: records(run("gpt-5", 999)) });
+	await settle();
+	assert.ok(monthLines(view).includes("Reading sessions…"), "the second load is still running");
+	loader.loads[1].resolve({ records: records(run("gpt-5", 7)) });
+	await settle();
+	assert.ok(monthLines(view)[0].includes("7.00 AI credits"));
+});
+
+test("closing aborts a running load", () => {
+	const { view, loader, calls } = monthViewOn();
+	view.handleInput("q");
+	assert.equal(loader.loads[0].signal.aborted, true);
+	assert.equal(calls.closes, 1);
+});
+
+test("disposing aborts a running load", () => {
+	const { view, loader } = monthViewOn();
+	view.dispose();
+	assert.equal(loader.loads[0].signal.aborted, true);
+});
+
+test("closing after the load finished aborts nothing", async () => {
+	const { view, loader } = monthViewOn();
+	loader.loads[0].resolve({});
+	await settle();
+	view.handleInput("\x1b");
+	assert.equal(loader.loads[0].signal.aborted, false);
+});
+
+test("s again after a completed load reuses it instead of reading the files again", async () => {
+	const { view, loader } = monthViewOn([run("gpt-5", 20)], "session");
+	view.handleInput("s");
+	loader.loads[0].resolve({ records: records(run("gpt-5", 7)) });
+	await settle();
+	view.handleInput("s");
+	assert.ok(monthLines(view)[0].startsWith("This session"));
+	view.handleInput("s");
+	assert.ok(monthLines(view)[0].includes("7.00 AI credits"));
+	assert.equal(loader.loads.length, 1);
+});
+
+test("the view persists across scope toggles, and Tab while loading keeps the loading line", async () => {
+	const { view, loader } = monthViewOn([run("gpt-5", 20, "subagent", "Explore")], "session");
+	view.handleInput(tab);
+	view.handleInput("s");
+	view.handleInput(tab);
+	view.handleInput(tab);
+	assert.ok(monthLines(view)[0].includes("By agent"));
+	assert.ok(monthLines(view).includes("Reading sessions…"));
+	loader.loads[0].resolve({ records: records(run("gpt-5", 7, "subagent", "Explore")) });
+	await settle();
+	assert.ok(monthLines(view)[0].includes("By agent"));
+	assert.ok(monthLines(view).some((l) => l.startsWith("Explore")));
+});
+
+test("a loader that throws synchronously is a failed load", async () => {
+	const { view } = monthViewOn([], "month", {
+		loadHistory: () => {
+			throw new Error("boom");
+		},
+	});
+	await settle();
+	assert.ok(monthLines(view).includes("Could not load history: boom"));
 });

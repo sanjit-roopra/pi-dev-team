@@ -5,11 +5,12 @@
  * UsageView is the thin component around it: it holds the state and reacts to keys.
  */
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
-import { COPILOT_PROVIDER, formatAiCredits, formatCredits } from "./ai-credits.ts";
+import { COPILOT_PROVIDER, copilotBillingPeriodStart, formatAiCredits, formatCredits } from "./ai-credits.ts";
 import type { SpendRun } from "./session-spend.ts";
 import { type CreditsRow, formatShare, type UsageBreakdown, usageBreakdown } from "./usage-breakdown.ts";
 import { barChartLines, type ChartStyle, cutToWidth, type SplitLabel, type SplitStyle, splitBarLines } from "./usage-chart.ts";
-import { reduce, type Scope, type Transition, type UsageEffect, type UsageState, usageKeyFor, type View } from "./usage-state.ts";
+import type { SpendHistory } from "./usage-history.ts";
+import { reduce, type Scope, type Transition, type UsageAction, type UsageEffect, type UsageState, usageKeyFor, type View } from "./usage-state.ts";
 
 export interface UsageStyle extends ChartStyle, SplitStyle {
 	/** The header line. */
@@ -206,13 +207,18 @@ export interface UsageViewDeps {
 	requestRender(): void;
 	/** Closes the overlay. */
 	close(): void;
+	/** Reads this month's spend from the saved sessions; the view cancels it through `signal`. */
+	loadHistory(options: { since: Date; signal: AbortSignal; onProgress(done: number, total: number): void }): Promise<SpendHistory>;
 }
 
-/** The overlay component: owns the state, turns keys into transitions and renders the model. */
+/** The overlay component: owns the state, turns keys into transitions, runs the month's load and renders the model. */
 export class UsageView implements Component {
 	private readonly deps: UsageViewDeps;
 	private state: UsageState;
 	private session: UsageBreakdown | undefined;
+	private month: MonthSnapshot | undefined;
+	/** The load in flight. Whatever else holds a different controller (or none) is a stale load whose news is dropped. */
+	private loading: AbortController | undefined;
 
 	constructor(deps: UsageViewDeps, initial: Transition) {
 		this.deps = deps;
@@ -223,23 +229,63 @@ export class UsageView implements Component {
 	render(width: number): string[] {
 		this.session ??= usageBreakdown(this.deps.sessionRuns());
 		const height = Math.max(1, Math.floor((this.deps.rows() * OVERLAY_HEIGHT_PERCENT) / 100));
-		return renderUsage({ state: this.state, session: this.session, now: this.deps.now() }, { width, height, style: this.deps.style });
+		return renderUsage({ state: this.state, session: this.session, month: this.month, now: this.deps.now() }, { width, height, style: this.deps.style });
 	}
 
 	handleInput(data: string): void {
 		const key = usageKeyFor(data);
-		if (!key) return;
-		const { state, effects } = reduce(this.state, { type: "key", key });
-		this.state = state;
-		this.run(effects);
-		this.deps.requestRender();
+		if (key) this.dispatch({ type: "key", key });
 	}
 
 	invalidate(): void {
 		this.session = undefined;
 	}
 
+	/** Called by pi when the overlay goes away; a load still running is of no use any more. */
+	dispose(): void {
+		this.cancelLoad();
+	}
+
+	private dispatch(action: UsageAction): void {
+		const { state, effects } = reduce(this.state, action);
+		this.state = state;
+		this.run(effects);
+		this.deps.requestRender();
+	}
+
 	private run(effects: readonly UsageEffect[]): void {
-		for (const effect of effects) if (effect === "close") this.deps.close();
+		for (const effect of effects) {
+			if (effect === "start-load") this.startLoad();
+			else if (effect === "cancel-load") this.cancelLoad();
+			else this.deps.close();
+		}
+	}
+
+	private startLoad(): void {
+		const controller = new AbortController();
+		this.loading = controller;
+		const current = () => this.loading === controller;
+		const since = copilotBillingPeriodStart(this.deps.now());
+		const onProgress = (done: number, total: number) => {
+			if (current()) this.dispatch({ type: "progress", done, total });
+		};
+		(async () => this.deps.loadHistory({ since, signal: controller.signal, onProgress }))().then(
+			(history) => {
+				if (!current()) return;
+				this.loading = undefined;
+				this.month = { breakdown: usageBreakdown(history.records.map((r) => r.run)), skipped: history.skipped, loadedAt: this.deps.now() };
+				this.dispatch({ type: "loaded" });
+			},
+			(err: unknown) => {
+				if (!current()) return;
+				this.loading = undefined;
+				this.dispatch({ type: "failed", reason: err instanceof Error ? err.message : String(err) });
+			},
+		);
+	}
+
+	private cancelLoad(): void {
+		this.loading?.abort();
+		this.loading = undefined;
 	}
 }
