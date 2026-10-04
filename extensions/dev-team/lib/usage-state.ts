@@ -2,8 +2,8 @@
  * The state machine behind the /dev-team usage overlay: which scope and view are shown and how the
  * this-month load is going. Pure: `reduce` maps a state and an action (a key, or news from the load)
  * to the next state plus the effects the view must carry out (start or cancel the load, close), so
- * every rule is testable without pi or a terminal. Mapping raw terminal input to a UsageKey and
- * parsing the command's arguments live here too, as they are the other two inputs to the machine.
+ * every rule is testable without pi or a terminal. Mapping raw terminal input to a UsageKey lives
+ * here too, as it is the machine's other input.
  */
 import { Key, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 
@@ -113,18 +113,4 @@ const KEY_TABLE: readonly { key: UsageKey; ids: readonly KeyId[] }[] = [
 /** The action a chunk of terminal input stands for, or undefined for any other key. */
 export function usageKeyFor(data: string): UsageKey | undefined {
 	return KEY_TABLE.find(({ ids }) => ids.some((id) => matchesKey(data, id)))?.key;
-}
-
-export const USAGE_SYNTAX = "Usage: /dev-team usage [session|month]";
-
-const SCOPE_ARGS: ReadonlyMap<string, Scope> = new Map([
-	["", "session"],
-	["session", "session"],
-	["month", "month"],
-]);
-
-/** The overlay's starting transition for `/dev-team usage <args>`, or the usage message for an argument it does not know. */
-export function parseUsageArgs(args: string): Transition | { error: string } {
-	const scope = SCOPE_ARGS.get(args.trim().toLowerCase());
-	return scope ? openUsage(scope) : { error: USAGE_SYNTAX };
 }

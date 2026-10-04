@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
 type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean> };
@@ -13,6 +13,7 @@ async function loadExtension() {
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
 	fs.writeFileSync(fakePython, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, { mode: 0o755 });
+	const previousPython = process.env.DEV_TEAM_PYTHON;
 	process.env.DEV_TEAM_PYTHON = fakePython;
 	const tools: Record<string, ToolDef> = {};
 	const commands: Record<string, CommandDef> = {};
@@ -24,14 +25,20 @@ async function loadExtension() {
 	const fakePi = new Proxy({}, { get: (_t, key) => recorders[String(key)] ?? (() => undefined) });
 	const { default: devTeam } = await import("../../extensions/dev-team/index.ts");
 	await devTeam(fakePi as never);
-	return { tools, commands, probed: fs.existsSync(marker), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+	const cleanup = () => {
+		fs.rmSync(dir, { recursive: true, force: true });
+		if (previousPython === undefined) delete process.env.DEV_TEAM_PYTHON;
+		else process.env.DEV_TEAM_PYTHON = previousPython;
+	};
+	return { tools, commands, probed: fs.existsSync(marker), cleanup };
 }
 
 const loaded = loadExtension();
 
-test("loading the extension starts no process (the Python probe waits for first use)", async (t) => {
-	const { probed, cleanup } = await loaded;
-	t.after(cleanup);
+after(async () => (await loaded).cleanup());
+
+test("loading the extension starts no process (the Python probe waits for first use)", async () => {
+	const { probed } = await loaded;
 	assert.equal(probed, false);
 });
 

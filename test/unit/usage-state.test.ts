@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openUsage, parseUsageArgs, reduce, type UsageAction, type UsageKey, type UsageState, usageKeyFor } from "../../extensions/dev-team/lib/usage-state.ts";
+import { openUsage, reduce, type UsageAction, type UsageKey, type UsageState, usageKeyFor } from "../../extensions/dev-team/lib/usage-state.ts";
 
 const key = (k: UsageKey): UsageAction => ({ type: "key", key: k });
 const sessionIdle: UsageState = { scope: "session", view: "model", load: { kind: "idle" } };
@@ -96,18 +96,4 @@ test("keys map to actions, letters in either case", () => {
 		["\x1b[A", undefined],
 	];
 	for (const [data, expected] of keys) assert.equal(usageKeyFor(data), expected, JSON.stringify(data));
-});
-
-test("arguments select the scope, defaulting to this session", () => {
-	assert.deepEqual(parseUsageArgs(""), openUsage("session"));
-	assert.deepEqual(parseUsageArgs("session"), openUsage("session"));
-	assert.deepEqual(parseUsageArgs("month"), openUsage("month"));
-	assert.deepEqual(parseUsageArgs("  month  "), openUsage("month"));
-	assert.deepEqual(parseUsageArgs("MONTH"), openUsage("month"));
-});
-
-test("an unknown or extra argument is a usage error", () => {
-	for (const args of ["histroy", "month now", "week"]) {
-		assert.deepEqual(parseUsageArgs(args), { error: "Usage: /dev-team usage [session|month]" }, args);
-	}
 });

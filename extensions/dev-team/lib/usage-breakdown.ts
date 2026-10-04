@@ -6,6 +6,7 @@
  */
 import { runAiCredits } from "./ai-credits.ts";
 import type { SpendRun } from "./session-spend.ts";
+import type { SpendHistory } from "./usage-history.ts";
 
 export interface CreditsRow {
 	label: string;
@@ -59,6 +60,20 @@ export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
 	}
 	const byModel = rank(models);
 	return { total: byModel.reduce((sum, row) => sum + row.credits, 0), byModel, byAgent: rank(agents), byThread: rank(threads).map((row) => ({ ...row, thread: THREAD_OF_LABEL.get(row.label) as SpendRun["thread"] })) };
+}
+
+/** What this month's load produced. */
+export interface MonthSnapshot {
+	breakdown: UsageBreakdown;
+	/** Session files that could not be read. */
+	skipped: number;
+	/** When the load finished; the header says "as of" this time. */
+	loadedAt: Date;
+}
+
+/** The snapshot of a finished load: the breakdown of its runs, the files it could not read, and when it finished. */
+export function monthSnapshot(history: SpendHistory, loadedAt: Date): MonthSnapshot {
+	return { breakdown: usageBreakdown(history.records.map((r) => r.run)), skipped: history.skipped, loadedAt };
 }
 
 /** "83.3%", or "<1%" for a share under 1% so a small row never reads as 0.0%. */

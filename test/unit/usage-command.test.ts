@@ -1,10 +1,11 @@
 process.env.TZ = "UTC";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/dev-team/lib/usage-command.ts";
 import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.ts";
-import { runUsage, type UsageDeps } from "../../extensions/dev-team/lib/usage-command.ts";
+import { OVERLAY_HEIGHT_PERCENT } from "../../extensions/dev-team/lib/usage-view.ts";
+import { NOW, run } from "../helpers/usage-fixtures.ts";
 
-const NOW = new Date(Date.UTC(2026, 9, 4, 14, 5));
 const SESSION_DIR = "/home/u/.pi/agent/sessions/--proj--";
 
 const copilotTurn = (id: string, credits: number) => ({
@@ -30,6 +31,7 @@ function fakeDeps(history: Partial<SpendHistory> | Error = {}) {
 	const deps: UsageDeps = {
 		now: () => NOW,
 		emit: (text) => void emitted.push(text),
+		// double-waiver: B1 — loadSpendHistory reads session files from disk
 		loadHistory: async (options) => {
 			loads.push(options);
 			if (history instanceof Error) throw history;
@@ -63,6 +65,24 @@ test("a UI whose custom() is a stub that never runs the factory (RPC) gets the t
 	assert.ok(emitted[0].startsWith("This session · 40.0 AI credits"));
 });
 
+test("a stub custom() that never runs the factory (RPC) gets this month's text summary, loaded from the session root", async () => {
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }] });
+	const custom: Custom = async () => undefined;
+	await runUsage(fakeCtx({ hasUI: true, custom }), "month", deps);
+	assert.equal(loads.length, 1);
+	assert.equal(loads[0].root, "/home/u/.pi/agent/sessions");
+	assert.equal(emitted.length, 1);
+	assert.ok(emitted[0].startsWith("This month (Oct 1 – Oct 4) · 30.0 AI credits"), emitted[0]);
+});
+
+test("a custom() that rejects falls back to the text summary instead of throwing", async () => {
+	const { deps, emitted } = fakeDeps();
+	const custom: Custom = () => Promise.reject(new Error("tui is gone"));
+	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
+	assert.equal(emitted.length, 1);
+	assert.ok(emitted[0].startsWith("This session · 40.0 AI credits"), emitted[0]);
+});
+
 test("when the overlay opened and closed, no text is printed", async () => {
 	const { deps, emitted } = fakeDeps();
 	let options: any;
@@ -85,7 +105,7 @@ test("the overlay component renders this session, themed, within the terminal he
 	};
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	const lines: string[] = view.render(80);
-	assert.ok(lines.length <= 18);
+	assert.ok(lines.length <= Math.floor((20 * OVERLAY_HEIGHT_PERCENT) / 100));
 	assert.ok(lines[0].includes("This session · By model · 40.0 AI credits"), lines[0]);
 	assert.ok(lines.some((l) => l.includes("<accent>")), "bars use the accent colour");
 	view.handleInput("q");
@@ -105,8 +125,7 @@ test("/dev-team usage month opens the overlay on this month and reads history fr
 });
 
 test("in text mode this month is loaded without progress and summarised", async () => {
-	const run = { thread: "main", agent: "main", model: "github-copilot/gpt-5", usage: { cost: { total: 0.3 } }, messages: 1 };
-	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run }], skipped: 1 });
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }], skipped: 1 });
 	await runUsage(fakeCtx({ hasUI: false }), "month", deps);
 	assert.equal(loads.length, 1);
 	assert.equal(loads[0].onProgress, undefined);
@@ -133,4 +152,18 @@ test("an unknown argument reports the usage and opens nothing", async () => {
 	await runUsage(fakeCtx({ hasUI: true }), "histroy", deps);
 	assert.deepEqual(emitted, ["Usage: /dev-team usage [session|month]"]);
 	assert.equal(loads.length, 0);
+});
+
+test("arguments select the scope, defaulting to this session", () => {
+	assert.deepEqual(parseUsageArgs(""), { scope: "session" });
+	assert.deepEqual(parseUsageArgs("session"), { scope: "session" });
+	assert.deepEqual(parseUsageArgs("month"), { scope: "month" });
+	assert.deepEqual(parseUsageArgs("  month  "), { scope: "month" });
+	assert.deepEqual(parseUsageArgs("MONTH"), { scope: "month" });
+});
+
+test("an unknown or extra argument is a usage error", () => {
+	for (const args of ["histroy", "month now", "week"]) {
+		assert.deepEqual(parseUsageArgs(args), { error: "Usage: /dev-team usage [session|month]" }, args);
+	}
 });

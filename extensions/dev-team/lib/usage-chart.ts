@@ -44,6 +44,7 @@ const MIN_LABEL_CELLS = 6;
 const MIN_BAR_CELLS = 6;
 const ELLIPSIS = "…";
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/g;
+const CONTROL_RUNS = /[\u0000-\u001f\u007f-\u009f]+/g;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 /**
@@ -68,6 +69,9 @@ export function cutToWidth(text: string, max: number): string {
 
 /** Labels come from session files; a control character (ESC included) must not reach the terminal. */
 export const withoutControlChars = (text: string) => text.replace(CONTROL_CHARS, "");
+
+/** Like withoutControlChars, but each run of control characters becomes one space, so the words around it do not merge (error messages). */
+export const controlRunsToSpace = (text: string) => text.replace(CONTROL_RUNS, " ");
 
 /** `eighths` eighths of a cell as glyphs: whole cells of `█`, then one partial block. */
 function barGlyphs(eighths: number): string {

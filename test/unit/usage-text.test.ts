@@ -1,19 +1,9 @@
 process.env.TZ = "UTC"; // "as of" is local time; pin it so the expected strings hold everywhere
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
 import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
-import { usageSummary } from "../../extensions/dev-team/lib/usage-text.ts";
-
-const run = (model: string, credits: number, thread: SpendRun["thread"] = "main", agent = "main"): SpendRun => ({
-	thread,
-	agent: thread === "main" ? "main" : agent,
-	model: `github-copilot/${model}`,
-	usage: { cost: { total: credits / 100 } },
-	messages: 1,
-});
-const NOW = new Date(Date.UTC(2026, 9, 4, 14, 5));
-const mixed = usageBreakdown([run("claude-sonnet-4.5", 60), run("gpt-5", 30, "subagent", "Explore"), run("claude-sonnet-4.5", 10, "subagent", "orchestrator"), run("gpt-5", 5, "overhead", "compaction")]);
+import { errorReason, loadFailedMessage, modelRows, usageSummary } from "../../extensions/dev-team/lib/usage-text.ts";
+import { mixed, NOW, run } from "../helpers/usage-fixtures.ts";
 
 test("this session: header, split line, then models and agents ranked with credits and share", () => {
 	assert.equal(
@@ -56,4 +46,20 @@ test("labels from session files cannot carry control characters", () => {
 	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([run("gpt-5", 20, "subagent", "bad\x1b[31m\nname")]), now: NOW });
 	assert.ok(!/[\u0000-\u0009\u000b-\u001f]/.test(text));
 	assert.ok(text.includes("bad[31mname"));
+});
+
+test("modelRows ranks as the breakdown does and drops the provider prefix from the labels", () => {
+	assert.deepEqual(
+		modelRows(mixed).map((r) => r.label),
+		["claude-sonnet-4.5", "gpt-5"],
+	);
+});
+
+test("a load failure message turns each run of control characters into one space", () => {
+	assert.equal(loadFailedMessage("bad\n\x1b[31mred"), "Could not load history: bad [31mred");
+});
+
+test("errorReason is an Error's message, or the text of anything else", () => {
+	assert.equal(errorReason(new Error("EACCES")), "EACCES");
+	assert.equal(errorReason("plain"), "plain");
 });
