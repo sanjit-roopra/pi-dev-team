@@ -95,8 +95,8 @@ test("usageBreakdown: a row under 1% displays as '<1%'", () => {
 test("monthSnapshot: breakdown of the records' runs, with the skipped count and when the load finished", () => {
 	const loadedAt = new Date(Date.UTC(2026, 9, 4, 14, 9));
 	const records = [run(copilot("a"), 0.3), run(copilot("b"), 0.1)].map((r) => ({ timestamp: "2026-10-02T10:00:00.000Z", run: r }));
-	const snapshot = monthSnapshot({ records, skipped: 2, aborted: false }, loadedAt);
+	const snapshot = monthSnapshot({ records, unreadable: 2, aborted: false }, loadedAt);
 	assert.deepEqual(shown(snapshot.breakdown.byModel), [`${copilot("a")} 30.0 75.0%`, `${copilot("b")} 10.0 25.0%`]);
-	assert.equal(snapshot.skipped, 2);
+	assert.equal(snapshot.unreadable, 2);
 	assert.equal(snapshot.loadedAt, loadedAt);
 });

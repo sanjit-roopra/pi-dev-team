@@ -9,6 +9,8 @@ import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./s
 
 /** The model of a run whose entry does not name one. */
 export const UNKNOWN_MODEL = "unknown";
+/** The agent of a subagent run whose entry does not name one as text. */
+export const UNKNOWN_AGENT = "unknown";
 
 /** Token usage as session entries carry it: pi's Usage (cost.total) or our UsageTotals (cost as a number). */
 export interface PiUsage {
@@ -74,10 +76,17 @@ function entryRuns(entry: Record<string, unknown>, effect: ModelInEffect): Spend
 		if (msg.model) effect.model = model;
 		if (msg.usage) return [{ thread: "main", agent: "main", model, usage: msg.usage, messages: 1 }];
 	} else if (type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-		const d = entry.data as SubagentUsageEntry | undefined;
-		if (!d?.usage) return [];
+		const usageEntry = entry.data as SubagentUsageEntry | undefined;
+		if (!usageEntry?.usage) return [];
 		// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
-		return creditedRuns(d).map((run) => ({ thread: "subagent", agent: run.agent, model: run.model ?? UNKNOWN_MODEL, usage: run.usage, messages: run.usage.turns ?? 0 }));
+		// Session files are untyped JSON: a non-string name must not reach code that treats it as one.
+		return creditedRuns(usageEntry).map((run) => ({
+			thread: "subagent",
+			agent: typeof run.agent === "string" ? run.agent : UNKNOWN_AGENT,
+			model: typeof run.model === "string" && run.model ? run.model : UNKNOWN_MODEL,
+			usage: run.usage,
+			messages: run.usage.turns ?? 0,
+		}));
 	} else if (type === "usage" && entry.usage) {
 		return [{ thread: "overhead", agent: String(entry.kind ?? "usage"), model: qualifiedModelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 }];
 	} else if (summaryAgent && entry.usage) {

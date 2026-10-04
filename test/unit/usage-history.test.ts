@@ -80,7 +80,7 @@ test("loadSpendHistory: spend comes from every top-level session file, with its 
 		async (root) => {
 			const h = await load(root);
 			assert.deepEqual(shown(h), ["2026-10-04T10:00:00Z github-copilot/f", "2026-10-02T10:00:00Z github-copilot/a", "2026-10-03T10:00:00Z github-copilot/b"]);
-			assert.deepEqual([h.skipped, h.aborted], [0, false]);
+			assert.deepEqual([h.unreadable, h.aborted], [0, false]);
 		},
 	);
 });
@@ -98,7 +98,7 @@ test("loadSpendHistory: nested run files of another extension are ignored", asyn
 
 test("loadSpendHistory: a missing session root is no history, not an error", async () => {
 	await withRoot({}, async (root) => {
-		assert.deepEqual(await load(path.join(root, "does-not-exist")), { records: [], skipped: 0, aborted: false });
+		assert.deepEqual(await load(path.join(root, "does-not-exist")), { records: [], unreadable: 0, aborted: false });
 	});
 });
 
@@ -154,7 +154,7 @@ test("loadSpendHistory: bad lines are ignored, valid entries kept", async () => 
 	await withRoot({ "--p--/1_a.jsonl": text }, async (root) => {
 		const h = await load(root);
 		assert.deepEqual(shown(h), ["2026-10-02T00:00:00Z github-copilot/first", "2026-10-03T00:00:00Z github-copilot/second"]);
-		assert.equal(h.skipped, 0);
+		assert.equal(h.unreadable, 0);
 	});
 });
 
@@ -170,7 +170,7 @@ test("loadSpendHistory: a file last modified before the month start is never ope
 		const long = new Date("2026-09-15T00:00:00Z");
 		await fs.utimes(path.join(root, "--p--/old.jsonl"), long, long);
 		const h = await load(root);
-		assert.deepEqual([shown(h), h.skipped], [["2026-10-02T00:00:00Z github-copilot/new"], 0]);
+		assert.deepEqual([shown(h), h.unreadable], [["2026-10-02T00:00:00Z github-copilot/new"], 0]);
 	});
 });
 
@@ -178,7 +178,7 @@ test("loadSpendHistory: an unreadable file is skipped and counted, the others ar
 	await withRoot({ "--p--/a.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "ok")], "--p--/b.jsonl": [turn("b", "2026-10-02T00:00:00Z", 0.1, "locked")] }, async (root) => {
 		await fs.chmod(path.join(root, "--p--/b.jsonl"), 0o000);
 		const h = await load(root);
-		assert.deepEqual([shown(h), h.skipped], [["2026-10-02T00:00:00Z github-copilot/ok"], 1]);
+		assert.deepEqual([shown(h), h.unreadable], [["2026-10-02T00:00:00Z github-copilot/ok"], 1]);
 	});
 });
 
@@ -188,7 +188,7 @@ test("loadSpendHistory: a project folder that cannot be listed counts as one ski
 		await fs.chmod(bad, 0o000);
 		try {
 			const h = await load(root);
-			assert.deepEqual([shown(h), h.skipped], [["2026-10-03T00:00:00Z github-copilot/ok"], 1]);
+			assert.deepEqual([shown(h), h.unreadable], [["2026-10-03T00:00:00Z github-copilot/ok"], 1]);
 		} finally {
 			await fs.chmod(bad, 0o755);
 		}
@@ -204,7 +204,7 @@ test("loadSpendHistory: a file that cannot be stat-ed is skipped and counted, th
 		await fs.chmod(bad, 0o444);
 		try {
 			const h = await load(root);
-			assert.deepEqual([shown(h), h.skipped], [["2026-10-03T00:00:00Z github-copilot/ok"], 1]);
+			assert.deepEqual([shown(h), h.unreadable], [["2026-10-03T00:00:00Z github-copilot/ok"], 1]);
 		} finally {
 			await fs.chmod(bad, 0o755);
 		}
@@ -222,19 +222,19 @@ test("loadSpendHistory: a file that vanishes after it was listed is not counted 
 				rmSync(path.join(root, "--p--/2.jsonl"));
 			},
 		});
-		assert.deepEqual([shown(h), h.skipped, calls], [["2026-10-02T00:00:00Z github-copilot/kept"], 0, [[1, 2], [2, 2]]]);
+		assert.deepEqual([shown(h), h.unreadable, calls], [["2026-10-02T00:00:00Z github-copilot/kept"], 0, [[1, 2], [2, 2]]]);
 	});
 });
 
 test("loadSpendHistory: a file with an entry spend cannot read is skipped whole, adding no records", async () => {
 	await withRoot({ "--p--/a.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "before"), brokenEntry()] }, async (root) => {
 		const h = await load(root);
-		assert.deepEqual([h.records, h.skipped], [[], 1]);
+		assert.deepEqual([h.records, h.unreadable], [[], 1]);
 	});
 });
 
 test("loadSpendHistory: an empty session root has no history", async () => {
-	await withRoot({}, async (root) => assert.deepEqual(await load(root), { records: [], skipped: 0, aborted: false }));
+	await withRoot({}, async (root) => assert.deepEqual(await load(root), { records: [], unreadable: 0, aborted: false }));
 });
 
 test("loadSpendHistory: progress is reported after each file modified this month", async () => {
@@ -252,14 +252,14 @@ test("loadSpendHistory: progress is reported for an unreadable file too", { skip
 		await fs.chmod(path.join(root, "--p--/a.jsonl"), 0o000);
 		const calls: [number, number][] = [];
 		const h = await loadSpendHistory({ root, since: SINCE, onProgress: (done, total) => calls.push([done, total]) });
-		assert.deepEqual([h.skipped, calls], [1, [[1, 2], [2, 2]]]);
+		assert.deepEqual([h.unreadable, calls], [1, [[1, 2], [2, 2]]]);
 	});
 });
 
 test("loadSpendHistory: a progress callback that throws does not stop the load", async () => {
 	await withRoot({ "--p--/1.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "first")], "--p--/2.jsonl": [turn("b", "2026-10-03T00:00:00Z", 0.1, "second")] }, async (root) => {
 		const h = await loadSpendHistory({ root, since: SINCE, onProgress: () => { throw new Error("renderer broke"); } });
-		assert.deepEqual([shown(h), h.skipped, h.aborted], [["2026-10-02T00:00:00Z github-copilot/first", "2026-10-03T00:00:00Z github-copilot/second"], 0, false]);
+		assert.deepEqual([shown(h), h.unreadable, h.aborted], [["2026-10-02T00:00:00Z github-copilot/first", "2026-10-03T00:00:00Z github-copilot/second"], 0, false]);
 	});
 });
 
@@ -333,7 +333,7 @@ test("loadSpendHistory: a file that fails midway does not claim its entries from
 	const shared = turn("same", "2026-10-02T00:00:00Z", 0.1, "shared");
 	await withRoot({ "--p--/1_broken.jsonl": [shared, brokenEntry()], "--p--/2_good.jsonl": [shared] }, async (root) => {
 		const h = await load(root);
-		assert.deepEqual([shown(h), h.skipped], [["2026-10-02T00:00:00Z github-copilot/shared"], 1]);
+		assert.deepEqual([shown(h), h.unreadable], [["2026-10-02T00:00:00Z github-copilot/shared"], 1]);
 	});
 });
 
@@ -353,14 +353,14 @@ test("loadSpendHistory: an abort partway through a file keeps nothing of that fi
 		let looks = 0;
 		const signal = { get aborted() { return ++looks > 10; } } as AbortSignal;
 		const h = await loadSpendHistory({ root, since: SINCE, signal });
-		assert.deepEqual(h, { records: [], skipped: 0, aborted: true });
+		assert.deepEqual(h, { records: [], unreadable: 0, aborted: true });
 	});
 });
 
 test("loadSpendHistory: a signal already aborted reads nothing", async () => {
 	await withRoot({ "--p--/1.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "first")] }, async (root) => {
 		const h = await loadSpendHistory({ root, since: SINCE, signal: AbortSignal.abort() });
-		assert.deepEqual(h, { records: [], skipped: 0, aborted: true });
+		assert.deepEqual(h, { records: [], unreadable: 0, aborted: true });
 	});
 });
 

@@ -86,11 +86,12 @@ export class UsageView implements Component {
 		const onProgress = (done: number, total: number) => {
 			if (isCurrentLoad()) this.dispatch({ type: "progress", done, total });
 		};
-		(async () => this.deps.loadHistory({ since, signal: controller.signal, onProgress }))().then(
-			(history) => {
+		// The snapshot is built inside the async function, so anything it throws is a failed load too.
+		(async () => monthSnapshot(await this.deps.loadHistory({ since, signal: controller.signal, onProgress }), this.deps.now()))().then(
+			(snapshot) => {
 				if (!isCurrentLoad()) return;
 				this.activeLoad = undefined;
-				this.month = monthSnapshot(history, this.deps.now());
+				this.month = snapshot;
 				this.dispatch({ type: "loaded" });
 			},
 			(err: unknown) => {

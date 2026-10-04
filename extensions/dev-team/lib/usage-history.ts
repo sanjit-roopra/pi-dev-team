@@ -20,7 +20,7 @@ export interface SpendRecord {
 export interface SpendHistory {
 	records: SpendRecord[];
 	/** Session files that could not be read. Files skipped for being too old, or gone before they were read, are not counted. */
-	skipped: number;
+	unreadable: number;
 	/** True when the load was cancelled; `records` then hold only what was read before that. */
 	aborted: boolean;
 }
@@ -52,7 +52,7 @@ const sessionFilesIn = (dir: string, dirents: readonly Dirent[]): string[] =>
  * down (`<root>/<project>/*.jsonl`, pi's default layout), and nothing deeper: another extension keeps
  * its own `<session>/<hash>/run-N/session.jsonl` transcripts under the same root, and those are not
  * this session history. A missing root is no history; any other failure to list it is thrown. A project
- * folder that cannot be listed counts as one skipped file, since its sessions are unknown.
+ * folder that cannot be listed counts as one unreadable file, since its sessions are unknown.
  */
 async function listSessionFiles(root: string): Promise<{ files: string[]; unlistable: number }> {
 	const files: string[] = [];
@@ -171,26 +171,26 @@ export interface LoadOptions {
 export async function loadSpendHistory({ root, since, onProgress, signal }: LoadOptions): Promise<SpendHistory> {
 	const { files, unlistable } = await listSessionFiles(root);
 	const recentFiles: string[] = [];
-	let skipped = unlistable;
+	let unreadable = unlistable;
 	for (const file of files) {
-		if (signal?.aborted) return { records: [], skipped, aborted: true };
+		if (signal?.aborted) return { records: [], unreadable, aborted: true };
 		try {
 			if ((await stat(file)).mtimeMs >= since.getTime()) recentFiles.push(file);
 		} catch (err) {
-			if (!isNotFound(err)) skipped++;
+			if (!isNotFound(err)) unreadable++;
 		}
 	}
 	const records: SpendRecord[] = [];
 	const seenKeys = new Set<string>();
 	for (const [i, file] of recentFiles.entries()) {
-		if (signal?.aborted) return { records, skipped, aborted: true };
+		if (signal?.aborted) return { records, unreadable, aborted: true };
 		try {
 			const fileResult = await readRecords(file, since, seenKeys, signal);
-			if (!fileResult) return { records, skipped, aborted: true };
+			if (!fileResult) return { records, unreadable, aborted: true };
 			for (const record of fileResult.records) records.push(record);
 			for (const key of fileResult.entryKeys) seenKeys.add(key);
 		} catch (err) {
-			if (!isNotFound(err)) skipped++;
+			if (!isNotFound(err)) unreadable++;
 		}
 		try {
 			onProgress?.(i + 1, recentFiles.length);
@@ -198,5 +198,5 @@ export async function loadSpendHistory({ root, since, onProgress, signal }: Load
 			// a failing progress display must not fail the load
 		}
 	}
-	return { records, skipped, aborted: false };
+	return { records, unreadable, aborted: false };
 }

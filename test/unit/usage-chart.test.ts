@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { barChartLines, type BarChartOptions, type ChartRow, splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/dev-team/lib/usage-chart.ts";
+import { barChartLines, type BarChartOptions, type ChartRow } from "../../extensions/dev-team/lib/usage-chart.ts";
+import { splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/dev-team/lib/usage-split-bar.ts";
 
 const identity = (text: string) => text;
 const style = { bar: identity, muted: identity };
@@ -223,10 +224,10 @@ test("a value is cut with an ellipsis, never shown as a shorter number", () => {
 	assert.deepEqual([4, 5, 6, 7].map(at), [["1,2…"], ["1,234"], ["1,234"], ["1,234"]]);
 });
 
-test("control characters in a label are stripped before it is drawn", () => {
-	const [line] = barChartLines([row("evil\x1b[31m\u009bred", 10)], options(40));
+test("escape sequences and control characters in a label are stripped whole before it is drawn", () => {
+	const [line] = barChartLines([row("evil\x1b[31m\u009b\tred", 10)], options(40));
 	assert.ok(!/[\x00-\x1f\x7f-\x9f]/.test(line), JSON.stringify(line));
-	assert.ok(line.startsWith("evil[31mred  "), line);
+	assert.ok(line.startsWith("evilred  "), line);
 });
 
 // Escape codes only, so a styled line measures as wide as a plain one; the code tells which style ran.

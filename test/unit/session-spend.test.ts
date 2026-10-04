@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCostRow } from "../../extensions/dev-team/lib/metrics.ts";
-import { sessionSpend, sessionSpendByEntry, UNKNOWN_MODEL } from "../../extensions/dev-team/lib/session-spend.ts";
+import { sessionSpend, sessionSpendByEntry, UNKNOWN_AGENT, UNKNOWN_MODEL } from "../../extensions/dev-team/lib/session-spend.ts";
 import { SUBAGENT_USAGE_ENTRY } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 const spend = (entries: Record<string, unknown>[]) => [...sessionSpend(entries)];
@@ -9,6 +9,17 @@ const spend = (entries: Record<string, unknown>[]) => [...sessionSpend(entries)]
 test("sessionSpend: a main turn without provider or model is booked to model 'unknown'", () => {
 	const [run] = spend([{ type: "message", message: { role: "assistant", usage: { cost: { total: 1 } } } }]);
 	assert.deepEqual({ thread: run.thread, model: run.model }, { thread: "main", model: UNKNOWN_MODEL });
+});
+
+test("sessionSpend: a subagent entry with a non-text agent or model is booked to 'unknown', not passed on", () => {
+	const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 1, turns: 1 };
+	const runs = spend([
+		{ type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: { agent: 5, model: 7, usage, nested: [{ agent: { x: 1 }, model: ["m"], usage }] } },
+	]);
+	assert.deepEqual(
+		runs.map((r) => [r.agent, r.model]),
+		[[UNKNOWN_AGENT, UNKNOWN_MODEL], [UNKNOWN_AGENT, UNKNOWN_MODEL]],
+	);
 });
 
 test("sessionSpend: a provider without a model is 'unknown', not 'provider/undefined'", () => {

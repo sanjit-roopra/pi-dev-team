@@ -16,7 +16,7 @@ const sessionModel = state("session", "model");
 const viewModel = (s: UsageState, extra: Partial<UsageViewModel> = {}): UsageViewModel => ({
 	state: s,
 	session: mixed,
-	month: { breakdown: mixed, skipped: 0, loadedAt: NOW },
+	month: { breakdown: mixed, unreadable: 0, loadedAt: NOW },
 	now: NOW,
 	...extra,
 });
@@ -76,7 +76,7 @@ test("an empty session says so, points at this month and shows no split bar", ()
 });
 
 test("an empty month says so", () => {
-	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, skipped: 0, loadedAt: NOW } }));
+	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, unreadable: 0, loadedAt: NOW } }));
 	assert.ok(lines.includes("No GitHub Copilot usage this month"), lines.join("\n"));
 	assert.ok(!lines.join("\n").includes("press s"));
 	assert.ok(!lines.some((l) => /[█▓░]/.test(l)));
@@ -86,7 +86,7 @@ test("By agent with main-only spend says there is no subagent usage and keeps th
 	const lines = render(viewModel(state("session", "agent"), { session: mainOnly }));
 	assert.ok(lines.includes("No subagent usage in this session"), lines.join("\n"));
 	assert.ok(lines.some((l) => l.includes("█ main 20.0 · ░ overhead 10.0")));
-	const month = render(viewModel(state("month", "agent"), { month: { breakdown: mainOnly, skipped: 0, loadedAt: NOW } }));
+	const month = render(viewModel(state("month", "agent"), { month: { breakdown: mainOnly, unreadable: 0, loadedAt: NOW } }));
 	assert.ok(month.includes("No subagent usage this month"), month.join("\n"));
 });
 
@@ -118,17 +118,17 @@ test("a failed load shows the reason and the back footer", () => {
 
 test("an error reason cannot smuggle control characters or extra lines", () => {
 	const lines = render(viewModel(state("month", "model", { kind: "error", reason: "bad\n\x1b[31mred" })));
-	assert.ok(lines.includes("Could not load history: bad [31mred"), lines.join("\n"));
+	assert.ok(lines.includes("Could not load history: bad red"), lines.join("\n"));
 	assert.ok(lines.every((l) => !/[\u0000-\u001f]/.test(l)));
 });
 
-test("skipped files get a footnote under this month's chart, and none under this session's", () => {
-	const skipped = (n: number) => render(viewModel(state("month", "model"), { month: { breakdown: mixed, skipped: n, loadedAt: NOW } }));
-	const lines = skipped(2);
+test("unreadable files get a footnote under this month's chart, and none under this session's", () => {
+	const unreadable = (n: number) => render(viewModel(state("month", "model"), { month: { breakdown: mixed, unreadable: n, loadedAt: NOW } }));
+	const lines = unreadable(2);
 	assert.equal(lines.at(-3), "2 session files could not be read");
-	assert.ok(skipped(1).includes("1 session file could not be read"));
-	assert.ok(!skipped(0).join("\n").includes("could not be read"));
-	assert.ok(!render(viewModel(sessionModel, { month: { breakdown: mixed, skipped: 2, loadedAt: NOW } })).join("\n").includes("could not be read"));
+	assert.ok(unreadable(1).includes("1 session file could not be read"));
+	assert.ok(!unreadable(0).join("\n").includes("could not be read"));
+	assert.ok(!render(viewModel(sessionModel, { month: { breakdown: mixed, unreadable: 2, loadedAt: NOW } })).join("\n").includes("could not be read"));
 });
 
 test("a narrow header drops the snapshot time, then the dates, before the scope and view", () => {
@@ -164,7 +164,7 @@ test("a loading footer drops the view hint, then the cancel hint", () => {
 /** Every scope, view and load state the overlay can be in, with enough models to need folding. */
 function everyViewModel(): [string, UsageViewModel][] {
 	const many = breakdown(...Array.from({ length: 14 }, (_, i) => run(`model-with-a-long-name-${i}`, 100 - i, i % 3 === 0 ? "subagent" : "main", `agent-${i}`)), run("x", 3, "overhead", "compaction"));
-	const readyMonth = (breakdownOf: UsageBreakdown, skipped = 0) => ({ breakdown: breakdownOf, skipped, loadedAt: NOW });
+	const readyMonth = (breakdownOf: UsageBreakdown, unreadable = 0) => ({ breakdown: breakdownOf, unreadable, loadedAt: NOW });
 	const out: [string, UsageViewModel][] = [];
 	for (const view of ["model", "agent"] as const) {
 		out.push([`session ${view} data`, viewModel(state("session", view), { session: many })]);

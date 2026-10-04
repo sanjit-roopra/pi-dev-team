@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { formatToolCall, formatUsage, recentCallLines, renderSubagentCall, renderSubagentResult, sanitizeTerminalText } from "../../extensions/dev-team/lib/subagent-render.ts";
+import { formatToolCall, formatUsage, recentCallLines, renderSubagentCall, renderSubagentResult } from "../../extensions/dev-team/lib/subagent-render.ts";
+import { sanitizeTerminalText } from "../../extensions/dev-team/lib/terminal-text.ts";
 import type { SubagentDetails, SubagentTaskView, UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // A theme stub that returns text unchanged; the renderers only call fg() and bold().

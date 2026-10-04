@@ -102,7 +102,7 @@ function stubLoader() {
 		new Promise<SpendHistory>((resolve, reject) => {
 			loads.push({
 				...options,
-				resolve: (h) => resolve({ records: [], skipped: 0, aborted: false, ...h }),
+				resolve: (h) => resolve({ records: [], unreadable: 0, aborted: false, ...h }),
 				reject,
 			});
 		});
@@ -135,10 +135,12 @@ test("progress updates the loading line and asks for a re-render", () => {
 
 test("a finished load shows this month with the time it finished", async () => {
 	let clock = NOW;
-	const { view, loader } = monthViewOn([], "month", { now: () => clock });
+	const { view, loader, calls } = monthViewOn([], "month", { now: () => clock });
 	clock = new Date(Date.UTC(2026, 9, 4, 14, 9));
-	loader.loads[0].resolve({ records: records(run("gpt-5", 40), run("gpt-5", 10, "subagent", "Explore")), skipped: 2 });
+	const rendersBefore = calls.renders;
+	loader.loads[0].resolve({ records: records(run("gpt-5", 40), run("gpt-5", 10, "subagent", "Explore")), unreadable: 2 });
 	await settle();
+	assert.equal(calls.renders, rendersBefore + 1, "the finished load asks for a re-render");
 	const lines = monthLines(view);
 	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · By model · 50.0 AI credits · as of 14:09");
 	assert.ok(lines.includes("2 session files could not be read"));
@@ -146,10 +148,21 @@ test("a finished load shows this month with the time it finished", async () => {
 });
 
 test("a rejected load shows the error and the back footer", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month");
+	const { view, loader, calls } = monthViewOn([run("gpt-5", 20)], "month");
+	const rendersBefore = calls.renders;
 	loader.loads[0].reject(new Error("EACCES"));
 	await settle();
+	assert.equal(calls.renders, rendersBefore + 1, "the failed load asks for a re-render");
 	assert.ok(monthLines(view).includes("Could not load history: EACCES"));
+	assert.equal(monthLines(view).at(-1), "s back · Esc close");
+});
+
+test("a load whose records cannot be summed is a failed load, not one stuck reading", async () => {
+	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month");
+	const broken = { ...run("gpt-5", 5), model: 7 } as unknown as SpendRun;
+	loader.loads[0].resolve({ records: records(broken), unreadable: 0 });
+	await settle();
+	assert.ok(monthLines(view).some((l) => l.startsWith("Could not load history: ")), monthLines(view).join("\n"));
 	assert.equal(monthLines(view).at(-1), "s back · Esc close");
 });
 

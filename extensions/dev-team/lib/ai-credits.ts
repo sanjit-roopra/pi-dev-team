@@ -11,7 +11,7 @@
 import { costUsd, type PiUsage, sessionSpend } from "./session-spend.ts";
 
 export const COPILOT_PROVIDER = "github-copilot";
-const CREDITS_PER_USD = 100;
+export const CREDITS_PER_USD = 100;
 /** The finest precision shown; a session below it shows no status line. */
 const FINEST_DIGITS = 2;
 
@@ -68,8 +68,13 @@ export function copilotBillingPeriodStart(now: Date): Date {
 	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
+/** False while `credits` round to 0.00: the one test of "no Copilot spend" the status line, overlay and summary share. */
+export function hasVisibleCredits(credits: number): boolean {
+	return Number(credits.toFixed(FINEST_DIGITS)) > 0;
+}
+
 /** The status line text, or undefined (hidden) while the session's credits round to 0.00. */
 export function aiCreditsStatus(entries: readonly Record<string, unknown>[]): string | undefined {
 	const credits = sessionAiCredits(entries);
-	return Number(credits.toFixed(FINEST_DIGITS)) > 0 ? `GitHub Copilot: ${formatAiCredits(credits)}` : undefined;
+	return hasVisibleCredits(credits) ? `GitHub Copilot: ${formatAiCredits(credits)}` : undefined;
 }

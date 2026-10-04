@@ -1,3 +1,4 @@
+import { COPILOT_PROVIDER, CREDITS_PER_USD } from "../../extensions/dev-team/lib/ai-credits.ts";
 import type { SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
 import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 
@@ -5,8 +6,8 @@ import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts
 export const run = (model: string, credits: number, thread: SpendRun["thread"] = "main", agent = "main"): SpendRun => ({
 	thread,
 	agent: thread === "main" ? "main" : agent,
-	model: `github-copilot/${model}`,
-	usage: { cost: { total: credits / 100 } },
+	model: `${COPILOT_PROVIDER}/${model}`,
+	usage: { cost: { total: credits / CREDITS_PER_USD } },
 	messages: 1,
 });
 

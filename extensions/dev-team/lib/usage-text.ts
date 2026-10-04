@@ -4,9 +4,9 @@
  * pieces, empty-state, failure and footnote sentences. Keeping the sentences here is what keeps the
  * two presentations saying the same thing.
  */
-import { COPILOT_PROVIDER, copilotBillingPeriodStart, formatAiCredits, formatCredits } from "./ai-credits.ts";
+import { COPILOT_PROVIDER, copilotBillingPeriodStart, formatAiCredits, formatCredits, hasVisibleCredits } from "./ai-credits.ts";
 import { type CreditsRow, formatShare, type MonthSnapshot, type UsageBreakdown } from "./usage-breakdown.ts";
-import { controlRunsToSpace, withoutControlChars } from "./usage-chart.ts";
+import { controlRunsToSpace, withoutControlChars } from "./terminal-text.ts";
 import type { Scope, View } from "./usage-state.ts";
 
 export const SEPARATOR = " · ";
@@ -49,8 +49,8 @@ export const loadFailedMessage = (reason: string) => `Could not load history: ${
 export const errorReason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 /** The footnote for session files that could not be read, or undefined when every file was. */
-export function skippedFilesNote(skipped: number): string | undefined {
-	return skipped > 0 ? `${skipped} session ${skipped === 1 ? "file" : "files"} could not be read` : undefined;
+export function unreadableFilesNote(unreadable: number): string | undefined {
+	return unreadable > 0 ? `${unreadable} session ${unreadable === 1 ? "file" : "files"} could not be read` : undefined;
 }
 
 export interface UsageSummaryInput {
@@ -69,13 +69,14 @@ function rankedLines(rows: readonly CreditsRow[]): string[] {
 	return cells.map(({ label, credits, share }) => `  ${label.padEnd(labelWidth)}  ${credits.padStart(creditsWidth)}  ${share.padStart(shareWidth)}`);
 }
 
-/** Header line, split line, then the models and the agents ranked; or the empty-state sentence alone. */
+/** Header line, split line, then the models and the agents ranked; or the empty-state sentence. Either way the unreadable-files note ends it, as in the overlay. */
 export function usageSummary({ scope, breakdown, now, month }: UsageSummaryInput): string {
-	if (breakdown.total === 0) return emptyUsageMessage(scope);
+	const note = unreadableFilesNote(month?.unreadable ?? 0);
+	const noteLines = note ? ["", note] : [];
+	if (!hasVisibleCredits(breakdown.total)) return [emptyUsageMessage(scope), ...noteLines].join("\n");
 	const header = [scopeHeading(scope, now), formatAiCredits(breakdown.total), ...(month ? [asOfLabel(month.loadedAt)] : [])].join(SEPARATOR);
 	const split = breakdown.byThread.map((r) => `${r.label} ${formatCredits(r.credits)}`).join(SEPARATOR);
 	const models = rankedLines(modelRows(breakdown));
 	const agents = breakdown.byAgent.length ? rankedLines(breakdown.byAgent) : [`  ${noSubagentUsageMessage(scope)}`];
-	const note = skippedFilesNote(month?.skipped ?? 0);
-	return [header, split, "", VIEW_TITLE.model, ...models, "", VIEW_TITLE.agent, ...agents, ...(note ? ["", note] : [])].join("\n");
+	return [header, split, "", VIEW_TITLE.model, ...models, "", VIEW_TITLE.agent, ...agents, ...noteLines].join("\n");
 }

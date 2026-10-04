@@ -35,7 +35,7 @@ function fakeDeps(history: Partial<SpendHistory> | Error = {}) {
 		loadHistory: async (options) => {
 			loads.push(options);
 			if (history instanceof Error) throw history;
-			return { records: [], skipped: 0, aborted: false, ...history };
+			return { records: [], unreadable: 0, aborted: false, ...history };
 		},
 	};
 	return { deps, emitted, loads };
@@ -125,7 +125,7 @@ test("/dev-team usage month opens the overlay on this month and reads history fr
 });
 
 test("in text mode this month is loaded without progress and summarised", async () => {
-	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }], skipped: 1 });
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }], unreadable: 1 });
 	await runUsage(fakeCtx({ hasUI: false }), "month", deps);
 	assert.equal(loads.length, 1);
 	assert.equal(loads[0].onProgress, undefined);

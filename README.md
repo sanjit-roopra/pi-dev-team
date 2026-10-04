@@ -116,9 +116,11 @@ The chart shows **this session** (all branches) at first. Press `s` to see **thi
 | `s` | Switch between this session and this month. While the month loads, `s` cancels the loading. |
 | `Esc`, `q`, `Ctrl+C` | Close |
 
+Letter keys work in either case: `S` and `Q` do the same as `s` and `q`.
+
 To start on a scope, run `/dev-team usage session` or `/dev-team usage month`. Without a terminal UI (`pi -p`, or an RPC client), the command prints a plain-text summary instead: the total, the split, and the models and agents ranked with their AI credits and share. The same argument selects the scope.
 
-The month counts the session files that pi keeps in `~/.pi/agent/sessions/<project>/`. It does not count the transcripts in nested `run-N/session.jsonl` files that other extensions keep in the same folder. If a file cannot be read, the chart shows how many files it skipped.
+The month counts the session files that pi keeps in `~/.pi/agent/sessions/<project>/`. It does not count the transcripts in nested `run-N/session.jsonl` files that other extensions keep in the same folder. If a file cannot be read, the chart shows how many files it could not read.
 
 ## Configuration
 

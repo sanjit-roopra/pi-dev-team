@@ -5,9 +5,11 @@
  * component that holds the state and reacts to keys is UsageView (usage-view.ts).
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { formatAiCredits, formatCredits } from "./ai-credits.ts";
-import { type CreditsRow, formatShare, type MonthSnapshot, type ThreadRow, type UsageBreakdown } from "./usage-breakdown.ts";
-import { barChartLines, type ChartStyle, cutToWidth, type SplitLabel, type SplitPart, type SplitStyle, splitBarLines } from "./usage-chart.ts";
+import { formatAiCredits, formatCredits, hasVisibleCredits } from "./ai-credits.ts";
+import { type CreditsRow, formatShare, type MonthSnapshot, type UsageBreakdown } from "./usage-breakdown.ts";
+import { cutToWidth } from "./terminal-text.ts";
+import { barChartLines, type ChartStyle } from "./usage-chart.ts";
+import { type SplitPart, type SplitStyle, splitBarLines } from "./usage-split-bar.ts";
 import type { UsageState, View } from "./usage-state.ts";
 import {
 	asOfLabel,
@@ -21,7 +23,7 @@ import {
 	SCOPE_TITLE,
 	SEPARATOR,
 	scopeHeading,
-	skippedFilesNote,
+	unreadableFilesNote,
 	VIEW_TITLE,
 } from "./usage-text.ts";
 
@@ -97,15 +99,15 @@ function bodyMessage(viewModel: UsageViewModel, breakdown: UsageBreakdown | unde
 	const { state } = viewModel;
 	if (state.load.kind === "loading") return { text: loadingMessage(state.load), tone: "plain" };
 	if (state.load.kind === "error") return { text: loadFailedMessage(state.load.reason), tone: "error" };
-	if (!breakdown || breakdown.total === 0) return { text: `${emptyUsageMessage(state.scope)}${pressSHint(state.scope)}`, tone: "plain" };
+	if (!breakdown || !hasVisibleCredits(breakdown.total)) return { text: `${emptyUsageMessage(state.scope)}${pressSHint(state.scope)}`, tone: "plain" };
 	if (state.view === "agent" && breakdown.byAgent.length === 0) return { text: noSubagentUsageMessage(state.scope), tone: "plain" };
 	return undefined;
 }
 
 function footnoteText(viewModel: UsageViewModel): string | undefined {
 	const { state, month } = viewModel;
-	const skipped = state.scope === "month" && state.load.kind === "ready" ? (month?.skipped ?? 0) : 0;
-	return skippedFilesNote(skipped);
+	const unreadable = state.scope === "month" && state.load.kind === "ready" ? (month?.unreadable ?? 0) : 0;
+	return unreadableFilesNote(unreadable);
 }
 
 /** The ranked rows the view charts: models (without the provider prefix) or dispatched agents. */
@@ -114,27 +116,25 @@ function viewRows(view: View, breakdown: UsageBreakdown | undefined): CreditsRow
 	return view === "model" ? modelRows(breakdown) : breakdown.byAgent;
 }
 
-const SPLIT_LABEL_OF_THREAD: Record<ThreadRow["thread"], SplitLabel> = { main: "main", subagent: "subagents", overhead: "overhead" };
-
 /** The thread rows as the split bar's input. */
 function splitParts(breakdown: UsageBreakdown): SplitPart[] {
-	return breakdown.byThread.map((row) => ({ label: SPLIT_LABEL_OF_THREAD[row.thread], credits: row.credits }));
+	return breakdown.byThread.map(({ label, credits }) => ({ label, credits }));
 }
 
 /** What the panel would like to show, in lines. */
 interface LayoutRequest {
-	splitLines: number;
+	splitLineCount: number;
 	hasFootnote: boolean;
-	chartRows: number;
+	chartRowCount: number;
 }
 
 interface Layout {
 	/** Blank lines between header, split bar, chart and footer. */
 	hasGaps: boolean;
 	/** Split bar lines kept (the bar first, then its legend). */
-	splitLines: number;
+	splitLineCount: number;
 	hasFootnote: boolean;
-	chartRows: number;
+	chartRowCount: number;
 }
 
 const PINNED_LINES = 2;
@@ -142,56 +142,60 @@ const FOOTNOTE_LINES = 1;
 const SPLIT_BAR_LINES = 1;
 /** Chart rows worth keeping over the extras before the extras start to go. */
 const MIN_CHART_ROWS = 3;
+/** Blank lines after the header and before the footer. */
+const OUTER_GAP_LINES = 2;
+/** The blank line after the split bar, when there is one. */
+const SPLIT_GAP_LINES = 1;
 
 /** The blank lines kept between header, split bar (when there is one), chart and footer. */
-const gapLines = (hasSplit: boolean) => 2 + (hasSplit ? 1 : 0);
+const gapLineCount = (hasSplit: boolean) => OUTER_GAP_LINES + (hasSplit ? SPLIT_GAP_LINES : 0);
 
 /**
  * Decides which lines are pinned and which flex for `height`. The header and footer always stay; the
  * rest give way in order (blank gaps, footnote, split legend, split bar) until the chart gets
  * MIN_CHART_ROWS rows or what it asked for, whichever is fewer. What is left goes to the chart.
  */
-function layout(height: number, request: LayoutRequest): Layout {
+function planLayout(height: number, request: LayoutRequest): Layout {
 	const free = Math.max(0, height - PINNED_LINES);
-	const { splitLines, hasFootnote } = request;
+	const { splitLineCount, hasFootnote } = request;
 	const options: Layout[] = [
-		{ hasGaps: true, splitLines, hasFootnote, chartRows: 0 },
-		{ hasGaps: false, splitLines, hasFootnote, chartRows: 0 },
-		{ hasGaps: false, splitLines, hasFootnote: false, chartRows: 0 },
-		{ hasGaps: false, splitLines: Math.min(SPLIT_BAR_LINES, splitLines), hasFootnote: false, chartRows: 0 },
-		{ hasGaps: false, splitLines: 0, hasFootnote: false, chartRows: 0 },
+		{ hasGaps: true, splitLineCount, hasFootnote, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount, hasFootnote, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount, hasFootnote: false, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount: Math.min(SPLIT_BAR_LINES, splitLineCount), hasFootnote: false, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount: 0, hasFootnote: false, chartRowCount: 0 },
 	];
 	const withChartRows = (o: Layout): Layout => ({
 		...o,
-		chartRows: Math.max(0, free - (o.hasGaps ? gapLines(splitLines > 0) : 0) - o.splitLines - (o.hasFootnote ? FOOTNOTE_LINES : 0)),
+		chartRowCount: Math.max(0, free - (o.hasGaps ? gapLineCount(splitLineCount > 0) : 0) - o.splitLineCount - (o.hasFootnote ? FOOTNOTE_LINES : 0)),
 	});
 	const sized = options.map(withChartRows);
-	return sized.find((o) => o.chartRows >= Math.min(request.chartRows, MIN_CHART_ROWS)) ?? sized[sized.length - 1];
+	return sized.find((o) => o.chartRowCount >= Math.min(request.chartRowCount, MIN_CHART_ROWS)) ?? sized[sized.length - 1];
 }
 
 export function renderUsage(viewModel: UsageViewModel, { width, height, style }: RenderOptions): string[] {
 	const breakdown = shownBreakdown(viewModel);
 	const message = bodyMessage(viewModel, breakdown);
 	// A split bar shows whenever there is spend to split, even when the view's own chart is empty.
-	const showSplit = !!breakdown && breakdown.total > 0 && viewModel.state.load.kind !== "loading";
+	const showSplit = !!breakdown && hasVisibleCredits(breakdown.total) && viewModel.state.load.kind !== "loading";
 	const allSplitLines = showSplit ? splitBarLines(splitParts(breakdown), { width, formatValue: formatCredits, style }) : [];
 	const footnote = footnoteText(viewModel);
 	const rankedRows = viewRows(viewModel.state.view, breakdown);
-	const plan = layout(height, { splitLines: allSplitLines.length, hasFootnote: !!footnote, chartRows: message ? 1 : rankedRows.length });
+	const plan = planLayout(height, { splitLineCount: allSplitLines.length, hasFootnote: !!footnote, chartRowCount: message ? 1 : rankedRows.length });
 
-	const splitLines = allSplitLines.slice(0, plan.splitLines);
+	const splitLines = allSplitLines.slice(0, plan.splitLineCount);
 	const paint = message?.tone === "error" ? style.error : (text: string) => text;
 	const body = message
-		? plan.chartRows > 0 ? [paint(cutToWidth(message.text, width))] : []
-		: barChartLines(rankedRows, { width, maxRows: plan.chartRows, formatValue: formatCredits, formatShare, style });
-	const gap = plan.hasGaps ? [""] : [];
+		? plan.chartRowCount > 0 ? [paint(cutToWidth(message.text, width))] : []
+		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, formatValue: formatCredits, formatShare, style });
+	const gapLines = plan.hasGaps ? [""] : [];
 	return [
 		style.title(fitLine(headerCandidates(viewModel), width)),
-		...gap,
-		...(splitLines.length ? [...splitLines, ...gap] : []),
+		...gapLines,
+		...(splitLines.length ? [...splitLines, ...gapLines] : []),
 		...body,
 		...(footnote && plan.hasFootnote ? [style.muted(cutToWidth(footnote, width))] : []),
-		...gap,
+		...gapLines,
 		style.muted(fitLine(footerCandidates(viewModel.state), width)),
 	];
 }
