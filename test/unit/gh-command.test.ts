@@ -4,7 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { extractGhTexts, type GhText, MAX_BODY_FILE_BYTES } from "../../extensions/dev-team/lib/gh-command.ts";
+import { MAX_LINT_CHARS } from "../../extensions/dev-team/lib/github-style.ts";
 import { MAX_SUBSTITUTION_DEPTH } from "../../extensions/dev-team/lib/shell-scan.ts";
+
+test("a body file can hold MAX_LINT_CHARS characters of UTF-8 (4 bytes each at most)", () => {
+	assert.equal(MAX_BODY_FILE_BYTES, MAX_LINT_CHARS * 4);
+});
 
 function tempDir(t: TestContext): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-ghcmd-"));

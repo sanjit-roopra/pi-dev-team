@@ -164,6 +164,18 @@ test("lintGhText: a code block between two lists keeps them apart", () => {
 	assert.deepEqual(lintGhText({ kind: "pr", body: `${nearCap}\n<details>x</details>\n${nearCap}` }), []);
 });
 
+test("lintGhText: a code block indented inside list items keeps the list whole", () => {
+	const items = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `${i + 1}. Run:\n   \`\`\`\n   npm test\n   \`\`\``).join("\n");
+	assert.ok(has(lintGhText({ kind: "pr", body: items }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)));
+});
+
+test("lintGhText: an inline comment is not a block break", () => {
+	const checklist = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `- [ ] Check ${i} <!-- required -->`).join("\n");
+	assert.ok(has(lintGhText({ kind: "pr", body: checklist }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)));
+	const sentence = oneSentenceOfWords(MAX_SENTENCE_WORDS + 1).replace("word word", "word <!-- note --> word");
+	assert.ok(has(lintGhText({ kind: "pr", body: sentence }), /Split 1 sentence/));
+});
+
 test("lintGhText: a code block ends the paragraph before it", () => {
 	const halfSentence = Array.from({ length: MAX_SENTENCE_WORDS - 5 }, () => "word").join(" ");
 	assert.deepEqual(lintGhText({ kind: "pr", body: `${halfSentence}:\n\`\`\`\nnpm test\n\`\`\`\n${halfSentence}.` }), []);

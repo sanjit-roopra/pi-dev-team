@@ -72,10 +72,16 @@ export function styleGuideFor(mode: GitHubStyleMode): string | undefined {
 /**
  * Marks where a block (code, table, <details>, comment) was removed, so the lists and paragraphs on
  * either side stay apart. A blank line cannot do this: list items may have blank lines between them.
+ * The break keeps the block's indentation, so a block inside a list item stays part of that item.
  */
 const BLOCK_BREAK = "\u0000";
 
-/** Replace every `open ... close` span (case-insensitive) with a block break, in one pass. An unclosed span runs to the end. */
+const isSpaceOrTab = (char: string | undefined) => char === " " || char === "\t";
+
+/**
+ * Remove every `open ... close` span (case-insensitive), in one pass. A span alone on its lines
+ * becomes a block break; a span inside a line becomes a space. An unclosed span runs to the end.
+ */
 function removeSpans(text: string, open: string, close: string): string {
 	const lower = text.toLowerCase();
 	let out = "";
@@ -83,9 +89,15 @@ function removeSpans(text: string, open: string, close: string): string {
 	while (i < text.length) {
 		const openAt = lower.indexOf(open, i);
 		if (openAt < 0) break;
-		out += `${text.slice(i, openAt)}\n${BLOCK_BREAK}\n`;
 		const closeAt = lower.indexOf(close, openAt + open.length);
-		i = closeAt < 0 ? text.length : closeAt + close.length;
+		const spanEnd = closeAt < 0 ? text.length : closeAt + close.length;
+		let lineStart = openAt;
+		while (isSpaceOrTab(text[lineStart - 1])) lineStart--;
+		let lineEnd = spanEnd;
+		while (isSpaceOrTab(text[lineEnd])) lineEnd++;
+		const aloneOnLine = (lineStart === 0 || text[lineStart - 1] === "\n") && (lineEnd === text.length || text[lineEnd] === "\n");
+		out += text.slice(i, openAt) + (aloneOnLine ? BLOCK_BREAK : " ");
+		i = spanEnd;
 	}
 	return out + text.slice(i);
 }
@@ -108,16 +120,20 @@ function visibleWithBreaks(body: string): string {
 		const marker = FENCE.exec(line)?.[1];
 		if (fence) {
 			if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = undefined;
-			lines.push(BLOCK_BREAK);
+			lines.push(indentOf(line) + BLOCK_BREAK);
 		} else if (marker) {
 			fence = marker;
-			lines.push(BLOCK_BREAK);
-		} else lines.push(TABLE_ROW.test(line) ? BLOCK_BREAK : line);
+			lines.push(indentOf(line) + BLOCK_BREAK);
+		} else lines.push(TABLE_ROW.test(line) ? indentOf(line) + BLOCK_BREAK : line);
 	}
 	return lines
 		.join("\n")
 		.replace(/`[^`\n]*`/g, "")
 		.replace(/https?:\/\/\S+/g, "");
+}
+
+function indentOf(line: string): string {
+	return /^[ \t]*/.exec(line)?.[0] ?? "";
 }
 
 function splitWords(text: string): string[] {
@@ -138,7 +154,7 @@ function textBlocks(visible: string): string[] {
 		blockLines = [];
 	};
 	for (const line of visible.split("\n")) {
-		if (!line.trim() || line === BLOCK_BREAK || HEADING.test(line)) {
+		if (!line.trim() || line.trim() === BLOCK_BREAK || HEADING.test(line)) {
 			flush();
 			continue;
 		}
