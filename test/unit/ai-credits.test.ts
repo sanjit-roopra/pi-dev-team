@@ -72,13 +72,13 @@ test("aiCreditsStatus: labels the session's credits", () => {
 	assert.equal(aiCreditsStatus([turn("github-copilot", 0.5)]), "GitHub Copilot: 50.0 AI credits");
 });
 
-test("aiCreditsStatus: hidden while the credits round to 0.00", () => {
-	const subCentUsd = 0.00004; // 0.004 AI credits
-	assert.equal(aiCreditsStatus([turn("github-copilot", subCentUsd)]), undefined);
+// The status line appears once the credits round to 0.01: from 0.005 credits ($0.00005).
+test("aiCreditsStatus: hidden just below 0.005 credits", () => {
+	assert.equal(aiCreditsStatus([turn("github-copilot", 0.000049)]), undefined);
 });
 
-test("aiCreditsStatus: shown from the smallest value that rounds to 0.01", () => {
-	assert.equal(aiCreditsStatus([turn("github-copilot", 0.0001)]), "GitHub Copilot: 0.01 AI credits");
+test("aiCreditsStatus: shown from 0.005 credits, as 0.01", () => {
+	assert.equal(aiCreditsStatus([turn("github-copilot", 0.00005)]), "GitHub Copilot: 0.01 AI credits");
 });
 
 test("aiCreditsStatus: hidden when no Copilot model ran", () => {

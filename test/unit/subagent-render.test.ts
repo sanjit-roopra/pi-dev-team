@@ -129,7 +129,7 @@ test("parallel total: AI credits count only the Copilot runs, nested ones includ
 	// Only the Copilot runs: $0.02 + $0.01 = 3 AI credits; the $1 run on another provider adds none.
 	for (const expanded of [false, true]) {
 		const out = draw(renderSubagentResult(result(details), { expanded, isPartial: false }, theme));
-		assert.match(out, /Total: .*\$1\.0300 \(3\.00 AI credits\)/, `expanded=${expanded}`);
+		assert.match(out, /Total: 6 turns ↑3\.6k ↓240 \$1\.0300 \(3\.00 AI credits\)/, `expanded=${expanded}`);
 	}
 });
 
