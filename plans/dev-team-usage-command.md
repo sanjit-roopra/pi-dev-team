@@ -43,16 +43,16 @@ Give pi-dev-team users a `/dev-team usage` subcommand that opens a graphical TUI
 - [ ] `/dev-team usage` opens an overlay with block-character bar charts of Copilot AI credits.
 - [ ] "By model" ranks models by credits, largest first; each row shows model, credits, share %.
 - [ ] "By agent" ranks subagents by credits; share % is of the subagent total.
-- [ ] Every non-empty view shows a split bar of main / subagents / overhead with distinct fill glyphs and a legend.
+- [ ] Every non-empty view shows a split bar with one segment per non-zero thread (main █, subagents ▓, overhead ░) and a legend naming each with its credits; zero threads are omitted.
 - [ ] Header always states scope (with dates for this month), view and total in AI credits.
-- [ ] Keys: `Tab`/`Shift+Tab` view; `s` this session ↔ this month; `Esc`/`q`/`Ctrl+C` close. Letter keys case-insensitive. Footer lists only keys valid in the current state.
+- [ ] Keys: `Tab`/`Shift+Tab` view; `s` this session ↔ this month; `Esc`/`q`/`Ctrl+C` close. Letter keys case-insensitive. Footer: ready → `Tab view · s <other scope> · Esc close`; loading → `Tab view · s cancel · Esc close`; error → `s back · Esc close`.
 - [ ] This month aggregates entries timestamped since the 1st 00:00 UTC from every top-level session file; nested run files ignored; forked/cloned entries count once.
 - [ ] Compaction and branch-summary usage counts as overhead at the model in effect, in the overlay and the status line.
 - [ ] Loading shows progress (`n/N files`); `s` cancels and returns; closing cancels.
 - [ ] A failed history load shows "Could not load history: <reason>" and stays usable.
 - [ ] Empty states: "No GitHub Copilot usage in <scope>" (with "press s for this month" in session scope); "No subagent usage in <scope>" in By agent.
 - [ ] No overlay line exceeds terminal width; overlay never exceeds terminal height (rows fold into "other (N)"; header/footer pinned).
-- [ ] Without an interactive overlay (print/json/RPC) a plain-text ranked summary is printed; `/dev-team usage [session|month]` selects scope in both modes.
+- [ ] When the overlay cannot show (no UI, or RPC where `custom()` is a stub) a plain-text summary is printed: header line, split line, then models and agents ranked with credits and share; `/dev-team usage [session|month]` selects scope in both modes.
 - [ ] README documents the subcommand, keys, args, and that nested run files of other extensions are not counted.
 
 ## Slices
