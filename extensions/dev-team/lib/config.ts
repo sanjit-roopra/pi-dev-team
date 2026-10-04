@@ -27,6 +27,9 @@ export interface HookConfig {
 	timeoutSec: number;
 }
 
+export const GITHUB_STYLE_MODES = ["block", "warn", "off"] as const;
+export type GitHubStyleMode = (typeof GITHUB_STYLE_MODES)[number];
+
 export interface DevTeamConfig {
 	/** Agent model tier -> "provider/model-id" or "inherit" (use the dispatching session's model). */
 	models: Record<Tier, string>;
@@ -41,6 +44,8 @@ export interface DevTeamConfig {
 	hooks: HookConfig;
 	/** Run hooks/post_format.py after write/edit (what /setup's formatter hook did). */
 	autoFormat: boolean;
+	/** Pull request and issue text that breaks the GitHub style rules: block the gh call once ("block"), only note it ("warn"), or skip the check and the style guide ("off"). */
+	githubStyle: GitHubStyleMode;
 	/** How dev-team skills are advertised in the system prompt. */
 	skillIndex: "compact" | "full" | "off";
 	/** Max description characters per skill in the compact index. */
@@ -84,6 +89,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	subagentTimeoutSec: 3600,
 	hooks: { enabled: true, disabled: DEFAULT_DISABLED_HOOKS, enable: [], outputToModel: true, timeoutSec: 60 },
 	autoFormat: false,
+	githubStyle: "block",
 	skillIndex: "compact",
 	skillIndexChars: 220,
 	claudeShim: true,
@@ -207,6 +213,7 @@ export function loadConfig(
 		const raw = readJson(file);
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
+		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);

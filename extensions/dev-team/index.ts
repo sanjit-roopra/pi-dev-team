@@ -22,6 +22,7 @@ import {
 	updateConfigFile,
 	userConfigPath,
 } from "./lib/config.ts";
+import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { aiCreditsStatus } from "./lib/ai-credits.ts";
 import { recordCost } from "./lib/metrics.ts";
@@ -54,6 +55,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	const getConfig = () => config;
 	const hooks = new HookBridge(packageRoot, getConfig);
 	const pendingAdvisories = new Map<string, string[]>();
+	const styleGate = createStyleGate();
 	let sessionContext: string[] = [];
 	let running = 0;
 
@@ -235,7 +237,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			`tiers: ${Object.entries(cfg.models).map(([k, v]) => `${k}=${v}`).join("  ")}`,
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
-			`autoFormat: ${cfg.autoFormat}  claudeShim: ${cfg.claudeShim}  maxParallelAgents: ${cfg.maxParallelAgents}`,
+			`autoFormat: ${cfg.autoFormat}  githubStyle: ${cfg.githubStyle}  claudeShim: ${cfg.claudeShim}  maxParallelAgents: ${cfg.maxParallelAgents}`,
 			`interactive gates: ${process.env.DEV_TEAM_INTERACTIVE === "1" ? "on" : "off (non-interactive defaults)"}`,
 		];
 		report(ctx, lines.join("\n"));
@@ -380,7 +382,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const opts = event.systemPromptOptions;
 		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const index = config.skillIndex === "off" ? "" : skillIndex(skills, config.skillIndex, config.skillIndexChars);
-		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1") };
+		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle)) };
 		if (agentPrompt) opts.appendSystemPrompt = `${opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n` : ""}${agentPrompt}`;
 		if (sessionContext.length) {
 			const content = sessionContext.join("\n\n");
@@ -405,6 +407,8 @@ export default function devTeam(pi: ExtensionAPI) {
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", `dev-team: ${running} agent call(s) running`);
 			return undefined;
 		}
+		const styleVerdict = event.toolName === "bash" && typeof input.command === "string" ? styleGate(config.githubStyle, input.command, ctx.cwd) : {};
+		if (styleVerdict.block) return { block: true, reason: styleVerdict.block };
 		const claudeTool = claudeToolName(event.toolName);
 		const out = await hooks.run(
 			"PreToolUse",
@@ -415,7 +419,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		notify(ctx, out.notices);
 		if (out.block) return { block: true, reason: out.block };
 		if (out.updatedInput) applyUpdatedInput(event.toolName, input, out.updatedInput);
-		if (out.advisories.length) pendingAdvisories.set(event.toolCallId, out.advisories);
+		const advisories = styleVerdict.note ? [styleVerdict.note, ...out.advisories] : out.advisories;
+		if (advisories.length) pendingAdvisories.set(event.toolCallId, advisories);
 		return undefined;
 	});
 
@@ -515,7 +520,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 }
 
-function compatGuide(packageRoot: string, index: string, interactive: boolean): string {
+function compatGuide(packageRoot: string, index: string, interactive: boolean, styleGuide: string | undefined): string {
 	return [
 		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
 		`- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=${DEV_TEAM_SUBAGENT_TOOL}(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).`,
@@ -528,6 +533,7 @@ function compatGuide(packageRoot: string, index: string, interactive: boolean): 
 			? "- Human gates: a human is attached (DEV_TEAM_INTERACTIVE=1). Ask with ask_user and wait for the answer; never assume approval."
 			: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
+		styleGuide ? `\n${styleGuide}` : "",
 		index ? `\nDev-team skills (load with the skill tool; "(/x)" = also a user command):\n${index}` : "",
 	].join("\n");
 }

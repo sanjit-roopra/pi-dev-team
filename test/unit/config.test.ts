@@ -120,3 +120,30 @@ test("project env settings: over-long values and booleans", () => {
 	assert.ok(isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", "x".repeat(64)));
 	assert.ok(!isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", "x".repeat(65)));
 });
+
+test("loadConfig: githubStyle keeps a valid mode and falls back to the default for anything else", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-style-cfg-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const userConfigFile = path.join(dir, "user.json");
+	const load = (githubStyle: unknown) => {
+		fs.writeFileSync(userConfigFile, JSON.stringify({ githubStyle }));
+		return loadConfig(dir, { includeProject: false, userConfigFile }).config.githubStyle;
+	};
+	assert.equal(DEFAULT_CONFIG.githubStyle, "block");
+	assert.equal(load("warn"), "warn");
+	assert.equal(load("off"), "off");
+	const OSC_CLIPBOARD_ESCAPE = "\u001b]52;c;x\u0007";
+	for (const invalid of ["Block", false, 1, null, OSC_CLIPBOARD_ESCAPE]) assert.equal(load(invalid), "block", JSON.stringify(invalid));
+});
+
+test("loadConfig: an invalid project githubStyle does not override a valid user value", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-style-prec-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const userConfigFile = path.join(dir, "user.json");
+	fs.writeFileSync(userConfigFile, JSON.stringify({ githubStyle: "warn" }));
+	fs.mkdirSync(path.join(dir, ".pi"));
+	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ githubStyle: "loud" }));
+	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "warn");
+	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ githubStyle: "off" }));
+	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "off", "a valid project value wins");
+});

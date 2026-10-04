@@ -16,6 +16,13 @@ allowed-tools: Read, Glob, Grep, Bash, Write
 
 # Issues from Assessment
 
+<!-- pi-port-notes -->
+## pi port notes (read first)
+
+- Issue and comment text follows the "GitHub text style" from the system prompt. Keep every heading, section and marker that this skill's template requires, because later steps read them. Write the prose inside them plainly and briefly. If the template itself breaks a rule (for example a required list that is longer than the limit), send the same `gh` command again unchanged: the extension blocks it only once.
+<!-- pi-port-notes -->
+
+
 Role: worker. Converts the assessment produced by `/cd-test-architecture` into the tracker artifacts the calling test-improvement workflow expects (Feature/Epic + Phase-tagged Stories + Tasks with predecessor links), or — when no tracker CLI is available — into local plan files with the same structure. Lifts the preview-then-confirm + `gh issue create` patterns from `/issues-from-plan`.
 
 You have been invoked with the `/issues-from-assessment` command.
