@@ -43,3 +43,24 @@ test("readSmallFile skips a FIFO without blocking", { timeout: 5000 }, (t) => {
 	if (process.platform === "win32" || spawnSync("mkfifo", [fifo]).status !== 0) return t.skip("mkfifo unavailable");
 	assert.equal(readSmallFile(fifo), undefined);
 });
+
+test("readSmallFile: an explicit maxBytes is the limit, at and one byte over", (t) => {
+	const dir = tempDir(t);
+	fs.writeFileSync(path.join(dir, "ten.md"), "x".repeat(10));
+	assert.equal(readSmallFile(path.join(dir, "ten.md"), 10), "x".repeat(10));
+	assert.equal(readSmallFile(path.join(dir, "ten.md"), 9), undefined);
+});
+
+test("readSmallFile skips a symlink to a FIFO without blocking", { timeout: 5000 }, (t) => {
+	const dir = tempDir(t);
+	const fifo = path.join(dir, "pipe");
+	if (process.platform === "win32" || spawnSync("mkfifo", [fifo]).status !== 0) return t.skip("mkfifo unavailable");
+	fs.symlinkSync(fifo, path.join(dir, "link.md"));
+	assert.equal(readSmallFile(path.join(dir, "link.md")), undefined);
+});
+
+test("readSmallFile stops at maxBytes on a file that reports size 0 (Linux /proc)", (t) => {
+	if (process.platform !== "linux") return t.skip("needs Linux /proc");
+	assert.equal(readSmallFile("/proc/self/maps", 16), undefined);
+	assert.ok(readSmallFile("/proc/self/maps")?.length);
+});

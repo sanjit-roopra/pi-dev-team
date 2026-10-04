@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
 type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean> };
@@ -13,6 +13,7 @@ async function loadExtension() {
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
 	fs.writeFileSync(fakePython, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, { mode: 0o755 });
+	const savedEnv = { DEV_TEAM_PYTHON: process.env.DEV_TEAM_PYTHON, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR };
 	process.env.DEV_TEAM_PYTHON = fakePython;
 	// The user's own ~/.pi/agent/dev-team.json must not change what the extension does here.
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -27,15 +28,22 @@ async function loadExtension() {
 	const fakePi = new Proxy({}, { get: (_t, key) => recorders[key as string] ?? (() => undefined) });
 	const { default: devTeam } = await import("../../extensions/dev-team/index.ts");
 	await devTeam(fakePi as never);
-	return { tools, handlers, probed: fs.existsSync(marker), cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+	const cleanup = () => {
+		fs.rmSync(dir, { recursive: true, force: true });
+		for (const [key, value] of Object.entries(savedEnv)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+	};
+	return { tools, handlers, probedAtLoad: fs.existsSync(marker), probed: () => fs.existsSync(marker), cleanup };
 }
 
 const loaded = loadExtension();
+after(async () => (await loaded).cleanup());
 
-test("loading the extension starts no process (the Python probe waits for first use)", async (t) => {
-	const { probed, cleanup } = await loaded;
-	t.after(cleanup);
-	assert.equal(probed, false);
+test("loading the extension starts no process (the Python probe waits for first use)", async () => {
+	const { probedAtLoad } = await loaded;
+	assert.equal(probedAtLoad, false);
 });
 
 test("every dev-team tool declares pi's safety hints", async () => {
@@ -64,12 +72,19 @@ test("ask_user is for the model only", async () => {
 	assert.equal(tools.ask_user.exposure, "model-only");
 });
 
-test("tool_call runs the GitHub style gate before the guard hooks", async () => {
-	const { handlers } = await loaded;
+test("tool_call blocks a breaking gh command before the guard hooks run; the same command sent again reaches them", async () => {
+	const { handlers, probed } = await loaded;
 	assert.equal(handlers.tool_call?.length, 1);
 	const ctx = { cwd: os.tmpdir(), hasUI: false, sessionManager: { getSessionId: () => "s", getSessionFile: () => undefined } };
-	const command = `gh issue create --title "Crash" --body "It simply crashes — always."`;
-	const out = (await handlers.tool_call[0]({ toolName: "bash", toolCallId: "1", input: { command } }, ctx)) as { block?: boolean; reason?: string };
-	assert.equal(out.block, true);
-	assert.match(out.reason ?? "", /GitHub style/);
+	const call = (id: string) =>
+		handlers.tool_call[0]({ toolName: "bash", toolCallId: id, input: { command: `gh issue create --title "Crash" --body "It simply crashes — always."` } }, ctx) as Promise<
+			{ block?: boolean; reason?: string } | undefined
+		>;
+	const first = await call("1");
+	assert.equal(first?.block, true);
+	assert.match(first?.reason ?? "", /GitHub style/);
+	assert.equal(probed(), false, "no hook ran for the blocked call");
+	const resend = await call("2");
+	assert.doesNotMatch(resend?.reason ?? "", /GitHub style/);
+	assert.equal(probed(), true, "the resend went on to the hooks");
 });

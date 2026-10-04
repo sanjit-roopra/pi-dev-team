@@ -213,11 +213,11 @@ export function loadConfig(
 		const raw = readJson(file);
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
+		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);
 	}
-	if (!(GITHUB_STYLE_MODES as readonly unknown[]).includes(config.githubStyle)) config = { ...config, githubStyle: DEFAULT_CONFIG.githubStyle };
 	return { config, sources, ignoredProjectSettings };
 }
 

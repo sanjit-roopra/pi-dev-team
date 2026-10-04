@@ -98,7 +98,7 @@ pi's footer shows the cost of the whole session in USD, including the agents. If
 
 The team writes pull requests, issues and comments for a reader who skims. The rules come from [SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) (plain English after ASD-STE100) and [i-have-adhd](https://github.com/ayghri/i-have-adhd) (the point first, short lists, one next step):
 
-- The title has fewer than 70 characters.
+- The title has 69 characters or fewer.
 - The first sentence of the body says what changes and why.
 - The visible body has 250 words or fewer (a comment has 150). Sentences have 25 words or fewer. Lists have 5 items or fewer.
 - The text has no em-dashes, bold, hedges (should, may, might) or filler (robust, seamlessly, leverage).
@@ -107,7 +107,7 @@ The team writes pull requests, issues and comments for a reader who skims. The r
 
 Before a `gh pr` or `gh issue` command creates, edits or comments, the extension checks the title and the body. If the text breaks a rule, the extension blocks the command one time and tells the agent what to fix. If the agent sends the same command again, it runs. To only show the problems, set `"githubStyle": "warn"`. To turn off the check and the rules, set `"githubStyle": "off"`.
 
-The check reads text in quotes, in `$(cat <<EOF ...)` and in a `--body-file`. It does not check text that the shell makes when the command runs, for example `--body "$BODY"`.
+The check reads text in quotes, in `$(cat <<EOF ...)` and in a `--body-file`. It does not check text that the shell makes when the command runs, for example `--body "$BODY"`, or a `gh` command that runs inside another program, for example `bash -c` or `xargs`.
 
 ## Configuration
 
