@@ -46,10 +46,10 @@ export function sessionEntries(ctx: ExtensionContext): readonly Record<string, u
 	return ctx.sessionManager.getEntries() as unknown as Record<string, unknown>[];
 }
 
-/** "provider/model", the bare model when no provider is named, UNKNOWN_MODEL when no model is. */
+/** "provider/model", the bare model when no provider is named, UNKNOWN_MODEL when no model is (session files are untyped JSON, so a name that is not text counts as none). */
 const qualifiedModelId = (provider: unknown, model: unknown): string => {
-	if (!model) return UNKNOWN_MODEL;
-	return provider ? `${provider}/${model}` : String(model);
+	if (typeof model !== "string" || !model) return UNKNOWN_MODEL;
+	return typeof provider === "string" && provider ? `${provider}/${model}` : model;
 };
 
 /** The overhead name of each entry type that records summary usage. */
@@ -82,8 +82,8 @@ function entryRuns(entry: Record<string, unknown>, effect: ModelInEffect): Spend
 		// Session files are untyped JSON: a non-string name must not reach code that treats it as one.
 		return creditedRuns(usageEntry).map((run) => ({
 			thread: "subagent",
-			agent: typeof run.agent === "string" ? run.agent : UNKNOWN_AGENT,
-			model: typeof run.model === "string" && run.model ? run.model : UNKNOWN_MODEL,
+			agent: typeof run.agent === "string" && run.agent ? run.agent : UNKNOWN_AGENT,
+			model: qualifiedModelId(undefined, run.model),
 			usage: run.usage,
 			messages: run.usage.turns ?? 0,
 		}));

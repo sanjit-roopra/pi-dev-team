@@ -125,7 +125,7 @@ const entryKey = (entry: Record<string, unknown>): string | undefined => (typeof
  * One session file's runs of spend since `since`, leaving out entries whose key is in `seenKeys` (kept
  * from earlier files) or that repeat an earlier entry of this file, and the keys of the entries it
  * kept. Throws when the file cannot be read or holds an entry sessionSpendByEntry() cannot make sense
- * of; nothing partial is returned, so a skipped file adds no records and claims no keys. Undefined
+ * of; nothing partial is returned, so an unreadable file adds no records and claims no keys. Undefined
  * when `signal` aborted the read partway.
  */
 async function readRecords(file: string, since: Date, seenKeys: ReadonlySet<string>, signal: AbortSignal | undefined): Promise<{ records: SpendRecord[]; entryKeys: string[] } | undefined> {

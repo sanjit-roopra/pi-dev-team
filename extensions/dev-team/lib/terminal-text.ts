@@ -10,9 +10,11 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 // overwrite itself, so CR and CRLF become \n first.
 const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
 const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f￹-￻]/g;
-/** What is left after sanitizeTerminalText that still breaks a single line: tab and newline. */
-const LINE_BREAKS = /[\t\n]/g;
-const LINE_BREAK_RUNS = /[\t\n]+/g;
+/** What sanitizeTerminalText keeps that a single line cannot hold. */
+const TAB_OR_NEWLINE = /[\t\n]/g;
+/** Every C0/C1 control, tab and newline included: in one-line text with spacing kept, a run of them becomes one space. */
+const CONTROL_RUNS = /[\x00-\x1f\x7f-\x9f]+/g;
+const ANNOTATION_CHARS = /[￹-￻]/g;
 const ELLIPSIS = "…";
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
@@ -22,10 +24,13 @@ export function sanitizeTerminalText(text: string): string {
 }
 
 /** One-line text (a label): sanitized, with tabs and newlines removed too. */
-export const withoutControlChars = (text: string) => sanitizeTerminalText(text).replace(LINE_BREAKS, "");
+export const toSingleLine = (text: string) => sanitizeTerminalText(text).replace(TAB_OR_NEWLINE, "");
 
-/** Like withoutControlChars, but each run of tabs and newlines becomes one space, so the words around it do not merge (error messages). */
-export const controlRunsToSpace = (text: string) => sanitizeTerminalText(text).replace(LINE_BREAK_RUNS, " ");
+/**
+ * One-line text where words must stay apart (an error message): escape sequences are removed, then
+ * each run of control characters (tab, newline, form feed, NUL...) becomes one space.
+ */
+export const toSpacedSingleLine = (text: string) => text.replace(ANSI_RE, "").replace(ANNOTATION_CHARS, "").replace(CONTROL_RUNS, " ");
 
 /**
  * `text` cut to at most `max` columns, ending in an ellipsis when something was cut ("" when not

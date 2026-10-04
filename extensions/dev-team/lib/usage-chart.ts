@@ -7,7 +7,7 @@
  * that feeds it.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { cutToWidth, withoutControlChars } from "./terminal-text.ts";
+import { cutToWidth, toSingleLine } from "./terminal-text.ts";
 
 export interface ChartRow {
 	label: string;
@@ -100,7 +100,7 @@ function foldRows(rows: readonly ChartRow[], maxRows: number): ChartRow[] {
 
 /** One line per row: label, bar scaled to the largest row, value, share. */
 export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, formatValue, formatShare, style }: BarChartOptions): string[] {
-	const rows = (maxRows > 0 ? foldRows(allRows, maxRows) : []).map((r) => ({ ...r, label: withoutControlChars(r.label) }));
+	const rows = (maxRows > 0 ? foldRows(allRows, maxRows) : []).map((r) => ({ ...r, label: toSingleLine(r.label) }));
 	if (!rows.length) return [];
 	const values = rows.map((r) => formatValue(r.credits));
 	const shares = rows.map((r) => formatShare(r.share));

@@ -82,6 +82,21 @@ test("an empty month says so", () => {
 	assert.ok(!lines.some((l) => /[█▓░]/.test(l)));
 });
 
+test("spend that rounds to 0.00 credits is shown as none, with no split bar, as the status line hides it", () => {
+	const tiny = breakdown(run("gpt-5", 0.004));
+	const session = render(viewModel(state("session", "model"), { session: tiny }));
+	assert.ok(session.includes("No GitHub Copilot usage in this session — press s for this month"), session.join("\n"));
+	assert.ok(!session.some((l) => /[█▓░]/.test(l)));
+	const month = render(viewModel(state("month", "model"), { month: { breakdown: tiny, unreadable: 0, loadedAt: NOW } }));
+	assert.ok(month.includes("No GitHub Copilot usage this month"), month.join("\n"));
+});
+
+test("an empty month still notes the files that could not be read", () => {
+	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, unreadable: 3, loadedAt: NOW } }));
+	assert.ok(lines.includes("No GitHub Copilot usage this month"), lines.join("\n"));
+	assert.ok(lines.includes("3 session files could not be read"), lines.join("\n"));
+});
+
 test("By agent with main-only spend says there is no subagent usage and keeps the split bar", () => {
 	const lines = render(viewModel(state("session", "agent"), { session: mainOnly }));
 	assert.ok(lines.includes("No subagent usage in this session"), lines.join("\n"));

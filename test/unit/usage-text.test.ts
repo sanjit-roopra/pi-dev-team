@@ -40,7 +40,8 @@ test("the month heading shows UTC dates while 'as of' shows the local clock", ()
 		const text = usageSummary({ scope: "month", breakdown: mixed, now: firstOfMonth, month: { unreadable: 0, loadedAt: firstOfMonth } });
 		assert.equal(text.split("\n")[0], "This month (Oct 1 – Oct 1) · 105.0 AI credits · as of 19:00");
 	} finally {
-		process.env.TZ = tz;
+		if (tz === undefined) delete process.env.TZ;
+		else process.env.TZ = tz;
 	}
 });
 

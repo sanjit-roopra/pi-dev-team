@@ -1,8 +1,9 @@
 /**
  * Where a session's GitHub Copilot AI credits went: the same runs the status line totals
  * (session-spend.ts), grouped by model, by dispatched agent and by thread. Runs served by other
- * providers, and runs that cost nothing, are left out, so "no Copilot spend" is simply an empty
- * breakdown. Credits stay floats here; only the display rounds them (formatCredits).
+ * providers, and runs that cost nothing, are left out, so an empty breakdown means no Copilot runs at
+ * all. Whether there is spend worth showing is hasVisibleCredits(total) (ai-credits.ts), the test the
+ * status line uses too. Credits stay floats here; only the display rounds them (formatCredits).
  */
 import { runAiCredits } from "./ai-credits.ts";
 import type { SpendRun } from "./session-spend.ts";
@@ -45,8 +46,8 @@ function rank<L extends string>(credits: ReadonlyMap<L, number>): CreditsRow<L>[
 	);
 }
 
-function addTo<K>(map: Map<K, number>, label: K, credits: number): void {
-	map.set(label, (map.get(label) ?? 0) + credits);
+function addTo<K>(map: Map<K, number>, key: K, credits: number): void {
+	map.set(key, (map.get(key) ?? 0) + credits);
 }
 
 export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {

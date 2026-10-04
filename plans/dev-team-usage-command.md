@@ -605,3 +605,11 @@ Round 1 verdicts: Parallelization approve; Strategic, UX, Acceptance, Design nee
   - [x] Step 4.2: Overlay component rendering
   - [x] Step 4.3: Load orchestration and cancel
   - [x] Step 4.4: Text summary, command wiring, docs
+
+### Deviations from the plan (branch review)
+
+The backstop review of the whole branch changed the module layout beyond the slices' file lists:
+
+- `lib/terminal-text.ts` (new): the one copy of the terminal sanitizers and `cutToWidth`. `subagent-render.ts` now imports `sanitizeTerminalText` from it, without a change in behaviour. Before this, the usage overlay had a second sanitizer that removed only the ESC byte of an escape sequence, so `[31m` stayed visible.
+- `lib/usage-split-bar.ts` (new): the split bar moved out of `usage-chart.ts`, which now draws only the ranked bars.
+- "No Copilot spend" now means credits that round to 0.00 (`hasVisibleCredits`) in the status line, the overlay and the summary, not an exact zero.

@@ -22,6 +22,25 @@ test("sessionSpend: a subagent entry with a non-text agent or model is booked to
 	);
 });
 
+test("sessionSpend: a subagent entry's empty agent or model counts as unnamed; named ones pass through", () => {
+	const usage = { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 1, turns: 1 };
+	const runs = spend([
+		{ type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: { agent: "", model: "", usage, nested: [{ agent: "Explore", model: "github-copilot/gpt-5", usage }] } },
+	]);
+	assert.deepEqual(
+		runs.map((r) => [r.agent, r.model]),
+		[[UNKNOWN_AGENT, UNKNOWN_MODEL], ["Explore", "github-copilot/gpt-5"]],
+	);
+});
+
+test("sessionSpend: a main turn's model or provider that is not text is not printed as one", () => {
+	const [noModel, noProvider] = spend([
+		{ type: "message", message: { role: "assistant", provider: "github-copilot", model: { x: 1 }, usage: { cost: { total: 1 } } } },
+		{ type: "message", message: { role: "assistant", provider: 7, model: "gpt-5", usage: { cost: { total: 1 } } } },
+	]);
+	assert.deepEqual([noModel.model, noProvider.model], [UNKNOWN_MODEL, "gpt-5"]);
+});
+
 test("sessionSpend: a provider without a model is 'unknown', not 'provider/undefined'", () => {
 	const [run] = spend([{ type: "message", message: { role: "assistant", provider: "github-copilot", usage: { cost: { total: 1 } } } }]);
 	assert.equal(run.model, UNKNOWN_MODEL);

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { formatToolCall, formatUsage, recentCallLines, renderSubagentCall, renderSubagentResult } from "../../extensions/dev-team/lib/subagent-render.ts";
-import { sanitizeTerminalText } from "../../extensions/dev-team/lib/terminal-text.ts";
 import type { SubagentDetails, SubagentTaskView, UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // A theme stub that returns text unchanged; the renderers only call fg() and bold().
@@ -143,11 +142,6 @@ test("parallel total without Copilot runs: no AI credits", () => {
 const UNSAFE = /[\x00-\x08\x0b-\x1f\x7f-\x9f]/;
 const HOSTILE = "x\x1b[31m\x1b]52;c;ZXZpbA==\x07\x1b[2J\x1b]8;;https://x\x1b\\y\x1b]8;;\x1b\\\x9b31m\rFAKE\x00";
 
-test("sanitizeTerminalText removes escape sequences and controls, keeps tab and newline", () => {
-	assert.equal(sanitizeTerminalText(HOSTILE), "xy31m\nFAKE");
-	assert.equal(sanitizeTerminalText("a\tb\nc\r\nd"), "a\tb\nc\nd");
-	assert.equal(sanitizeTerminalText("a\ufff9b\ufffbc"), "abc");
-});
 
 // Where each field is drawn, so the sanitizer checks cannot pass just because a field was left out.
 const SHOWN: Record<string, string[]> = {

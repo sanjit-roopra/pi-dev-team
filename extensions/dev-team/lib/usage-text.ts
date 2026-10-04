@@ -6,7 +6,7 @@
  */
 import { COPILOT_PROVIDER, copilotBillingPeriodStart, formatAiCredits, formatCredits, hasVisibleCredits } from "./ai-credits.ts";
 import { type CreditsRow, formatShare, type MonthSnapshot, type UsageBreakdown } from "./usage-breakdown.ts";
-import { controlRunsToSpace, withoutControlChars } from "./terminal-text.ts";
+import { toSpacedSingleLine, toSingleLine } from "./terminal-text.ts";
 import type { Scope, View } from "./usage-state.ts";
 
 export const SEPARATOR = " · ";
@@ -42,8 +42,8 @@ export const noSubagentUsageMessage = (scope: Scope) => `No subagent usage ${sco
 /** Appended to the empty session message: this month may have spend even when this session has none. */
 export const pressSHint = (scope: Scope) => (scope === "session" ? " — press s for this month" : "");
 
-/** The reason is an error's message and may carry control characters or newlines; they become one space each run. */
-export const loadFailedMessage = (reason: string) => `Could not load history: ${controlRunsToSpace(reason)}`;
+/** The reason is an error's message and may carry escape sequences, control characters or newlines: sequences go, each run of controls becomes one space. */
+export const loadFailedMessage = (reason: string) => `Could not load history: ${toSpacedSingleLine(reason)}`;
 
 /** The text of whatever a load rejected with. */
 export const errorReason = (err: unknown): string => (err instanceof Error ? err.message : String(err));
@@ -63,7 +63,7 @@ export interface UsageSummaryInput {
 
 /** Rows as aligned "  label  credits  share" lines. */
 function rankedLines(rows: readonly CreditsRow[]): string[] {
-	const cells = rows.map((r) => ({ label: withoutControlChars(r.label), credits: formatCredits(r.credits), share: formatShare(r.share) }));
+	const cells = rows.map((r) => ({ label: toSingleLine(r.label), credits: formatCredits(r.credits), share: formatShare(r.share) }));
 	const widest = (pick: (cell: (typeof cells)[number]) => string) => Math.max(...cells.map((cell) => pick(cell).length));
 	const [labelWidth, creditsWidth, shareWidth] = [widest((c) => c.label), widest((c) => c.credits), widest((c) => c.share)];
 	return cells.map(({ label, credits, share }) => `  ${label.padEnd(labelWidth)}  ${credits.padStart(creditsWidth)}  ${share.padStart(shareWidth)}`);

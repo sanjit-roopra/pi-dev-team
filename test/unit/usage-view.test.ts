@@ -157,12 +157,20 @@ test("a rejected load shows the error and the back footer", async () => {
 	assert.equal(monthLines(view).at(-1), "s back · Esc close");
 });
 
-test("a load whose records cannot be summed is a failed load, not one stuck reading", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month");
-	const broken = { ...run("gpt-5", 5), model: 7 } as unknown as SpendRun;
-	loader.loads[0].resolve({ records: records(broken), unreadable: 0 });
+test("a snapshot that throws once the files are read is a failed load, not one stuck reading", async () => {
+	// The snapshot reads the clock for its "as of" time; a clock that throws then stands in for any failure there.
+	let clockBroken = false;
+	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month", {
+		now: () => {
+			if (clockBroken) throw new Error("clock broke");
+			return NOW;
+		},
+	});
+	clockBroken = true;
+	loader.loads[0].resolve({ records: records(run("gpt-5", 5)), unreadable: 0 });
 	await settle();
-	assert.ok(monthLines(view).some((l) => l.startsWith("Could not load history: ")), monthLines(view).join("\n"));
+	clockBroken = false;
+	assert.ok(monthLines(view).includes("Could not load history: clock broke"), monthLines(view).join("\n"));
 	assert.equal(monthLines(view).at(-1), "s back · Esc close");
 });
 

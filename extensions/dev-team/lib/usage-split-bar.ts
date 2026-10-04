@@ -4,15 +4,15 @@
  * it is pure string rendering: plain text is measured and cut first, then styled.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { FULL_BLOCK } from "./usage-chart.ts";
 import { cutToWidth } from "./terminal-text.ts";
+import type { ThreadLabel } from "./usage-breakdown.ts";
+import { FULL_BLOCK } from "./usage-chart.ts";
 
-/** The closed set of thread segments (the breakdown's ThreadLabel), in the order they are drawn. */
-export type SplitLabel = "main" | "subagents" | "overhead";
+/** A segment is named by its thread's label; there is one vocabulary for the threads. */
+export type SplitLabel = ThreadLabel;
 
 /** One input to the split bar: credits spent by one thread, which becomes (part of) a segment. */
 export interface SplitPart {
-	/** Any label outside SplitLabel is ignored (the input may be untyped session data). */
 	label: SplitLabel;
 	credits: number;
 }

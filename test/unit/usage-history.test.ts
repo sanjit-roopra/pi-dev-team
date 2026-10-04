@@ -174,7 +174,7 @@ test("loadSpendHistory: a file last modified before the month start is never ope
 	});
 });
 
-test("loadSpendHistory: an unreadable file is skipped and counted, the others are returned", { skip: CANNOT_CHMOD }, async () => {
+test("loadSpendHistory: an unreadable file is counted as unreadable, the others are returned", { skip: CANNOT_CHMOD }, async () => {
 	await withRoot({ "--p--/a.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "ok")], "--p--/b.jsonl": [turn("b", "2026-10-02T00:00:00Z", 0.1, "locked")] }, async (root) => {
 		await fs.chmod(path.join(root, "--p--/b.jsonl"), 0o000);
 		const h = await load(root);
@@ -182,7 +182,7 @@ test("loadSpendHistory: an unreadable file is skipped and counted, the others ar
 	});
 });
 
-test("loadSpendHistory: a project folder that cannot be listed counts as one skipped file, the other folders are returned", { skip: CANNOT_CHMOD }, async () => {
+test("loadSpendHistory: a project folder that cannot be listed counts as one unreadable file, the other folders are returned", { skip: CANNOT_CHMOD }, async () => {
 	await withRoot({ "--bad--/a.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "hidden")], "--good--/b.jsonl": [turn("b", "2026-10-03T00:00:00Z", 0.1, "ok")] }, async (root) => {
 		const bad = path.join(root, "--bad--");
 		await fs.chmod(bad, 0o000);
@@ -198,7 +198,7 @@ test("loadSpendHistory: a project folder that cannot be listed counts as one ski
 // A folder without search permission lists fine (names and types) but its files cannot be stat-ed. Where
 // a filesystem reports no entry types, listing fails instead; one skipped file either way. A file that
 // vanishes between listing and stat cannot be provoked deterministically, so that branch has no test.
-test("loadSpendHistory: a file that cannot be stat-ed is skipped and counted, the others are returned", { skip: CANNOT_CHMOD }, async () => {
+test("loadSpendHistory: a file that cannot be stat-ed is counted as unreadable, the others are returned", { skip: CANNOT_CHMOD }, async () => {
 	await withRoot({ "--bad--/a.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "hidden")], "--good--/b.jsonl": [turn("b", "2026-10-03T00:00:00Z", 0.1, "ok")] }, async (root) => {
 		const bad = path.join(root, "--bad--");
 		await fs.chmod(bad, 0o444);
@@ -226,7 +226,7 @@ test("loadSpendHistory: a file that vanishes after it was listed is not counted 
 	});
 });
 
-test("loadSpendHistory: a file with an entry spend cannot read is skipped whole, adding no records", async () => {
+test("loadSpendHistory: a file with an entry spend cannot read counts as unreadable, adding no records", async () => {
 	await withRoot({ "--p--/a.jsonl": [turn("a", "2026-10-02T00:00:00Z", 0.1, "before"), brokenEntry()] }, async (root) => {
 		const h = await load(root);
 		assert.deepEqual([h.records, h.unreadable], [[], 1]);
@@ -346,7 +346,7 @@ test("loadSpendHistory: an abort between files stops the load as aborted, keepin
 	});
 });
 
-test("loadSpendHistory: an abort partway through a file keeps nothing of that file and does not count it skipped", async () => {
+test("loadSpendHistory: an abort partway through a file keeps nothing of that file and does not count it unreadable", async () => {
 	const lines = Array.from({ length: 200 }, (_, i) => turn(`t${i}`, "2026-10-02T00:00:00Z", 0.1, `m${i}`));
 	await withRoot({ "--p--/1.jsonl": lines }, async (root) => {
 		// The load only reads `aborted`: it turns true on the 10th look, long before 200 lines have been read.
