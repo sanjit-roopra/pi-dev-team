@@ -120,3 +120,17 @@ test("project env settings: over-long values and booleans", () => {
 	assert.ok(isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", "x".repeat(64)));
 	assert.ok(!isProjectEnvSettingAllowed("DEV_TEAM_COST_METER", "x".repeat(65)));
 });
+
+test("loadConfig: githubStyle keeps a valid mode and falls back to the default for anything else", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-style-cfg-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const userConfigFile = path.join(dir, "user.json");
+	const load = (githubStyle: unknown) => {
+		fs.writeFileSync(userConfigFile, JSON.stringify({ githubStyle }));
+		return loadConfig(dir, { includeProject: false, userConfigFile }).config.githubStyle;
+	};
+	assert.equal(DEFAULT_CONFIG.githubStyle, "block");
+	assert.equal(load("warn"), "warn");
+	assert.equal(load("off"), "off");
+	for (const invalid of ["Block", false, 1, "\u001b]52;c;x\u0007"]) assert.equal(load(invalid), "block", String(invalid));
+});

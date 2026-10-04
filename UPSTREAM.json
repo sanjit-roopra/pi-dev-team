@@ -22,11 +22,14 @@
   ],
   "notes": [
     "autoship",
+    "issues-from-assessment",
+    "issues-from-plan",
     "mutation-night-watch",
     "mutation-testing",
     "pr",
     "project-init",
-    "setup"
+    "setup",
+    "specs"
   ],
   "normalisedFrontmatter": [
     "skills/project-init/SKILL.md"

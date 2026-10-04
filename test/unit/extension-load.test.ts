@@ -14,12 +14,15 @@ async function loadExtension() {
 	const fakePython = path.join(dir, "python");
 	fs.writeFileSync(fakePython, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, { mode: 0o755 });
 	process.env.DEV_TEAM_PYTHON = fakePython;
+	// The user's own ~/.pi/agent/dev-team.json must not change what the extension does here.
+	process.env.PI_CODING_AGENT_DIR = dir;
+	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block" }));
 	const tools: Record<string, ToolDef> = {};
-	const handlers: Record<string, Handler> = {};
+	const handlers: Record<string, Handler[]> = {};
 	// Every API the factory may call is a no-op, except registerTool and on, which are recorded.
 	const recorders: Record<string, unknown> = {
 		registerTool: (def: ToolDef) => (tools[def.name] = def),
-		on: (event: string, handler: Handler) => (handlers[event] = handler),
+		on: (event: string, handler: Handler) => (handlers[event] ??= []).push(handler),
 	};
 	const fakePi = new Proxy({}, { get: (_t, key) => recorders[key as string] ?? (() => undefined) });
 	const { default: devTeam } = await import("../../extensions/dev-team/index.ts");
@@ -61,16 +64,12 @@ test("ask_user is for the model only", async () => {
 	assert.equal(tools.ask_user.exposure, "model-only");
 });
 
-test("a gh pr create that breaks the GitHub style is stopped once; the same command sent again passes the style check", async () => {
+test("tool_call runs the GitHub style gate before the guard hooks", async () => {
 	const { handlers } = await loaded;
+	assert.equal(handlers.tool_call?.length, 1);
 	const ctx = { cwd: os.tmpdir(), hasUI: false, sessionManager: { getSessionId: () => "s", getSessionFile: () => undefined } };
-	// Other guards (pre_pr_review) may still stop the call, so only the style reason is checked.
-	const styleReason = async (command: string, id: string) => {
-		const out = (await handlers.tool_call({ toolName: "bash", toolCallId: id, input: { command } }, ctx)) as { reason?: string } | undefined;
-		return /GitHub style/.test(out?.reason ?? "") ? out?.reason : undefined;
-	};
-	const bad = `gh pr create --title "Fix" --body "This simply works — trust me."`;
-	assert.match((await styleReason(bad, "1")) ?? "", /em-dashes/);
-	assert.equal(await styleReason(bad, "2"), undefined);
-	assert.equal(await styleReason(`gh pr create --title "Fix" --body "Fixes the crash."`, "3"), undefined);
+	const command = `gh issue create --title "Crash" --body "It simply crashes — always."`;
+	const out = (await handlers.tool_call[0]({ toolName: "bash", toolCallId: "1", input: { command } }, ctx)) as { block?: boolean; reason?: string };
+	assert.equal(out.block, true);
+	assert.match(out.reason ?? "", /GitHub style/);
 });

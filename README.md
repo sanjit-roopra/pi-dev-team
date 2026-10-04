@@ -98,13 +98,16 @@ pi's footer shows the cost of the whole session in USD, including the agents. If
 
 The team writes pull requests, issues and comments for a reader who skims. The rules come from [SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) (plain English after ASD-STE100) and [i-have-adhd](https://github.com/ayghri/i-have-adhd) (the point first, short lists, one next step):
 
-- The title has 72 characters or fewer.
+- The title has fewer than 70 characters.
 - The first sentence of the body says what changes and why.
 - The visible body has 250 words or fewer (a comment has 150). Sentences have 25 words or fewer. Lists have 5 items or fewer.
 - The text has no em-dashes, bold, hedges (should, may, might) or filler (robust, seamlessly, leverage).
-- Long required content, for example the evidence bundle of `/pr`, goes at the end in one collapsed `<details>` block. Code, tables and `<details>` blocks do not count toward the word limit.
+- Long required content, for example the evidence bundle of `/pr`, goes at the end in one collapsed `<details>` block. Code, tables, headings and `<details>` blocks do not count toward the word limit.
+- Headings and markers that a skill needs, for example the sections of a `/specs` issue, stay as they are.
 
-Before a `gh pr` or `gh issue` command creates, edits or comments, the extension checks the text. If the text breaks a rule, the extension stops the command one time and tells the agent what to fix. If the agent sends the same command again, it runs. To only show the problems, set `"githubStyle": "warn"`. To turn the check off, set `"githubStyle": "off"`.
+Before a `gh pr` or `gh issue` command creates, edits or comments, the extension checks the title and the body. If the text breaks a rule, the extension blocks the command one time and tells the agent what to fix. If the agent sends the same command again, it runs. To only show the problems, set `"githubStyle": "warn"`. To turn off the check and the rules, set `"githubStyle": "off"`.
+
+The check reads text in quotes, in `$(cat <<EOF ...)` and in a `--body-file`. It does not check text that the shell makes when the command runs, for example `--body "$BODY"`.
 
 ## Configuration
 
@@ -124,7 +127,7 @@ All settings, with the default values:
   "maxSubagentDepth": 2,       // agents can start other agents, 2 levels deep
   "subagentTimeoutSec": 3600,  // stop an agent after this time
   "autoFormat": false,         // format files after each edit (/setup turns this on)
-  "githubStyle": "block",      // block, warn, or off: the check of pull request and issue text
+  "githubStyle": "block",      // block, warn, or off: the rules and the check for pull request and issue text
   "skillIndex": "compact",     // compact, full, or off: the command list in the system prompt
   "skillIndexChars": 220,      // the maximum length of each description in the compact list
   "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
