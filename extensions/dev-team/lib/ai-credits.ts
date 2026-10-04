@@ -5,8 +5,8 @@
  * (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing). pi's catalog prices the
  * `github-copilot` provider at those same per-token rates (checked against pi-ai's catalog for 11
  * models, long-context tiers included, in October 2026), so a Copilot run's credits are its USD cost
- * x 100. It is an estimate: GitHub documents no per-request rounding, and plan allowances are not
- * visible from a session.
+ * x 100: exact by formula (tokens x GitHub's per-token rates / $0.01). The figures are gross usage:
+ * they do not subtract a plan's monthly allowance.
  */
 import { costUsd, type PiUsage, sessionSpend } from "./session-spend.ts";
 
@@ -21,13 +21,13 @@ export function isCopilotModel(model: string | undefined): boolean {
 }
 
 /** One run's AI credits: its USD cost x 100 when Copilot served it, else 0. */
-export function runCredits(run: { model?: string; usage: PiUsage }): number {
+export function runAiCredits(run: { model?: string; usage: PiUsage }): number {
 	return isCopilotModel(run.model) ? costUsd(run.usage) * CREDITS_PER_USD : 0;
 }
 
 /** The AI credits of the runs served by Copilot; every other run counts 0. */
 export function runsAiCredits(runs: Iterable<{ model?: string; usage: PiUsage }>): number {
-	return Array.from(runs).reduce((credits, run) => credits + runCredits(run), 0);
+	return Array.from(runs).reduce((credits, run) => credits + runAiCredits(run), 0);
 }
 
 /** Decimal places for a credits value: 2 below 10, 1 below 1000, else 0, judged after rounding. */

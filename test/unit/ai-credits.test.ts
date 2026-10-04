@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus, formatAiCredits, formatCredits, isCopilotModel, runCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
+import { aiCreditsStatus, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
 import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // GitHub bills 1 AI credit per $0.01 of token cost (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
@@ -9,6 +9,7 @@ const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - 
 
 const usage = (cost: number): UsageTotals => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost, turns: 1 });
 const turn = (provider: string, total: number) => ({ type: "message", message: { role: "assistant", provider, model: "m", usage: { cost: { total } } } });
+const compaction = (total: number) => ({ type: "compaction", summary: "s", usage: { cost: { total } } });
 function subagentEntry(model: string, cost: number, nested: NestedUsage[] = []) {
 	return { type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: { agent: "a", model, ok: true, durationMs: 0, usage: usage(cost), nested } };
 }
@@ -20,18 +21,14 @@ test("isCopilotModel: only the github-copilot provider", () => {
 	assert.equal(isCopilotModel(undefined), false);
 });
 
-test("runCredits: a Copilot run at 100 credits per USD, any other run 0", () => {
-	close(runCredits({ model: "github-copilot/m", usage: usage(0.25) }), 0.25 * CREDITS_PER_USD);
-	close(runCredits({ model: "anthropic/m", usage: usage(3) }), 0);
-	close(runCredits({ usage: usage(1) }), 0);
+test("runAiCredits: a Copilot run at 100 credits per USD, any other run 0", () => {
+	close(runAiCredits({ model: "github-copilot/m", usage: usage(0.25) }), 0.25 * CREDITS_PER_USD);
+	close(runAiCredits({ model: "anthropic/m", usage: usage(3) }), 0);
+	close(runAiCredits({ usage: usage(1) }), 0);
 });
 
-test("runsAiCredits: Copilot runs at 100 credits per USD", () => {
-	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(0.25) }]), 0.25 * CREDITS_PER_USD);
-});
-
-test("runsAiCredits: other providers and runs without a model count 0", () => {
-	close(runsAiCredits([{ model: "anthropic/m", usage: usage(3) }, { usage: usage(1) }]), 0);
+test("runsAiCredits: sums the Copilot runs of a mixed list", () => {
+	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(0.25) }, { model: "anthropic/m", usage: usage(3) }, { model: "github-copilot/n", usage: usage(0.05) }]), 0.3 * CREDITS_PER_USD);
 });
 
 test("formatAiCredits: fewer decimals as the number grows", () => {
@@ -96,4 +93,12 @@ test("aiCreditsStatus: shown from 0.005 credits, as 0.01", () => {
 
 test("aiCreditsStatus: hidden when no Copilot model ran", () => {
 	assert.equal(aiCreditsStatus([turn("anthropic", 1)]), undefined);
+});
+
+test("aiCreditsStatus: compaction usage reaches the status line", () => {
+	assert.equal(aiCreditsStatus([turn("github-copilot", 0.5), compaction(0.05)]), "GitHub Copilot: 55.0 AI credits");
+});
+
+test("aiCreditsStatus: a compaction on an unknown model counts no AI credits", () => {
+	assert.equal(aiCreditsStatus([compaction(5)]), undefined);
 });

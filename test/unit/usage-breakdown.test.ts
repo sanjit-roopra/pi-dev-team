@@ -32,10 +32,21 @@ test("usageBreakdown: agents are the dispatched ones, main turns are not listed"
 	assert.deepEqual(shown(b.byAgent), ["Explore 20.0 50.0%", "orchestrator 20.0 50.0%"], "shares are of the subagent total, ties by name");
 });
 
+test("usageBreakdown: one agent on two Copilot models is one agent row and two model rows", () => {
+	const b = usageBreakdown([run(copilot("a"), 0.3, "subagent", "Explore"), run(copilot("b"), 0.1, "subagent", "Explore")]);
+	assert.deepEqual(shown(b.byAgent), ["Explore 40.0 100.0%"]);
+	assert.deepEqual(shown(b.byModel), [`${copilot("a")} 30.0 75.0%`, `${copilot("b")} 10.0 25.0%`]);
+});
+
 test("usageBreakdown: the thread split covers main, subagents and overhead and sums to the total", () => {
 	const b = usageBreakdown([run(copilot("m"), 0.5), run(copilot("m"), 0.3, "subagent", "a"), run(copilot("m"), 0.2, "overhead", "cache_warm")]);
 	assert.deepEqual(shown(b.byThread), ["main 50.0 50.0%", "subagents 30.0 30.0%", "overhead 20.0 20.0%"]);
 	close(b.byThread.reduce((sum, row) => sum + row.credits, 0), b.total);
+});
+
+test("usageBreakdown: thread rows carry the SpendRun thread next to their label", () => {
+	const b = usageBreakdown([run(copilot("m"), 0.5), run(copilot("m"), 0.3, "subagent", "a"), run(copilot("m"), 0.2, "overhead", "cache_warm")]);
+	assert.deepEqual(b.byThread.map((r) => [r.label, r.thread]), [["main", "main"], ["subagents", "subagent"], ["overhead", "overhead"]]);
 });
 
 test("usageBreakdown: non-Copilot runs appear in no ranking or total", () => {
@@ -49,6 +60,14 @@ test("usageBreakdown: non-Copilot runs appear in no ranking or total", () => {
 test("usageBreakdown: equal credits are ordered alphabetically", () => {
 	const b = usageBreakdown([run(copilot("zeta"), 0.1), run(copilot("alpha"), 0.1)]);
 	assert.deepEqual(b.byModel.map((r) => r.label), [copilot("alpha"), copilot("zeta")]);
+});
+
+test("usageBreakdown: a NaN cost is dropped and the total stays finite", () => {
+	const nan: SpendRun = { thread: "main", agent: "main", model: copilot("m"), usage: { cost: Number.NaN }, messages: 1 };
+	const b = usageBreakdown([nan, run(copilot("m"), 0.1)]);
+	assert.deepEqual(shown(b.byModel), [`${copilot("m")} 10.0 100.0%`]);
+	assert.ok(Number.isFinite(b.total));
+	close(b.total, 10);
 });
 
 test("usageBreakdown: no runs, only non-Copilot runs, or only free runs give an empty breakdown", () => {
@@ -69,5 +88,6 @@ test("formatShare: one decimal, '<1%' under one percent", () => {
 
 test("usageBreakdown: a row under 1% displays as '<1%'", () => {
 	const b = usageBreakdown([run(copilot("big"), 10), run(copilot("tiny"), 0.01)]);
+	assert.deepEqual(b.byModel.map((r) => r.label), [copilot("big"), copilot("tiny")]);
 	assert.equal(formatShare(b.byModel[1].share), "<1%");
 });

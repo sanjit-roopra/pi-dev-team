@@ -1,15 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus } from "../../extensions/dev-team/lib/ai-credits.ts";
 import { buildCostRow } from "../../extensions/dev-team/lib/metrics.ts";
-import { sessionSpend } from "../../extensions/dev-team/lib/session-spend.ts";
+import { sessionSpend, UNKNOWN_MODEL } from "../../extensions/dev-team/lib/session-spend.ts";
 import { SUBAGENT_USAGE_ENTRY } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 const spend = (entries: Record<string, unknown>[]) => [...sessionSpend(entries)];
 
 test("sessionSpend: a main turn without provider or model is booked to model 'unknown'", () => {
 	const [run] = spend([{ type: "message", message: { role: "assistant", usage: { cost: { total: 1 } } } }]);
-	assert.deepEqual({ thread: run.thread, model: run.model }, { thread: "main", model: "unknown" });
+	assert.deepEqual({ thread: run.thread, model: run.model }, { thread: "main", model: UNKNOWN_MODEL });
+});
+
+test("sessionSpend: a provider without a model is 'unknown', not 'provider/undefined'", () => {
+	const [run] = spend([{ type: "message", message: { role: "assistant", provider: "github-copilot", usage: { cost: { total: 1 } } } }]);
+	assert.equal(run.model, UNKNOWN_MODEL);
+});
+
+test("sessionSpend: an entry type named like an Object.prototype key is not a summary entry", () => {
+	assert.deepEqual(spend([{ type: "constructor", usage: { cost: { total: 1 } } }]), []);
 });
 
 test("sessionSpend: a usage entry is overhead named by its kind, or 'usage' without one", () => {
@@ -45,9 +53,13 @@ const modelChange = (provider: string, modelId: string) => ({ type: "model_chang
 const compaction = (total: number) => ({ type: "compaction", summary: "s", usage: cost(total) });
 const overhead = (entries: Record<string, unknown>[]) => spend(entries).filter((r) => r.thread === "overhead").map((r) => [r.agent, r.model, r.messages]);
 
-test("sessionSpend: a compaction is overhead named 'compaction', booked to the model of the last assistant turn", () => {
+test("sessionSpend: a compaction is overhead named 'compaction', attributed to the model in effect", () => {
 	assert.deepEqual(overhead([assistant("github-copilot", "a"), compaction(0.05)]), [["compaction", "github-copilot/a", 0]]);
-	assert.deepEqual(spend([assistant("github-copilot", "a"), compaction(0.05)])[1].usage, cost(0.05));
+});
+
+test("sessionSpend: a compaction's usage is passed through unchanged", () => {
+	const [run] = spend([assistant("github-copilot", "a"), compaction(0.05)]).filter((r) => r.thread === "overhead");
+	assert.deepEqual(run.usage, cost(0.05));
 });
 
 test("sessionSpend: a model switch before a compaction moves it to the new model", () => {
@@ -75,18 +87,9 @@ test("sessionSpend: a branch summary is overhead named 'branch summary', booked 
 	assert.deepEqual(overhead([assistant("github-copilot", "a"), summary]), [["branch summary", "github-copilot/a", 0]]);
 });
 
-test("sessionSpend: compaction usage reaches the AI credits status line", () => {
-	assert.equal(aiCreditsStatus([assistant("github-copilot", "a", 0.5), compaction(0.05)]), "GitHub Copilot: 55.0 AI credits");
-});
-
-test("sessionSpend: a compaction on an unknown model counts no AI credits", () => {
-	assert.equal(aiCreditsStatus([compaction(5)]), undefined);
-});
-
 test("cost row: compaction usage leaves the cost meter row unchanged", () => {
 	const ctxFrom = (entries: unknown[]) => ({ sessionManager: { getEntries: () => entries, getSessionId: () => "s1", getSessionFile: () => "/x/s1.jsonl" } }) as never;
 	const turn = assistant("p", "a", 0.1);
-	const { timestamp: _t1, ...without } = buildCostRow(ctxFrom([turn])) as Record<string, unknown>;
-	const { timestamp: _t2, ...withCompaction } = buildCostRow(ctxFrom([turn, compaction(5)])) as Record<string, unknown>;
-	assert.deepEqual(withCompaction, without);
+	const omitTimestamp = (row: unknown) => Object.fromEntries(Object.entries(row as Record<string, unknown>).filter(([key]) => key !== "timestamp"));
+	assert.deepEqual(omitTimestamp(buildCostRow(ctxFrom([turn, compaction(5)]))), omitTimestamp(buildCostRow(ctxFrom([turn]))));
 });
