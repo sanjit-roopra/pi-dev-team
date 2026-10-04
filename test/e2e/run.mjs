@@ -148,6 +148,18 @@ const scenarios = {
 		assert(r.out.includes('ECHO:<skill name="version"'), `unexpected output: ${r.out.slice(0, 300)} ${r.err}`);
 	},
 
+	"/dev-team usage prints the plain-text summary in print mode"(env) {
+		// The scripted provider is not GitHub Copilot, so a session of it has no AI credits to show.
+		// pi sends an extension's console.log to stderr in print mode, so read both streams.
+		const said = (r) => `${r.out}${r.err}`.trim();
+		const session = pi(env, "/dev-team usage");
+		assert(session.code === 0 && said(session) === "No GitHub Copilot usage in this session", `unexpected output: ${JSON.stringify(said(session).slice(0, 300))} code=${session.code}`);
+		const month = pi(env, "/dev-team usage month");
+		assert(month.code === 0 && said(month) === "No GitHub Copilot usage this month", `unexpected month output: ${JSON.stringify(said(month).slice(0, 300))} code=${month.code}`);
+		const unknown = pi(env, "/dev-team usage histroy");
+		assert(said(unknown) === "Usage: /dev-team usage [session|month]", `unexpected usage output: ${JSON.stringify(said(unknown).slice(0, 300))}`);
+	},
+
 	"autocompact_setup_nudge reaches the model only when autocompact is unconfigured"(env) {
 		fs.rmSync(path.join(env.home, ".claude", "settings.json"));
 		let r = pi(env, "hello");

@@ -5,12 +5,13 @@
  * UsageView is the thin component around it: it holds the state and reacts to keys.
  */
 import { type Component, visibleWidth } from "@earendil-works/pi-tui";
-import { COPILOT_PROVIDER, copilotBillingPeriodStart, formatAiCredits, formatCredits } from "./ai-credits.ts";
+import { copilotBillingPeriodStart, formatAiCredits, formatCredits } from "./ai-credits.ts";
 import type { SpendRun } from "./session-spend.ts";
 import { type CreditsRow, formatShare, type UsageBreakdown, usageBreakdown } from "./usage-breakdown.ts";
 import { barChartLines, type ChartStyle, cutToWidth, type SplitLabel, type SplitStyle, splitBarLines } from "./usage-chart.ts";
 import type { SpendHistory } from "./usage-history.ts";
-import { reduce, type Scope, type Transition, type UsageAction, type UsageEffect, type UsageState, usageKeyFor, type View } from "./usage-state.ts";
+import { reduce, type Transition, type UsageAction, type UsageEffect, type UsageState, usageKeyFor, type View } from "./usage-state.ts";
+import { asOfLabel, emptyUsageMessage, loadFailedMessage, modelLabel, noSubagentUsageMessage, SCOPE_NOUN, SCOPE_TITLE, SEPARATOR, scopeHeading, skippedFilesNote } from "./usage-text.ts";
 
 export interface UsageStyle extends ChartStyle, SplitStyle {
 	/** The header line. */
@@ -44,16 +45,7 @@ export interface RenderOptions {
 	style: UsageStyle;
 }
 
-const SEPARATOR = " · ";
-const SCOPE_TITLE: Record<Scope, string> = { session: "This session", month: "This month" };
-const SCOPE_NOUN: Record<Scope, string> = { session: "this session", month: "this month" };
 const VIEW_TITLE: Record<View, string> = { model: "By model", agent: "By agent" };
-
-/** Every row is GitHub Copilot, so the provider prefix is noise. */
-const modelLabel = (model: string) => (model.startsWith(`${COPILOT_PROVIDER}/`) ? model.slice(COPILOT_PROVIDER.length + 1) : model);
-
-const monthDay = (date: Date) => date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-const clock = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 
 /** The credits breakdown the state is showing, or undefined while it is not known (loading, failed). */
 function shownBreakdown(model: UsageModel): UsageBreakdown | undefined {
@@ -68,12 +60,11 @@ function shownBreakdown(model: UsageModel): UsageBreakdown | undefined {
 function headerCandidates(model: UsageModel): string[] {
 	const { scope, view } = model.state;
 	const breakdown = shownBreakdown(model);
-	const windowStart = new Date(Date.UTC(model.now.getUTCFullYear(), model.now.getUTCMonth(), 1));
-	const dates = scope === "month" ? ` (${monthDay(windowStart)} – ${monthDay(model.now)})` : "";
 	const tail = [VIEW_TITLE[view], ...(breakdown ? [formatAiCredits(breakdown.total)] : [])];
-	const asOf = scope === "month" && breakdown && model.month ? [`as of ${clock(model.month.loadedAt)}`] : [];
+	const asOf = scope === "month" && breakdown && model.month ? [asOfLabel(model.month.loadedAt)] : [];
 	const join = (scopeText: string, ...more: string[]) => [scopeText, ...tail, ...more].join(SEPARATOR);
-	return [join(`${SCOPE_TITLE[scope]}${dates}`, ...asOf), join(`${SCOPE_TITLE[scope]}${dates}`), join(SCOPE_TITLE[scope])];
+	const heading = scopeHeading(scope, model.now);
+	return [join(heading, ...asOf), join(heading), join(SCOPE_TITLE[scope])];
 }
 
 /** The key hints from most to least detailed: hints drop from the left, so "Esc close" is the last to go. */
@@ -93,8 +84,6 @@ function fitLine(candidates: readonly string[], width: number): string {
 const PINNED_LINES = 2;
 const CONTROL_RUNS = /[\u0000-\u001f\u007f-\u009f]+/g;
 
-const usageIn = (scope: Scope) => (scope === "session" ? "in this session" : "this month");
-
 /** Text that fills the chart area in place of a chart. */
 interface Message {
 	text: string;
@@ -109,18 +98,18 @@ function loadingMessage(load: UsageState["load"]): string {
 function bodyMessage(model: UsageModel, breakdown: UsageBreakdown | undefined): Message | undefined {
 	const { state } = model;
 	if (state.load.kind === "loading") return { text: loadingMessage(state.load), tone: "plain" };
-	if (state.load.kind === "error") return { text: `Could not load history: ${state.load.reason.replace(CONTROL_RUNS, " ")}`, tone: "error" };
+	if (state.load.kind === "error") return { text: loadFailedMessage(state.load.reason.replace(CONTROL_RUNS, " ")), tone: "error" };
 	if (!breakdown || breakdown.total === 0) {
 		const hint = state.scope === "session" ? " — press s for this month" : "";
-		return { text: `No GitHub Copilot usage ${usageIn(state.scope)}${hint}`, tone: "plain" };
+		return { text: `${emptyUsageMessage(state.scope)}${hint}`, tone: "plain" };
 	}
-	if (state.view === "agent" && breakdown.byAgent.length === 0) return { text: `No subagent usage ${usageIn(state.scope)}`, tone: "plain" };
+	if (state.view === "agent" && breakdown.byAgent.length === 0) return { text: noSubagentUsageMessage(state.scope), tone: "plain" };
 	return undefined;
 }
 
 function footnoteText(model: UsageModel): string | undefined {
 	const skipped = model.state.scope === "month" && model.state.load.kind === "ready" ? (model.month?.skipped ?? 0) : 0;
-	return skipped > 0 ? `${skipped} session ${skipped === 1 ? "file" : "files"} could not be read` : undefined;
+	return skippedFilesNote(skipped);
 }
 
 /** What the panel would like to show, in lines. */

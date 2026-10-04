@@ -67,7 +67,7 @@ export function cutToWidth(text: string, max: number): string {
 }
 
 /** Labels come from session files; a control character (ESC included) must not reach the terminal. */
-const withoutControlChars = (text: string) => text.replace(CONTROL_CHARS, "");
+export const withoutControlChars = (text: string) => text.replace(CONTROL_CHARS, "");
 
 /** `eighths` eighths of a cell as glyphs: whole cells of `█`, then one partial block. */
 function barGlyphs(eighths: number): string {
