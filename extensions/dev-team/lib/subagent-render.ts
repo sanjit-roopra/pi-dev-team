@@ -21,6 +21,7 @@ import {
 	type ToolCallSummary,
 	type UsageTotals,
 } from "./subagent-types.ts";
+import { sanitizeTerminalText } from "./terminal-text.ts";
 
 const COLLAPSED_TOOLS = 3;
 const COLLAPSED_OUTPUT_LINES = 3;
@@ -28,16 +29,6 @@ const CALL_PREVIEW_TASKS = 4;
 const SINGLE_CALL_PREVIEW_CHARS = 80;
 const PARALLEL_CALL_PREVIEW_CHARS = 50;
 const COLLAPSED_ERROR_CHARS = 300;
-
-// ANSI CSI/OSC/other escape sequences, then remaining C0/C1 controls (keeping \t and \n) and the
-// interlinear annotation characters pi's sanitizeBinaryOutput also removes. A bare \r would let a line
-// overwrite itself, so CR and CRLF become \n first.
-const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
-const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f￹-￻]/g;
-
-export function sanitizeTerminalText(text: string): string {
-	return text.replace(/\r\n?/g, "\n").replace(ANSI_RE, "").replace(CONTROL_RE, "");
-}
 
 function preview(text: string | undefined, maxChars: number): string {
 	const flat = sanitizeTerminalText(text ?? "").replace(/\s+/g, " ").trim();

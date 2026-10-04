@@ -7,6 +7,7 @@ import { after, test } from "node:test";
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
 type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean> };
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
+type CommandDef = { description?: string; getArgumentCompletions?: (prefix: string) => { value: string }[]; handler: (args: string, ctx: unknown) => Promise<void> | void };
 
 async function loadExtension() {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-load-"));
@@ -20,12 +21,14 @@ async function loadExtension() {
 	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block" }));
 	const tools: Record<string, ToolDef> = {};
 	const handlers: Record<string, Handler[]> = {};
-	// Every API the factory may call is a no-op, except registerTool and on, which are recorded.
+	const commands: Record<string, CommandDef> = {};
+	// Every API the factory may call is a no-op, except registerTool, registerCommand and on, which are recorded.
 	const recorders: Record<string, unknown> = {
 		registerTool: (def: ToolDef) => (tools[def.name] = def),
+		registerCommand: (name: string, def: CommandDef) => (commands[name] = def),
 		on: (event: string, handler: Handler) => (handlers[event] ??= []).push(handler),
 	};
-	const fakePi = new Proxy({}, { get: (_t, key) => recorders[key as string] ?? (() => undefined) });
+	const fakePi = new Proxy({}, { get: (_t, key) => recorders[String(key)] ?? (() => undefined) });
 	const { default: devTeam } = await import("../../extensions/dev-team/index.ts");
 	await devTeam(fakePi as never);
 	const cleanup = () => {
@@ -35,7 +38,7 @@ async function loadExtension() {
 			else process.env[key] = value;
 		}
 	};
-	return { tools, handlers, probedAtLoad: fs.existsSync(marker), probed: () => fs.existsSync(marker), cleanup };
+	return { tools, commands, handlers, probedAtLoad: fs.existsSync(marker), probed: () => fs.existsSync(marker), cleanup };
 }
 
 const loaded = loadExtension();
@@ -94,4 +97,20 @@ test("tool_call blocks a breaking gh command before the guard hooks run; the sam
 	const resend = await call("2");
 	assert.doesNotMatch(resend?.reason ?? "", /GitHub style/);
 	assert.equal(probed(), true, "the resend went on to the hooks");
+});
+
+test("/dev-team offers usage in its completions and description", async () => {
+	const { commands } = await loaded;
+	const devTeam = commands["dev-team"];
+	assert.deepEqual(devTeam.getArgumentCompletions?.("u"), [{ value: "usage", label: "usage" }]);
+	assert.ok(devTeam.getArgumentCompletions?.("").some((c) => c.value === "usage"));
+	assert.ok(devTeam.description?.includes("usage"));
+});
+
+test("/dev-team usage <unknown> reports the usage line instead of opening anything", async (t) => {
+	const { commands } = await loaded;
+	const printed: unknown[] = [];
+	t.mock.method(console, "log", (...args: unknown[]) => void printed.push(args.join(" ")));
+	await commands["dev-team"].handler("usage histroy", { hasUI: false });
+	assert.deepEqual(printed, ["Usage: /dev-team usage [session|month]"]);
 });

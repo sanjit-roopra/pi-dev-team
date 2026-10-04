@@ -2,10 +2,15 @@
  * What a session spent, one run at a time: the single walk over session entries that both the cost
  * meter (metrics.ts) and the GitHub Copilot AI credits status line (ai-credits.ts) read, so the two
  * classify entries the same way. Each reader chooses which threads it counts: the cost meter leaves
- * out "overhead" runs, the AI credits count them.
+ * out "overhead" runs (cache warming, compaction, branch summaries), the AI credits count them.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
+
+/** The model of a run whose entry does not name one. */
+export const UNKNOWN_MODEL = "unknown";
+/** The agent of a subagent run whose entry does not name one as text. */
+export const UNKNOWN_AGENT = "unknown";
 
 /** Token usage as session entries carry it: pi's Usage (cost.total) or our UsageTotals (cost as a number). */
 export interface PiUsage {
@@ -20,12 +25,12 @@ export interface SpendRun {
 	/**
 	 * "main": one of the session's own assistant turns. "subagent": a dispatched agent's own turns, or
 	 * an agent it dispatched itself. "overhead": spend pi records outside any turn, such as cache
-	 * warming.
+	 * warming, compaction and branch summaries.
 	 */
 	thread: "main" | "subagent" | "overhead";
-	/** "main", the dispatched agent's name, or the usage entry's kind (e.g. "cache_warm"). */
+	/** "main", the dispatched agent's name, the usage entry's kind (e.g. "cache_warm"), "compaction" or "branch summary". */
 	agent: string;
-	/** "provider/model", or "unknown" when the entry does not name one. */
+	/** "provider/model", or UNKNOWN_MODEL when the entry does not name one. */
 	model: string;
 	usage: PiUsage;
 	/** Model messages the run covers. */
@@ -41,27 +46,67 @@ export function sessionEntries(ctx: ExtensionContext): readonly Record<string, u
 	return ctx.sessionManager.getEntries() as unknown as Record<string, unknown>[];
 }
 
-const modelId = (provider: unknown, model: unknown): string => (provider ? `${provider}/${model}` : String(model ?? "unknown"));
+/** "provider/model", the bare model when no provider is named, UNKNOWN_MODEL when no model is (session files are untyped JSON, so a name that is not text counts as none). */
+const qualifiedModelId = (provider: unknown, model: unknown): string => {
+	if (typeof model !== "string" || !model) return UNKNOWN_MODEL;
+	return typeof provider === "string" && provider ? `${provider}/${model}` : model;
+};
+
+/** The overhead name of each entry type that records summary usage. */
+const SUMMARY_AGENT: ReadonlyMap<string, string> = new Map([
+	["compaction", "compaction"],
+	["branch_summary", "branch summary"],
+]);
+
+/** The model a compaction or branch summary is booked to: updated as the walk passes switches and turns. */
+interface ModelInEffect {
+	model: string;
+}
+
+/** The runs one entry records spend for, updating `effect` when the entry puts another model in effect. */
+function entryRuns(entry: Record<string, unknown>, effect: ModelInEffect): SpendRun[] {
+	const type = String(entry.type);
+	const summaryAgent = SUMMARY_AGENT.get(type);
+	if (type === "model_change") {
+		effect.model = qualifiedModelId(entry.provider, entry.modelId);
+	} else if (type === "message") {
+		const msg = entry.message as { role?: string; usage?: PiUsage; model?: string; provider?: string } | undefined;
+		if (msg?.role !== "assistant") return [];
+		const model = qualifiedModelId(msg.provider, msg.model);
+		if (msg.model) effect.model = model;
+		if (msg.usage) return [{ thread: "main", agent: "main", model, usage: msg.usage, messages: 1 }];
+	} else if (type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
+		const usageEntry = entry.data as SubagentUsageEntry | undefined;
+		if (!usageEntry?.usage) return [];
+		// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
+		// Session files are untyped JSON: a non-string name must not reach code that treats it as one.
+		return creditedRuns(usageEntry).map((run) => ({
+			thread: "subagent",
+			agent: typeof run.agent === "string" && run.agent ? run.agent : UNKNOWN_AGENT,
+			model: qualifiedModelId(undefined, run.model),
+			usage: run.usage,
+			messages: run.usage.turns ?? 0,
+		}));
+	} else if (type === "usage" && entry.usage) {
+		return [{ thread: "overhead", agent: String(entry.kind ?? "usage"), model: qualifiedModelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 }];
+	} else if (summaryAgent && entry.usage) {
+		return [{ thread: "overhead", agent: summaryAgent, model: effect.model, usage: entry.usage as PiUsage, messages: 0 }];
+	}
+	return [];
+}
 
 /**
- * Every run the entries record spend for. Compaction and branch-summary usage is left out: those
- * entries do not say which provider served them.
+ * Every entry with the runs it records spend for (none for most entries), in one walk. Compaction and
+ * branch-summary entries carry usage but not the provider that served it; pi summarizes with the
+ * session's current model, so they are booked to the model in effect when they were written: the last
+ * model switch or assistant turn before them, UNKNOWN_MODEL when there is none.
  */
-export function* sessionSpend(entries: readonly Record<string, unknown>[]): Generator<SpendRun> {
-	for (const entry of entries) {
-		if (entry.type === "message") {
-			const msg = entry.message as { role?: string; usage?: PiUsage; model?: string; provider?: string } | undefined;
-			if (msg?.role !== "assistant" || !msg.usage) continue;
-			yield { thread: "main", agent: "main", model: modelId(msg.provider, msg.model), usage: msg.usage, messages: 1 };
-		} else if (entry.type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-			const d = entry.data as SubagentUsageEntry | undefined;
-			if (!d?.usage) continue;
-			// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
-			for (const run of creditedRuns(d)) {
-				yield { thread: "subagent", agent: run.agent, model: run.model ?? "unknown", usage: run.usage, messages: run.usage.turns ?? 0 };
-			}
-		} else if (entry.type === "usage" && entry.usage) {
-			yield { thread: "overhead", agent: String(entry.kind ?? "usage"), model: modelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 };
-		}
-	}
+export function* sessionSpendByEntry<E extends Record<string, unknown>>(entries: Iterable<E>): Generator<{ entry: E; runs: SpendRun[] }> {
+	const effect: ModelInEffect = { model: UNKNOWN_MODEL };
+	for (const entry of entries) yield { entry, runs: entryRuns(entry, effect) };
+}
+
+/** Every run the entries record spend for: sessionSpendByEntry() without the entries. */
+export function* sessionSpend(entries: Iterable<Record<string, unknown>>): Generator<SpendRun> {
+	for (const { runs } of sessionSpendByEntry(entries)) yield* runs;
 }

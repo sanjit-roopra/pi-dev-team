@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus, formatAiCredits, isCopilotModel, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
+import { aiCreditsStatus, copilotBillingPeriodStart, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
 import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // GitHub bills 1 AI credit per $0.01 of token cost (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
@@ -9,6 +9,7 @@ const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - 
 
 const usage = (cost: number): UsageTotals => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost, turns: 1 });
 const turn = (provider: string, total: number) => ({ type: "message", message: { role: "assistant", provider, model: "m", usage: { cost: { total } } } });
+const compaction = (total: number) => ({ type: "compaction", summary: "s", usage: { cost: { total } } });
 function subagentEntry(model: string, cost: number, nested: NestedUsage[] = []) {
 	return { type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: { agent: "a", model, ok: true, durationMs: 0, usage: usage(cost), nested } };
 }
@@ -20,12 +21,14 @@ test("isCopilotModel: only the github-copilot provider", () => {
 	assert.equal(isCopilotModel(undefined), false);
 });
 
-test("runsAiCredits: Copilot runs at 100 credits per USD", () => {
-	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(0.25) }]), 0.25 * CREDITS_PER_USD);
+test("runAiCredits: a Copilot run at 100 credits per USD, any other run 0", () => {
+	close(runAiCredits({ model: "github-copilot/m", usage: usage(0.25) }), 0.25 * CREDITS_PER_USD);
+	close(runAiCredits({ model: "anthropic/m", usage: usage(3) }), 0);
+	close(runAiCredits({ usage: usage(1) }), 0);
 });
 
-test("runsAiCredits: other providers and runs without a model count 0", () => {
-	close(runsAiCredits([{ model: "anthropic/m", usage: usage(3) }, { usage: usage(1) }]), 0);
+test("runsAiCredits: sums the Copilot runs of a mixed list", () => {
+	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(0.25) }, { model: "anthropic/m", usage: usage(3) }, { model: "github-copilot/n", usage: usage(0.05) }]), 0.3 * CREDITS_PER_USD);
 });
 
 test("formatAiCredits: fewer decimals as the number grows", () => {
@@ -35,6 +38,13 @@ test("formatAiCredits: fewer decimals as the number grows", () => {
 	assert.equal(formatAiCredits(12.345), "12.3 AI credits");
 	assert.equal(formatAiCredits(1000), "1,000 AI credits");
 	assert.equal(formatAiCredits(1234.5), "1,235 AI credits");
+});
+
+test("formatCredits: the bare number, with the same digit tiers", () => {
+	assert.equal(formatCredits(1234.5), "1,235");
+	assert.equal(formatCredits(12.345), "12.3");
+	assert.equal(formatCredits(0.1234), "0.12");
+	assert.equal(formatAiCredits(1234.5), `${formatCredits(1234.5)} AI credits`);
 });
 
 test("formatAiCredits: the number of decimals follows the rounded value at the tier edges", () => {
@@ -83,4 +93,24 @@ test("aiCreditsStatus: shown from 0.005 credits, as 0.01", () => {
 
 test("aiCreditsStatus: hidden when no Copilot model ran", () => {
 	assert.equal(aiCreditsStatus([turn("anthropic", 1)]), undefined);
+});
+
+test("aiCreditsStatus: compaction usage reaches the status line", () => {
+	assert.equal(aiCreditsStatus([turn("github-copilot", 0.5), compaction(0.05)]), "GitHub Copilot: 55.0 AI credits");
+});
+
+test("aiCreditsStatus: a compaction on an unknown model counts no AI credits", () => {
+	assert.equal(aiCreditsStatus([compaction(5)]), undefined);
+});
+
+test("copilotBillingPeriodStart: the 1st of the month at 00:00 UTC", () => {
+	assert.equal(copilotBillingPeriodStart(new Date("2026-10-04T15:00:00Z")).toISOString(), "2026-10-01T00:00:00.000Z");
+});
+
+test("copilotBillingPeriodStart: the first day of a month does not reach back to the last one", () => {
+	assert.equal(copilotBillingPeriodStart(new Date("2026-11-01T00:30:00Z")).toISOString(), "2026-11-01T00:00:00.000Z");
+});
+
+test("copilotBillingPeriodStart: the last instant of a month still belongs to it", () => {
+	assert.equal(copilotBillingPeriodStart(new Date("2026-10-31T23:59:59.999Z")).toISOString(), "2026-10-01T00:00:00.000Z");
 });

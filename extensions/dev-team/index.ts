@@ -33,6 +33,8 @@ import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-ty
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { childTrustOf, shimTrustEnv } from "./lib/trust.ts";
+import { runUsage } from "./lib/usage-command.ts";
+import { loadSpendHistory } from "./lib/usage-history.ts";
 
 function packageRootDir(): string {
 	// extensions/dev-team/index.ts -> package root
@@ -197,11 +199,12 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("dev-team", {
-		description: "pi-dev-team: status | models | hooks | doctor",
+		description: "pi-dev-team: status | models | hooks | doctor | usage",
 		getArgumentCompletions: (prefix) =>
-			["status", "models", "hooks", "doctor"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
+			["status", "models", "hooks", "doctor", "usage"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
 		handler: async (args, ctx) => {
-			const sub = (args ?? "").trim().split(/\s+/)[0] || "status";
+			const [sub = "status", ...rest] = (args ?? "").trim().split(/\s+/).filter(Boolean);
+			if (sub === "usage") return runUsage(ctx, rest.join(" "), { now: () => new Date(), loadHistory: loadSpendHistory, emit: (text) => report(ctx, text) });
 			if (sub === "models") return configureModels(ctx);
 			if (sub === "hooks") return showHooks(ctx);
 			if (sub === "doctor") return doctor(ctx);
