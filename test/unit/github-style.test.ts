@@ -164,9 +164,15 @@ test("lintGhText: a code block between two lists keeps them apart", () => {
 	assert.deepEqual(lintGhText({ kind: "pr", body: `${nearCap}\n<details>x</details>\n${nearCap}` }), []);
 });
 
-test("lintGhText: a code block indented inside list items keeps the list whole", () => {
-	const items = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `${i + 1}. Run:\n   \`\`\`\n   npm test\n   \`\`\``).join("\n");
+test("lintGhText: a code block indented inside list items keeps the list whole, blank lines included", () => {
+	const items = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `${i + 1}. Run:\n   \`\`\`\n   npm test\n\n   npm run lint\n   \`\`\``).join("\n");
 	assert.ok(has(lintGhText({ kind: "pr", body: items }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)));
+});
+
+test("lintGhText reads CRLF bodies like LF bodies", () => {
+	const nearCap = listOf(MAX_LIST_ITEMS - 1);
+	const crlf = `${nearCap}\n<!-- section -->\n${nearCap}`.replace(/\n/g, "\r\n");
+	assert.deepEqual(lintGhText({ kind: "pr", body: crlf }), []);
 });
 
 test("lintGhText: an inline comment is not a block break", () => {

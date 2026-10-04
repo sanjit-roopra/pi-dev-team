@@ -115,15 +115,17 @@ export function visibleText(body: string): string {
 /** visibleText, with a BLOCK_BREAK line where each block was removed. */
 function visibleWithBreaks(body: string): string {
 	const lines: string[] = [];
-	let fence: string | undefined;
-	for (const line of removeSpans(removeSpans(body, "<!--", "-->"), "<details", "</details>").split("\n")) {
+	// Every line of a fenced block takes the opening fence's indentation, blank lines included.
+	let fence: { marker: string; indent: string } | undefined;
+	const lf = body.replace(/\r\n?/g, "\n");
+	for (const line of removeSpans(removeSpans(lf, "<!--", "-->"), "<details", "</details>").split("\n")) {
 		const marker = FENCE.exec(line)?.[1];
 		if (fence) {
-			if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = undefined;
-			lines.push(indentOf(line) + BLOCK_BREAK);
+			lines.push(fence.indent + BLOCK_BREAK);
+			if (marker && marker[0] === fence.marker[0] && marker.length >= fence.marker.length) fence = undefined;
 		} else if (marker) {
-			fence = marker;
-			lines.push(indentOf(line) + BLOCK_BREAK);
+			fence = { marker, indent: indentOf(line) };
+			lines.push(fence.indent + BLOCK_BREAK);
 		} else lines.push(TABLE_ROW.test(line) ? indentOf(line) + BLOCK_BREAK : line);
 	}
 	return lines
