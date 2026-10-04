@@ -41,6 +41,8 @@ export interface DevTeamConfig {
 	hooks: HookConfig;
 	/** Run hooks/post_format.py after write/edit (what /setup's formatter hook did). */
 	autoFormat: boolean;
+	/** Pull request and issue text that breaks the GitHub style rules: stop the gh call once ("block"), only note it ("warn"), or skip the check ("off"). */
+	githubStyle: "block" | "warn" | "off";
 	/** How dev-team skills are advertised in the system prompt. */
 	skillIndex: "compact" | "full" | "off";
 	/** Max description characters per skill in the compact index. */
@@ -84,6 +86,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	subagentTimeoutSec: 3600,
 	hooks: { enabled: true, disabled: DEFAULT_DISABLED_HOOKS, enable: [], outputToModel: true, timeoutSec: 60 },
 	autoFormat: false,
+	githubStyle: "block",
 	skillIndex: "compact",
 	skillIndexChars: 220,
 	claudeShim: true,
