@@ -81,32 +81,61 @@ test("result without details falls back to the text content", () => {
 });
 
 test("formatUsage: turns, tokens in k, cache, cost, duration and model", () => {
-	assert.equal(formatUsage(usage, "p/m", 1500), "2 turns ↑1.2k ↓80 $0.0012 1.5s p/m");
+	assert.equal(formatUsage(usage, { model: "p/m", durationMs: 1500 }), "2 turns ↑1.2k ↓80 $0.0012 1.5s p/m");
 	assert.equal(formatUsage({ input: 25_000, output: 999, cacheRead: 12_000, cacheWrite: 1, cost: 0, turns: 1 }), "1 turn ↑25k ↓999 R12k W1");
 	assert.equal(formatUsage(undefined), "");
 });
 
-test("formatUsage: GitHub Copilot models also show the cost in AI credits", () => {
-	assert.equal(formatUsage(usage, "github-copilot/claude-opus-5.5"), "2 turns ↑1.2k ↓80 $0.0012 (0.12 AI credits) github-copilot/claude-opus-5.5");
-	assert.equal(formatUsage(usage, "anthropic/claude-opus-5-5"), "2 turns ↑1.2k ↓80 $0.0012 anthropic/claude-opus-5-5");
-	assert.equal(formatUsage({ ...usage, cost: 1 }, undefined, undefined, 25), "2 turns ↑1.2k ↓80 $1.0000 (25.0 AI credits)", "a mixed total names only the Copilot share");
+test("formatUsage: AI credits follow the cost when given", () => {
+	assert.equal(formatUsage(usage, { aiCredits: 0.12 }), "2 turns ↑1.2k ↓80 $0.0012 (0.12 AI credits)");
 });
 
-test("parallel total: AI credits count only the runs served by Copilot", () => {
-	const out = draw(
-		renderSubagentResult(
-			result({
-				mode: "parallel",
-				results: [
-					taskView({ agent: "a", model: "github-copilot/gpt-5-mini", usage: { ...usage, cost: 0.02 } }),
-					taskView({ agent: "b", model: "anthropic/claude-haiku-4-5", usage: { ...usage, cost: 1 } }),
-				],
-			} as SubagentDetails),
-			{ expanded: false, isPartial: false } as never,
-			theme,
-		),
-	);
-	assert.match(out, /Total: .*\$1\.0200 \(2\.00 AI credits\)/);
+test("formatUsage: no AI credits segment at 0", () => {
+	assert.equal(formatUsage(usage, { model: "github-copilot/x", aiCredits: 0 }), "2 turns ↑1.2k ↓80 $0.0012 github-copilot/x");
+});
+
+// $0.0012 at 1 AI credit per $0.01 (GitHub's models-and-pricing page).
+const COPILOT_USAGE_LINE = "$0.0012 (0.12 AI credits)";
+const COPILOT = "github-copilot/claude-opus-5.5";
+
+test("one agent on a Copilot model: AI credits on its usage line, collapsed and expanded", () => {
+	const details = { results: [taskView({ model: COPILOT, usage })] };
+	for (const expanded of [false, true]) {
+		const out = draw(renderSubagentResult(result(details), { expanded, isPartial: false }, theme));
+		assert.ok(out.includes(`${COPILOT_USAGE_LINE} ${COPILOT}`), `expanded=${expanded}`);
+	}
+});
+
+test("one agent on another provider: no AI credits", () => {
+	const out = draw(renderSubagentResult(result({ results: [taskView({ model: "anthropic/claude-opus-5-5", usage })] }), { expanded: false, isPartial: false }, theme));
+	assert.doesNotMatch(out, /AI credits/);
+});
+
+test("parallel total: AI credits count only the Copilot runs, nested ones included", () => {
+	const copilotUsd = 0.02;
+	const nestedCopilotUsd = 0.01;
+	const otherUsd = 1;
+	const details = {
+		results: [
+			taskView({ agent: "a", model: "github-copilot/gpt-5-mini", usage: { ...usage, cost: copilotUsd } }),
+			taskView({
+				agent: "b",
+				model: "anthropic/claude-haiku-4-5",
+				usage: { ...usage, cost: otherUsd },
+				nested: [{ agent: "Explore", model: "github-copilot/gpt-5-mini", usage: { ...usage, cost: nestedCopilotUsd } }],
+			}),
+		],
+	};
+	const credits = ((copilotUsd + nestedCopilotUsd) * 100).toFixed(2);
+	for (const expanded of [false, true]) {
+		const out = draw(renderSubagentResult(result(details), { expanded, isPartial: false }, theme));
+		assert.ok(out.includes(`Total: 6 turns ↑3.6k ↓240 $1.0300 (${credits} AI credits)`), `expanded=${expanded}`);
+	}
+});
+
+test("parallel total without Copilot runs: no AI credits", () => {
+	const details = { results: [taskView({ usage }), taskView({ agent: "b", usage })] };
+	assert.doesNotMatch(draw(renderSubagentResult(result(details), { expanded: false, isPartial: false }, theme)), /AI credits/);
 });
 
 // Escape and control characters that must never reach the terminal (BEL, ESC, other C0, C1, CR).

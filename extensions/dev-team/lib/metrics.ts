@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
+import { costUsd, type PiUsage, sessionEntries, sessionSpend } from "./session-spend.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
@@ -47,20 +47,12 @@ const newBucket = (): Bucket => ({
 	messages: 0,
 });
 
-interface PiUsage {
-	input?: number;
-	output?: number;
-	cacheRead?: number;
-	cacheWrite?: number;
-	cost?: { total?: number } | number;
-}
-
 function add(bucket: Bucket, u: PiUsage, messages: number): void {
 	bucket.input_tokens += u.input ?? 0;
 	bucket.output_tokens += u.output ?? 0;
 	bucket.cache_read_input_tokens += u.cacheRead ?? 0;
 	bucket.cache_creation_input_tokens += u.cacheWrite ?? 0;
-	bucket.cost_usd += typeof u.cost === "number" ? u.cost : (u.cost?.total ?? 0);
+	bucket.cost_usd += costUsd(u);
 	bucket.messages += messages;
 }
 
@@ -84,29 +76,14 @@ export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | u
 		add(map[key], u, n);
 	};
 	let any = false;
-	for (const entry of ctx.sessionManager.getEntries() as unknown as Record<string, unknown>[]) {
-		if (entry.type === "message") {
-			const msg = entry.message as { role?: string; usage?: PiUsage; model?: string; provider?: string } | undefined;
-			if (msg?.role !== "assistant" || !msg.usage) continue;
-			const model = msg.provider ? `${msg.provider}/${msg.model}` : String(msg.model ?? "unknown");
-			add(total, msg.usage, 1);
-			bump(byModel, model, msg.usage, 1);
-			bump(byThread, "main", msg.usage, 1);
-			bump(byAgent, "main", msg.usage, 1);
-			any = true;
-		} else if (entry.type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-			const d = entry.data as SubagentUsageEntry | undefined;
-			if (!d?.usage) continue;
-			// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
-			for (const run of creditedRuns(d)) {
-				const n = run.usage.turns ?? 0;
-				add(total, run.usage, n);
-				bump(byModel, run.model ?? "unknown", run.usage, n);
-				bump(byThread, "subagent", run.usage, n);
-				bump(byAgent, `dev-team:${run.agent}`, run.usage, n);
-			}
-			any = true;
-		}
+	for (const run of sessionSpend(sessionEntries(ctx))) {
+		// Rows keep upstream's shape: model turns only, so pi's other usage entries (cache warming) stay out.
+		if (run.thread === "usage") continue;
+		add(total, run.usage, run.messages);
+		bump(byModel, run.model, run.usage, run.messages);
+		bump(byThread, run.thread, run.usage, run.messages);
+		bump(byAgent, run.thread === "main" ? "main" : `dev-team:${run.agent}`, run.usage, run.messages);
+		any = true;
 	}
 	if (!any) return undefined;
 	const file = ctx.sessionManager.getSessionFile();

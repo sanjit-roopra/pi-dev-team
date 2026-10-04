@@ -3,11 +3,12 @@
  *
  * Copilot prices models per token and converts the total at 1 AI credit = $0.01 USD
  * (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing). pi's catalog prices the
- * `github-copilot` provider at those same per-token rates, so a Copilot message's credits are its
- * usage.cost.total x 100. It is an estimate: GitHub documents no per-request rounding, and plan
- * allowances are not visible from a session.
+ * `github-copilot` provider at those same per-token rates (checked against pi-ai's catalog for 11
+ * models, long-context tiers included, in October 2026), so a Copilot run's credits are its USD cost
+ * x 100. It is an estimate: GitHub documents no per-request rounding, and plan allowances are not
+ * visible from a session.
  */
-import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
+import { costUsd, type PiUsage, sessionSpend } from "./session-spend.ts";
 
 export const COPILOT_PROVIDER = "github-copilot";
 const CREDITS_PER_USD = 100;
@@ -17,33 +18,37 @@ export function isCopilotModel(model: string | undefined): boolean {
 	return !!model && model.startsWith(`${COPILOT_PROVIDER}/`);
 }
 
-export function usdToAiCredits(usd: number): number {
-	return usd * CREDITS_PER_USD;
+/** The AI credits of the runs served by Copilot; every other run counts 0. */
+export function runsAiCredits(runs: Iterable<{ model?: string; usage: PiUsage }>): number {
+	const copilotUsd = Array.from(runs)
+		.filter((run) => isCopilotModel(run.model))
+		.reduce((usd, run) => usd + costUsd(run.usage), 0);
+	return copilotUsd * CREDITS_PER_USD;
+}
+
+/** Decimal places for a credits value: 2 below 10, 1 below 1000, else 0, judged after rounding. */
+function creditDigits(credits: number): number {
+	if (Number(credits.toFixed(2)) < 10) return 2;
+	return Number(credits.toFixed(1)) < 1000 ? 1 : 0;
 }
 
 /** "0.12 AI credits", "12.3 AI credits", "1,234 AI credits": fewer decimals as the number grows. */
 export function formatAiCredits(credits: number): string {
-	const digits = credits < 10 ? 2 : credits < 1000 ? 1 : 0;
+	const digits = creditDigits(credits);
 	return `${credits.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })} AI credits`;
 }
 
 /**
- * Copilot AI credits the whole session spent (every branch, like pi's footer): the main thread's
- * Copilot turns plus every dispatched agent, nested ones included, that ran on a Copilot model.
- * Subagents are read from their usage entries, since a tool result's usage does not say which
- * provider served it.
+ * The session's Copilot AI credits (every branch, like pi's footer): the main thread's turns, every
+ * dispatched agent (nested ones included) and pi's other usage entries such as cache warming, each
+ * counted when a Copilot model served it.
  */
 export function sessionAiCredits(entries: readonly Record<string, unknown>[]): number {
-	let usd = 0;
-	for (const entry of entries) {
-		if (entry.type === "message") {
-			const msg = entry.message as { role?: string; provider?: string; usage?: { cost?: { total?: number } } } | undefined;
-			if (msg?.role === "assistant" && msg.provider === COPILOT_PROVIDER) usd += msg.usage?.cost?.total ?? 0;
-		} else if (entry.type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-			const d = entry.data as SubagentUsageEntry | undefined;
-			if (!d?.usage) continue;
-			for (const run of creditedRuns(d)) if (isCopilotModel(run.model)) usd += run.usage.cost;
-		}
-	}
-	return usdToAiCredits(usd);
+	return runsAiCredits(sessionSpend(entries));
+}
+
+/** The status line text, or undefined (hidden) while the session's credits round to 0.00. */
+export function aiCreditsStatus(entries: readonly Record<string, unknown>[]): string | undefined {
+	const credits = sessionAiCredits(entries);
+	return Number(credits.toFixed(2)) > 0 ? `GitHub Copilot: ${formatAiCredits(credits)}` : undefined;
 }

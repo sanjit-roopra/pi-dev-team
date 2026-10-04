@@ -31,3 +31,15 @@ test("cost row: entries written before nested crediting still count", () => {
 	assert.equal(row.total.input_tokens, 15);
 	assert.ok(row.by_agent_type["dev-team:a"]);
 });
+
+test("cost row: pi's own usage entries (cache warming) stay out of the upstream row shape", () => {
+	const entries = [
+		{ type: "message", message: { role: "assistant", provider: "p", model: "main", usage: { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, cost: { total: 0.1 } } } },
+		{ type: "usage", kind: "cache_warm", provider: "p", model: "main", usage: { input: 500, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 5 } } },
+	];
+	const ctx = { sessionManager: { getEntries: () => entries, getSessionId: () => "s1", getSessionFile: () => "/x/s1.jsonl" } } as never;
+	const row = buildCostRow(ctx) as { total: { input_tokens: number; cost_usd: number }; by_thread: Record<string, unknown> };
+	assert.equal(row.total.input_tokens, 10);
+	assert.equal(row.total.cost_usd, 0.1);
+	assert.deepEqual(Object.keys(row.by_thread), ["main"]);
+});

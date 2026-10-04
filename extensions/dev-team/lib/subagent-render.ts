@@ -9,7 +9,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getMarkdownTheme, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { formatAiCredits, isCopilotModel, usdToAiCredits } from "./ai-credits.ts";
+import { formatAiCredits, runsAiCredits } from "./ai-credits.ts";
 import {
 	creditedRuns,
 	type DispatchArgs,
@@ -49,16 +49,15 @@ function formatTokens(n: number): string {
 	return `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1)}k`;
 }
 
-/**
- * One usage line. `aiCredits` is the GitHub Copilot share of the cost; by default the whole cost when
- * `model` is a Copilot model, none otherwise.
- */
-export function formatUsage(
-	u: UsageTotals | undefined,
-	model?: string,
-	durationMs?: number,
-	aiCredits = isCopilotModel(model) ? usdToAiCredits(u?.cost ?? 0) : 0,
-): string {
+export interface UsageLineOptions {
+	model?: string;
+	durationMs?: number;
+	/** The GitHub Copilot AI credits within `u.cost`, shown after it when not 0. */
+	aiCredits?: number;
+}
+
+/** One usage line: turns, tokens, cost (with its AI credits), duration and model. */
+export function formatUsage(u: UsageTotals | undefined, { model, durationMs, aiCredits = 0 }: UsageLineOptions = {}): string {
 	if (!u) return "";
 	const parts = [`${u.turns} turn${u.turns === 1 ? "" : "s"}`, `↑${formatTokens(u.input)}`, `↓${formatTokens(u.output)}`];
 	if (u.cacheRead) parts.push(`R${formatTokens(u.cacheRead)}`);
@@ -68,6 +67,12 @@ export function formatUsage(
 	if (durationMs !== undefined) parts.push(`${(durationMs / 1000).toFixed(1)}s`);
 	if (model) parts.push(sanitizeTerminalText(model));
 	return parts.join(" ");
+}
+
+/** One agent's own usage line (what it dispatched itself is in the parallel total). */
+function agentUsageLine(v: SubagentTaskView): string {
+	const aiCredits = v.usage ? runsAiCredits([{ model: v.model, usage: v.usage }]) : 0;
+	return formatUsage(v.usage, { model: v.model, durationMs: v.durationMs, aiCredits });
 }
 
 function addTotals(t: UsageTotals, u: UsageTotals): UsageTotals {
@@ -85,12 +90,6 @@ function addTotals(t: UsageTotals, u: UsageTotals): UsageTotals {
 function sumUsageTotals(views: SubagentTaskView[]): UsageTotals {
 	const usages = views.flatMap((v) => creditedRuns(v).map((run) => run.usage));
 	return usages.reduce(addTotals, { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 });
-}
-
-/** The Copilot AI credits within that total: only the runs, nested included, served by Copilot. */
-function sumAiCredits(views: SubagentTaskView[]): number {
-	const runs = views.flatMap((v) => creditedRuns(v)).filter((run) => isCopilotModel(run.model));
-	return usdToAiCredits(runs.reduce((usd, run) => usd + run.usage.cost, 0));
 }
 
 function statusIcon(v: SubagentTaskView, theme: Theme): string {
@@ -154,7 +153,7 @@ function renderCollapsed(v: SubagentTaskView, theme: Theme): string {
 	} else lines.push(theme.fg("muted", "(no output)"));
 	const wt = worktreeLine(v, theme);
 	if (wt) lines.push(wt);
-	const usage = formatUsage(v.usage, v.model, v.durationMs);
+	const usage = agentUsageLine(v);
 	if (usage) lines.push(theme.fg("dim", usage));
 	return lines.join("\n");
 }
@@ -172,7 +171,7 @@ function renderExpandedInto(container: Container, v: SubagentTaskView, theme: Th
 	}
 	const wt = worktreeLine(v, theme);
 	if (wt) container.addChild(new Text(wt, 0, 0));
-	const usage = formatUsage(v.usage, v.model, v.durationMs);
+	const usage = agentUsageLine(v);
 	if (usage) container.addChild(new Text(theme.fg("dim", usage), 0, 0));
 }
 
@@ -230,7 +229,7 @@ export function renderSubagentResult(
 	const summaryLine = runningCount
 		? `${theme.fg("warning", "⏳")} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", `${views.length - runningCount}/${views.length} done, ${runningCount} running`)}`
 		: `${failedCount ? theme.fg("warning", "◐") : theme.fg("success", "✓")} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", `${views.length - failedCount}/${views.length} succeeded`)}`;
-	const totalUsageText = runningCount ? "" : formatUsage(sumUsageTotals(views), undefined, undefined, sumAiCredits(views));
+	const totalUsageText = runningCount ? "" : formatUsage(sumUsageTotals(views), { aiCredits: runsAiCredits(views.flatMap((v) => creditedRuns(v))) });
 
 	if (expanded && !runningCount) {
 		const c = new Container();

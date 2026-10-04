@@ -92,7 +92,7 @@ To limit the work, set these values in `~/.pi/agent/dev-team.json`:
 
 To see what the team spends, run `/telemetry on`. Then run `/cost-report`. The numbers come from pi, so they are correct for every provider.
 
-pi's footer shows the cost of the whole session in USD, including the agents. If you use GitHub Copilot models, the status line also shows `GitHub Copilot: N AI credits` for the session, and the agent view shows the AI credits of each agent next to its USD cost. GitHub bills 1 AI credit for each $0.01 of token cost ([models and pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)). The number is an estimate: it does not include your plan's monthly allowance.
+pi's footer shows the cost of the whole session in USD, including the agents. If you use GitHub Copilot models, the status line also shows `GitHub Copilot: N AI credits` for the session, and the agent view shows the AI credits of each agent next to its USD cost. GitHub bills 1 AI credit for each $0.01 of token cost ([models and pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)). The number is an estimate: it does not include your plan's monthly allowance, and it leaves out the usage of context compaction and branch summaries, because pi does not record which provider ran them.
 
 ## Configuration
 
