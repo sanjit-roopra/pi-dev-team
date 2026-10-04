@@ -595,9 +595,9 @@ Round 1 verdicts: Parallelization approve; Strategic, UX, Acceptance, Design nee
 - [x] Slice 2: Bar chart rendering (pure, width-safe)
   - [x] Step 2.1: Ranked horizontal bars
   - [x] Step 2.2: Stacked thread split bar
-- [ ] Slice 3: This-month loader across saved sessions
-  - [ ] Step 3.1: Walk, month-filter and read session files
-  - [ ] Step 3.2: De-duplicate shared entries and support abort
+- [x] Slice 3: This-month loader across saved sessions
+  - [x] Step 3.1: Walk, month-filter and read session files
+  - [x] Step 3.2: De-duplicate shared entries and support abort
 
 #### Wave 2
 - [ ] Slice 4: `/dev-team usage` overlay, text fallback and wiring
