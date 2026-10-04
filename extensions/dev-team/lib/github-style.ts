@@ -114,28 +114,41 @@ export function visibleText(body: string): string {
 
 /** visibleText, with a BLOCK_BREAK line where each block was removed. */
 function visibleWithBreaks(body: string): string {
-	const lines: string[] = [];
-	// Every line of a fenced block takes the opening fence's indentation, blank lines included.
-	let fence: { marker: string; indent: string } | undefined;
-	const lf = body.replace(/\r\n?/g, "\n");
-	for (const line of removeSpans(removeSpans(lf, "<!--", "-->"), "<details", "</details>").split("\n")) {
-		const marker = FENCE.exec(line)?.[1];
-		if (fence) {
-			lines.push(fence.indent + BLOCK_BREAK);
-			if (marker && marker[0] === fence.marker[0] && marker.length >= fence.marker.length) fence = undefined;
-		} else if (marker) {
-			fence = { marker, indent: indentOf(line) };
-			lines.push(fence.indent + BLOCK_BREAK);
-		} else lines.push(TABLE_ROW.test(line) ? indentOf(line) + BLOCK_BREAK : line);
-	}
-	return lines
+	// Code goes first, so a `<details>` or `<!--` quoted in code is not taken for HTML.
+	const withoutCode = removeFencedCode(body.replace(/\r\n?/g, "\n")).replace(/`[^`\n]*`/g, "");
+	return removeSpans(removeSpans(withoutCode, "<!--", "-->"), "<details", "</details>")
+		.split("\n")
+		.map((line) => (TABLE_ROW.test(line) ? indentOf(line) + BLOCK_BREAK : line))
 		.join("\n")
-		.replace(/`[^`\n]*`/g, "")
 		.replace(/https?:\/\/\S+/g, "");
+}
+
+/** Each line of a fenced block becomes a block break with the opening fence's indentation, blank lines included. */
+function removeFencedCode(text: string): string {
+	let fence: { marker: string; indent: string } | undefined;
+	return text
+		.split("\n")
+		.map((line) => {
+			const marker = FENCE.exec(line)?.[1];
+			if (fence) {
+				const indent = fence.indent;
+				if (marker && marker[0] === fence.marker[0] && marker.length >= fence.marker.length) fence = undefined;
+				return indent + BLOCK_BREAK;
+			}
+			if (!marker) return line;
+			fence = { marker, indent: indentOf(line) };
+			return fence.indent + BLOCK_BREAK;
+		})
+		.join("\n");
 }
 
 function indentOf(line: string): string {
 	return /^[ \t]*/.exec(line)?.[0] ?? "";
+}
+
+/** Indentation width in columns, a tab counting as TAB_WIDTH. */
+function indentWidth(indent: string): number {
+	return indent.replace(/\t/g, " ".repeat(TAB_WIDTH)).length;
 }
 
 function splitWords(text: string): string[] {
@@ -175,13 +188,13 @@ function longestListRun(visible: string): number {
 	for (const line of visible.split("\n")) {
 		const item = LIST_MARKER.exec(line);
 		if (item) {
-			const indent = item[1].replace(/\t/g, " ".repeat(TAB_WIDTH)).length;
+			const indent = indentWidth(item[1]);
 			while (open.length && open[open.length - 1].indent > indent) open.pop();
 			const top = open[open.length - 1];
 			if (top?.indent === indent) top.items++;
 			else open.push({ indent, items: 1 });
 			longest = Math.max(longest, open[open.length - 1].items);
-		} else if (line.trim() && !/^[ \t]{2,}\S/.test(line)) open.length = 0;
+		} else if (line.trim() && indentWidth(indentOf(line)) < 2) open.length = 0;
 	}
 	return longest;
 }

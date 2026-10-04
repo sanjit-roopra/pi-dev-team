@@ -169,6 +169,18 @@ test("lintGhText: a code block indented inside list items keeps the list whole, 
 	assert.ok(has(lintGhText({ kind: "pr", body: items }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)));
 });
 
+test("lintGhText: a <details> or <!-- quoted in code is text, not HTML", () => {
+	const items = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `- item ${i}`).join("\n");
+	for (const quoted of ["Use a `<details>` block.", "Use a `<!--` comment.", "```\n<details>\n```"]) {
+		assert.ok(has(lintGhText({ kind: "pr", body: `${quoted}\n${items}` }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)), quoted);
+	}
+});
+
+test("lintGhText: a tab-indented block inside list items keeps the list whole", () => {
+	const items = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => `- item ${i}\n\t\`\`\`\n\tx\n\t\`\`\`\n\tmore text`).join("\n");
+	assert.ok(has(lintGhText({ kind: "pr", body: items }), new RegExp(`A list has ${MAX_LIST_ITEMS + 1} items`)));
+});
+
 test("lintGhText reads CRLF bodies like LF bodies", () => {
 	const nearCap = listOf(MAX_LIST_ITEMS - 1);
 	const crlf = `${nearCap}\n<!-- section -->\n${nearCap}`.replace(/\n/g, "\r\n");
