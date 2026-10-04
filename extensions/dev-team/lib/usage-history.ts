@@ -1,23 +1,25 @@
 /**
- * What GitHub Copilot cost this calendar month, read from every saved pi session file: the
- * "This month" scope of /dev-team usage. Reads are stat-first and async so a large session history
- * does not stall the TUI. Spend is classified by sessionSpend() (session-spend.ts), the same walk
- * the status line uses, so both views agree on what a run is.
+ * Timestamped runs of spend loaded from every saved pi session file, for the "This month" scope of
+ * /dev-team usage. All providers are loaded; narrowing to GitHub Copilot is usage-breakdown's job.
+ * Reads are stat-first and async so a large session history does not stall the TUI. Spend is
+ * classified by sessionSpendByEntry() (session-spend.ts), the same walk the status line uses, so both
+ * views agree on what a run is.
  */
-import type { Dirent } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { createReadStream, type Dirent } from "node:fs";
+import { readdir, stat } from "node:fs/promises";
 import * as path from "node:path";
-import { sessionSpend, type SpendRun } from "./session-spend.ts";
+import { createInterface } from "node:readline";
+import { sessionSpendByEntry, type SpendRun } from "./session-spend.ts";
 
 /** One run of spend, with when its session entry was written (the entry's ISO 8601 `timestamp`, as stored). */
-export interface UsageRecord {
+export interface SpendRecord {
 	timestamp: string;
 	run: SpendRun;
 }
 
-export interface UsageHistory {
-	records: UsageRecord[];
-	/** Session files that could not be read. Files skipped for being too old are not counted. */
+export interface SpendHistory {
+	records: SpendRecord[];
+	/** Session files that could not be read. Files skipped for being too old, or gone before they were read, are not counted. */
 	skipped: number;
 	/** True when the load was cancelled; `records` then hold only what was read before that. */
 	aborted: boolean;
@@ -34,26 +36,16 @@ export function sessionRoot(sessionDir: string): string {
 	return PROJECT_DIR.test(path.basename(sessionDir)) ? path.dirname(sessionDir) : sessionDir;
 }
 
-/**
- * The first instant of the calendar month `now` falls in, in UTC. GitHub resets Copilot's monthly
- * allowance on the 1st at 00:00:00 UTC:
- * https://docs.github.com/en/copilot/concepts/billing/copilot-requests ("Premium request counters
- * reset on the 1st of each month at 00:00:00 UTC", checked 2026-10-04). Local time would put the
- * boundary hours off for anyone not on UTC.
- */
-export function monthStart(now: Date): Date {
-	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-}
-
-const SESSION_FILE = ".jsonl";
+const SESSION_FILE_EXTENSION = ".jsonl";
 
 const isNotFound = (err: unknown): boolean => (err as { code?: string } | undefined)?.code === "ENOENT";
 
-const byName = (entries: readonly Dirent[]): Dirent[] => [...entries].sort((a, b) => a.name.localeCompare(b.name));
+/** By code unit, so the order that decides which copy of a shared entry wins is the same on every machine and locale. */
+const sortedByName = (dirents: readonly Dirent[]): Dirent[] => [...dirents].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
-/** The session files among a folder's entries, in name order. */
-const sessionFilesIn = (dir: string, entries: readonly Dirent[]): string[] =>
-	byName(entries).filter((entry) => entry.isFile() && entry.name.endsWith(SESSION_FILE)).map((entry) => path.join(dir, entry.name));
+/** The session files among a folder's dirents, in name order. */
+const sessionFilesIn = (dir: string, dirents: readonly Dirent[]): string[] =>
+	sortedByName(dirents).filter((dirent) => dirent.isFile() && dirent.name.endsWith(SESSION_FILE_EXTENSION)).map((dirent) => path.join(dir, dirent.name));
 
 /**
  * Session files directly under the root (`<root>/*.jsonl`, a flat custom session dir) or one folder
@@ -65,15 +57,15 @@ const sessionFilesIn = (dir: string, entries: readonly Dirent[]): string[] =>
 async function listSessionFiles(root: string): Promise<{ files: string[]; unlistable: number }> {
 	const files: string[] = [];
 	let unlistable = 0;
-	let top;
+	let rootDirents;
 	try {
-		top = await readdir(root, { withFileTypes: true });
+		rootDirents = await readdir(root, { withFileTypes: true });
 	} catch (err) {
 		if (isNotFound(err)) return { files, unlistable };
 		throw err;
 	}
-	files.push(...sessionFilesIn(root, top));
-	for (const folder of byName(top).filter((entry) => entry.isDirectory())) {
+	files.push(...sessionFilesIn(root, rootDirents));
+	for (const folder of sortedByName(rootDirents).filter((dirent) => dirent.isDirectory())) {
 		const dir = path.join(root, folder.name);
 		try {
 			files.push(...sessionFilesIn(dir, await readdir(dir, { withFileTypes: true })));
@@ -84,33 +76,43 @@ async function listSessionFiles(root: string): Promise<{ files: string[]; unlist
 	return { files, unlistable };
 }
 
-/** The JSON objects among a file's lines; a truncated last line or any other non-JSON line is ignored. */
-function parseEntries(text: string): Record<string, unknown>[] {
-	const entries: Record<string, unknown>[] = [];
-	for (const line of text.split("\n")) {
-		if (!line.trim()) continue;
-		try {
-			const value: unknown = JSON.parse(line);
-			if (value && typeof value === "object" && !Array.isArray(value)) entries.push(value as Record<string, unknown>);
-		} catch {
-			// not an entry
-		}
+/**
+ * A line's JSON object, or undefined for a blank line, a truncated last line or any other line that is
+ * not an entry. pi's own parseSessionEntries is not used: pi exports it for its tests only, and it keeps
+ * any parsed value, where a line that is not an object (`null`, `[1]`, `7`) cannot be an entry and is
+ * dropped here.
+ */
+function parseEntry(line: string): Record<string, unknown> | undefined {
+	if (!line.trim()) return undefined;
+	try {
+		const value: unknown = JSON.parse(line);
+		return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+	} catch {
+		return undefined;
 	}
-	return entries;
 }
 
 /**
- * Each entry with the runs it spent. The whole file goes through sessionSpend() in order, because a
- * compaction is booked to the model an earlier entry put in effect; entries are then matched to their
- * runs by count, which does not depend on that tracking: an entry yields the same runs on its own.
+ * A file's entries, read line by line so the file's text is never held whole; only the parsed entries
+ * are, since a compaction's model depends on entries before it. `signal` is checked between lines, and
+ * the stream is destroyed however the read ends. Undefined when aborted partway: the file is then
+ * unfinished and must add nothing. Throws when the file cannot be opened or read.
  */
-function* entrySpend(entries: readonly Record<string, unknown>[]): Generator<{ entry: Record<string, unknown>; runs: SpendRun[] }> {
-	const all = sessionSpend(entries);
-	for (const entry of entries) {
-		const runs: SpendRun[] = [];
-		for (let n = Array.from(sessionSpend([entry])).length; n > 0; n--) runs.push(all.next().value as SpendRun);
-		yield { entry, runs };
+async function readEntries(file: string, signal: AbortSignal | undefined): Promise<Record<string, unknown>[] | undefined> {
+	const entries: Record<string, unknown>[] = [];
+	const input = createReadStream(file, { encoding: "utf8" });
+	const lines = createInterface({ input, crlfDelay: Infinity });
+	try {
+		for await (const line of lines) {
+			if (signal?.aborted) return undefined;
+			const entry = parseEntry(line);
+			if (entry) entries.push(entry);
+		}
+	} finally {
+		lines.close();
+		input.destroy();
 	}
+	return entries;
 }
 
 /**
@@ -120,23 +122,27 @@ function* entrySpend(entries: readonly Record<string, unknown>[]): Generator<{ e
 const entryKey = (entry: Record<string, unknown>): string | undefined => (typeof entry.id === "string" ? `${entry.id}|${entry.timestamp}` : undefined);
 
 /**
- * One session file's runs of spend since `since`, leaving out entries whose key is in `seen`, and the
- * keys of the entries it kept. Throws when the file cannot be read or holds an entry sessionSpend()
- * cannot make sense of; nothing partial is returned, so a skipped file adds no records and claims no keys.
+ * One session file's runs of spend since `since`, leaving out entries whose key is in `seenKeys` (kept
+ * from earlier files) or that repeat an earlier entry of this file, and the keys of the entries it
+ * kept. Throws when the file cannot be read or holds an entry sessionSpendByEntry() cannot make sense
+ * of; nothing partial is returned, so a skipped file adds no records and claims no keys. Undefined
+ * when `signal` aborted the read partway.
  */
-async function readRecords(file: string, since: Date, seen: ReadonlySet<string>): Promise<{ records: UsageRecord[]; keys: string[] }> {
-	const records: UsageRecord[] = [];
-	const keys: string[] = [];
-	for (const { entry, runs } of entrySpend(parseEntries(await readFile(file, "utf8")))) {
+async function readRecords(file: string, since: Date, seenKeys: ReadonlySet<string>, signal: AbortSignal | undefined): Promise<{ records: SpendRecord[]; entryKeys: string[] } | undefined> {
+	const entries = await readEntries(file, signal);
+	if (!entries) return undefined;
+	const records: SpendRecord[] = [];
+	const entryKeys = new Set<string>();
+	for (const { entry, runs } of sessionSpendByEntry(entries)) {
 		const { timestamp } = entry;
 		// An entry with no usable time cannot be placed in the month, so it is left out.
 		if (typeof timestamp !== "string" || !(Date.parse(timestamp) >= since.getTime())) continue;
 		const key = entryKey(entry);
-		if (runs.length === 0 || (key !== undefined && seen.has(key))) continue;
-		if (key !== undefined) keys.push(key);
+		if (runs.length === 0 || (key !== undefined && (seenKeys.has(key) || entryKeys.has(key)))) continue;
+		if (key !== undefined) entryKeys.add(key);
 		for (const run of runs) records.push({ timestamp, run });
 	}
-	return { records, keys };
+	return { records, entryKeys: [...entryKeys] };
 }
 
 export interface LoadOptions {
@@ -144,9 +150,15 @@ export interface LoadOptions {
 	root: string;
 	/** Entries stamped before this are left out. */
 	since: Date;
-	/** Called after each file that was read (or failed to be), over the files modified since `since`. */
+	/**
+	 * Called after each file that was read (or failed to be), over the files modified since `since`.
+	 * An error it throws is swallowed: progress display must not be able to fail the load.
+	 */
 	onProgress?: (done: number, total: number) => void;
-	/** Stops the load between files; the result is then `aborted`, with what was read so far. */
+	/**
+	 * Stops the load, between files and between a file's lines; the result is then `aborted`, with the
+	 * files read whole so far (a file cut off partway adds nothing).
+	 */
 	signal?: AbortSignal;
 }
 
@@ -156,30 +168,35 @@ export interface LoadOptions {
  * An entry shared by several files (a fork or clone of a session) is counted once, from the first
  * file read: root-level files by name, then each project folder's by name.
  */
-export async function loadUsageHistory({ root, since, onProgress, signal }: LoadOptions): Promise<UsageHistory> {
+export async function loadSpendHistory({ root, since, onProgress, signal }: LoadOptions): Promise<SpendHistory> {
 	const { files, unlistable } = await listSessionFiles(root);
-	const recent: string[] = [];
+	const recentFiles: string[] = [];
 	let skipped = unlistable;
 	for (const file of files) {
 		if (signal?.aborted) return { records: [], skipped, aborted: true };
 		try {
-			if ((await stat(file)).mtimeMs >= since.getTime()) recent.push(file);
-		} catch {
-			skipped++;
+			if ((await stat(file)).mtimeMs >= since.getTime()) recentFiles.push(file);
+		} catch (err) {
+			if (!isNotFound(err)) skipped++;
 		}
 	}
-	const records: UsageRecord[] = [];
-	const seen = new Set<string>();
-	for (const [i, file] of recent.entries()) {
+	const records: SpendRecord[] = [];
+	const seenKeys = new Set<string>();
+	for (const [i, file] of recentFiles.entries()) {
 		if (signal?.aborted) return { records, skipped, aborted: true };
 		try {
-			const read = await readRecords(file, since, seen);
-			for (const record of read.records) records.push(record);
-			for (const key of read.keys) seen.add(key);
-		} catch {
-			skipped++;
+			const fileResult = await readRecords(file, since, seenKeys, signal);
+			if (!fileResult) return { records, skipped, aborted: true };
+			for (const record of fileResult.records) records.push(record);
+			for (const key of fileResult.entryKeys) seenKeys.add(key);
+		} catch (err) {
+			if (!isNotFound(err)) skipped++;
 		}
-		onProgress?.(i + 1, recent.length);
+		try {
+			onProgress?.(i + 1, recentFiles.length);
+		} catch {
+			// a failing progress display must not fail the load
+		}
 	}
 	return { records, skipped, aborted: false };
 }

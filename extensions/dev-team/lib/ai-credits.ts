@@ -58,6 +58,16 @@ export function sessionAiCredits(entries: readonly Record<string, unknown>[]): n
 	return runsAiCredits(sessionSpend(entries));
 }
 
+/**
+ * The first instant of the Copilot billing period `now` falls in, in UTC. GitHub's docs
+ * (https://docs.github.com/en/copilot/concepts/billing/copilot-requests, checked 2026-10-04) state
+ * "Premium request counters reset on the 1st of each month at 00:00:00 UTC"; we assume AI credit
+ * allowances follow the same period. Local time would put the boundary hours off for anyone not on UTC.
+ */
+export function copilotBillingPeriodStart(now: Date): Date {
+	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
 /** The status line text, or undefined (hidden) while the session's credits round to 0.00. */
 export function aiCreditsStatus(entries: readonly Record<string, unknown>[]): string | undefined {
 	const credits = sessionAiCredits(entries);

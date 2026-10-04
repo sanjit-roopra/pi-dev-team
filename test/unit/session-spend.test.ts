@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCostRow } from "../../extensions/dev-team/lib/metrics.ts";
-import { sessionSpend, UNKNOWN_MODEL } from "../../extensions/dev-team/lib/session-spend.ts";
+import { sessionSpend, sessionSpendByEntry, UNKNOWN_MODEL } from "../../extensions/dev-team/lib/session-spend.ts";
 import { SUBAGENT_USAGE_ENTRY } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 const spend = (entries: Record<string, unknown>[]) => [...sessionSpend(entries)];
@@ -92,4 +92,22 @@ test("cost row: compaction usage leaves the cost meter row unchanged", () => {
 	const turn = assistant("p", "a", 0.1);
 	const omitTimestamp = (row: unknown) => Object.fromEntries(Object.entries(row as Record<string, unknown>).filter(([key]) => key !== "timestamp"));
 	assert.deepEqual(omitTimestamp(buildCostRow(ctxFrom([turn, compaction(5)]))), omitTimestamp(buildCostRow(ctxFrom([turn]))));
+});
+
+test("sessionSpendByEntry: a dispatch entry's nested runs stay with that entry; a model_change has none", () => {
+	const totals = (turns: number) => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns });
+	const data = { agent: "orchestrator", model: "p/opus", ok: true, durationMs: 0, usage: totals(3), nested: [{ agent: "Explore", usage: totals(2) }] };
+	const dispatch = { type: "custom", customType: SUBAGENT_USAGE_ENTRY, id: "d", data };
+	const switched = modelChange("p", "next");
+	const turn = assistant("p", "m", 1);
+	const grouped = [...sessionSpendByEntry([switched, dispatch, turn])];
+	assert.deepEqual(
+		grouped.map(({ entry, runs }) => [entry, runs.map((r) => r.agent)]),
+		[[switched, []], [dispatch, ["orchestrator", "Explore"]], [turn, ["main"]]],
+	);
+});
+
+test("sessionSpendByEntry: model-in-effect tracking runs across entries, so a compaction is booked to an earlier switch", () => {
+	const grouped = [...sessionSpendByEntry([modelChange("p", "switched"), compaction(1)])];
+	assert.deepEqual(grouped.map(({ runs }) => runs.map((r) => r.model)), [[], ["p/switched"]]);
 });

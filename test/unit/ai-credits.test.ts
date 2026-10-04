@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
+import { aiCreditsStatus, copilotBillingPeriodStart, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
 import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // GitHub bills 1 AI credit per $0.01 of token cost (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
@@ -101,4 +101,16 @@ test("aiCreditsStatus: compaction usage reaches the status line", () => {
 
 test("aiCreditsStatus: a compaction on an unknown model counts no AI credits", () => {
 	assert.equal(aiCreditsStatus([compaction(5)]), undefined);
+});
+
+test("copilotBillingPeriodStart: the 1st of the month at 00:00 UTC", () => {
+	assert.equal(copilotBillingPeriodStart(new Date("2026-10-04T15:00:00Z")).toISOString(), "2026-10-01T00:00:00.000Z");
+});
+
+test("copilotBillingPeriodStart: the first day of a month does not reach back to the last one", () => {
+	assert.equal(copilotBillingPeriodStart(new Date("2026-11-01T00:30:00Z")).toISOString(), "2026-11-01T00:00:00.000Z");
+});
+
+test("copilotBillingPeriodStart: the last instant of a month still belongs to it", () => {
+	assert.equal(copilotBillingPeriodStart(new Date("2026-10-31T23:59:59.999Z")).toISOString(), "2026-10-01T00:00:00.000Z");
 });

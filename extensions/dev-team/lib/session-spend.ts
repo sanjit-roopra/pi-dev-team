@@ -56,37 +56,48 @@ const SUMMARY_AGENT: ReadonlyMap<string, string> = new Map([
 	["branch_summary", "branch summary"],
 ]);
 
-/**
- * Every run the entries record spend for. Compaction and branch-summary entries carry usage but not
- * the provider that served it; pi summarizes with the session's current model, so they are booked
- * to the model in effect when they were written: the last model switch or assistant turn before
- * them, UNKNOWN_MODEL when there is none.
- */
-export function* sessionSpend(entries: readonly Record<string, unknown>[]): Generator<SpendRun> {
-	let modelInEffect = UNKNOWN_MODEL;
-	for (const entry of entries) {
-		const type = String(entry.type);
-		const summaryAgent = SUMMARY_AGENT.get(type);
-		if (type === "model_change") {
-			modelInEffect = qualifiedModelId(entry.provider, entry.modelId);
-		} else if (type === "message") {
-			const msg = entry.message as { role?: string; usage?: PiUsage; model?: string; provider?: string } | undefined;
-			if (msg?.role !== "assistant") continue;
-			const model = qualifiedModelId(msg.provider, msg.model);
-			if (msg.model) modelInEffect = model;
-			if (!msg.usage) continue;
-			yield { thread: "main", agent: "main", model, usage: msg.usage, messages: 1 };
-		} else if (type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
-			const d = entry.data as SubagentUsageEntry | undefined;
-			if (!d?.usage) continue;
-			// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
-			for (const run of creditedRuns(d)) {
-				yield { thread: "subagent", agent: run.agent, model: run.model ?? UNKNOWN_MODEL, usage: run.usage, messages: run.usage.turns ?? 0 };
-			}
-		} else if (type === "usage" && entry.usage) {
-			yield { thread: "overhead", agent: String(entry.kind ?? "usage"), model: qualifiedModelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 };
-		} else if (summaryAgent && entry.usage) {
-			yield { thread: "overhead", agent: summaryAgent, model: modelInEffect, usage: entry.usage as PiUsage, messages: 0 };
-		}
+/** The model a compaction or branch summary is booked to: updated as the walk passes switches and turns. */
+interface ModelInEffect {
+	model: string;
+}
+
+/** The runs one entry records spend for, updating `effect` when the entry puts another model in effect. */
+function entryRuns(entry: Record<string, unknown>, effect: ModelInEffect): SpendRun[] {
+	const type = String(entry.type);
+	const summaryAgent = SUMMARY_AGENT.get(type);
+	if (type === "model_change") {
+		effect.model = qualifiedModelId(entry.provider, entry.modelId);
+	} else if (type === "message") {
+		const msg = entry.message as { role?: string; usage?: PiUsage; model?: string; provider?: string } | undefined;
+		if (msg?.role !== "assistant") return [];
+		const model = qualifiedModelId(msg.provider, msg.model);
+		if (msg.model) effect.model = model;
+		if (msg.usage) return [{ thread: "main", agent: "main", model, usage: msg.usage, messages: 1 }];
+	} else if (type === "custom" && entry.customType === SUBAGENT_USAGE_ENTRY) {
+		const d = entry.data as SubagentUsageEntry | undefined;
+		if (!d?.usage) return [];
+		// The child's own turns, then each agent it dispatched itself, credited to that agent and model.
+		return creditedRuns(d).map((run) => ({ thread: "subagent", agent: run.agent, model: run.model ?? UNKNOWN_MODEL, usage: run.usage, messages: run.usage.turns ?? 0 }));
+	} else if (type === "usage" && entry.usage) {
+		return [{ thread: "overhead", agent: String(entry.kind ?? "usage"), model: qualifiedModelId(entry.provider, entry.model), usage: entry.usage as PiUsage, messages: 0 }];
+	} else if (summaryAgent && entry.usage) {
+		return [{ thread: "overhead", agent: summaryAgent, model: effect.model, usage: entry.usage as PiUsage, messages: 0 }];
 	}
+	return [];
+}
+
+/**
+ * Every entry with the runs it records spend for (none for most entries), in one walk. Compaction and
+ * branch-summary entries carry usage but not the provider that served it; pi summarizes with the
+ * session's current model, so they are booked to the model in effect when they were written: the last
+ * model switch or assistant turn before them, UNKNOWN_MODEL when there is none.
+ */
+export function* sessionSpendByEntry<E extends Record<string, unknown>>(entries: Iterable<E>): Generator<{ entry: E; runs: SpendRun[] }> {
+	const effect: ModelInEffect = { model: UNKNOWN_MODEL };
+	for (const entry of entries) yield { entry, runs: entryRuns(entry, effect) };
+}
+
+/** Every run the entries record spend for: sessionSpendByEntry() without the entries. */
+export function* sessionSpend(entries: Iterable<Record<string, unknown>>): Generator<SpendRun> {
+	for (const { runs } of sessionSpendByEntry(entries)) yield* runs;
 }
