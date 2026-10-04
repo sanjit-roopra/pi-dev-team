@@ -23,7 +23,9 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
+import { aiCreditsStatus } from "./lib/ai-credits.ts";
 import { recordCost } from "./lib/metrics.ts";
+import { sessionEntries } from "./lib/session-spend.ts";
 import { commandText, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
@@ -350,6 +352,15 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 	let agentPrompt: string | undefined;
 
+	/**
+	 * Refresh the session's GitHub Copilot AI credits status line under pi's footer (hidden at 0). Runs
+	 * at turn end and dispatch end, so spend pi records while idle (cache warming) shows from the next turn.
+	 */
+	function refreshAiCreditsStatus(ctx: ExtensionContext): void {
+		if (isSubagent || !ctx.hasUI) return;
+		ctx.ui.setStatus("dev-team-ai-credits", aiCreditsStatus(sessionEntries(ctx)));
+	}
+
 	// ---------------------------------------------------------------- lifecycle
 
 	pi.on("session_start", async (event, ctx) => {
@@ -357,6 +368,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
+		refreshAiCreditsStatus(ctx);
 		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
 		sessionContext = out.context;
 	});
@@ -408,6 +420,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			running = Math.max(0, running - 1);
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", running ? `dev-team: ${running} agent call(s) running` : undefined);
+			refreshAiCreditsStatus(ctx);
 		}
 		const claudeTool = claudeToolName(event.toolName);
 		const input = event.input as Record<string, unknown>;
@@ -454,6 +467,10 @@ export default function devTeam(pi: ExtensionAPI) {
 			structuredContent: event.structuredContent,
 			...(block ? { isError: true } : {}),
 		};
+	});
+
+	pi.on("turn_end", async (_event, ctx) => {
+		refreshAiCreditsStatus(ctx);
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
