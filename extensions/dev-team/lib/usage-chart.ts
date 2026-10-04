@@ -51,7 +51,7 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
  * even the ellipsis fits). Plain text in, plain text out: unlike pi-tui's truncateToWidth it never
  * appends an SGR reset, so colour stays with the caller's style.
  */
-function cutToWidth(text: string, max: number): string {
+export function cutToWidth(text: string, max: number): string {
 	if (visibleWidth(text) <= max) return text;
 	const room = max - visibleWidth(ELLIPSIS);
 	if (room < 0) return "";
