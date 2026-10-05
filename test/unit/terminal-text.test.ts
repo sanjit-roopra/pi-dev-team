@@ -32,3 +32,7 @@ test("cutToWidth keeps text that fits, cuts with an ellipsis, and returns nothin
 	assert.equal(cutToWidth("abc", 0), "");
 	assert.equal(cutToWidth("日本語", 4), "日…");
 });
+
+test("toSingleLine strips bidirectional controls and Unicode line separators", () => {
+	assert.equal(toSingleLine("open‮ai⁦x⁩ y z"), "openaixyz");
+});

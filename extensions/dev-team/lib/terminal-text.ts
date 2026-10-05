@@ -5,11 +5,12 @@
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 
-// ANSI CSI/OSC/other escape sequences, then remaining C0/C1 controls (keeping \t and \n) and the
-// interlinear annotation characters pi's sanitizeBinaryOutput also removes. A bare \r would let a line
-// overwrite itself, so CR and CRLF become \n first.
+// ANSI CSI/OSC/other escape sequences, then remaining C0/C1 controls (keeping \t and \n), the
+// interlinear annotation characters pi's sanitizeBinaryOutput also removes, and the bidirectional
+// controls and Unicode line/paragraph separators, which could reorder or break a line. A bare \r would
+// let a line overwrite itself, so CR and CRLF become \n first.
 const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
-const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f￹-￻]/g;
+const CONTROL_RE = /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f￹-￻\u202a-\u202e\u2066-\u2069\u2028\u2029]/g;
 /** What sanitizeTerminalText keeps that a single line cannot hold. */
 const TAB_OR_NEWLINE = /[\t\n]/g;
 /** Every C0/C1 control, tab and newline included: in one-line text with spacing kept, a run of them becomes one space. */

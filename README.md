@@ -102,18 +102,21 @@ Run `/dev-team usage` to open a chart of what your sessions spent. It counts eve
 - **By model** ranks the models by USD, largest first, with the share of the total. Each model shows its provider, for example `openai/gpt-5.5`.
 - **By provider** ranks the providers by USD.
 - **By agent** ranks the dev-team agents that ran as subagents. An agent that ran on two providers has one row for each, for example `software-engineer · github-copilot`. The share is of the subagent total.
-- Each row shows USD, the AI credits when Copilot served it, and the share. If a row cost $0, for example a local model, the rows also show their tokens. A $0 row has a share of 0%.
-- Above the chart, split bars show how the USD divides. The first bar shows the providers, when more than one has a cost. The second bar shows the threads: main, subagents and overhead. Each part has its own glyph (`█`, `▓`, `▒`, `░`), so the bars read without colour.
+- Each row shows USD, the AI credits (`cr`) when Copilot served it, and the share. If a row cost $0, for example a local model, the rows also show their tokens (`tok`). A $0 row has a share of 0%.
+- Above the chart, split bars show how the USD divides. The first bar shows the providers, when more than one has a cost. The second bar shows the threads: main `█`, subagents `▓` and overhead `▒`. A thread always has the same glyph, so the bars read without colour.
 
 | Term | Meaning |
 |---|---|
-| Main | The spend of your own conversation with pi |
-| Subagents | The spend of the dev-team agents that the team started, including the agents they started |
-| Overhead | The spend that pi has outside a turn: cache warm-ups, context compaction, and branch summaries |
+| USD | pi's price for the tokens, from its model catalog. Every provider has it. |
+| AI credits | What GitHub Copilot counts for its share: 1 AI credit for each $0.01 of Copilot's USD. It is gross use, before your plan's monthly allowance. |
+| Tokens | The input, output and cache tokens of a run |
+| Main | The USD of your own conversation with pi |
+| Subagents | The USD of the dev-team agents that the team started, including the agents they started |
+| Overhead | The USD that pi spends outside a turn: cache warm-ups, context compaction, and branch summaries |
 
-USD is pi's price for the tokens. For a subscription (GitHub Copilot, or a ChatGPT or Claude plan), it is not what the plan bills you. The AI credits show what GitHub bills for Copilot.
+For a ChatGPT or Claude plan, USD is pi's catalog price, not what the plan bills you.
 
-The chart shows **this session** (all branches) at first. Press `s` to see **this month** instead: every saved pi session of all your projects, from the 1st of the month at 00:00 UTC, which is when GitHub's monthly period starts. pi reads the files when you press `s` and shows the progress. The header shows the time of that reading ("as of"). To refresh, close the chart and open it again. A session that was forked or cloned counts once.
+The chart shows **this session** (all branches) at first. Press `s` to see **this month** instead: every saved pi session of all your projects, from the 1st of the month at 00:00 UTC. That is also when GitHub's monthly period starts, so the month's AI credits match GitHub's period. pi reads the files when you press `s` and shows the progress. The header shows the time of that reading ("as of"). To refresh, close the chart and open it again. A session that was forked or cloned counts once.
 
 | Key | Action |
 |---|---|
@@ -123,7 +126,7 @@ The chart shows **this session** (all branches) at first. Press `s` to see **thi
 
 Letter keys work in either case: `S` and `Q` do the same as `s` and `q`.
 
-To start on a scope, run `/dev-team usage session` or `/dev-team usage month`. Without a terminal UI (`pi -p`, or an RPC client), the command prints a plain-text summary instead: the total, the provider and thread splits, and the models, providers and agents ranked with their USD, AI credits and share. The same argument selects the scope.
+To start on a scope, run `/dev-team usage session` or `/dev-team usage month`. Without a terminal UI (`pi -p`, or an RPC client), the command prints a plain-text summary instead: the total, the same splits as the chart, and the models, providers and agents ranked with their USD, AI credits and share. The same argument selects the scope.
 
 The month counts the session files that pi keeps in `~/.pi/agent/sessions/<project>/`. It does not count the transcripts in nested `run-N/session.jsonl` files that other extensions keep in the same folder. If a file cannot be read, the chart shows how many files it could not read.
 

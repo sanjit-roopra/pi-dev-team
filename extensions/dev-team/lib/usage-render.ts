@@ -5,7 +5,6 @@
  * component that holds the state and reacts to keys is UsageView (usage-view.ts).
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { hasVisibleCredits } from "./ai-credits.ts";
 import { formatShare, formatUsd, hasUsage, type MonthSnapshot, type UsageBreakdown, type UsageRow } from "./usage-breakdown.ts";
 import { cutToWidth } from "./terminal-text.ts";
 import { barChartLines, type ChartStyle } from "./usage-chart.ts";
@@ -23,10 +22,12 @@ import {
 	SCOPE_TITLE,
 	SEPARATOR,
 	scopeHeading,
+	splitSections,
 	totalParts,
 	unreadableFilesNote,
 	VIEW_TITLE,
 	viewRows,
+	visibleColumns,
 } from "./usage-text.ts";
 
 export interface UsageStyle extends ChartStyle, SplitStyle {
@@ -65,11 +66,13 @@ function shownBreakdown(viewModel: UsageViewModel): UsageBreakdown | undefined {
 function headerCandidates(viewModel: UsageViewModel): string[] {
 	const { scope, view } = viewModel.state;
 	const breakdown = shownBreakdown(viewModel);
-	const totals = breakdown ? totalParts(breakdown.total) : [];
+	const { usd, credits } = breakdown ? totalParts(breakdown.total) : { usd: undefined, credits: undefined };
+	const usdOnly = usd ? [usd] : [];
+	const totals = credits ? [...usdOnly, credits] : usdOnly;
 	const asOfParts = scope === "month" && breakdown && viewModel.month ? [asOfLabel(viewModel.month.loadedAt)] : [];
 	const join = (scopeText: string, shownTotals: readonly string[], ...more: string[]) => [scopeText, VIEW_TITLE[view], ...shownTotals, ...more].join(SEPARATOR);
 	const heading = scopeHeading(scope, viewModel.now);
-	return [join(heading, totals, ...asOfParts), join(heading, totals), join(SCOPE_TITLE[scope], totals), join(SCOPE_TITLE[scope], totals.slice(0, 1))];
+	return [join(heading, totals, ...asOfParts), join(heading, totals), join(SCOPE_TITLE[scope], totals), join(SCOPE_TITLE[scope], usdOnly)];
 }
 
 /** The key hints from most to least detailed: hints drop from the left, so "Esc close" is the last to go. */
@@ -112,27 +115,22 @@ function footnoteText(viewModel: UsageViewModel): string | undefined {
 	return unreadableFilesNote(unreadable);
 }
 
-/** Thread segments always run main, subagents, overhead, so the same glyph means the same thread. */
-const THREAD_ORDER = ["main", "subagents", "overhead"] as const;
-
 /** One split bar's lines: the bar, then its legend lines. */
 interface SplitBlock {
 	bar: string;
 	legend: string[];
 }
 
-/**
- * The split bars: providers (only when more than one has a cost; the legend gives each share)
- * then threads (the legend gives each USD amount).
- */
+/** The split bars of splitSections(): providers (legend gives each share), then threads (legend gives each USD). */
 function splitBlocks(breakdown: UsageBreakdown, options: Omit<SplitBarOptions, "formatValue">): SplitBlock[] {
-	const toBlock = (lines: string[]): SplitBlock[] => (lines.length ? [{ bar: lines[0], legend: lines.slice(1) }] : []);
-	const providers =
-		breakdown.byProvider.filter((r) => r.usd > 0).length > 1
-			? toBlock(splitBarLines(breakdown.byProvider.map((r) => ({ label: r.label, amount: r.usd })), { ...options, formatValue: (_, share) => formatShare(share) }))
-			: [];
-	const threadParts = THREAD_ORDER.map((label) => ({ label, amount: breakdown.byThread.find((r) => r.label === label)?.usd ?? 0 }));
-	return [...providers, ...toBlock(splitBarLines(threadParts, { ...options, formatValue: (usd) => formatUsd(usd) }))];
+	return splitSections(breakdown).flatMap((section): SplitBlock[] => {
+		const formatValue = (usd: number, share: number) => (section.legend === "share" ? formatShare(share) : formatUsd(usd));
+		const lines = splitBarLines(
+			section.parts.map((p) => ({ label: p.label, amount: p.usd })),
+			{ ...options, formatValue },
+		);
+		return lines.length ? [{ bar: lines[0], legend: lines.slice(1) }] : [];
+	});
 }
 
 /** `count` split lines at most: every bar first, then legend lines block by block; each block stays in order. */
@@ -213,7 +211,7 @@ export function renderUsage(viewModel: UsageViewModel, { width, height, style }:
 	const paint = message?.tone === "error" ? style.error : (text: string) => text;
 	const body = message
 		? plan.chartRowCount > 0 ? [paint(cutToWidth(message.text, width))] : []
-		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, format: CHART_FORMAT, hasCredits: hasVisibleCredits, style });
+		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, format: CHART_FORMAT, columns: visibleColumns(rankedRows), style });
 	const gapLines = plan.hasGaps ? [""] : [];
 	return [
 		style.title(fitLine(headerCandidates(viewModel), width)),

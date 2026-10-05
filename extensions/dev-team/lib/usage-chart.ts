@@ -29,6 +29,7 @@ export interface ChartStyle {
 
 export interface ChartFormat {
 	usd(usd: number): string;
+	/** "" for a row without credits worth showing; the cell stays blank. */
 	credits(credits: number): string;
 	tokens(tokens: number): string;
 	share(share: number): string;
@@ -40,15 +41,18 @@ export interface BarChartOptions {
 	/** Most lines to return; rows beyond that fold into one "other (N)" line that takes the last slot. */
 	maxRows: number;
 	format: ChartFormat;
-	/** Whether a row has credits worth a column; rows without any leave the cell blank. */
-	hasCredits(credits: number): boolean;
+	/**
+	 * Which optional columns the rows want, decided by the caller over all rows (before any fold into
+	 * "other"), so the overlay and the text summary apply one rule. Share is always wanted.
+	 */
+	columns: { credits: boolean; tokens: boolean };
 	style: ChartStyle;
 }
 
 const COLUMN_GAP = "  ";
 const GAP_WIDTH = COLUMN_GAP.length;
 /** Gaps between the label, bar and USD columns; each optional column adds one more. */
-const GAPS_LABEL_BAR_VALUE = 2;
+const GAPS_LABEL_BAR_USD = 2;
 const MAX_BAR_CELLS = 30;
 /** `▏` to `▉`: one to seven eighths of a cell; a full cell is `█`. */
 const PARTIAL_BLOCKS = "▏▎▍▌▋▊▉";
@@ -98,7 +102,7 @@ function fitColumns(width: number, natural: { label: number; usd: number } & Rec
 	for (let keep = wanted.length; keep >= 0; keep--) {
 		const shown = new Set(wanted.slice(0, keep));
 		const optionalWidth = [...shown].reduce((sum, column) => sum + natural[column] + GAP_WIDTH, 0);
-		const room = width - natural.usd - optionalWidth - GAPS_LABEL_BAR_VALUE * GAP_WIDTH;
+		const room = width - natural.usd - optionalWidth - GAPS_LABEL_BAR_USD * GAP_WIDTH;
 		const label = Math.min(natural.label, room - MIN_BAR_CELLS);
 		if (label >= minLabel) return { label, bar: Math.min(MAX_BAR_CELLS, room - label), shown, usd: natural.usd };
 	}
@@ -117,26 +121,19 @@ function foldRows(rows: readonly ChartRow[], maxRows: number): ChartRow[] {
 	return [...kept, { label: `other (${folded.length})`, usd: sum((r) => r.usd), credits: sum((r) => r.credits), tokens: sum((r) => r.tokens), share: sum((r) => r.share) }];
 }
 
-/**
- * One line per row: label, bar scaled to the largest USD, USD, then credits (when any row has
- * some), tokens (when any row cost nothing, so a free model still says what it used) and share.
- */
-export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, format, hasCredits, style }: BarChartOptions): string[] {
+/** One line per row: label, bar scaled to the largest USD, USD, then the wanted optional columns (credits, tokens) and share. */
+export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, format, columns: wantedColumns, style }: BarChartOptions): string[] {
 	const rows = (maxRows > 0 ? foldRows(allRows, maxRows) : []).map((r) => ({ ...r, label: toSingleLine(r.label) }));
 	if (!rows.length) return [];
 	const cellsOf: Record<OptionalColumn, string[]> = {
-		credits: rows.map((r) => (hasCredits(r.credits) ? format.credits(r.credits) : "")),
+		credits: rows.map((r) => format.credits(r.credits)),
 		tokens: rows.map((r) => format.tokens(r.tokens)),
 		share: rows.map((r) => format.share(r.share)),
 	};
 	const usdCells = rows.map((r) => format.usd(r.usd));
 	const widest = (cells: readonly string[]) => Math.max(...cells.map(visibleWidth));
 	const natural = { label: widest(rows.map((r) => r.label)), usd: widest(usdCells), credits: widest(cellsOf.credits), tokens: widest(cellsOf.tokens), share: widest(cellsOf.share) };
-	const wanted = OPTIONAL_COLUMNS.filter((column) => {
-		if (column === "credits") return rows.some((r) => hasCredits(r.credits));
-		if (column === "tokens") return rows.some((r) => !(r.usd > 0));
-		return true;
-	});
+	const wanted = OPTIONAL_COLUMNS.filter((column) => column === "share" || wantedColumns[column]);
 	const columns = fitColumns(width, natural, wanted);
 	const max = Math.max(...rows.map((r) => r.usd));
 

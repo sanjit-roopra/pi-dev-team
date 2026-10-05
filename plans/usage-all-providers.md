@@ -32,5 +32,5 @@
 
 ## Risks
 
-- USD for a subscription provider (Copilot, a ChatGPT or Claude plan) is pi's catalog price, not what the plan bills. The README says so.
+- USD for a ChatGPT or Claude plan is pi's catalog price, not what the plan bills. For Copilot, pi's catalog uses GitHub's rates, so its USD and AI credits agree (gross, before the plan allowance). The README says so.
 - A subagent run that switched models mid-run is booked to its last model, as before.

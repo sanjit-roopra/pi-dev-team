@@ -1,18 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { PiUsage, SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
-import {
-	formatShare,
-	formatTokens,
-	formatUsd,
-	hasCopilotSpend,
-	hasUsage,
-	monthSnapshot,
-	providerOf,
-	runTokens,
-	type UsageRow,
-	usageBreakdown,
-} from "../../extensions/dev-team/lib/usage-breakdown.ts";
+import { type PiUsage, providerOf, type SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
+import { formatShare, formatTokens, formatUsd, hasUsage, monthSnapshot, runTokens, THREAD_ORDER, type UsageRow, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 
 const run = (model: string, usd: number, thread: SpendRun["thread"] = "main", agent = "main", usage: PiUsage = {}): SpendRun => ({
 	thread,
@@ -53,13 +42,9 @@ test("usageBreakdown: an agent has one row per provider it ran on, shares of the
 		run(copilot("m"), 0.1, "subagent", "Explore"),
 		run(copilot("n"), 0.1, "subagent", "Explore"),
 	]);
-	assert.deepEqual(shown(b.byAgent), [
-		"Explore · github-copilot $0.20 20.0 40.0%",
-		"orchestrator · github-copilot $0.20 20.0 40.0%",
-		"orchestrator · openai $0.10 0.0 20.0%",
-	]);
+	assert.deepEqual(shown(b.byAgent), ["Explore $0.20 20.0 40.0%", "orchestrator $0.20 20.0 40.0%", "orchestrator $0.10 0.0 20.0%"]);
 	assert.deepEqual(
-		b.byAgent.map((r) => [r.agent, r.provider]),
+		b.byAgent.map((r) => [r.label, r.provider]),
 		[
 			["Explore", "github-copilot"],
 			["orchestrator", "github-copilot"],
@@ -88,9 +73,25 @@ test("usageBreakdown: only free runs give rows with 0% shares, ranked by tokens"
 	assert.ok(hasUsage(b.total));
 });
 
+test("usageBreakdown: an agent name containing the label separator cannot merge with another agent", () => {
+	const b = usageBreakdown([run("openai/x", 0.1, "subagent", "a · openai"), run("openai/x", 0.2, "subagent", "a")]);
+	assert.deepEqual(b.byAgent.map((r) => [r.label, r.provider]), [["a", "openai"], ["a · openai", "openai"]]);
+});
+
+test("usageBreakdown: one agent on two providers with equal spend is ordered by provider", () => {
+	const b = usageBreakdown([run("openai/x", 0.1, "subagent", "a"), run(copilot("x"), 0.1, "subagent", "a")]);
+	assert.deepEqual(b.byAgent.map((r) => r.provider), ["github-copilot", "openai"]);
+});
+
 test("usageBreakdown: equal USD and tokens are ordered alphabetically", () => {
 	const b = usageBreakdown([run(copilot("zeta"), 0.1), run(copilot("alpha"), 0.1)]);
 	assert.deepEqual(b.byModel.map((r) => r.label), [copilot("alpha"), copilot("zeta")]);
+});
+
+test("usageBreakdown: Copilot credits come from the cleaned USD, so a cost that is not a number gives none", () => {
+	const textCost: SpendRun = { thread: "main", agent: "main", model: copilot("m"), usage: { cost: { total: "0.5" as unknown as number }, input: 10 }, messages: 1 };
+	const b = usageBreakdown([textCost]);
+	assert.deepEqual(b.total, { usd: 0, credits: 0, tokens: 10 });
 });
 
 test("usageBreakdown: a NaN or negative cost or token count counts as none, and totals stay finite", () => {
@@ -121,9 +122,8 @@ test("runTokens: input, output and both cache directions", () => {
 	assert.equal(runTokens({}), 0);
 });
 
-test("hasCopilotSpend: only credits the display shows count", () => {
-	assert.ok(hasCopilotSpend({ usd: 1, credits: 0.01, tokens: 0 }));
-	assert.ok(!hasCopilotSpend({ usd: 1, credits: 0.004, tokens: 0 }));
+test("THREAD_ORDER: main, subagents, overhead", () => {
+	assert.deepEqual(THREAD_ORDER, ["main", "subagents", "overhead"]);
 });
 
 test("formatShare: one decimal, '<1%' for a small share, '0%' for none", () => {

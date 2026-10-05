@@ -1,8 +1,11 @@
 /**
  * A stacked split for the /dev-team usage overlay (splitBarLines): one bar cut into segments by
  * amount, then a legend. The overlay draws two: threads (main, subagents, overhead) and providers.
- * Segments keep the order the caller gives; each position has its own glyph (█ ▓ ▒ ░), so the split
- * reads without colour, and parts beyond the last glyph fold into one "other" segment. Like the bar
+ * Segments keep the order the caller gives, and each input position has its own glyph (█ ▓ ▒ ░) and
+ * colour, so the split reads without colour. A part with no amount draws nothing but keeps its
+ * position, so a fixed list of parts (the threads) always draws the same part with the same glyph. When
+ * there are more parts than glyphs, the parts with an amount are drawn in order and those past the
+ * last glyph fold into one "other" segment. Like the bar
  * chart (usage-chart.ts) it is pure string rendering: plain text is measured and cut first, then
  * styled.
  */
@@ -17,8 +20,8 @@ export interface SplitPart {
 }
 
 export interface SplitStyle {
-	/** Colours the glyphs of the segment at `position` (0 is the first segment). */
-	segment(position: number, text: string): string;
+	/** Colours the glyphs of the segment in slot `slot` (0 to SPLIT_GLYPHS.length - 1). */
+	segment(slot: number, text: string): string;
 	/** De-emphasises the legend separators. */
 	muted(text: string): string;
 }
@@ -35,7 +38,7 @@ export interface SplitBarOptions {
 /** The glyph of each segment position; there are as many segments as glyphs at most. */
 export const SPLIT_GLYPHS: readonly string[] = [FULL_BLOCK, "▓", "▒", "░"];
 const OTHER_LABEL = "other";
-type Segment = { label: string; glyph: string; amount: number };
+type Segment = { label: string; slot: number; amount: number };
 const MAX_SPLIT_BAR_CELLS = 40;
 const LEGEND_SEPARATOR = " · ";
 
@@ -69,14 +72,16 @@ function keepVisible(allocated: readonly number[]): number[] {
 	);
 }
 
-/** The parts with an amount, in the given order; those past the last glyph folded into "other". */
+/** The parts with an amount, each in its slot: its input position, or its rank among them when the parts outnumber the glyphs. */
 function toSegments(parts: readonly SplitPart[]): Segment[] {
-	const positive = parts.filter((p) => p.amount > 0);
-	const fits = positive.length <= SPLIT_GLYPHS.length;
-	const kept = fits ? positive : positive.slice(0, SPLIT_GLYPHS.length - 1);
-	const folded = fits ? [] : [{ label: OTHER_LABEL, amount: positive.slice(kept.length).reduce((sum, p) => sum + p.amount, 0) }];
 	// Labels can come from session files, so they are made one line before they are measured.
-	return [...kept, ...folded].map((p, i) => ({ label: toSingleLine(p.label), amount: p.amount, glyph: SPLIT_GLYPHS[i] }));
+	const slotted = (part: SplitPart, slot: number): Segment => ({ label: toSingleLine(part.label), slot, amount: part.amount });
+	if (parts.length <= SPLIT_GLYPHS.length) return parts.map(slotted).filter((s) => s.amount > 0);
+	const positive = parts.filter((p) => p.amount > 0);
+	if (positive.length <= SPLIT_GLYPHS.length) return positive.map(slotted);
+	const kept = positive.slice(0, SPLIT_GLYPHS.length - 1);
+	const other = { label: OTHER_LABEL, amount: positive.slice(kept.length).reduce((sum, p) => sum + p.amount, 0) };
+	return [...kept, other].map(slotted);
 }
 
 /** A bar split into segments by amount, in the given order, then a legend naming each with its value. */
@@ -85,7 +90,7 @@ export function splitBarLines(parts: readonly SplitPart[], { width, formatValue,
 	if (!segments.length) return [];
 
 	const segmentCells = allocateCells(segments.map((s) => s.amount), Math.max(0, Math.min(width, maxBarCells)));
-	const bar = segments.map((s, i) => style.segment(i, s.glyph.repeat(segmentCells[i]))).join("");
+	const bar = segments.map((s, i) => style.segment(s.slot, SPLIT_GLYPHS[s.slot].repeat(segmentCells[i]))).join("");
 	return [bar, ...legendLines(segments, { width, formatValue, style })];
 }
 
@@ -103,9 +108,10 @@ function legendLines(
 	const lines: string[] = [];
 	let line = "";
 	let lineWidth = 0;
-	for (const [position, s] of segments.entries()) {
-		const plain = cutToWidth(`${s.glyph} ${s.label} ${formatValue(s.amount, s.amount / total)}`, width);
-		const entry = plain && style.segment(position, plain.slice(0, s.glyph.length)) + plain.slice(s.glyph.length);
+	for (const s of segments) {
+		const glyph = SPLIT_GLYPHS[s.slot];
+		const plain = cutToWidth(`${glyph} ${s.label} ${formatValue(s.amount, s.amount / total)}`, width);
+		const entry = plain && style.segment(s.slot, plain.slice(0, glyph.length)) + plain.slice(glyph.length);
 		const entryWidth = visibleWidth(plain);
 		if (line && lineWidth + separatorWidth + entryWidth <= width) {
 			line += style.muted(LEGEND_SEPARATOR) + entry;

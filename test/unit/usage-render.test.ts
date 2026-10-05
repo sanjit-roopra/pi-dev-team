@@ -36,11 +36,20 @@ test("a thread split bar shows main, subagent and overhead segments, then a lege
 	assert.ok(lines.some((l) => l.includes("█ main $0.60 · ▓ subagents $0.40 · ▒ overhead $0.05")));
 });
 
+const splitBarCount = (lines: string[]) => lines.filter((l) => /^[█▓▒░]+$/.test(l)).length;
+
 test("one provider with a cost draws no provider split bar", () => {
-	const lines = render(viewModel(sessionModel));
-	assert.equal(lines.filter((l) => /^[█▓▒░]+$/.test(l)).length, 1, lines.join("\n"));
+	assert.equal(splitBarCount(render(viewModel(sessionModel))), 1);
+});
+
+test("a paid provider and a free one draw no provider split bar", () => {
 	const withFreeModel = breakdown(run("m", 10), providerRun("ollama/qwen3", 0, "main", "main", 100));
-	assert.ok(!render(viewModel(sessionModel, { session: withFreeModel })).some((l) => l.includes("ollama 0")));
+	assert.equal(splitBarCount(render(viewModel(sessionModel, { session: withFreeModel }))), 1);
+});
+
+test("subagent-only spend keeps the subagents glyph in the thread split", () => {
+	const lines = render(viewModel(sessionModel, { session: breakdown(run("m", 10, "subagent", "a")) }));
+	assert.ok(lines.includes("▓ subagents $0.10"), lines.join("\n"));
 });
 
 test("two providers with a cost draw a provider split bar with their USD shares, above the thread split", () => {
@@ -117,7 +126,7 @@ test("an empty month still notes the files that could not be read", () => {
 test("By agent with main-only spend says there is no subagent usage and keeps the split bar", () => {
 	const lines = render(viewModel(state("session", "agent"), { session: mainOnly }));
 	assert.ok(lines.includes("No subagent usage in this session"), lines.join("\n"));
-	assert.ok(lines.some((l) => l.includes("█ main $0.20 · ▓ overhead $0.10")));
+	assert.ok(lines.some((l) => l.includes("█ main $0.20 · ▒ overhead $0.10")), "overhead keeps its own glyph when subagents spent nothing");
 	const month = render(viewModel(state("month", "agent"), { month: { breakdown: mainOnly, unreadable: 0, loadedAt: NOW } }));
 	assert.ok(month.includes("No subagent usage this month"), month.join("\n"));
 });
@@ -242,12 +251,17 @@ test("rows beyond the height fold into other (N) while the header and footer sta
 test("with little height, split legends give way before split bars, and both bars stay in order", () => {
 	const isBar = (l: string) => /^[█▓▒░]+$/.test(l);
 	const isLegend = (l: string) => /^[█▓▒░] /.test(l);
-	for (let height = 4; height <= 14; height++) {
+	const shape = (height: number) => {
 		const lines = render(viewModel(sessionModel, { session: multiProvider }), 80, height);
-		const bars = lines.filter(isBar).length;
-		const legends = lines.filter(isLegend).length;
-		if (legends > 0) assert.equal(bars, 2, `height ${height}: a legend shows before both bars\n${lines.join("\n")}`);
-		const providerBar = lines.findIndex(isBar);
-		if (providerBar >= 0 && legends > 0) assert.equal(lines[providerBar + 1], "█ openai 55.0% · ▓ github-copilot 45.0%", `height ${height}`);
+		return { bars: lines.filter(isBar).length, legends: lines.filter(isLegend).length, lines };
+	};
+	const shapes = Array.from({ length: 16 }, (_, i) => shape(i + 4));
+	assert.ok(shapes.some((s) => s.bars === 2 && s.legends === 0), "some height keeps both bars without legends");
+	assert.ok(shapes.some((s) => s.bars === 2 && s.legends === 2), "some height shows both bars and both legends");
+	for (const [i, s] of shapes.entries()) {
+		if (s.legends > 0) assert.equal(s.bars, 2, `height ${i + 4}: a legend shows before both bars\n${s.lines.join("\n")}`);
+		if (i > 0) assert.ok(s.legends >= shapes[i - 1].legends, `height ${i + 4}: legends never shrink as the height grows`);
 	}
+	const full = shapes.at(-1)!.lines;
+	assert.equal(full[full.findIndex(isBar) + 1], "█ openai 55.0% · ▓ github-copilot 45.0%");
 });

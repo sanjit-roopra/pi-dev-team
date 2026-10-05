@@ -9,7 +9,15 @@ import { createReadStream, type Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import * as path from "node:path";
 import { createInterface } from "node:readline";
+import { copilotBillingPeriodStart } from "./ai-credits.ts";
 import { sessionSpendByEntry, type SpendRun } from "./session-spend.ts";
+
+/**
+ * Where "this month" starts for every provider: the 1st at 00:00 UTC. It is the calendar month in
+ * UTC, and the same instant GitHub starts a Copilot billing period, so the AI credits of the month
+ * line up with GitHub's.
+ */
+export const usageMonthStart = (now: Date): Date => copilotBillingPeriodStart(now);
 
 /** One run of spend, with when its session entry was written (the entry's ISO 8601 `timestamp`, as stored). */
 export interface SpendRecord {

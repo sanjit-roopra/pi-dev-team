@@ -9,6 +9,8 @@ import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./s
 
 /** The model of a run whose entry does not name one. */
 export const UNKNOWN_MODEL = "unknown";
+/** The provider of a model id that names none. */
+export const UNKNOWN_PROVIDER = "unknown";
 /** The agent of a subagent run whose entry does not name one as text. */
 export const UNKNOWN_AGENT = "unknown";
 
@@ -35,6 +37,12 @@ export interface SpendRun {
 	usage: PiUsage;
 	/** Model messages the run covers. */
 	messages: number;
+}
+
+/** The provider part of a "provider/model" id; UNKNOWN_PROVIDER when the id names none. */
+export function providerOf(model: string): string {
+	const slash = model.indexOf("/");
+	return slash > 0 ? model.slice(0, slash) : UNKNOWN_PROVIDER;
 }
 
 export function costUsd(u: PiUsage): number {

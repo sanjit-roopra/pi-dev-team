@@ -2,7 +2,7 @@ process.env.TZ = "UTC"; // "as of" is local time; pin it so the expected strings
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
-import { errorReason, loadFailedMessage, totalParts, usageSummary, viewRows } from "../../extensions/dev-team/lib/usage-text.ts";
+import { errorReason, loadFailedMessage, splitSections, totalParts, usageSummary, viewRows, visibleColumns } from "../../extensions/dev-team/lib/usage-text.ts";
 import { mixed, multiProvider, NOW, providerRun, run } from "../helpers/usage-fixtures.ts";
 
 test("this session, Copilot only: USD and credits, both splits, then models, providers and agents", () => {
@@ -10,7 +10,6 @@ test("this session, Copilot only: USD and credits, both splits, then models, pro
 		usageSummary({ scope: "session", breakdown: mixed, now: NOW }),
 		[
 			"This session · $1.05 · 105.0 AI credits",
-			"Providers  github-copilot $1.05 100.0%",
 			"Threads  main $0.60 57.1% · subagents $0.40 38.1% · overhead $0.05 4.8%",
 			"",
 			"By model",
@@ -32,8 +31,8 @@ test("mixed providers: USD for all, credits only on Copilot rows, tokens when a 
 		usageSummary({ scope: "session", breakdown: multiProvider, now: NOW }),
 		[
 			"This session · $2.00 · 90.0 AI credits",
-			"Providers  openai $1.10 55.0% · github-copilot $0.90 45.0% · ollama $0.00 0%",
-			"Threads  subagents $1.20 60.0% · main $0.80 40.0%",
+			"Providers  openai $1.10 55.0% · github-copilot $0.90 45.0%",
+			"Threads  main $0.80 40.0% · subagents $1.20 60.0%",
 			"",
 			"By model",
 			"  openai/gpt-5.5                    $1.10              0 tok  55.0%",
@@ -56,12 +55,29 @@ test("mixed providers: USD for all, credits only on Copilot rows, tokens when a 
 test("no Copilot at all: the header has no credits and no row has a credits column", () => {
 	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([providerRun("openai/gpt-5.5", 1.5), providerRun("anthropic/claude", 0.5, "subagent", "a")]), now: NOW });
 	assert.equal(text.split("\n")[0], "This session · $2.00");
-	assert.ok(!text.includes("cr") && !text.includes("AI credits"), text);
+	assert.ok(!/\d cr\b/.test(text) && !text.includes("AI credits"), text);
 });
 
 test("totalParts: USD, then credits only when Copilot spend shows", () => {
-	assert.deepEqual(totalParts({ usd: 2, credits: 90, tokens: 0 }), ["$2.00", "90.0 AI credits"]);
-	assert.deepEqual(totalParts({ usd: 2, credits: 0, tokens: 0 }), ["$2.00"]);
+	assert.deepEqual(totalParts({ usd: 2, credits: 90, tokens: 0 }), { usd: "$2.00", credits: "90.0 AI credits" });
+	assert.deepEqual(totalParts({ usd: 2, credits: 0, tokens: 0 }), { usd: "$2.00" });
+});
+
+test("splitSections: providers only when two or more have a cost; threads always, in fixed order", () => {
+	assert.deepEqual(
+		splitSections(multiProvider).map((s) => [s.title, s.legend, s.parts.map((p) => p.label)]),
+		[
+			["Providers", "share", ["openai", "github-copilot"]],
+			["Threads", "usd", ["main", "subagents", "overhead"]],
+		],
+	);
+	assert.deepEqual(splitSections(mixed).map((s) => s.title), ["Threads"]);
+	assert.deepEqual(splitSections(usageBreakdown([providerRun("ollama/a", 0, "main", "main", 10)])), [], "nothing cost anything");
+});
+
+test("visibleColumns: credits when a row has some, tokens when a row cost nothing", () => {
+	assert.deepEqual(visibleColumns(multiProvider.byModel), { credits: true, tokens: true });
+	assert.deepEqual(visibleColumns(usageBreakdown([providerRun("openai/a", 1)]).byModel), { credits: false, tokens: false });
 });
 
 test("viewRows: models, providers or agents, as ranked in the breakdown", () => {

@@ -38,7 +38,8 @@ const manyRuns = manyCredits.map((credits, i) => run(`model-${i}`, credits));
 
 test("the component renders this session by model, headed with the session's total", () => {
 	const total = manyCredits.reduce((sum, credits) => sum + credits, 0);
-	assert.equal(viewOn(manyRuns).view.render(80)[0], `This session · By model · $${(total / 100).toFixed(2)} · ${total.toLocaleString("en-US")} AI credits`);
+	assert.equal(total, 1065);
+	assert.equal(viewOn(manyRuns).view.render(80)[0], "This session · By model · $10.65 · 1,065 AI credits");
 });
 
 test("the component fits the overlay's share of the terminal height at any width", () => {
@@ -273,11 +274,12 @@ test("s again after a completed load reuses it instead of reading the files agai
 
 test("the view persists across scope toggles, and Tab while loading keeps the loading line", async () => {
 	const { view, loader } = monthViewOn([run("gpt-5", 20, "subagent", "Explore")], "session");
-	view.handleInput(shiftTab);
+	view.handleInput(shiftTab); // By model -> By agent
 	view.handleInput("s");
-	view.handleInput(tab);
-	view.handleInput(tab);
-	view.handleInput(tab);
+	assert.ok(monthLines(view)[0].includes("By agent"), "the view survives the scope toggle");
+	view.handleInput(tab); // -> By model
+	view.handleInput(tab); // -> By provider
+	view.handleInput(tab); // -> By agent, with the load still running
 	assert.ok(monthLines(view)[0].includes("By agent"));
 	assert.ok(monthLines(view).includes("Reading sessions…"));
 	loader.loads[0].resolve({ records: records(run("gpt-5", 7, "subagent", "Explore")) });

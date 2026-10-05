@@ -8,7 +8,7 @@
  * x 100: exact by formula (tokens x GitHub's per-token rates / $0.01). The figures are gross usage:
  * they do not subtract a plan's monthly allowance.
  */
-import { costUsd, type PiUsage, sessionSpend } from "./session-spend.ts";
+import { costUsd, type PiUsage, providerOf, sessionSpend } from "./session-spend.ts";
 
 export const COPILOT_PROVIDER = "github-copilot";
 export const CREDITS_PER_USD = 100;
@@ -17,7 +17,7 @@ const FINEST_DIGITS = 2;
 
 /** True for a "provider/model" id served by GitHub Copilot. */
 export function isCopilotModel(model: string | undefined): boolean {
-	return !!model && model.startsWith(`${COPILOT_PROVIDER}/`);
+	return !!model && providerOf(model) === COPILOT_PROVIDER;
 }
 
 /** One run's AI credits: its USD cost x 100 when Copilot served it, else 0. */

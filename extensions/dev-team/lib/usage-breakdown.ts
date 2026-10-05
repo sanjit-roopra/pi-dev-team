@@ -6,8 +6,8 @@
  * something or used tokens, so a free local model still shows; a run with neither is left out, and an
  * empty breakdown means no usage at all. Amounts stay floats here; only the display rounds them.
  */
-import { hasVisibleCredits, runAiCredits } from "./ai-credits.ts";
-import { costUsd, type PiUsage, type SpendRun, UNKNOWN_MODEL } from "./session-spend.ts";
+import { CREDITS_PER_USD, isCopilotModel } from "./ai-credits.ts";
+import { costUsd, type PiUsage, providerOf, type SpendRun } from "./session-spend.ts";
 import type { SpendHistory } from "./usage-history.ts";
 
 /** What a group of runs spent. */
@@ -24,7 +24,7 @@ export interface UsageRow<L extends string = string> extends SpendAmounts {
 	share: number;
 }
 
-/** How a thread is named on screen; the split bar draws the same closed set. */
+/** How a thread is named on screen; the overlay's thread split draws the same closed set (THREAD_ORDER). */
 export type ThreadLabel = "main" | "subagents" | "overhead";
 
 export interface ThreadRow extends UsageRow<ThreadLabel> {
@@ -32,9 +32,8 @@ export interface ThreadRow extends UsageRow<ThreadLabel> {
 	thread: SpendRun["thread"];
 }
 
+/** One dispatched agent's spend on one provider; `label` is the agent's name. */
 export interface AgentRow extends UsageRow {
-	/** The dispatched agent's name. */
-	agent: string;
 	/** The provider that served this part of the agent's spend. */
 	provider: string;
 }
@@ -52,82 +51,90 @@ export interface UsageBreakdown {
 }
 
 export const THREAD_LABEL: Record<SpendRun["thread"], ThreadLabel> = { main: "main", subagent: "subagents", overhead: "overhead" };
-/** Joins an agent and its provider in an agent row's label. */
-export const AGENT_PROVIDER_SEPARATOR = " · ";
+/** The threads in the order the overlay's thread split draws them, so a glyph always means the same thread. */
+export const THREAD_ORDER: readonly ThreadLabel[] = Object.values(THREAD_LABEL);
 /** Below this share a non-zero row displays as "<1%". */
 const TINY_SHARE = 0.01;
 /** The finest USD amount the display shows; below it a cost reads as "<$0.01". */
 const USD_CENT = 0.01;
 
 /** Session files are untyped JSON: a cost or count that is not a positive finite number counts as none. */
-const amount = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
+const positiveFiniteOrZero = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
 
 /** A run's tokens: input, output and both cache directions. */
 export function runTokens(usage: PiUsage): number {
-	return amount(usage.input) + amount(usage.output) + amount(usage.cacheRead) + amount(usage.cacheWrite);
+	return positiveFiniteOrZero(usage.input) + positiveFiniteOrZero(usage.output) + positiveFiniteOrZero(usage.cacheRead) + positiveFiniteOrZero(usage.cacheWrite);
 }
 
-/** The provider part of a "provider/model" id; UNKNOWN_MODEL when the id names no provider. */
-export function providerOf(model: string): string {
-	const slash = model.indexOf("/");
-	return slash > 0 ? model.slice(0, slash) : UNKNOWN_MODEL;
+/** A run's USD, AI credits (from that same USD, when Copilot served it) and tokens. */
+function runAmounts(run: SpendRun): SpendAmounts {
+	const usd = positiveFiniteOrZero(costUsd(run.usage));
+	return { usd, credits: isCopilotModel(run.model) ? usd * CREDITS_PER_USD : 0, tokens: runTokens(run.usage) };
 }
 
 const ZERO: SpendAmounts = { usd: 0, credits: 0, tokens: 0 };
 const plus = (a: SpendAmounts, b: SpendAmounts): SpendAmounts => ({ usd: a.usd + b.usd, credits: a.credits + b.credits, tokens: a.tokens + b.tokens });
 
-function addTo<K>(map: Map<K, SpendAmounts>, key: K, amounts: SpendAmounts): void {
-	map.set(key, plus(map.get(key) ?? ZERO, amounts));
+/** A group's label and what it spent, before ranking. */
+interface Group<E> {
+	label: string;
+	/** Breaks ties between groups with the same label (an agent on two providers). */
+	tieBreak: string;
+	amounts: SpendAmounts;
+	extra: E;
 }
 
-/** Rows by USD, largest first, then by tokens, then by name; each with its share of the map's USD. */
-function rank<K>(groups: ReadonlyMap<K, SpendAmounts>, labelOf: (key: K) => string): (UsageRow & { key: K })[] {
-	const totalUsd = Array.from(groups.values()).reduce((sum, a) => sum + a.usd, 0);
-	return Array.from(groups, ([key, amounts]) => ({ key, label: labelOf(key), ...amounts, share: totalUsd > 0 ? amounts.usd / totalUsd : 0 })).sort(
-		(a, b) => b.usd - a.usd || b.tokens - a.tokens || a.label.localeCompare(b.label, "en"),
-	);
+/** Rows by USD, largest first, then by tokens, then by name; each with its share of the groups' USD. */
+function rank<E>(groups: Iterable<Group<E>>): (UsageRow & E)[] {
+	const list = [...groups];
+	const totalUsd = list.reduce((sum, g) => sum + g.amounts.usd, 0);
+	return list
+		.sort((a, b) => b.amounts.usd - a.amounts.usd || b.amounts.tokens - a.amounts.tokens || a.label.localeCompare(b.label, "en") || a.tieBreak.localeCompare(b.tieBreak, "en"))
+		.map((g) => ({ ...g.extra, label: g.label, ...g.amounts, share: totalUsd > 0 ? g.amounts.usd / totalUsd : 0 }));
 }
 
-const withoutKey = <R extends { key: unknown }>({ key: _key, ...row }: R): Omit<R, "key"> => row;
-
-export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
-	const models = new Map<string, SpendAmounts>();
-	const providers = new Map<string, SpendAmounts>();
-	const agents = new Map<string, { agent: string; provider: string; amounts: SpendAmounts }>();
-	const threads = new Map<SpendRun["thread"], SpendAmounts>();
-	for (const run of runs) {
-		const amounts: SpendAmounts = { usd: amount(costUsd(run.usage)), credits: amount(runAiCredits(run)), tokens: amount(runTokens(run.usage)) };
-		if (amounts.usd === 0 && amounts.tokens === 0) continue;
-		const provider = providerOf(run.model);
-		addTo(models, run.model, amounts);
-		addTo(providers, provider, amounts);
-		addTo(threads, run.thread, amounts);
-		if (run.thread === "subagent") {
-			const key = `${run.agent}${AGENT_PROVIDER_SEPARATOR}${provider}`;
-			const prev = agents.get(key);
-			agents.set(key, { agent: run.agent, provider, amounts: plus(prev?.amounts ?? ZERO, amounts) });
-		}
+/** Sums runs into groups by key, keeping each group's label and extra fields from its first run. */
+class Grouper<E> {
+	private readonly groups = new Map<string, Group<E>>();
+	add(key: string, label: string, amounts: SpendAmounts, extra: E, tieBreak = ""): void {
+		const group = this.groups.get(key);
+		if (group) group.amounts = plus(group.amounts, amounts);
+		else this.groups.set(key, { label, tieBreak, amounts, extra });
 	}
-	const byModel = rank(models, (model) => model).map(withoutKey);
-	const agentAmounts = new Map(Array.from(agents, ([key, a]) => [key, a.amounts]));
-	const byAgent = rank(agentAmounts, (key) => key).map(({ key, ...row }) => ({ ...row, agent: agents.get(key)?.agent ?? key, provider: agents.get(key)?.provider ?? UNKNOWN_MODEL }));
-	const byThread = rank(threads, (thread) => THREAD_LABEL[thread]).map(({ key: thread, ...row }) => ({ ...row, thread, label: THREAD_LABEL[thread] }));
-	return {
-		total: byModel.reduce<SpendAmounts>((sum, row) => plus(sum, row), ZERO),
-		byModel,
-		byProvider: rank(providers, (provider) => provider).map(withoutKey),
-		byAgent,
-		byThread,
-	};
+	ranked(): (UsageRow & E)[] {
+		return rank(this.groups.values());
+	}
 }
 
 /** False when nothing was spent: no USD and no tokens. */
-export function hasUsage(total: SpendAmounts): boolean {
-	return total.usd > 0 || total.tokens > 0;
+export function hasUsage(amounts: SpendAmounts): boolean {
+	return amounts.usd > 0 || amounts.tokens > 0;
 }
 
-/** True when some of the spend was GitHub Copilot's, as much as the credits display shows. */
-export const hasCopilotSpend = (amounts: SpendAmounts): boolean => hasVisibleCredits(amounts.credits);
+export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
+	const models = new Grouper<object>();
+	const providers = new Grouper<object>();
+	const agents = new Grouper<{ provider: string }>();
+	const threads = new Grouper<{ thread: SpendRun["thread"] }>();
+	for (const run of runs) {
+		const amounts = runAmounts(run);
+		if (!hasUsage(amounts)) continue;
+		const provider = providerOf(run.model);
+		models.add(run.model, run.model, amounts, {});
+		providers.add(provider, provider, amounts, {});
+		threads.add(run.thread, THREAD_LABEL[run.thread], amounts, { thread: run.thread });
+		// Keyed on the pair, so no agent name can collide with another agent and provider.
+		if (run.thread === "subagent") agents.add(JSON.stringify([run.agent, provider]), run.agent, amounts, { provider }, provider);
+	}
+	const byModel = models.ranked();
+	return {
+		total: byModel.reduce<SpendAmounts>((sum, row) => plus(sum, row), ZERO),
+		byModel,
+		byProvider: providers.ranked(),
+		byAgent: agents.ranked(),
+		byThread: threads.ranked() as ThreadRow[],
+	};
+}
 
 /** What this month's load produced. */
 export interface MonthSnapshot {
@@ -156,14 +163,15 @@ export function formatUsd(usd: number): string {
 	return `$${usd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const TOKEN_UNITS: readonly (readonly [number, string])[] = [
+	[1e9, "B"],
+	[1e6, "M"],
+	[1e3, "k"],
+];
+
 /** "320 tok", "85.3k tok", "1.2M tok". */
 export function formatTokens(tokens: number): string {
-	const units: [number, string][] = [
-		[1e9, "B"],
-		[1e6, "M"],
-		[1e3, "k"],
-	];
-	for (const [size, unit] of units) {
+	for (const [size, unit] of TOKEN_UNITS) {
 		const scaled = tokens / size;
 		if (Number(scaled.toFixed(1)) >= 1) return `${Number(scaled.toFixed(1)).toLocaleString("en-US")}${unit} tok`;
 	}

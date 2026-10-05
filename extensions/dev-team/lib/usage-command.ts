@@ -5,10 +5,9 @@
  * ran" is the signal to fall back to text. A `ui.custom()` that rejects falls back to text too.
  */
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { copilotBillingPeriodStart } from "./ai-credits.ts";
 import { type SpendRun, sessionEntries, sessionSpend } from "./session-spend.ts";
 import { monthSnapshot, usageBreakdown } from "./usage-breakdown.ts";
-import { loadSpendHistory, sessionRoot } from "./usage-history.ts";
+import { loadSpendHistory, sessionRoot, usageMonthStart } from "./usage-history.ts";
 import type { UsageStyle } from "./usage-render.ts";
 import { openUsage, type Scope, type Transition } from "./usage-state.ts";
 import { errorReason, loadFailedMessage, usageSummary } from "./usage-text.ts";
@@ -38,8 +37,8 @@ export function parseUsageArgs(args: string): { scope: Scope } | { error: string
 const sessionRunsOf = (ctx: ExtensionContext): SpendRun[] => [...sessionSpend(sessionEntries(ctx))];
 const sessionRootOf = (ctx: ExtensionContext): string => sessionRoot(ctx.sessionManager.getSessionDir());
 
-/** A distinct colour per split segment position; the glyphs (usage-split-bar.ts) tell them apart without colour. */
-const SEGMENT_COLORS = ["accent", "success", "warning", "error"] as const;
+/** A distinct colour per split segment slot, one per glyph in SPLIT_GLYPHS (usage-split-bar.ts), which tell the slots apart without colour. */
+const SEGMENT_COLORS = ["accent", "success", "warning", "muted"] as const;
 
 /** pi theme tokens for the overlay: accent bars, a distinct colour per split segment, muted secondary text. */
 function themeStyle(theme: Theme): UsageStyle {
@@ -48,7 +47,7 @@ function themeStyle(theme: Theme): UsageStyle {
 		error: (text) => theme.fg("error", text),
 		bar: (text) => theme.fg("accent", text),
 		muted: (text) => theme.fg("muted", text),
-		segment: (position, text) => theme.fg(SEGMENT_COLORS[position % SEGMENT_COLORS.length], text),
+		segment: (slot, text) => theme.fg(SEGMENT_COLORS[slot] ?? "muted", text),
 	};
 }
 
@@ -60,7 +59,7 @@ async function printSummary(ctx: ExtensionContext, scope: Scope, deps: UsageDeps
 		return;
 	}
 	try {
-		const history = await deps.loadHistory({ root: sessionRootOf(ctx), since: copilotBillingPeriodStart(now) });
+		const history = await deps.loadHistory({ root: sessionRootOf(ctx), since: usageMonthStart(now) });
 		const snapshot = monthSnapshot(history, deps.now());
 		deps.emit(usageSummary({ scope, breakdown: snapshot.breakdown, now, month: snapshot }));
 	} catch (err) {

@@ -2,7 +2,7 @@ import { COPILOT_PROVIDER, CREDITS_PER_USD } from "../../extensions/dev-team/lib
 import type { SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
 import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 
-/** A Copilot run costing `credits` AI credits (1 credit = $0.01). */
+/** A Copilot run costing `credits` AI credits (1 credit = $0.01); for other providers, or a cost in USD, use providerRun. */
 export const run = (model: string, credits: number, thread: SpendRun["thread"] = "main", agent = "main"): SpendRun => ({
 	thread,
 	agent: thread === "main" ? "main" : agent,
@@ -31,7 +31,12 @@ export const providerRun = (model: string, usd: number, thread: SpendRun["thread
 	messages: 1,
 });
 
-/** $2.00: the main session on OpenAI, agents on Copilot and OpenAI, and a free local model. */
+/**
+ * The main session on OpenAI, agents on Copilot and OpenAI, and a free local model. Totals: $2.00 and
+ * 90 AI credits. Providers: openai $1.10 (55%), github-copilot $0.90 (45%), ollama $0.00 with 850k
+ * tokens. Threads: main $0.80, subagents $1.20. Agents: software-engineer on github-copilot $0.90,
+ * arch-review on openai $0.30, Explore on ollama $0.00.
+ */
 export const multiProvider = usageBreakdown([
 	providerRun("openai/gpt-5.5", 0.8),
 	providerRun("github-copilot/claude-sonnet-5.5", 0.9, "subagent", "software-engineer"),
