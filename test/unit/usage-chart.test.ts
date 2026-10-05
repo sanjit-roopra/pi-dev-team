@@ -11,15 +11,18 @@ const percent = (share: number) => `${(share * 100).toFixed(1)}%`;
 // Layout is label | bar | value | share, two spaces apart. With one-character labels, two-character
 // values and "83.3%"-style shares, a bar area of N cells needs a width of 1 + 2 + 5 + 3 * 2 + N.
 const widthForBar = (cells: number) => 14 + cells;
+const format = { usd: String, credits: (c: number) => (c > 0 ? `${c} cr` : ""), tokens: (t: number) => `${t} tok`, share: percent };
+const NO_OPTIONAL = { credits: false, tokens: false };
 const options = (width: number, extra: Partial<BarChartOptions> = {}): BarChartOptions => ({
 	width,
 	maxRows: 99,
-	formatValue: String,
-	formatShare: percent,
+	format,
+	wantedColumns: NO_OPTIONAL,
 	style,
 	...extra,
 });
-const row = (label: string, credits: number, share = 0.5): ChartRow => ({ label, credits, share });
+const withUsd = (usd: (n: number) => string): Partial<BarChartOptions> => ({ format: { ...format, usd } });
+const row = (label: string, usd: number, share = 0.5, more: Partial<ChartRow> = {}): ChartRow => ({ label, usd, credits: 0, tokens: 7, share, ...more });
 
 test("bars scale to the largest row, with label, value and share on each line", () => {
 	const lines = barChartLines([row("A", 50, 50 / 60), row("B", 10, 10 / 60)], options(widthForBar(10)));
@@ -32,13 +35,45 @@ test("fractional bar lengths use eighth blocks", () => {
 });
 
 test("a non-zero row is always visible", () => {
-	const lines = barChartLines([row("A", 90), row("B", 0.09)], options(widthForBar(10), { formatValue: (n) => String(Math.round(n)) }));
+	const lines = barChartLines([row("A", 90), row("B", 0.09)], options(widthForBar(10), withUsd((n) => String(Math.round(n)))));
 	assert.deepEqual(lines, ["A  ██████████  90  50.0%", "B  ▏            0  50.0%"]);
 });
 
-test("a zero row has an empty bar", () => {
-	const lines = barChartLines([row("A", 10), row("B", 0)], options(widthForBar(10)));
-	assert.deepEqual(lines, ["A  ██████████  10  50.0%", `B  ${" ".repeat(10)}   0  50.0%`]);
+test("a zero row has an empty bar; a wanted tokens column shows on every row", () => {
+	const lines = barChartLines([row("A", 10), row("B", 0)], options(widthForBar(10) + 7, { wantedColumns: { credits: false, tokens: true } }));
+	assert.deepEqual(lines, ["A  ██████████  10  7 tok  50.0%", `B  ${" ".repeat(10)}   0  7 tok  50.0%`]);
+});
+
+test("optional columns show only when wanted", () => {
+	const lines = barChartLines([row("A", 10, 0.5, { credits: 1000 }), row("B", 0)], options(80));
+	assert.ok(lines.every((l) => !l.includes("tok") && !l.includes("cr")), lines.join("\n"));
+});
+
+test("a wanted credits column is blank for a row without credits", () => {
+	const lines = barChartLines([row("A", 50, 50 / 60, { credits: 5000 }), row("B", 10, 10 / 60)], options(widthForBar(10) + 9, { wantedColumns: { credits: true, tokens: false } }));
+	assert.deepEqual(lines, ["A  ██████████  50  5000 cr  83.3%", `B  ██${" ".repeat(8)}  10           16.7%`]);
+});
+
+test("a wanted tokens column stays when the free row folds into other", () => {
+	const rows = [row("A", 30), row("B", 20), row("C", 10), row("free", 0, 0, { tokens: 900 })];
+	const lines = barChartLines(rows, options(80, { maxRows: 3, wantedColumns: { credits: false, tokens: true } }));
+	assert.ok(lines[2].startsWith("other (2)") && lines[2].includes("907 tok"), lines[2]);
+});
+
+test("a narrow terminal drops share, then tokens, then credits, then the bar", () => {
+	const rows = [row("A", 50, 0.5, { credits: 5000 }), row("B", 0, 0.5)];
+	const all = { wantedColumns: { credits: true, tokens: true } };
+	/** The columns the first line shows at `width`, as a word list. */
+	const columnsAt = (width: number) => {
+		const line = barChartLines(rows, options(width, all))[0];
+		return [line.includes("█") && "bar", "usd", line.includes("cr") && "credits", line.includes("tok") && "tokens", line.includes("%") && "share"].filter(Boolean).join(" ");
+	};
+	const seen: string[] = [];
+	for (let width = 60; width >= 5; width--) {
+		const columns = columnsAt(width);
+		if (seen.at(-1) !== columns) seen.push(columns);
+	}
+	assert.deepEqual(seen, ["bar usd credits tokens share", "bar usd credits tokens", "bar usd credits", "bar usd", "usd"]);
 });
 
 const LONG_LABEL = "model-with-a-very-long-name-1234567890-abc"; // 40 characters
@@ -103,6 +138,7 @@ test("rows beyond the limit fold into an other row with the summed value and sha
 	const lines = barChartLines(countdown, options(60, { maxRows: 8 }));
 	assert.equal(lines.length, 8);
 	assert.ok(lines[6].startsWith("m6"), lines[6]);
+	assert.ok(lines.every((l) => !l.includes("tok")), "no zero row, so no tokens column");
 	assert.ok(lines[7].startsWith("other (3)"), lines[7]);
 	assert.ok(lines[7].endsWith("  6  10.9%"), lines[7]);
 });
@@ -130,55 +166,85 @@ test("a limit of one folds everything into other", () => {
 	assert.ok(lines[0].startsWith("other (10)"), lines[0]);
 });
 
-const splitStyle = { segment: (_label: string, text: string) => text, muted: identity };
+const splitStyle = { segment: (_position: number, text: string) => text, muted: identity };
 const splitOptions = (width: number, extra: Partial<SplitBarOptions> = {}): SplitBarOptions => ({ width, formatValue: String, style: splitStyle, ...extra });
 const split = (main: number, subagents: number, overhead: number): SplitPart[] => [
-	{ label: "main", credits: main },
-	{ label: "subagents", credits: subagents },
-	{ label: "overhead", credits: overhead },
+	{ label: "main", amount: main },
+	{ label: "subagents", amount: subagents },
+	{ label: "overhead", amount: overhead },
 ];
 
-test("split bar: segments in main, subagents, overhead order with a legend of credits", () => {
+test("split bar: segments in the given order with a legend of values", () => {
 	assert.deepEqual(splitBarLines(split(30, 60, 10), splitOptions(80, { maxBarCells: 10 })), [
-		"███▓▓▓▓▓▓░",
-		"█ main 30 · ▓ subagents 60 · ░ overhead 10",
+		"███▓▓▓▓▓▓▒",
+		"█ main 30 · ▓ subagents 60 · ▒ overhead 10",
 	]);
 });
 
-test("split bar: input order does not matter", () => {
-	const [bar] = splitBarLines(split(30, 60, 10).reverse(), splitOptions(10));
-	assert.equal(bar, "███▓▓▓▓▓▓░");
+test("split bar: the given order decides the segment order and glyphs", () => {
+	assert.deepEqual(splitBarLines(split(30, 60, 10).reverse(), splitOptions(80, { maxBarCells: 10 })), ["█▓▓▓▓▓▓▒▒▒", "█ overhead 10 · ▓ subagents 60 · ▒ main 30"]);
 });
 
-test("split bar: a zero or missing thread is omitted from bar and legend", () => {
-	assert.deepEqual(splitBarLines(split(40, 0, 10), splitOptions(80, { maxBarCells: 10 })), ["████████░░", "█ main 40 · ░ overhead 10"]);
-	assert.deepEqual(splitBarLines([{ label: "main", credits: 5 }], splitOptions(80, { maxBarCells: 4 })), ["████", "█ main 5"]);
+test("split bar: a part keeps its glyph when an earlier part has no amount", () => {
+	assert.deepEqual(splitBarLines(split(0, 60, 10), splitOptions(80, { maxBarCells: 7 })), ["▓▓▓▓▓▓▒", "▓ subagents 60 · ▒ overhead 10"]);
 });
 
-test("split bar: nothing to show when no thread has credits", () => {
+test("split bar: a part keeps its colour slot when an earlier part has no amount", () => {
+	assert.deepEqual(splitBarLines(split(0, 60, 10), splitOptions(80, { maxBarCells: 7, style: taggedSplitStyle })), [
+		sgr(32, "▓▓▓▓▓▓") + sgr(33, "▒"),
+		`${sgr(32, "▓")} subagents 60${sgr(MUTED_CODE, " · ")}${sgr(33, "▒")} overhead 10`,
+	]);
+});
+
+test("split bar: with more parts than glyphs but at most four with an amount, slots follow their rank", () => {
+	const parts = [0, 40, 30, 20, 10].map((amount, i) => ({ label: `p${i}`, amount }));
+	assert.deepEqual(splitBarLines(parts, splitOptions(80, { maxBarCells: 10 })), ["████▓▓▓▒▒░", "█ p1 40 · ▓ p2 30 · ▒ p3 20 · ░ p4 10"]);
+});
+
+test("split bar: the legend value can use the part's share of the total", () => {
+	const lines = splitBarLines(split(30, 60, 10), splitOptions(80, { maxBarCells: 10, formatValue: (_, share) => `${Math.round(share * 100)}%` }));
+	assert.equal(lines[1], "█ main 30% · ▓ subagents 60% · ▒ overhead 10%");
+});
+
+test("split bar: past four parts, the rest fold into one other segment", () => {
+	const parts = ["a", "b", "c", "d", "e"].map((label, i) => ({ label, amount: 50 - i * 10 }));
+	assert.deepEqual(splitBarLines(parts, splitOptions(80, { maxBarCells: 15 })), ["█████▓▓▓▓▒▒▒░░░", "█ a 50 · ▓ b 40 · ▒ c 30 · ░ other 30"]);
+});
+
+test("split bar: a label from a session file is made one line before it is drawn", () => {
+	const [, legend] = splitBarLines([{ label: "evil\x1b[31m\nprovider", amount: 1 }], splitOptions(80));
+	assert.ok(!/[\x00-\x1f]/.test(legend), JSON.stringify(legend));
+});
+
+test("split bar: a zero part is omitted from bar and legend, and the others keep their glyphs", () => {
+	assert.deepEqual(splitBarLines(split(40, 0, 10), splitOptions(80, { maxBarCells: 10 })), ["████████▒▒", "█ main 40 · ▒ overhead 10"]);
+	assert.deepEqual(splitBarLines([{ label: "main", amount: 5 }], splitOptions(80, { maxBarCells: 4 })), ["████", "█ main 5"]);
+});
+
+test("split bar: nothing to show when no part has an amount", () => {
 	assert.deepEqual(splitBarLines(split(0, 0, 0), splitOptions(10)), []);
 	assert.deepEqual(splitBarLines([], splitOptions(10)), []);
 });
 
 test("split bar: an uneven split fills the bar exactly, by largest remainder", () => {
 	const [bar] = splitBarLines(split(1, 1, 1), splitOptions(10));
-	assert.equal(bar, "████▓▓▓░░░");
+	assert.equal(bar, "████▓▓▓▒▒▒");
 	const [skewed] = splitBarLines(split(5, 3, 1), splitOptions(10)); // ideal 5.56, 3.33, 1.11
-	assert.equal(skewed, "██████▓▓▓░");
+	assert.equal(skewed, "██████▓▓▓▒");
 });
 
 test("split bar: a tiny part keeps at least one cell", () => {
 	const [bar] = splitBarLines(split(99, 0, 1), splitOptions(10));
-	assert.equal(bar, "█████████░");
+	assert.equal(bar, "█████████▒");
 });
 
 test("split bar: a narrow width wraps the legend between entries", () => {
 	const lines = splitBarLines(split(30, 60, 10), splitOptions(30));
-	assert.deepEqual(lines, ["█".repeat(9) + "▓".repeat(18) + "░".repeat(3), "█ main 30 · ▓ subagents 60", "░ overhead 10"]);
+	assert.deepEqual(lines, ["█".repeat(9) + "▓".repeat(18) + "▒".repeat(3), "█ main 30 · ▓ subagents 60", "▒ overhead 10"]);
 });
 
 test("split bar: an entry wider than the width is truncated", () => {
-	const lines = splitBarLines(split(1234567, 0, 0), splitOptions(8, { formatValue: (n) => n.toLocaleString("en-US") }));
+	const lines = splitBarLines(split(1234567, 0, 0), splitOptions(8, { formatValue: (n: number) => n.toLocaleString("en-US") }));
 	assert.deepEqual(lines, ["████████", "█ main …"]);
 });
 
@@ -195,13 +261,8 @@ test("split bar: the bar is as wide as the width, up to the default cap of 40", 
 	}
 });
 
-test("split bar: credits of the same label sum, and an unknown label is ignored", () => {
-	const parts = [{ label: "main", credits: 10 }, { label: "main", credits: 20 }, { label: "bogus", credits: 99 }] as SplitPart[];
-	assert.deepEqual(splitBarLines(parts, splitOptions(80, { maxBarCells: 4 })), ["████", "█ main 30"]);
-});
-
 test("split bar: with too few cells, each segment gets one before the largest keeps two", () => {
-	assert.deepEqual(splitBarLines(split(98, 1, 1), splitOptions(3)).slice(0, 1), ["█▓░"]);
+	assert.deepEqual(splitBarLines(split(98, 1, 1), splitOptions(3)).slice(0, 1), ["█▓▒"]);
 	assert.deepEqual(splitBarLines(split(98, 1, 1), splitOptions(2)).slice(0, 1), ["█▓"]);
 	assert.deepEqual(splitBarLines(split(98, 1, 1), splitOptions(0)).slice(0, 1), [""]);
 });
@@ -220,7 +281,7 @@ test("identity styling leaves no escape codes in any split bar line, at any widt
 
 test("a value is cut with an ellipsis, never shown as a shorter number", () => {
 	const thousands = (n: number) => n.toLocaleString("en-US");
-	const at = (width: number) => barChartLines([row("model", 1234, 1)], options(width, { formatValue: thousands }));
+	const at = (width: number) => barChartLines([row("model", 1234, 1)], options(width, withUsd(thousands)));
 	assert.deepEqual([4, 5, 6, 7].map(at), [["1,2…"], ["1,234"], ["1,234"], ["1,234"]]);
 });
 
@@ -232,11 +293,11 @@ test("escape sequences and control characters in a label are stripped whole befo
 
 // Escape codes only, so a styled line measures as wide as a plain one; the code tells which style ran.
 const sgr = (code: number, text: string) => `\x1b[${code}m${text}\x1b[0m`;
-const SEGMENT_CODES = { main: 31, subagents: 32, overhead: 33 };
+const SEGMENT_CODES = [31, 32, 33, 35];
 const BAR_CODE = 34;
 const MUTED_CODE = 2;
 const taggedStyle: BarChartOptions["style"] = { bar: (t) => sgr(BAR_CODE, t), muted: (t) => sgr(MUTED_CODE, t) };
-const taggedSplitStyle: SplitBarOptions["style"] = { segment: (label, t) => sgr(SEGMENT_CODES[label], t), muted: (t) => sgr(MUTED_CODE, t) };
+const taggedSplitStyle: SplitBarOptions["style"] = { segment: (position, t) => sgr(SEGMENT_CODES[position], t), muted: (t) => sgr(MUTED_CODE, t) };
 
 test("bar chart: bar styling wraps the bar glyphs and muted wraps the share, nothing else", () => {
 	const lines = barChartLines([row("A", 50, 50 / 60), row("B", 10, 10 / 60)], options(widthForBar(10), { style: taggedStyle }));
@@ -257,8 +318,8 @@ test("bar chart: styled lines are no wider than the width, at every width and la
 test("split bar: each segment's style wraps its own glyphs, and muted wraps the legend separators", () => {
 	const lines = splitBarLines(split(30, 60, 10), splitOptions(80, { maxBarCells: 10, style: taggedSplitStyle }));
 	assert.deepEqual(lines, [
-		sgr(31, "███") + sgr(32, "▓▓▓▓▓▓") + sgr(33, "░"),
-		`${sgr(31, "█")} main 30${sgr(MUTED_CODE, " · ")}${sgr(32, "▓")} subagents 60${sgr(MUTED_CODE, " · ")}${sgr(33, "░")} overhead 10`,
+		sgr(31, "███") + sgr(32, "▓▓▓▓▓▓") + sgr(33, "▒"),
+		`${sgr(31, "█")} main 30${sgr(MUTED_CODE, " · ")}${sgr(32, "▓")} subagents 60${sgr(MUTED_CODE, " · ")}${sgr(33, "▒")} overhead 10`,
 	]);
 });
 

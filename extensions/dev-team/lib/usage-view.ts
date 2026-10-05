@@ -3,10 +3,10 @@
  * keys into transitions, runs this month's load and hands the model to renderUsage (usage-render.ts).
  */
 import type { Component } from "@earendil-works/pi-tui";
-import { copilotBillingPeriodStart } from "./ai-credits.ts";
 import type { SpendRun } from "./session-spend.ts";
 import { type MonthSnapshot, monthSnapshot, type UsageBreakdown, usageBreakdown } from "./usage-breakdown.ts";
 import type { LoadOptions, SpendHistory } from "./usage-history.ts";
+import { usageMonthStart } from "./ai-credits.ts";
 import { renderUsage, type UsageStyle } from "./usage-render.ts";
 import { reduce, type Transition, type UsageAction, type UsageEffect, type UsageState, usageKeyFor } from "./usage-state.ts";
 import { errorReason } from "./usage-text.ts";
@@ -82,7 +82,7 @@ export class UsageView implements Component {
 		const controller = new AbortController();
 		this.activeLoad = controller;
 		const isCurrentLoad = () => this.activeLoad === controller;
-		const since = copilotBillingPeriodStart(this.deps.now());
+		const since = usageMonthStart(this.deps.now());
 		const onProgress = (done: number, total: number) => {
 			if (isCurrentLoad()) this.dispatch({ type: "progress", done, total });
 		};

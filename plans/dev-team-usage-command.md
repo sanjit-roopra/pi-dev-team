@@ -11,6 +11,8 @@ Give pi-dev-team users a `/dev-team usage` subcommand that opens a graphical TUI
 
 ## Approach stances (decision-defaults axes)
 
+> Scope superseded on 2026-10-04 by [usage-all-providers.md](usage-all-providers.md): every provider counts, bars and shares measure USD, and AI credits are a column for the Copilot part. The stances below describe the first version.
+
 - **Scope**: GitHub Copilot AI credits only (USD × 100, same formula as the status line). Non-Copilot spend is excluded everywhere. No USD charts, no monthly allowance, no GitHub billing API.
 - **Replace vs merge**: additive, with one deliberate change to shared accounting: `sessionSpend()` now also yields compaction and branch-summary usage (attributed to the model in effect), so the status line counts them too. The cost meter skips overhead and is unchanged; subagent render unchanged.
 - **History source**: stat-only walk of the pi session root, top-level session files only (`<root>/<project>/*.jsonl` or a flat `<root>/*.jsonl`). Nested `run-N/session.jsonl` files from another extension are ignored for now (operator decision 2026-10-04; those subagents will be fixed separately). Covers all projects — credits are account-wide.

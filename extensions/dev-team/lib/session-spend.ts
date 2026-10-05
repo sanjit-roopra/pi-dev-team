@@ -9,6 +9,8 @@ import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./s
 
 /** The model of a run whose entry does not name one. */
 export const UNKNOWN_MODEL = "unknown";
+/** The provider of a model id that names none. */
+export const UNKNOWN_PROVIDER = "unknown";
 /** The agent of a subagent run whose entry does not name one as text. */
 export const UNKNOWN_AGENT = "unknown";
 
@@ -36,6 +38,15 @@ export interface SpendRun {
 	/** Model messages the run covers. */
 	messages: number;
 }
+
+/** The provider part of a "provider/model" id; UNKNOWN_PROVIDER when the id names none. */
+export function providerOf(model: string): string {
+	const slash = model.indexOf("/");
+	return slash > 0 ? model.slice(0, slash) : UNKNOWN_PROVIDER;
+}
+
+/** Session files are untyped JSON: a cost or count that is not a positive finite number counts as none. */
+export const positiveFiniteOrZero = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
 
 export function costUsd(u: PiUsage): number {
 	return typeof u.cost === "number" ? u.cost : (u.cost?.total ?? 0);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus, copilotBillingPeriodStart, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
+import { aiCreditsStatus, copilotBillingPeriodStart, creditsFor, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
 import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // GitHub bills 1 AI credit per $0.01 of token cost (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
@@ -25,6 +25,22 @@ test("runAiCredits: a Copilot run at 100 credits per USD, any other run 0", () =
 	close(runAiCredits({ model: "github-copilot/m", usage: usage(0.25) }), 0.25 * CREDITS_PER_USD);
 	close(runAiCredits({ model: "anthropic/m", usage: usage(3) }), 0);
 	close(runAiCredits({ usage: usage(1) }), 0);
+});
+
+test("runAiCredits: a NaN, negative, infinite or non-number cost gives 0 credits", () => {
+	for (const cost of [Number.NaN, -1, Number.POSITIVE_INFINITY, "0.5" as unknown as number]) {
+		assert.equal(runAiCredits({ model: "github-copilot/m", usage: usage(cost) }), 0, String(cost));
+	}
+});
+
+test("runsAiCredits: one malformed run does not spoil the sum", () => {
+	close(runsAiCredits([{ model: "github-copilot/m", usage: usage(Number.NaN) }, { model: "github-copilot/m", usage: usage(0.25) }]), 0.25 * CREDITS_PER_USD);
+});
+
+test("creditsFor: 100 credits per USD for a Copilot model, 0 for any other", () => {
+	close(creditsFor("github-copilot/m", 0.5), 0.5 * CREDITS_PER_USD);
+	assert.equal(creditsFor("openai/m", 0.5), 0);
+	assert.equal(creditsFor(undefined, 0.5), 0);
 });
 
 test("runsAiCredits: sums the Copilot runs of a mixed list", () => {

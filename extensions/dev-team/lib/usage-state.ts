@@ -8,7 +8,7 @@
 import { Key, type KeyId, matchesKey } from "@earendil-works/pi-tui";
 
 export type Scope = "session" | "month";
-export type View = "model" | "agent";
+export type View = "model" | "provider" | "agent";
 
 /**
  * The this-month history load. It outlives the scope: "ready" is kept when the user goes back to this
@@ -45,7 +45,7 @@ export interface Transition {
 }
 
 /** Left to right as Tab walks them. */
-const VIEWS: readonly View[] = ["model", "agent"];
+const VIEWS: readonly View[] = ["model", "provider", "agent"];
 
 const LOADING: LoadState = { kind: "loading" };
 const IDLE: LoadState = { kind: "idle" };

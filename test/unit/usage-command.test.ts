@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/dev-team/lib/usage-command.ts";
 import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.ts";
 import { OVERLAY_HEIGHT_PERCENT } from "../../extensions/dev-team/lib/usage-view.ts";
-import { NOW, run } from "../helpers/usage-fixtures.ts";
+import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const SESSION_DIR = "/home/u/.pi/agent/sessions/--proj--";
 
@@ -13,6 +13,14 @@ const copilotTurn = (id: string, credits: number) => ({
 	id,
 	timestamp: "2026-10-02T10:00:00.000Z",
 	message: { role: "assistant", provider: "github-copilot", model: "gpt-5", usage: { cost: { total: credits / 100 } } },
+});
+
+/** An assistant turn from any provider, as pi writes it to the session file. */
+const assistantTurn = (id: string, provider: string, model: string, usd: number, input = 0) => ({
+	type: "message",
+	id,
+	timestamp: "2026-10-02T10:00:00.000Z",
+	message: { role: "assistant", provider, model, usage: { cost: { total: usd }, input } },
 });
 
 type Custom = (factory: (...args: any[]) => any, options?: any) => Promise<unknown>;
@@ -48,13 +56,13 @@ test("without a UI the session summary is printed, no overlay is opened", async 
 	const { deps, emitted } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: false, entries: [copilotTurn("a", 40), copilotTurn("b", 20)] }), "", deps);
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This session · 60.0 AI credits\nmain 60.0"), emitted[0]);
+	assert.ok(emitted[0].startsWith("This session · $0.60 · 60.0 AI credits\nThreads  main $0.60"), emitted[0]);
 });
 
-test("without a UI and without Copilot spend it prints the empty state", async () => {
+test("without a UI and without usage it prints the empty state", async () => {
 	const { deps, emitted } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: false }), "", deps);
-	assert.deepEqual(emitted, ["No GitHub Copilot usage in this session"]);
+	assert.deepEqual(emitted, ["No usage in this session"]);
 });
 
 test("a UI whose custom() is a stub that never runs the factory (RPC) gets the text summary", async () => {
@@ -62,17 +70,17 @@ test("a UI whose custom() is a stub that never runs the factory (RPC) gets the t
 	const custom: Custom = async () => undefined;
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This session · 40.0 AI credits"));
+	assert.ok(emitted[0].startsWith("This session · $0.40 · 40.0 AI credits"));
 });
 
 test("a stub custom() that never runs the factory (RPC) gets this month's text summary, loaded from the session root", async () => {
-	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }] });
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: copilotRun("gpt-5", 30) }] });
 	const custom: Custom = async () => undefined;
 	await runUsage(fakeCtx({ hasUI: true, custom }), "month", deps);
 	assert.equal(loads.length, 1);
 	assert.equal(loads[0].root, "/home/u/.pi/agent/sessions");
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This month (Oct 1 – Oct 4) · 30.0 AI credits"), emitted[0]);
+	assert.ok(emitted[0].startsWith("This month (Oct 1 – Oct 4) · $0.30 · 30.0 AI credits"), emitted[0]);
 });
 
 test("a custom() that rejects falls back to the text summary instead of throwing", async () => {
@@ -80,7 +88,7 @@ test("a custom() that rejects falls back to the text summary instead of throwing
 	const custom: Custom = () => Promise.reject(new Error("tui is gone"));
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	assert.equal(emitted.length, 1);
-	assert.ok(emitted[0].startsWith("This session · 40.0 AI credits"), emitted[0]);
+	assert.ok(emitted[0].startsWith("This session · $0.40 · 40.0 AI credits"), emitted[0]);
 });
 
 test("when the overlay opened and closed, no text is printed", async () => {
@@ -106,7 +114,7 @@ test("the overlay component renders this session, themed, within the terminal he
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	const lines: string[] = view.render(80);
 	assert.ok(lines.length <= Math.floor((20 * OVERLAY_HEIGHT_PERCENT) / 100));
-	assert.ok(lines[0].includes("This session · By model · 40.0 AI credits"), lines[0]);
+	assert.ok(lines[0].includes("This session · By model · $0.40 · 40.0 AI credits"), lines[0]);
 	assert.ok(lines.some((l) => l.includes("<accent>")), "bars use the accent colour");
 	view.handleInput("q");
 	assert.equal(closed, 1);
@@ -125,20 +133,20 @@ test("/dev-team usage month opens the overlay on this month and reads history fr
 });
 
 test("in text mode this month is loaded without progress and summarised", async () => {
-	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }], unreadable: 1 });
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: copilotRun("gpt-5", 30) }], unreadable: 1 });
 	await runUsage(fakeCtx({ hasUI: false }), "month", deps);
 	assert.equal(loads.length, 1);
 	assert.equal(loads[0].onProgress, undefined);
 	assert.equal(loads[0].since.toISOString(), "2026-10-01T00:00:00.000Z");
 	const lines = emitted[0].split("\n");
-	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · 30.0 AI credits · as of 14:05");
+	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · $0.30 · 30.0 AI credits · as of 14:05");
 	assert.equal(lines.at(-1), "1 session file could not be read");
 });
 
-test("a month with no Copilot spend prints the empty state", async () => {
+test("a month with no usage prints the empty state", async () => {
 	const { deps, emitted } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: false }), "month", deps);
-	assert.deepEqual(emitted, ["No GitHub Copilot usage this month"]);
+	assert.deepEqual(emitted, ["No usage this month"]);
 });
 
 test("a history load that fails in text mode prints the reason and does not throw", async () => {
@@ -166,4 +174,21 @@ test("an unknown or extra argument is a usage error", () => {
 	for (const args of ["histroy", "month now", "week"]) {
 		assert.deepEqual(parseUsageArgs(args), { error: "Usage: /dev-team usage [session|month]" }, args);
 	}
+});
+
+test("without a UI, turns from other providers and a free local model reach the summary in USD", async () => {
+	const { deps, emitted } = fakeDeps();
+	const entries = [assistantTurn("a", "openai", "gpt-5.5", 0.75), assistantTurn("b", "github-copilot", "gpt-5", 0.25), assistantTurn("c", "ollama", "qwen3", 0, 4000)];
+	await runUsage(fakeCtx({ hasUI: false, entries }), "", deps);
+	const lines = emitted[0].split("\n");
+	assert.equal(lines[0], "This session · $1.00 · 25.0 AI credits");
+	assert.equal(lines[1], "Providers  openai $0.75 75.0% · github-copilot $0.25 25.0%");
+	assert.ok(lines.some((l) => l.includes("ollama/qwen3") && l.includes("4k tok")), emitted[0]);
+});
+
+test("without a UI, a session with no Copilot at all shows USD and no AI credits", async () => {
+	const { deps, emitted } = fakeDeps();
+	await runUsage(fakeCtx({ hasUI: false, entries: [assistantTurn("a", "openai", "gpt-5.5", 1.5)] }), "", deps);
+	assert.ok(emitted[0].startsWith("This session · $1.50\n"), emitted[0]);
+	assert.ok(!emitted[0].includes("AI credits"), emitted[0]);
 });

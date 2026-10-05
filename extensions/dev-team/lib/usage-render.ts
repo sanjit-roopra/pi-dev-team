@@ -1,21 +1,20 @@
 /**
- * Renders the /dev-team usage overlay. renderUsage() turns the view's state plus the credits breakdown
- * into the lines of the panel (header, split bar, ranked chart, footer), fitted to the terminal's width
+ * Renders the /dev-team usage overlay. renderUsage() turns the view's state plus the usage breakdown
+ * into the lines of the panel (header, split bars, ranked chart, footer), fitted to the terminal's width
  * and height; it is pure (colour comes from the injected style), so tests drive it without pi. The
  * component that holds the state and reacts to keys is UsageView (usage-view.ts).
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { formatAiCredits, formatCredits, hasVisibleCredits } from "./ai-credits.ts";
-import { type CreditsRow, formatShare, type MonthSnapshot, type UsageBreakdown } from "./usage-breakdown.ts";
+import { formatShare, formatUsd, hasUsage, type MonthSnapshot, type UsageBreakdown, type UsageRow } from "./usage-breakdown.ts";
 import { cutToWidth } from "./terminal-text.ts";
 import { barChartLines, type ChartStyle } from "./usage-chart.ts";
-import { type SplitPart, type SplitStyle, splitBarLines } from "./usage-split-bar.ts";
-import type { UsageState, View } from "./usage-state.ts";
+import { type SplitBarOptions, type SplitStyle, splitBarLines } from "./usage-split-bar.ts";
+import type { UsageState } from "./usage-state.ts";
 import {
 	asOfLabel,
+	CHART_FORMAT,
 	emptyUsageMessage,
 	loadFailedMessage,
-	modelRows,
 	noSubagentUsageMessage,
 	pressSHint,
 	READING_SESSIONS,
@@ -23,8 +22,12 @@ import {
 	SCOPE_TITLE,
 	SEPARATOR,
 	scopeHeading,
+	splitSections,
+	totalHeaderParts,
 	unreadableFilesNote,
 	VIEW_TITLE,
+	viewRows,
+	wantedColumns,
 } from "./usage-text.ts";
 
 export interface UsageStyle extends ChartStyle, SplitStyle {
@@ -50,24 +53,26 @@ export interface RenderOptions {
 	style: UsageStyle;
 }
 
-/** The credits breakdown the state is showing, or undefined while it is not known (loading, failed). */
+/** The breakdown the state is showing, or undefined while it is not known (loading, failed). */
 function shownBreakdown(viewModel: UsageViewModel): UsageBreakdown | undefined {
 	if (viewModel.state.scope === "session") return viewModel.session;
 	return viewModel.state.load.kind === "ready" ? viewModel.month?.breakdown : undefined;
 }
 
 /**
- * The header from most to least detailed: the snapshot time goes first, then the dates, so a narrow
- * terminal keeps the scope, the view and the total.
+ * The header from most to least detailed: the snapshot time goes first, then the dates, then the
+ * AI credits, so a narrow terminal keeps the scope, the view and the USD total.
  */
 function headerCandidates(viewModel: UsageViewModel): string[] {
 	const { scope, view } = viewModel.state;
 	const breakdown = shownBreakdown(viewModel);
-	const viewAndTotal = [VIEW_TITLE[view], ...(breakdown ? [formatAiCredits(breakdown.total)] : [])];
+	const totals = breakdown ? totalHeaderParts(breakdown.total) : [];
+	const [usdPart] = totals;
+	const usdOnly = usdPart ? [usdPart] : [];
 	const asOfParts = scope === "month" && breakdown && viewModel.month ? [asOfLabel(viewModel.month.loadedAt)] : [];
-	const joinParts = (scopeText: string, ...more: string[]) => [scopeText, ...viewAndTotal, ...more].join(SEPARATOR);
+	const join = (scopeText: string, shownTotals: readonly string[], ...more: string[]) => [scopeText, VIEW_TITLE[view], ...shownTotals, ...more].join(SEPARATOR);
 	const heading = scopeHeading(scope, viewModel.now);
-	return [joinParts(heading, ...asOfParts), joinParts(heading), joinParts(SCOPE_TITLE[scope])];
+	return [join(heading, totals, ...asOfParts), join(heading, totals), join(SCOPE_TITLE[scope], totals), join(SCOPE_TITLE[scope], usdOnly)];
 }
 
 /** The key hints from most to least detailed: hints drop from the left, so "Esc close" is the last to go. */
@@ -99,7 +104,7 @@ function bodyMessage(viewModel: UsageViewModel, breakdown: UsageBreakdown | unde
 	const { state } = viewModel;
 	if (state.load.kind === "loading") return { text: loadingMessage(state.load), tone: "plain" };
 	if (state.load.kind === "error") return { text: loadFailedMessage(state.load.reason), tone: "error" };
-	if (!breakdown || !hasVisibleCredits(breakdown.total)) return { text: `${emptyUsageMessage(state.scope)}${pressSHint(state.scope)}`, tone: "plain" };
+	if (!breakdown || !hasUsage(breakdown.total)) return { text: `${emptyUsageMessage(state.scope)}${pressSHint(state.scope)}`, tone: "plain" };
 	if (state.view === "agent" && breakdown.byAgent.length === 0) return { text: noSubagentUsageMessage(state.scope), tone: "plain" };
 	return undefined;
 }
@@ -110,20 +115,39 @@ function footnoteText(viewModel: UsageViewModel): string | undefined {
 	return unreadableFilesNote(unreadable);
 }
 
-/** The ranked rows the view charts: models (without the provider prefix) or dispatched agents. */
-function viewRows(view: View, breakdown: UsageBreakdown | undefined): CreditsRow[] {
-	if (!breakdown) return [];
-	return view === "model" ? modelRows(breakdown) : breakdown.byAgent;
+/** One split bar's lines: the bar, then its legend lines. */
+interface SplitBlock {
+	bar: string;
+	legend: string[];
 }
 
-/** The thread rows as the split bar's input. */
-function splitParts(breakdown: UsageBreakdown): SplitPart[] {
-	return breakdown.byThread.map(({ label, credits }) => ({ label, credits }));
+/** The split bars of splitSections(): providers (legend gives each share), then threads (legend gives each USD). */
+function splitBlocks(breakdown: UsageBreakdown, options: Omit<SplitBarOptions, "formatValue">): SplitBlock[] {
+	return splitSections(breakdown).flatMap((section): SplitBlock[] => {
+		const formatValue = (usd: number, share: number) => (section.legend === "share" ? formatShare(share) : formatUsd(usd));
+		const lines = splitBarLines(
+			section.parts.map((p) => ({ label: p.label, amount: p.usd })),
+			{ ...options, formatValue },
+		);
+		return lines.length ? [{ bar: lines[0], legend: lines.slice(1) }] : [];
+	});
+}
+
+/** `count` split lines at most: every bar first, then legend lines block by block; each block stays in order. */
+function fitSplitLines(blocks: readonly SplitBlock[], count: number): string[] {
+	let legendBudget = Math.max(0, count - blocks.length);
+	return blocks.slice(0, count).flatMap((block) => {
+		const legend = block.legend.slice(0, legendBudget);
+		legendBudget -= legend.length;
+		return [block.bar, ...legend];
+	});
 }
 
 /** What the panel would like to show, in lines. */
 interface LayoutRequest {
 	splitLineCount: number;
+	/** The split bars without their legends: what is left when the legends give way. */
+	splitBarCount: number;
 	hasFootnote: boolean;
 	chartRowCount: number;
 }
@@ -139,7 +163,6 @@ interface Layout {
 
 const PINNED_LINES = 2;
 const FOOTNOTE_LINES = 1;
-const SPLIT_BAR_LINES = 1;
 /** Chart rows worth keeping over the extras before the extras start to go. */
 const MIN_CHART_ROWS = 3;
 /** Blank lines after the header and before the footer. */
@@ -152,7 +175,7 @@ const gapLineCount = (hasSplit: boolean) => OUTER_GAP_LINES + (hasSplit ? SPLIT_
 
 /**
  * Decides which lines are pinned and which flex for `height`. The header and footer always stay; the
- * rest give way in order (blank gaps, footnote, split legend, split bar) until the chart gets
+ * rest give way in order (blank gaps, footnote, split legends, split bars) until the chart gets
  * MIN_CHART_ROWS rows or what it asked for, whichever is fewer. What is left goes to the chart.
  */
 function planLayout(height: number, request: LayoutRequest): Layout {
@@ -162,7 +185,7 @@ function planLayout(height: number, request: LayoutRequest): Layout {
 		{ hasGaps: true, splitLineCount, hasFootnote, chartRowCount: 0 },
 		{ hasGaps: false, splitLineCount, hasFootnote, chartRowCount: 0 },
 		{ hasGaps: false, splitLineCount, hasFootnote: false, chartRowCount: 0 },
-		{ hasGaps: false, splitLineCount: Math.min(SPLIT_BAR_LINES, splitLineCount), hasFootnote: false, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount: Math.min(request.splitBarCount, splitLineCount), hasFootnote: false, chartRowCount: 0 },
 		{ hasGaps: false, splitLineCount: 0, hasFootnote: false, chartRowCount: 0 },
 	];
 	const withChartRows = (o: Layout): Layout => ({
@@ -176,18 +199,19 @@ function planLayout(height: number, request: LayoutRequest): Layout {
 export function renderUsage(viewModel: UsageViewModel, { width, height, style }: RenderOptions): string[] {
 	const breakdown = shownBreakdown(viewModel);
 	const message = bodyMessage(viewModel, breakdown);
-	// A split bar shows whenever there is spend to split, even when the view's own chart is empty.
-	const showSplit = !!breakdown && hasVisibleCredits(breakdown.total) && viewModel.state.load.kind !== "loading";
-	const allSplitLines = showSplit ? splitBarLines(splitParts(breakdown), { width, formatValue: formatCredits, style }) : [];
+	// The split bars show whenever there is spend to split, even when the view's own chart is empty.
+	const showSplit = !!breakdown && hasUsage(breakdown.total) && viewModel.state.load.kind !== "loading";
+	const blocks = showSplit ? splitBlocks(breakdown, { width, style }) : [];
+	const splitLineCount = blocks.reduce((sum, b) => sum + 1 + b.legend.length, 0);
 	const footnote = footnoteText(viewModel);
-	const rankedRows = viewRows(viewModel.state.view, breakdown);
-	const plan = planLayout(height, { splitLineCount: allSplitLines.length, hasFootnote: !!footnote, chartRowCount: message ? 1 : rankedRows.length });
+	const rankedRows: UsageRow[] = breakdown ? viewRows(viewModel.state.view, breakdown) : [];
+	const plan = planLayout(height, { splitLineCount, splitBarCount: blocks.length, hasFootnote: !!footnote, chartRowCount: message ? 1 : rankedRows.length });
 
-	const splitLines = allSplitLines.slice(0, plan.splitLineCount);
+	const splitLines = fitSplitLines(blocks, plan.splitLineCount);
 	const paint = message?.tone === "error" ? style.error : (text: string) => text;
 	const body = message
 		? plan.chartRowCount > 0 ? [paint(cutToWidth(message.text, width))] : []
-		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, formatValue: formatCredits, formatShare, style });
+		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, format: CHART_FORMAT, wantedColumns: wantedColumns(rankedRows), style });
 	const gapLines = plan.hasGaps ? [""] : [];
 	return [
 		style.title(fitLine(headerCandidates(viewModel), width)),

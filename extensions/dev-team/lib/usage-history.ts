@@ -1,6 +1,6 @@
 /**
  * Timestamped runs of spend loaded from every saved pi session file, for the "This month" scope of
- * /dev-team usage. All providers are loaded; narrowing to GitHub Copilot is usage-breakdown's job.
+ * /dev-team usage. All providers are loaded; grouping them is usage-breakdown's job.
  * Reads are stat-first and async so a large session history does not stall the TUI. Spend is
  * classified by sessionSpendByEntry() (session-spend.ts), the same walk the status line uses, so both
  * views agree on what a run is.
@@ -10,6 +10,7 @@ import { readdir, stat } from "node:fs/promises";
 import * as path from "node:path";
 import { createInterface } from "node:readline";
 import { sessionSpendByEntry, type SpendRun } from "./session-spend.ts";
+
 
 /** One run of spend, with when its session entry was written (the entry's ISO 8601 `timestamp`, as stored). */
 export interface SpendRecord {

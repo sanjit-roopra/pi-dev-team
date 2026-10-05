@@ -8,7 +8,7 @@
  * x 100: exact by formula (tokens x GitHub's per-token rates / $0.01). The figures are gross usage:
  * they do not subtract a plan's monthly allowance.
  */
-import { costUsd, type PiUsage, sessionSpend } from "./session-spend.ts";
+import { costUsd, type PiUsage, positiveFiniteOrZero, providerOf, sessionSpend } from "./session-spend.ts";
 
 export const COPILOT_PROVIDER = "github-copilot";
 export const CREDITS_PER_USD = 100;
@@ -17,13 +17,25 @@ const FINEST_DIGITS = 2;
 
 /** True for a "provider/model" id served by GitHub Copilot. */
 export function isCopilotModel(model: string | undefined): boolean {
-	return !!model && model.startsWith(`${COPILOT_PROVIDER}/`);
+	return !!model && providerOf(model) === COPILOT_PROVIDER;
 }
 
-/** One run's AI credits: its USD cost x 100 when Copilot served it, else 0. */
-export function runAiCredits(run: { model?: string; usage: PiUsage }): number {
-	return isCopilotModel(run.model) ? costUsd(run.usage) * CREDITS_PER_USD : 0;
+/** The AI credits of `usd` spent on `model`: x 100 when Copilot served it, else 0. The one place the conversion lives. */
+export function creditsFor(model: string | undefined, usd: number): number {
+	return isCopilotModel(model) ? usd * CREDITS_PER_USD : 0;
 }
+
+/** One run's AI credits, from its cost; a cost that is not a positive number counts as none. */
+export function runAiCredits(run: { model?: string; usage: PiUsage }): number {
+	return creditsFor(run.model, positiveFiniteOrZero(costUsd(run.usage)));
+}
+
+/**
+ * Where "this month" starts for /dev-team usage, for every provider: the 1st at 00:00 UTC, the
+ * calendar month in UTC. It is the same instant GitHub starts a Copilot billing period, so the
+ * month's AI credits line up with GitHub's.
+ */
+export const usageMonthStart = (now: Date): Date => copilotBillingPeriodStart(now);
 
 /** The AI credits of the runs served by Copilot; every other run counts 0. */
 export function runsAiCredits(runs: Iterable<{ model?: string; usage: PiUsage }>): number {
