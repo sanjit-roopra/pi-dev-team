@@ -5,12 +5,12 @@ import { visibleWidth } from "@earendil-works/pi-tui";
 import { type UsageBreakdown, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 import { renderUsage, type UsageStyle, type UsageViewModel } from "../../extensions/dev-team/lib/usage-render.ts";
 import type { UsageState } from "../../extensions/dev-team/lib/usage-state.ts";
-import { mixed, multiProvider, NOW, providerRun, run } from "../helpers/usage-fixtures.ts";
+import { mixed, multiProvider, NOW, providerRun, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_position, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_slot, text) => text };
 
-const breakdown = (...runs: ReturnType<typeof run>[]): UsageBreakdown => usageBreakdown(runs);
+const breakdown = (...runs: ReturnType<typeof copilotRun>[]): UsageBreakdown => usageBreakdown(runs);
 const state = (scope: UsageState["scope"], view: UsageState["view"], load: UsageState["load"] = { kind: scope === "month" ? "ready" : "idle" }): UsageState => ({ scope, view, load });
 const sessionModel = state("session", "model");
 const viewModel = (s: UsageState, extra: Partial<UsageViewModel> = {}): UsageViewModel => ({
@@ -43,12 +43,12 @@ test("one provider with a cost draws no provider split bar", () => {
 });
 
 test("a paid provider and a free one draw no provider split bar", () => {
-	const withFreeModel = breakdown(run("m", 10), providerRun("ollama/qwen3", 0, "main", "main", 100));
+	const withFreeModel = breakdown(copilotRun("m", 10), providerRun("ollama/qwen3", 0, "main", "main", 100));
 	assert.equal(splitBarCount(render(viewModel(sessionModel, { session: withFreeModel }))), 1);
 });
 
 test("subagent-only spend keeps the subagents glyph in the thread split", () => {
-	const lines = render(viewModel(sessionModel, { session: breakdown(run("m", 10, "subagent", "a")) }));
+	const lines = render(viewModel(sessionModel, { session: breakdown(copilotRun("m", 10, "subagent", "a")) }));
 	assert.ok(lines.includes("▓ subagents $0.10"), lines.join("\n"));
 });
 
@@ -73,7 +73,7 @@ test("By provider ranks the providers; a free provider shows its tokens and a 0%
 	assert.deepEqual(chart.map((l) => l.split(" ")[0]), ["openai", "github-copilot", "ollama"]);
 	assert.ok(chart[1].includes("$0.90") && chart[1].includes("90.0 cr") && chart[1].includes("45.0%"), chart[1]);
 	assert.ok(chart[2].includes("$0.00") && chart[2].includes("850k tok") && chart[2].endsWith("0%"), chart[2]);
-	assert.ok(!chart[0].includes("cr"), chart[0]);
+	assert.ok(!/\d cr\b/.test(chart[0]), chart[0]);
 });
 
 test("By agent ranks each agent per provider and keeps the split bars", () => {
@@ -90,7 +90,7 @@ test("this month's header names the dates and the snapshot time, and the footer 
 });
 
 const empty = breakdown();
-const mainOnly = breakdown(run("gpt-5", 20), run("gpt-5", 10, "overhead", "compaction"));
+const mainOnly = breakdown(copilotRun("gpt-5", 20), copilotRun("gpt-5", 10, "overhead", "compaction"));
 
 test("an empty session says so, points at this month and shows no split bar", () => {
 	const lines = render(viewModel(sessionModel, { session: empty }));
@@ -206,7 +206,7 @@ test("a loading footer drops the view hint, then the cancel hint", () => {
 
 /** Every scope, view and load state the overlay can be in, with enough models to need folding. */
 function everyViewModel(): [string, UsageViewModel][] {
-	const many = breakdown(...Array.from({ length: 14 }, (_, i) => run(`model-with-a-long-name-${i}`, 100 - i, i % 3 === 0 ? "subagent" : "main", `agent-${i}`)), run("x", 3, "overhead", "compaction"));
+	const many = breakdown(...Array.from({ length: 14 }, (_, i) => copilotRun(`model-with-a-long-name-${i}`, 100 - i, i % 3 === 0 ? "subagent" : "main", `agent-${i}`)), copilotRun("x", 3, "overhead", "compaction"));
 	const readyMonth = (breakdownOf: UsageBreakdown, unreadable = 0) => ({ breakdown: breakdownOf, unreadable, loadedAt: NOW });
 	const out: [string, UsageViewModel][] = [];
 	for (const view of ["model", "provider", "agent"] as const) {
@@ -240,7 +240,7 @@ test("no line is wider than the terminal, the panel fits the height, and header 
 });
 
 test("rows beyond the height fold into other (N) while the header and footer stay pinned", () => {
-	const many = breakdown(...Array.from({ length: 14 }, (_, i) => run(`m${i}`, 100 - i)));
+	const many = breakdown(...Array.from({ length: 14 }, (_, i) => copilotRun(`m${i}`, 100 - i)));
 	const lines = render(viewModel(sessionModel, { session: many }), 80, 10);
 	assert.equal(lines.length, 10);
 	assert.ok(lines.some((l) => l.startsWith("other (")), lines.join("\n"));
@@ -248,20 +248,23 @@ test("rows beyond the height fold into other (N) while the header and footer sta
 	assert.equal(lines.at(-1), "Tab view · s this month · Esc close");
 });
 
-test("with little height, split legends give way before split bars, and both bars stay in order", () => {
+test("with little height, split legends give way before split bars", () => {
 	const isBar = (l: string) => /^[█▓▒░]+$/.test(l);
 	const isLegend = (l: string) => /^[█▓▒░] /.test(l);
-	const shape = (height: number) => {
+	const shapeAt = (height: number) => {
 		const lines = render(viewModel(sessionModel, { session: multiProvider }), 80, height);
-		return { bars: lines.filter(isBar).length, legends: lines.filter(isLegend).length, lines };
+		return `${lines.filter(isBar).length} bars, ${lines.filter(isLegend).length} legends`;
 	};
-	const shapes = Array.from({ length: 16 }, (_, i) => shape(i + 4));
-	assert.ok(shapes.some((s) => s.bars === 2 && s.legends === 0), "some height keeps both bars without legends");
-	assert.ok(shapes.some((s) => s.bars === 2 && s.legends === 2), "some height shows both bars and both legends");
-	for (const [i, s] of shapes.entries()) {
-		if (s.legends > 0) assert.equal(s.bars, 2, `height ${i + 4}: a legend shows before both bars\n${s.lines.join("\n")}`);
-		if (i > 0) assert.ok(s.legends >= shapes[i - 1].legends, `height ${i + 4}: legends never shrink as the height grows`);
+	const seen: string[] = [];
+	for (let height = 4; height <= 20; height++) {
+		const shape = shapeAt(height);
+		if (seen.at(-1) !== shape) seen.push(shape);
 	}
-	const full = shapes.at(-1)!.lines;
-	assert.equal(full[full.findIndex(isBar) + 1], "█ openai 55.0% · ▓ github-copilot 45.0%");
+	assert.deepEqual(seen, ["0 bars, 0 legends", "2 bars, 0 legends", "2 bars, 2 legends"]);
+});
+
+test("the provider legend sits right under the provider bar", () => {
+	const lines = render(viewModel(sessionModel, { session: multiProvider }));
+	const providerBar = lines.findIndex((l) => /^[█▓▒░]+$/.test(l));
+	assert.equal(lines[providerBar + 1], "█ openai 55.0% · ▓ github-copilot 45.0%");
 });

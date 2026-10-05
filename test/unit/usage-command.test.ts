@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/dev-team/lib/usage-command.ts";
 import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.ts";
 import { OVERLAY_HEIGHT_PERCENT } from "../../extensions/dev-team/lib/usage-view.ts";
-import { NOW, run } from "../helpers/usage-fixtures.ts";
+import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const SESSION_DIR = "/home/u/.pi/agent/sessions/--proj--";
 
@@ -74,7 +74,7 @@ test("a UI whose custom() is a stub that never runs the factory (RPC) gets the t
 });
 
 test("a stub custom() that never runs the factory (RPC) gets this month's text summary, loaded from the session root", async () => {
-	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }] });
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: copilotRun("gpt-5", 30) }] });
 	const custom: Custom = async () => undefined;
 	await runUsage(fakeCtx({ hasUI: true, custom }), "month", deps);
 	assert.equal(loads.length, 1);
@@ -133,7 +133,7 @@ test("/dev-team usage month opens the overlay on this month and reads history fr
 });
 
 test("in text mode this month is loaded without progress and summarised", async () => {
-	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: run("gpt-5", 30) }], unreadable: 1 });
+	const { deps, emitted, loads } = fakeDeps({ records: [{ timestamp: "2026-10-02T10:00:00.000Z", run: copilotRun("gpt-5", 30) }], unreadable: 1 });
 	await runUsage(fakeCtx({ hasUI: false }), "month", deps);
 	assert.equal(loads.length, 1);
 	assert.equal(loads[0].onProgress, undefined);

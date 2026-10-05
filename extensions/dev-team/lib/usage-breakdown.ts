@@ -6,8 +6,8 @@
  * something or used tokens, so a free local model still shows; a run with neither is left out, and an
  * empty breakdown means no usage at all. Amounts stay floats here; only the display rounds them.
  */
-import { CREDITS_PER_USD, isCopilotModel } from "./ai-credits.ts";
-import { costUsd, type PiUsage, providerOf, type SpendRun } from "./session-spend.ts";
+import { creditsFor } from "./ai-credits.ts";
+import { costUsd, type PiUsage, positiveFiniteOrZero, providerOf, type SpendRun } from "./session-spend.ts";
 import type { SpendHistory } from "./usage-history.ts";
 
 /** What a group of runs spent. */
@@ -58,9 +58,6 @@ const TINY_SHARE = 0.01;
 /** The finest USD amount the display shows; below it a cost reads as "<$0.01". */
 const USD_CENT = 0.01;
 
-/** Session files are untyped JSON: a cost or count that is not a positive finite number counts as none. */
-const positiveFiniteOrZero = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
-
 /** A run's tokens: input, output and both cache directions. */
 export function runTokens(usage: PiUsage): number {
 	return positiveFiniteOrZero(usage.input) + positiveFiniteOrZero(usage.output) + positiveFiniteOrZero(usage.cacheRead) + positiveFiniteOrZero(usage.cacheWrite);
@@ -69,15 +66,15 @@ export function runTokens(usage: PiUsage): number {
 /** A run's USD, AI credits (from that same USD, when Copilot served it) and tokens. */
 function runAmounts(run: SpendRun): SpendAmounts {
 	const usd = positiveFiniteOrZero(costUsd(run.usage));
-	return { usd, credits: isCopilotModel(run.model) ? usd * CREDITS_PER_USD : 0, tokens: runTokens(run.usage) };
+	return { usd, credits: creditsFor(run.model, usd), tokens: runTokens(run.usage) };
 }
 
 const ZERO: SpendAmounts = { usd: 0, credits: 0, tokens: 0 };
 const plus = (a: SpendAmounts, b: SpendAmounts): SpendAmounts => ({ usd: a.usd + b.usd, credits: a.credits + b.credits, tokens: a.tokens + b.tokens });
 
 /** A group's label and what it spent, before ranking. */
-interface Group<E> {
-	label: string;
+interface Group<L extends string, E> {
+	label: L;
 	/** Breaks ties between groups with the same label (an agent on two providers). */
 	tieBreak: string;
 	amounts: SpendAmounts;
@@ -85,7 +82,7 @@ interface Group<E> {
 }
 
 /** Rows by USD, largest first, then by tokens, then by name; each with its share of the groups' USD. */
-function rank<E>(groups: Iterable<Group<E>>): (UsageRow & E)[] {
+function rank<L extends string, E>(groups: Iterable<Group<L, E>>): (UsageRow<L> & E)[] {
 	const list = [...groups];
 	const totalUsd = list.reduce((sum, g) => sum + g.amounts.usd, 0);
 	return list
@@ -94,14 +91,14 @@ function rank<E>(groups: Iterable<Group<E>>): (UsageRow & E)[] {
 }
 
 /** Sums runs into groups by key, keeping each group's label and extra fields from its first run. */
-class Grouper<E> {
-	private readonly groups = new Map<string, Group<E>>();
-	add(key: string, label: string, amounts: SpendAmounts, extra: E, tieBreak = ""): void {
+class Grouper<L extends string, E> {
+	private readonly groups = new Map<string, Group<L, E>>();
+	add(key: string, label: L, amounts: SpendAmounts, extra: E, tieBreak = ""): void {
 		const group = this.groups.get(key);
 		if (group) group.amounts = plus(group.amounts, amounts);
 		else this.groups.set(key, { label, tieBreak, amounts, extra });
 	}
-	ranked(): (UsageRow & E)[] {
+	ranked(): (UsageRow<L> & E)[] {
 		return rank(this.groups.values());
 	}
 }
@@ -112,10 +109,10 @@ export function hasUsage(amounts: SpendAmounts): boolean {
 }
 
 export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
-	const models = new Grouper<object>();
-	const providers = new Grouper<object>();
-	const agents = new Grouper<{ provider: string }>();
-	const threads = new Grouper<{ thread: SpendRun["thread"] }>();
+	const models = new Grouper<string, object>();
+	const providers = new Grouper<string, object>();
+	const agents = new Grouper<string, { provider: string }>();
+	const threads = new Grouper<ThreadLabel, { thread: SpendRun["thread"] }>();
 	for (const run of runs) {
 		const amounts = runAmounts(run);
 		if (!hasUsage(amounts)) continue;
@@ -132,7 +129,7 @@ export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
 		byModel,
 		byProvider: providers.ranked(),
 		byAgent: agents.ranked(),
-		byThread: threads.ranked() as ThreadRow[],
+		byThread: threads.ranked(),
 	};
 }
 

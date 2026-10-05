@@ -2,10 +2,10 @@ process.env.TZ = "UTC"; // "as of" is local time; pin it so the expected strings
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
-import { errorReason, loadFailedMessage, splitSections, totalParts, usageSummary, viewRows, visibleColumns } from "../../extensions/dev-team/lib/usage-text.ts";
-import { mixed, multiProvider, NOW, providerRun, run } from "../helpers/usage-fixtures.ts";
+import { errorReason, loadFailedMessage, splitSections, totalHeaderParts, usageSummary, viewRows, wantedColumns } from "../../extensions/dev-team/lib/usage-text.ts";
+import { mixed, multiProvider, NOW, providerRun, copilotRun } from "../helpers/usage-fixtures.ts";
 
-test("this session, Copilot only: USD and credits, both splits, then models, providers and agents", () => {
+test("this session, Copilot only: USD and credits, the thread split (one provider draws no provider split), then models, providers and agents", () => {
 	assert.equal(
 		usageSummary({ scope: "session", breakdown: mixed, now: NOW }),
 		[
@@ -58,9 +58,9 @@ test("no Copilot at all: the header has no credits and no row has a credits colu
 	assert.ok(!/\d cr\b/.test(text) && !text.includes("AI credits"), text);
 });
 
-test("totalParts: USD, then credits only when Copilot spend shows", () => {
-	assert.deepEqual(totalParts({ usd: 2, credits: 90, tokens: 0 }), { usd: "$2.00", credits: "90.0 AI credits" });
-	assert.deepEqual(totalParts({ usd: 2, credits: 0, tokens: 0 }), { usd: "$2.00" });
+test("totalHeaderParts: USD first, then credits only when Copilot spend shows", () => {
+	assert.deepEqual(totalHeaderParts({ usd: 2, credits: 90, tokens: 0 }), ["$2.00", "90.0 AI credits"]);
+	assert.deepEqual(totalHeaderParts({ usd: 2, credits: 0, tokens: 0 }), ["$2.00"]);
 });
 
 test("splitSections: providers only when two or more have a cost; threads always, in fixed order", () => {
@@ -75,9 +75,9 @@ test("splitSections: providers only when two or more have a cost; threads always
 	assert.deepEqual(splitSections(usageBreakdown([providerRun("ollama/a", 0, "main", "main", 10)])), [], "nothing cost anything");
 });
 
-test("visibleColumns: credits when a row has some, tokens when a row cost nothing", () => {
-	assert.deepEqual(visibleColumns(multiProvider.byModel), { credits: true, tokens: true });
-	assert.deepEqual(visibleColumns(usageBreakdown([providerRun("openai/a", 1)]).byModel), { credits: false, tokens: false });
+test("wantedColumns: credits when a row has some, tokens when a row cost nothing", () => {
+	assert.deepEqual(wantedColumns(multiProvider.byModel), { credits: true, tokens: true });
+	assert.deepEqual(wantedColumns(usageBreakdown([providerRun("openai/a", 1)]).byModel), { credits: false, tokens: false });
 });
 
 test("viewRows: models, providers or agents, as ranked in the breakdown", () => {
@@ -127,12 +127,12 @@ test("no usage prints just the empty-state sentence", () => {
 });
 
 test("main-only spend lists no agents", () => {
-	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([run("gpt-5", 20)]), now: NOW });
+	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([copilotRun("gpt-5", 20)]), now: NOW });
 	assert.ok(text.endsWith("By agent\n  No subagent usage in this session"), text);
 });
 
 test("labels from session files cannot carry control characters", () => {
-	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([run("gpt-5", 20, "subagent", "bad\x1b[31m\nname")]), now: NOW });
+	const text = usageSummary({ scope: "session", breakdown: usageBreakdown([copilotRun("gpt-5", 20, "subagent", "bad\x1b[31m\nname")]), now: NOW });
 	assert.ok(!/[\u0000-\u0009\u000b-\u001f]/.test(text));
 	assert.ok(text.includes("badname"));
 });

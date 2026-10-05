@@ -35,7 +35,7 @@ export interface SplitBarOptions {
 	maxBarCells?: number;
 }
 
-/** The glyph of each segment position; there are as many segments as glyphs at most. */
+/** The glyph of each segment slot; there are as many segments as glyphs at most. */
 export const SPLIT_GLYPHS: readonly string[] = [FULL_BLOCK, "▓", "▒", "░"];
 const OTHER_LABEL = "other";
 type Segment = { label: string; slot: number; amount: number };

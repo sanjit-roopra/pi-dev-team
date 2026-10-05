@@ -23,11 +23,11 @@ import {
 	SEPARATOR,
 	scopeHeading,
 	splitSections,
-	totalParts,
+	totalHeaderParts,
 	unreadableFilesNote,
 	VIEW_TITLE,
 	viewRows,
-	visibleColumns,
+	wantedColumns,
 } from "./usage-text.ts";
 
 export interface UsageStyle extends ChartStyle, SplitStyle {
@@ -66,9 +66,9 @@ function shownBreakdown(viewModel: UsageViewModel): UsageBreakdown | undefined {
 function headerCandidates(viewModel: UsageViewModel): string[] {
 	const { scope, view } = viewModel.state;
 	const breakdown = shownBreakdown(viewModel);
-	const { usd, credits } = breakdown ? totalParts(breakdown.total) : { usd: undefined, credits: undefined };
-	const usdOnly = usd ? [usd] : [];
-	const totals = credits ? [...usdOnly, credits] : usdOnly;
+	const totals = breakdown ? totalHeaderParts(breakdown.total) : [];
+	const [usdPart] = totals;
+	const usdOnly = usdPart ? [usdPart] : [];
 	const asOfParts = scope === "month" && breakdown && viewModel.month ? [asOfLabel(viewModel.month.loadedAt)] : [];
 	const join = (scopeText: string, shownTotals: readonly string[], ...more: string[]) => [scopeText, VIEW_TITLE[view], ...shownTotals, ...more].join(SEPARATOR);
 	const heading = scopeHeading(scope, viewModel.now);
@@ -211,7 +211,7 @@ export function renderUsage(viewModel: UsageViewModel, { width, height, style }:
 	const paint = message?.tone === "error" ? style.error : (text: string) => text;
 	const body = message
 		? plan.chartRowCount > 0 ? [paint(cutToWidth(message.text, width))] : []
-		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, format: CHART_FORMAT, columns: visibleColumns(rankedRows), style });
+		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, format: CHART_FORMAT, wantedColumns: wantedColumns(rankedRows), style });
 	const gapLines = plan.hasGaps ? [""] : [];
 	return [
 		style.title(fitLine(headerCandidates(viewModel), width)),

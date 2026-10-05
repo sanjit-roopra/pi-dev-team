@@ -45,6 +45,9 @@ export function providerOf(model: string): string {
 	return slash > 0 ? model.slice(0, slash) : UNKNOWN_PROVIDER;
 }
 
+/** Session files are untyped JSON: a cost or count that is not a positive finite number counts as none. */
+export const positiveFiniteOrZero = (n: unknown): number => (typeof n === "number" && Number.isFinite(n) && n > 0 ? n : 0);
+
 export function costUsd(u: PiUsage): number {
 	return typeof u.cost === "number" ? u.cost : (u.cost?.total ?? 0);
 }

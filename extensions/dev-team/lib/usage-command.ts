@@ -7,7 +7,8 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { type SpendRun, sessionEntries, sessionSpend } from "./session-spend.ts";
 import { monthSnapshot, usageBreakdown } from "./usage-breakdown.ts";
-import { loadSpendHistory, sessionRoot, usageMonthStart } from "./usage-history.ts";
+import { loadSpendHistory, sessionRoot } from "./usage-history.ts";
+import { usageMonthStart } from "./ai-credits.ts";
 import type { UsageStyle } from "./usage-render.ts";
 import { openUsage, type Scope, type Transition } from "./usage-state.ts";
 import { errorReason, loadFailedMessage, usageSummary } from "./usage-text.ts";

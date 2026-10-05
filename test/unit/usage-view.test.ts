@@ -7,10 +7,10 @@ import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.t
 import type { UsageStyle } from "../../extensions/dev-team/lib/usage-render.ts";
 import { openUsage } from "../../extensions/dev-team/lib/usage-state.ts";
 import { OVERLAY_HEIGHT_PERCENT, UsageView, type UsageViewDeps } from "../../extensions/dev-team/lib/usage-view.ts";
-import { NOW, run } from "../helpers/usage-fixtures.ts";
+import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_position, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_slot, text) => text };
 
 /** A UsageView on stub deps, recording what it asked of the host. */
 function viewOn(runs: SpendRun[], extra: Partial<UsageViewDeps> = {}) {
@@ -34,7 +34,7 @@ const escape = "\x1b";
 const overlayHeight = (terminalRows: number) => Math.floor((terminalRows * OVERLAY_HEIGHT_PERCENT) / 100);
 
 const manyCredits = Array.from({ length: 30 }, (_, i) => 50 - i);
-const manyRuns = manyCredits.map((credits, i) => run(`model-${i}`, credits));
+const manyRuns = manyCredits.map((credits, i) => copilotRun(`model-${i}`, credits));
 
 test("the component renders this session by model, headed with the session's total", () => {
 	const total = manyCredits.reduce((sum, credits) => sum + credits, 0);
@@ -60,26 +60,30 @@ test("the component keeps the header and the close hint when the terminal is sma
 });
 
 test("Tab and Shift+Tab switch the view and ask for a re-render; the split bar stays", () => {
-	const { view, calls } = viewOn([run("gpt-5", 30, "subagent", "Explore"), run("gpt-5", 20)]);
-	view.handleInput(tab);
+	const { view, calls } = viewOn([copilotRun("gpt-5", 30, "subagent", "Explore"), copilotRun("gpt-5", 20)]);
+	const press = (input: string) => {
+		const before = calls.renders;
+		view.handleInput(input);
+		assert.equal(calls.renders, before + 1, `a re-render after ${JSON.stringify(input)}`);
+	};
+	press(tab);
 	assert.ok(view.render(80)[0].includes("By provider"));
-	view.handleInput(tab);
+	press(tab);
 	assert.ok(view.render(80)[0].includes("By agent"));
 	assert.ok(view.render(80).some((l) => l.includes("█ main $0.20")), "split bar still shown");
-	view.handleInput(shiftTab);
-	view.handleInput(shiftTab);
+	press(shiftTab);
+	press(shiftTab);
 	assert.ok(view.render(80)[0].includes("By model"));
-	assert.ok(calls.renders >= 1);
 });
 
 test("Esc closes the overlay", () => {
-	const { view, calls } = viewOn([run("gpt-5", 20)]);
+	const { view, calls } = viewOn([copilotRun("gpt-5", 20)]);
 	view.handleInput(escape);
 	assert.equal(calls.closes, 1);
 });
 
 test("an unrelated key changes nothing and asks for nothing", () => {
-	const { view, calls } = viewOn([run("gpt-5", 20)]);
+	const { view, calls } = viewOn([copilotRun("gpt-5", 20)]);
 	const before = view.render(80);
 	view.handleInput("x");
 	assert.deepEqual(view.render(80), before);
@@ -87,10 +91,10 @@ test("an unrelated key changes nothing and asks for nothing", () => {
 });
 
 test("invalidate rebuilds the session's breakdown from the runs; until then it is cached", () => {
-	const runs = [run("gpt-5", 20)];
+	const runs = [copilotRun("gpt-5", 20)];
 	const { view } = viewOn(runs);
 	assert.ok(view.render(80)[0].includes("20.0 AI credits"));
-	runs.push(run("gpt-5", 30));
+	runs.push(copilotRun("gpt-5", 30));
 	assert.ok(view.render(80)[0].includes("20.0 AI credits"), "cached");
 	view.invalidate();
 	assert.ok(view.render(80)[0].includes("50.0 AI credits"), "rebuilt");
@@ -123,7 +127,7 @@ function monthViewOn(runs: SpendRun[] = [], opening: "session" | "month" = "mont
 	return { view, calls, loader, deps };
 }
 
-test("opening on this month loads from the billing period start and shows the loading line", () => {
+test("opening on this month loads from the start of the month and shows the loading line", () => {
 	const { view, loader } = monthViewOn();
 	assert.equal(loader.loads.length, 1);
 	assert.equal(loader.loads[0].since.toISOString(), "2026-10-01T00:00:00.000Z");
@@ -142,7 +146,7 @@ test("a finished load shows this month with the time it finished", async () => {
 	const { view, loader, calls } = monthViewOn([], "month", { now: () => clock });
 	clock = new Date(Date.UTC(2026, 9, 4, 14, 9));
 	const rendersBefore = calls.renders;
-	loader.loads[0].resolve({ records: records(run("gpt-5", 40), run("gpt-5", 10, "subagent", "Explore")), unreadable: 2 });
+	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 40), copilotRun("gpt-5", 10, "subagent", "Explore")), unreadable: 2 });
 	await settle();
 	assert.equal(calls.renders, rendersBefore + 1, "the finished load asks for a re-render");
 	const lines = monthLines(view);
@@ -152,7 +156,7 @@ test("a finished load shows this month with the time it finished", async () => {
 });
 
 test("a rejected load shows the error and the back footer", async () => {
-	const { view, loader, calls } = monthViewOn([run("gpt-5", 20)], "month");
+	const { view, loader, calls } = monthViewOn([copilotRun("gpt-5", 20)], "month");
 	const rendersBefore = calls.renders;
 	loader.loads[0].reject(new Error("EACCES"));
 	await settle();
@@ -164,14 +168,14 @@ test("a rejected load shows the error and the back footer", async () => {
 test("a snapshot that throws once the files are read is a failed load, not one stuck reading", async () => {
 	// The snapshot reads the clock for its "as of" time; a clock that throws then stands in for any failure there.
 	let clockBroken = false;
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month", {
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "month", {
 		now: () => {
 			if (clockBroken) throw new Error("clock broke");
 			return NOW;
 		},
 	});
 	clockBroken = true;
-	loader.loads[0].resolve({ records: records(run("gpt-5", 5)), unreadable: 0 });
+	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 5)), unreadable: 0 });
 	await settle();
 	clockBroken = false;
 	assert.ok(monthLines(view).includes("Could not load history: clock broke"), monthLines(view).join("\n"));
@@ -179,7 +183,7 @@ test("a snapshot that throws once the files are read is a failed load, not one s
 });
 
 test("s after a rejected load goes back to this session without loading again", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "month");
 	loader.loads[0].reject(new Error("EACCES"));
 	await settle();
 	view.handleInput("s");
@@ -188,7 +192,7 @@ test("s after a rejected load goes back to this session without loading again", 
 });
 
 test("s again after a rejected load retries it", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "month");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "month");
 	loader.loads[0].reject(new Error("EACCES"));
 	await settle();
 	view.handleInput("s");
@@ -198,7 +202,7 @@ test("s again after a rejected load retries it", async () => {
 });
 
 test("s while loading cancels the load and shows this session", () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "session");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "session");
 	view.handleInput("s");
 	assert.equal(loader.loads.length, 1);
 	assert.equal(loader.loads[0].signal.aborted, false);
@@ -208,17 +212,17 @@ test("s while loading cancels the load and shows this session", () => {
 });
 
 test("news from a cancelled load is ignored", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "session");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "session");
 	view.handleInput("s");
 	view.handleInput("s");
 	loader.loads[0].onProgress(5, 6);
-	loader.loads[0].resolve({ records: records(run("gpt-5", 999)), aborted: true });
+	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 999)), aborted: true });
 	await settle();
 	assert.ok(monthLines(view)[0].includes("20.0 AI credits"), "still this session");
 });
 
 test("s again after a cancelled load starts a fresh load", () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "session");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "session");
 	view.handleInput("s");
 	view.handleInput("s");
 	view.handleInput("s");
@@ -231,10 +235,10 @@ test("a result from a cancelled load cannot replace the restarted one", async ()
 	view.handleInput("s");
 	view.handleInput("s");
 	assert.equal(loader.loads.length, 2);
-	loader.loads[0].resolve({ records: records(run("gpt-5", 999)) });
+	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 999)) });
 	await settle();
 	assert.ok(monthLines(view).includes("Reading sessions…"), "the second load is still running");
-	loader.loads[1].resolve({ records: records(run("gpt-5", 7)) });
+	loader.loads[1].resolve({ records: records(copilotRun("gpt-5", 7)) });
 	await settle();
 	assert.ok(monthLines(view)[0].includes("7.00 AI credits"));
 });
@@ -261,9 +265,9 @@ test("closing after the load finished aborts nothing", async () => {
 });
 
 test("s again after a completed load reuses it instead of reading the files again", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20)], "session");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20)], "session");
 	view.handleInput("s");
-	loader.loads[0].resolve({ records: records(run("gpt-5", 7)) });
+	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 7)) });
 	await settle();
 	view.handleInput("s");
 	assert.ok(monthLines(view)[0].startsWith("This session"));
@@ -273,7 +277,7 @@ test("s again after a completed load reuses it instead of reading the files agai
 });
 
 test("the view persists across scope toggles, and Tab while loading keeps the loading line", async () => {
-	const { view, loader } = monthViewOn([run("gpt-5", 20, "subagent", "Explore")], "session");
+	const { view, loader } = monthViewOn([copilotRun("gpt-5", 20, "subagent", "Explore")], "session");
 	view.handleInput(shiftTab); // By model -> By agent
 	view.handleInput("s");
 	assert.ok(monthLines(view)[0].includes("By agent"), "the view survives the scope toggle");
@@ -282,7 +286,7 @@ test("the view persists across scope toggles, and Tab while loading keeps the lo
 	view.handleInput(tab); // -> By agent, with the load still running
 	assert.ok(monthLines(view)[0].includes("By agent"));
 	assert.ok(monthLines(view).includes("Reading sessions…"));
-	loader.loads[0].resolve({ records: records(run("gpt-5", 7, "subagent", "Explore")) });
+	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 7, "subagent", "Explore")) });
 	await settle();
 	assert.ok(monthLines(view)[0].includes("By agent"));
 	assert.ok(monthLines(view).some((l) => l.startsWith("Explore · github-copilot")));

@@ -45,7 +45,7 @@ export interface BarChartOptions {
 	 * Which optional columns the rows want, decided by the caller over all rows (before any fold into
 	 * "other"), so the overlay and the text summary apply one rule. Share is always wanted.
 	 */
-	columns: { credits: boolean; tokens: boolean };
+	wantedColumns: { credits: boolean; tokens: boolean };
 	style: ChartStyle;
 }
 
@@ -122,7 +122,7 @@ function foldRows(rows: readonly ChartRow[], maxRows: number): ChartRow[] {
 }
 
 /** One line per row: label, bar scaled to the largest USD, USD, then the wanted optional columns (credits, tokens) and share. */
-export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, format, columns: wantedColumns, style }: BarChartOptions): string[] {
+export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, format, wantedColumns, style }: BarChartOptions): string[] {
 	const rows = (maxRows > 0 ? foldRows(allRows, maxRows) : []).map((r) => ({ ...r, label: toSingleLine(r.label) }));
 	if (!rows.length) return [];
 	const cellsOf: Record<OptionalColumn, string[]> = {

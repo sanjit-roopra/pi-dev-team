@@ -5,7 +5,8 @@
 import type { Component } from "@earendil-works/pi-tui";
 import type { SpendRun } from "./session-spend.ts";
 import { type MonthSnapshot, monthSnapshot, type UsageBreakdown, usageBreakdown } from "./usage-breakdown.ts";
-import { type LoadOptions, type SpendHistory, usageMonthStart } from "./usage-history.ts";
+import type { LoadOptions, SpendHistory } from "./usage-history.ts";
+import { usageMonthStart } from "./ai-credits.ts";
 import { renderUsage, type UsageStyle } from "./usage-render.ts";
 import { reduce, type Transition, type UsageAction, type UsageEffect, type UsageState, usageKeyFor } from "./usage-state.ts";
 import { errorReason } from "./usage-text.ts";

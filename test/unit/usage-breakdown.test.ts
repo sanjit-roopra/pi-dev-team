@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { type PiUsage, providerOf, type SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
 import { formatShare, formatTokens, formatUsd, hasUsage, monthSnapshot, runTokens, THREAD_ORDER, type UsageRow, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
 
-const run = (model: string, usd: number, thread: SpendRun["thread"] = "main", agent = "main", usage: PiUsage = {}): SpendRun => ({
+const usdRun = (model: string, usd: number, thread: SpendRun["thread"] = "main", agent = "main", usage: PiUsage = {}): SpendRun => ({
 	thread,
 	agent,
 	model,
@@ -16,31 +16,31 @@ const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - 
 const shown = (rows: readonly UsageRow[]) => rows.map((r) => `${r.label} ${formatUsd(r.usd)} ${r.credits.toFixed(1)} ${formatShare(r.share)}`);
 
 test("usageBreakdown: models ranked by USD, largest first, with the total and USD shares", () => {
-	const b = usageBreakdown([run(copilot("b"), 0.1), run(copilot("a"), 0.3), run(copilot("a"), 0.2)]);
+	const b = usageBreakdown([usdRun(copilot("b"), 0.1), usdRun(copilot("a"), 0.3), usdRun(copilot("a"), 0.2)]);
 	assert.deepEqual(shown(b.byModel), [`${copilot("a")} $0.50 50.0 83.3%`, `${copilot("b")} $0.10 10.0 16.7%`]);
 	close(b.total.usd, 0.6);
 	close(b.total.credits, 60);
 });
 
 test("usageBreakdown: every provider counts; only Copilot runs carry credits", () => {
-	const b = usageBreakdown([run(copilot("m"), 0.25), run("openai/gpt-5.5", 0.75)]);
+	const b = usageBreakdown([usdRun(copilot("m"), 0.25), usdRun("openai/gpt-5.5", 0.75)]);
 	assert.deepEqual(shown(b.byModel), ["openai/gpt-5.5 $0.75 0.0 75.0%", `${copilot("m")} $0.25 25.0 25.0%`]);
 	close(b.total.usd, 1);
 	close(b.total.credits, 25);
 });
 
 test("usageBreakdown: providers are grouped from the model ids, with their USD share", () => {
-	const b = usageBreakdown([run(copilot("a"), 0.3), run(copilot("b"), 0.1), run("openai/gpt-5.5", 0.6)]);
+	const b = usageBreakdown([usdRun(copilot("a"), 0.3), usdRun(copilot("b"), 0.1), usdRun("openai/gpt-5.5", 0.6)]);
 	assert.deepEqual(shown(b.byProvider), ["openai $0.60 0.0 60.0%", "github-copilot $0.40 40.0 40.0%"]);
 });
 
 test("usageBreakdown: an agent has one row per provider it ran on, shares of the agents' USD", () => {
 	const b = usageBreakdown([
-		run(copilot("m"), 0.3),
-		run(copilot("m"), 0.2, "subagent", "orchestrator"),
-		run("openai/gpt-5.5", 0.1, "subagent", "orchestrator"),
-		run(copilot("m"), 0.1, "subagent", "Explore"),
-		run(copilot("n"), 0.1, "subagent", "Explore"),
+		usdRun(copilot("m"), 0.3),
+		usdRun(copilot("m"), 0.2, "subagent", "orchestrator"),
+		usdRun("openai/gpt-5.5", 0.1, "subagent", "orchestrator"),
+		usdRun(copilot("m"), 0.1, "subagent", "Explore"),
+		usdRun(copilot("n"), 0.1, "subagent", "Explore"),
 	]);
 	assert.deepEqual(shown(b.byAgent), ["Explore $0.20 20.0 40.0%", "orchestrator $0.20 20.0 40.0%", "orchestrator $0.10 0.0 20.0%"]);
 	assert.deepEqual(
@@ -54,37 +54,37 @@ test("usageBreakdown: an agent has one row per provider it ran on, shares of the
 });
 
 test("usageBreakdown: the thread split covers main, subagents and overhead and sums to the total", () => {
-	const b = usageBreakdown([run(copilot("m"), 0.5), run("openai/x", 0.3, "subagent", "a"), run("unknown", 0.2, "overhead", "compaction")]);
+	const b = usageBreakdown([usdRun(copilot("m"), 0.5), usdRun("openai/x", 0.3, "subagent", "a"), usdRun("unknown", 0.2, "overhead", "compaction")]);
 	assert.deepEqual(shown(b.byThread), ["main $0.50 50.0 50.0%", "subagents $0.30 0.0 30.0%", "overhead $0.20 0.0 20.0%"]);
 	assert.deepEqual(b.byThread.map((r) => [r.label, r.thread]), [["main", "main"], ["subagents", "subagent"], ["overhead", "overhead"]]);
 	close(b.byThread.reduce((sum, row) => sum + row.usd, 0), b.total.usd);
 });
 
 test("usageBreakdown: a free run with tokens shows, ranks after paid rows and has a 0% share", () => {
-	const b = usageBreakdown([run("ollama/qwen3", 0, "main", "main", { input: 800, output: 50 }), run(copilot("m"), 0.1, "main", "main", { input: 10 })]);
+	const b = usageBreakdown([usdRun("ollama/qwen3", 0, "main", "main", { input: 800, output: 50 }), usdRun(copilot("m"), 0.1, "main", "main", { input: 10 })]);
 	assert.deepEqual(shown(b.byModel), [`${copilot("m")} $0.10 10.0 100.0%`, "ollama/qwen3 $0.00 0.0 0%"]);
 	assert.equal(b.byModel[1].tokens, 850);
 	assert.equal(b.total.tokens, 860);
 });
 
 test("usageBreakdown: only free runs give rows with 0% shares, ranked by tokens", () => {
-	const b = usageBreakdown([run("ollama/a", 0, "main", "main", { input: 10 }), run("ollama/b", 0, "main", "main", { input: 30 })]);
+	const b = usageBreakdown([usdRun("ollama/a", 0, "main", "main", { input: 10 }), usdRun("ollama/b", 0, "main", "main", { input: 30 })]);
 	assert.deepEqual(shown(b.byModel), ["ollama/b $0.00 0.0 0%", "ollama/a $0.00 0.0 0%"]);
 	assert.ok(hasUsage(b.total));
 });
 
 test("usageBreakdown: an agent name containing the label separator cannot merge with another agent", () => {
-	const b = usageBreakdown([run("openai/x", 0.1, "subagent", "a · openai"), run("openai/x", 0.2, "subagent", "a")]);
+	const b = usageBreakdown([usdRun("openai/x", 0.1, "subagent", "a · openai"), usdRun("openai/x", 0.2, "subagent", "a")]);
 	assert.deepEqual(b.byAgent.map((r) => [r.label, r.provider]), [["a", "openai"], ["a · openai", "openai"]]);
 });
 
 test("usageBreakdown: one agent on two providers with equal spend is ordered by provider", () => {
-	const b = usageBreakdown([run("openai/x", 0.1, "subagent", "a"), run(copilot("x"), 0.1, "subagent", "a")]);
+	const b = usageBreakdown([usdRun("openai/x", 0.1, "subagent", "a"), usdRun(copilot("x"), 0.1, "subagent", "a")]);
 	assert.deepEqual(b.byAgent.map((r) => r.provider), ["github-copilot", "openai"]);
 });
 
 test("usageBreakdown: equal USD and tokens are ordered alphabetically", () => {
-	const b = usageBreakdown([run(copilot("zeta"), 0.1), run(copilot("alpha"), 0.1)]);
+	const b = usageBreakdown([usdRun(copilot("zeta"), 0.1), usdRun(copilot("alpha"), 0.1)]);
 	assert.deepEqual(b.byModel.map((r) => r.label), [copilot("alpha"), copilot("zeta")]);
 });
 
@@ -96,7 +96,7 @@ test("usageBreakdown: Copilot credits come from the cleaned USD, so a cost that 
 
 test("usageBreakdown: a NaN or negative cost or token count counts as none, and totals stay finite", () => {
 	const bad: SpendRun = { thread: "main", agent: "main", model: copilot("m"), usage: { cost: Number.NaN, input: 5, output: -3 }, messages: 1 };
-	const b = usageBreakdown([bad, run(copilot("m"), -1, "main", "main", { input: Number.NaN }), run(copilot("m"), 0.1)]);
+	const b = usageBreakdown([bad, usdRun(copilot("m"), -1, "main", "main", { input: Number.NaN }), usdRun(copilot("m"), 0.1)]);
 	assert.ok(Object.values(b.total).every(Number.isFinite), JSON.stringify(b.total));
 	close(b.total.usd, 0.1);
 	assert.equal(b.total.tokens, 5);
@@ -105,7 +105,7 @@ test("usageBreakdown: a NaN or negative cost or token count counts as none, and 
 test("usageBreakdown: a run without cost or tokens is left out; none at all is an empty breakdown", () => {
 	const empty = { total: { usd: 0, credits: 0, tokens: 0 }, byModel: [], byProvider: [], byAgent: [], byThread: [] };
 	assert.deepEqual(usageBreakdown([]), empty);
-	assert.deepEqual(usageBreakdown([run(copilot("m"), 0)]), empty);
+	assert.deepEqual(usageBreakdown([usdRun(copilot("m"), 0)]), empty);
 	assert.ok(!hasUsage(empty.total));
 });
 
@@ -154,7 +154,7 @@ test("formatTokens: plain under a thousand, then k, M and B with one decimal", (
 
 test("monthSnapshot: breakdown of the records' runs, with the unreadable count and when the load finished", () => {
 	const loadedAt = new Date(Date.UTC(2026, 9, 4, 14, 9));
-	const records = [run(copilot("a"), 0.3), run("openai/b", 0.1)].map((r) => ({ timestamp: "2026-10-02T10:00:00.000Z", run: r }));
+	const records = [usdRun(copilot("a"), 0.3), usdRun("openai/b", 0.1)].map((r) => ({ timestamp: "2026-10-02T10:00:00.000Z", run: r }));
 	const snapshot = monthSnapshot({ records, unreadable: 2, aborted: false }, loadedAt);
 	assert.deepEqual(shown(snapshot.breakdown.byModel), [`${copilot("a")} $0.30 30.0 75.0%`, "openai/b $0.10 0.0 25.0%"]);
 	assert.equal(snapshot.unreadable, 2);

@@ -4,7 +4,7 @@
  * pieces, empty-state, failure and footnote sentences. Keeping the sentences here is what keeps the
  * two presentations saying the same thing.
  */
-import { formatAiCredits, formatCredits, hasVisibleCredits } from "./ai-credits.ts";
+import { formatAiCredits, formatCredits, hasVisibleCredits, usageMonthStart } from "./ai-credits.ts";
 import {
 	formatShare,
 	formatTokens,
@@ -17,7 +17,6 @@ import {
 	type UsageRow,
 } from "./usage-breakdown.ts";
 import type { BarChartOptions, ChartFormat } from "./usage-chart.ts";
-import { usageMonthStart } from "./usage-history.ts";
 import { toSpacedSingleLine, toSingleLine } from "./terminal-text.ts";
 import type { Scope, View } from "./usage-state.ts";
 
@@ -35,7 +34,7 @@ export const scopePhrase = (scope: Scope) => (scope === "session" ? "in this ses
 
 const monthDay = (date: Date) => date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
-/** "This session", or "This month (Oct 1 – Oct 4)": the billing month's UTC dates, 1st to `now`. */
+/** "This session", or "This month (Oct 1 – Oct 4)": the month's UTC dates, 1st to `now`. */
 export function scopeHeading(scope: Scope, now: Date): string {
 	if (scope === "session") return SCOPE_TITLE.session;
 	return `${SCOPE_TITLE.month} (${monthDay(usageMonthStart(now))} – ${monthDay(now)})`;
@@ -55,19 +54,13 @@ export const CHART_FORMAT: ChartFormat = { usd: formatUsd, credits: formatCredit
  * credits when any row has some, tokens when any row cost nothing (so a free model still says what it
  * used). Judged over every row, before the chart folds any into "other".
  */
-export function visibleColumns(rows: readonly UsageRow[]): BarChartOptions["columns"] {
+export function wantedColumns(rows: readonly UsageRow[]): BarChartOptions["wantedColumns"] {
 	return { credits: rows.some((r) => hasVisibleCredits(r.credits)), tokens: rows.some((r) => !(r.usd > 0)) };
 }
 
-/** The total's parts: USD always, AI credits when Copilot served any of it. */
-export function totalParts(total: SpendAmounts): { usd: string; credits?: string } {
-	return { usd: formatUsd(total.usd), ...(hasVisibleCredits(total.credits) ? { credits: formatAiCredits(total.credits) } : {}) };
-}
-
-/** "$4.20", or "$4.20" and "312 AI credits": the total as header parts. */
-export function totalText(total: SpendAmounts): string[] {
-	const { usd, credits } = totalParts(total);
-	return credits ? [usd, credits] : [usd];
+/** The total as header parts: "$4.20", then "312 AI credits" when Copilot served any of it. USD is always first. */
+export function totalHeaderParts(total: SpendAmounts): string[] {
+	return [formatUsd(total.usd), ...(hasVisibleCredits(total.credits) ? [formatAiCredits(total.credits)] : [])];
 }
 
 /** The ranked rows of a view; an agent row is labelled "agent · provider". */
@@ -125,9 +118,9 @@ export interface UsageSummaryInput {
 	month?: Omit<MonthSnapshot, "breakdown">;
 }
 
-/** Rows as aligned "  label  usd  credits  tokens  share" lines, with the columns visibleColumns() wants. */
+/** Rows as aligned "  label  usd  credits  tokens  share" lines, with the columns wantedColumns() asks for. */
 function rankedLines(rows: readonly UsageRow[]): string[] {
-	const columns = visibleColumns(rows);
+	const columns = wantedColumns(rows);
 	const cells = rows.map((r) => [
 		toSingleLine(r.label),
 		CHART_FORMAT.usd(r.usd),
@@ -150,7 +143,7 @@ export function usageSummary({ scope, breakdown, now, month }: UsageSummaryInput
 	const note = unreadableFilesNote(month?.unreadable ?? 0);
 	const noteLines = note ? ["", note] : [];
 	if (!hasUsage(breakdown.total)) return [emptyUsageMessage(scope), ...noteLines].join("\n");
-	const header = [scopeHeading(scope, now), ...totalText(breakdown.total), ...(month ? [asOfLabel(month.loadedAt)] : [])].join(SEPARATOR);
+	const header = [scopeHeading(scope, now), ...totalHeaderParts(breakdown.total), ...(month ? [asOfLabel(month.loadedAt)] : [])].join(SEPARATOR);
 	const section = (view: View) => {
 		const rows = viewRows(view, breakdown);
 		return ["", VIEW_TITLE[view], ...(rows.length ? rankedLines(rows) : [`  ${noSubagentUsageMessage(scope)}`])];
