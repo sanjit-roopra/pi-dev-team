@@ -1,0 +1,32 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # OIDC for npm trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Check tag matches package.json version
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json $pkg" >&2
+            exit 1
+          fi
+      - name: Link pi packages for the unit tests
+        run: |
+          npm install -g @earendil-works/pi-coding-agent
+          ./test/link-deps.sh
+      - run: npm test
+      - run: npm publish --access public

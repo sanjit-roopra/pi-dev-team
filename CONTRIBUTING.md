@@ -54,3 +54,14 @@ You can also run the upstream Python test suite against the files of this packag
    uv run --no-project --with pytest --with pytest-asyncio --with hypothesis --with pytest-xdist \
      --with jsonschema --with pyyaml python -m pytest -n 8 plugins/dev-team/tests/{hooks,scripts,lib}
    ```
+
+## Release a new version
+
+A GitHub Actions workflow (`.github/workflows/publish.yml`) publishes the package to npm when you push a `v*` tag. The workflow uses npm trusted publishing, so the repository has no npm token.
+
+1. Bump the version. This changes `package.json`, makes a commit and makes a tag: `npm version patch` (or `minor`, `major`).
+2. Push the commit and the tag: `git push --follow-tags`
+
+The workflow stops if the tag is not the same as the version in `package.json`. It also stops if `npm test` fails.
+
+To set up trusted publishing one time, go to the package settings on npmjs.com. Add a trusted publisher for GitHub Actions with the repository `sanjit-roopra/pi-dev-team` and the workflow `publish.yml`.
