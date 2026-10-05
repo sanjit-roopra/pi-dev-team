@@ -3,6 +3,15 @@
   "version": "0.2.0",
   "description": "pi port of Bryan Finster's dev-team (bdfinst/agentic-dev-team): persona-driven dev team, reviewer swarm, TDD-gated /specs -> /plan -> /build -> /pr workflow, guard hooks. Works with any pi model provider, including GitHub Copilot.",
   "license": "MIT",
+  "author": "Sanjit Roopra (https://github.com/sanjit-roopra)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sanjit-roopra/pi-dev-team.git"
+  },
+  "homepage": "https://github.com/sanjit-roopra/pi-dev-team#readme",
+  "bugs": {
+    "url": "https://github.com/sanjit-roopra/pi-dev-team/issues"
+  },
   "keywords": ["pi-package", "agents", "code-review", "tdd", "dev-team"],
   "type": "module",
   "pi": {
