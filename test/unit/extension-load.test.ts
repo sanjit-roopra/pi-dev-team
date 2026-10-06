@@ -254,11 +254,13 @@ test("compaction and a branch switch forget earlier reads", async () => {
 
 test("nested, failed and non-text reads, other tools and readDedup off are never noted", async () => {
 	const nested = { parentToolCallId: "p" };
+	// Long enough to be noted on text alone, so only the text-only rule keeps it out.
+	const withImage = { content: [{ type: "text", text: "line\n".repeat(1000) }, { type: "image", data: "", mimeType: "image/png" }] };
 	const cases: [string, Record<string, unknown> | undefined, Record<string, unknown>, Record<string, unknown>][] = [
 		["a script repeats the model's read", undefined, {}, nested],
 		["the model repeats a script's read", undefined, nested, {}],
 		["failed read", undefined, { isError: true }, { isError: true }],
-		["image content", undefined, { content: [{ type: "image", data: "", mimeType: "image/png" }] }, { content: [{ type: "image", data: "", mimeType: "image/png" }] }],
+		["text with an image", undefined, withImage, withImage],
 		["bash with the same output", undefined, { toolName: "bash" }, { toolName: "bash" }],
 		["readDedup off", { readDedup: false }, {}, {}],
 	];

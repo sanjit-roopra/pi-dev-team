@@ -5,7 +5,7 @@
  *
  * The note is safe only while the earlier result is still in the context, so the caller resets the
  * tracker whenever the context is rebuilt (compaction, a branch switch, a new or resumed session) and
- * passes only reads the model itself sees (not the nested calls of a codemode script). The reference
+ * passes only reads the model itself sees (isModelVisibleRead: not the nested calls of a codemode script). The reference
  * must come from an earlier turn: parallel reads in one turn may complete in any order, so "above"
  * would not hold. A note is given once per reference: reading the same range again right after a note
  * returns the full text, which becomes the new reference. That way an agent that cannot find the
@@ -23,6 +23,19 @@ interface Reference {
 	turn: number;
 	/** A note already pointed at this reference; the next identical read returns the full text. */
 	noteGiven: boolean;
+}
+
+/** A tool result as the tracker needs it. */
+export interface ToolResultLike {
+	toolName: string;
+	parentToolCallId?: string;
+	isError: boolean;
+	content: { type: string }[];
+}
+
+/** A successful text `read` the model itself sees: a codemode script's nested calls never reach the transcript. */
+export function isModelVisibleRead(event: ToolResultLike): boolean {
+	return event.toolName === "read" && !event.parentToolCallId && !event.isError && event.content.every((c) => c.type === "text");
 }
 
 export interface ReadCall {

@@ -198,6 +198,18 @@ const scenarios = {
 		assert(/sid=\S+/.test(r.out), "CLAUDE_SESSION_ID unset");
 	},
 
+	"a repeated read in a later turn returns a note; parallel reads in one turn return the text"(env) {
+		fs.writeFileSync(path.join(env.repo, "big.txt"), "line of text\n".repeat(400));
+		const read = { tool: "read", args: { path: "big.txt" } };
+		const r = pi(env, script([{ tools: [read, read] }, read, read, { text: "done" }]), { json: true });
+		assert(r.code === 0, r.err);
+		const reads = toolResults(r.out).filter((x) => x.tool === "read");
+		assert(reads.length === 4, `expected 4 reads, got ${reads.length}`);
+		assert(reads.slice(0, 2).every((x) => x.text.includes("line of text")), "parallel reads in one turn must both return the text");
+		assert(reads[2].text.includes("big.txt is unchanged") && !reads[2].text.includes("line of text"), `the read in the next turn should be a note: ${reads[2].text.slice(0, 200)}`);
+		assert(reads[3].text.includes("line of text"), "asking again right after a note returns the text");
+	},
+
 	"pre_tool_guard blocks writing .env"(env) {
 		const r = pi(env, script([{ tool: "write", args: { path: ".env", content: "SECRET=1" } }]));
 		assert(r.out.includes("[pre_tool_guard] BLOCKED"), r.out);

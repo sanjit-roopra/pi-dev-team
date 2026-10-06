@@ -12,7 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
-import { ReadTracker } from "./lib/read-dedup.ts";
+import { isModelVisibleRead, ReadTracker } from "./lib/read-dedup.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -476,9 +476,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		};
 		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
 		// Hooks see the real text; the model gets a note when it already has this exact read in context.
-		// Only reads the model sees: a codemode script's nested calls never reach the transcript.
-		const modelRead = event.toolName === "read" && !event.parentToolCallId && !event.isError && event.content.every((c) => c.type === "text");
-		const readNote = config.readDedup && modelRead ? readTracker.noteForRepeatedRead({ cwd: ctx.cwd, input, text }) : undefined;
+		const readNote = config.readDedup && isModelVisibleRead(event) ? readTracker.noteForRepeatedRead({ cwd: ctx.cwd, input, text }) : undefined;
 		const content = readNote ? [{ type: "text" as const, text: readNote }] : event.content;
 		const unchanged = readNote ? { content } : undefined;
 		if (config.autoFormat && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
