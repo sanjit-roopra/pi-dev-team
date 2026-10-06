@@ -174,3 +174,40 @@ test("/dev-team usage <unknown> reports the usage line instead of opening anythi
 	await commands["dev-team"].handler("usage histroy", { hasUI: false });
 	assert.deepEqual(printed, ["Usage: /dev-team usage [session|month]"]);
 });
+
+// These run last: they reach the PostToolUse hooks, which probe for Python.
+test("a dispatched agent's own prompt goes after the shared guide, not in pi's appended prompt", async () => {
+	const child = await loadExtension({ flags: { [AGENT_PROMPT_FLAG]: AGENT_PROMPT_FLAG_VALUE } });
+	try {
+		const opts: { appendSystemPrompt?: string; sections?: Record<string, string> } = { appendSystemPrompt: "AGENT BODY" };
+		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+		assert.equal(opts.appendSystemPrompt, "");
+		assert.deepEqual(Object.keys(opts.sections ?? {}), ["dev_team", "dev_team_agent"], "agent section last");
+		assert.equal(opts.sections?.dev_team_agent, "AGENT BODY");
+	} finally {
+		child.cleanup();
+	}
+});
+
+test("the main session keeps pi's appended prompt where it is", async () => {
+	const { handlers } = await loaded;
+	const opts: { appendSystemPrompt?: string; sections?: Record<string, string> } = { appendSystemPrompt: "USER APPEND" };
+	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	assert.equal(opts.appendSystemPrompt, "USER APPEND");
+	assert.equal(opts.sections?.dev_team_agent, undefined);
+});
+
+test("a repeated read reaches the model as a note, and a branch switch resets it", async () => {
+	const { handlers } = await loaded;
+	const ctx = { cwd: os.tmpdir(), hasUI: false, sessionManager: { getSessionId: () => "s", getSessionFile: () => undefined } };
+	const text = "line\n".repeat(1000);
+	const read = async (id: string) =>
+		(await handlers.tool_result[0]({ toolName: "read", toolCallId: id, input: { path: "big.ts" }, content: [{ type: "text", text }], isError: false }, ctx)) as
+			| { content?: { text: string }[] }
+			| undefined;
+	assert.equal((await read("r1"))?.content?.[0].text ?? text, text, "first read unchanged");
+	assert.match((await read("r2"))?.content?.[0].text ?? "", /big\.ts is unchanged/);
+	await read("r3"); // full text again: the new reference
+	for (const h of handlers.session_tree) await h({}, ctx);
+	assert.equal((await read("r4"))?.content?.[0].text ?? text, text, "after a branch switch the earlier read may be gone");
+});

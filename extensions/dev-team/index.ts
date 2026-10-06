@@ -12,6 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
+import { ReadDedup } from "./lib/read-dedup.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -56,6 +57,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	const hooks = new HookBridge(packageRoot, getConfig);
 	const pendingAdvisories = new Map<string, string[]>();
 	const styleGate = createStyleGate();
+	const readDedup = new ReadDedup();
 	let sessionContext: string[] = [];
 	let running = 0;
 
@@ -63,7 +65,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	process.env.DEV_TEAM_ROOT = packageRoot;
 
 	pi.registerFlag("dev-team-agent", { type: "string", description: "Run this pi process as the named dev-team agent (used by the claude CLI shim)" });
-	pi.registerFlag(AGENT_PROMPT_FLAG, { type: "string", description: "Set by dev_team_subagent: the appended agent prompt lists this agent's skills, so the full skill index is left out" });
+	pi.registerFlag(AGENT_PROMPT_FLAG, { type: "string", description: "Set by dev_team_subagent on its children: the appended prompt is a dev-team agent prompt, which lists the agent's own skills and goes after the shared guide" });
 	pi.registerFlag("dev-team-tier", { type: "string", description: "Model tier (opus|sonnet|haiku|fable) resolved through dev-team.json" });
 
 	function applyEnv(ctx: ExtensionContext) {
@@ -370,6 +372,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	// ---------------------------------------------------------------- lifecycle
 
 	pi.on("session_start", async (event, ctx) => {
+		readDedup.reset();
 		applyEnv(ctx);
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
@@ -382,16 +385,24 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("before_agent_start", async (event, ctx) => {
 		const opts = event.systemPromptOptions;
 		// A dispatched agent (flag set by dev_team_subagent) or a process run as an agent gets only the
-		// skills its instructions name, in its appended prompt (buildSystemPrompt), so the guide stays the
+		// skills its instructions name, in its agent prompt (buildSystemPrompt), so the guide stays the
 		// same for every agent and cacheable. Not keyed on DEV_TEAM_SUBAGENT: a plain `claude -p` from a
 		// subagent's bash inherits that env but has no agent prompt, and keeps the full index.
-		const promptListsSkills = agentPrompt !== undefined || pi.getFlag(AGENT_PROMPT_FLAG) === AGENT_PROMPT_FLAG_VALUE;
+		const hasAgentPrompt = agentPrompt !== undefined || pi.getFlag(AGENT_PROMPT_FLAG) === AGENT_PROMPT_FLAG_VALUE;
 		const index =
-			promptListsSkills || config.skillIndex === "off"
+			hasAgentPrompt || config.skillIndex === "off"
 				? ""
 				: skillIndex(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), config.skillIndex, config.skillIndexChars);
-		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle)) };
-		if (agentPrompt) opts.appendSystemPrompt = `${opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n` : ""}${agentPrompt}`;
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle));
+		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
+		if (hasAgentPrompt) {
+			// The agent's own text goes last. pi renders the appended prompt before the project context and
+			// the sections, so left there it would end the prefix that every agent type shares; moved behind
+			// the guide, agents dispatched in parallel share one cached prefix up to their own instructions.
+			const agentText = [opts.appendSystemPrompt, agentPrompt].filter(Boolean).join("\n\n");
+			opts.appendSystemPrompt = "";
+			if (agentText) opts.sections = { ...opts.sections, dev_team_agent: agentText };
+		}
 		if (sessionContext.length) {
 			const content = sessionContext.join("\n\n");
 			sessionContext = [];
@@ -463,6 +474,12 @@ export default function devTeam(pi: ExtensionAPI) {
 			tool_response: toolResponse,
 		};
 		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
+		// Hooks see the real text; the model gets a note when it already has this exact read in context.
+		const readNote =
+			config.readDedup && event.toolName === "read" && !event.isError && event.content.every((c) => c.type === "text")
+				? readDedup.check({ cwd: ctx.cwd, input, text })
+				: undefined;
+		const content = readNote ? [{ type: "text" as const, text: readNote }] : event.content;
 		if (config.autoFormat && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
 			outcomes.push(await hooks.runScript("post_format", "PostToolUse", payload, ctx.cwd));
 		}
@@ -470,16 +487,16 @@ export default function devTeam(pi: ExtensionAPI) {
 		pendingAdvisories.delete(event.toolCallId);
 		notify(ctx, outcomes.flatMap((o) => o.notices));
 		const block = outcomes.map((o) => o.block).filter(Boolean).join("\n\n");
-		if (!advisories.length && !block) return undefined;
+		if (!advisories.length && !block) return readNote ? { content } : undefined;
 		const extra: string[] = [];
 		if (block) extra.push(`dev-team hook feedback (must address):\n${block}`);
 		if (advisories.length) {
 			if (config.hooks.outputToModel) extra.push(`dev-team hook notes:\n${advisories.join("\n")}`);
 			else notify(ctx, advisories, "info");
 		}
-		if (!extra.length) return undefined;
+		if (!extra.length) return readNote ? { content } : undefined;
 		return {
-			content: [...event.content, { type: "text" as const, text: `\n\n${extra.join("\n\n")}` }],
+			content: [...content, { type: "text" as const, text: `\n\n${extra.join("\n\n")}` }],
 			structuredContent: event.structuredContent,
 			...(block ? { isError: true } : {}),
 		};
@@ -506,10 +523,16 @@ export default function devTeam(pi: ExtensionAPI) {
 		ctx.compact({ onError: () => {} });
 	});
 
+	// A branch switch rebuilds the context from another path of the session tree.
+	pi.on("session_tree", async () => {
+		readDedup.reset();
+	});
+
 	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject uses it
 	// to restore /build state. triggerTurn: false adds it to the context (deferred to the end of the turn
 	// when one is running) without starting a model turn, as Claude's additionalContext does.
 	pi.on("session_compact", async (_event, ctx) => {
+		readDedup.reset();
 		if (isSubagent) return;
 		const out = await runSessionStart(ctx, "compact");
 		if (out.context.length) {

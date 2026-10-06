@@ -438,6 +438,9 @@ const scenarios = {
 			assert(runtime.tools.includes("subagent"), "external tool was removed by dev-team's depth safeguard");
 			assert(!/^- autoship/m.test(runtime.systemPrompt), "child prompt still carries the full skill index");
 			assert(runtime.systemPrompt.includes("load any by name with the skill tool"), "child prompt lacks the skill note");
+			const guideAt = runtime.systemPrompt.indexOf("<dev_team>");
+			const agentAt = runtime.systemPrompt.indexOf("Inspect the runtime tools and prompt.");
+			assert(guideAt >= 0 && agentAt > guideAt && runtime.systemPrompt.lastIndexOf("<dev_team_agent>") < agentAt, "child agent prompt is not the last section after the shared guide");
 			return runtime;
 		};
 		assert(inspectChild().tools.includes("dev_team_subagent"), "Claude Agent/Task did not enable namespaced child dispatch");
