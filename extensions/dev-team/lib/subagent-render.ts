@@ -29,6 +29,9 @@ const CALL_PREVIEW_TASKS = 4;
 const SINGLE_CALL_PREVIEW_CHARS = 80;
 const PARALLEL_CALL_PREVIEW_CHARS = 50;
 const COLLAPSED_ERROR_CHARS = 300;
+/** Nested agents listed under a running agent before the rest are counted. */
+const SHOWN_SUBAGENTS = 12;
+const SUBAGENT_INDENT = "  ";
 
 function preview(text: string | undefined, maxChars: number): string {
 	const flat = sanitizeTerminalText(text ?? "").replace(/\s+/g, " ").trim();
@@ -131,6 +134,32 @@ function toolLines(tools: string[], theme: Theme): string {
 	return tools.map((t) => `${theme.fg("muted", "→ ")}${theme.fg("accent", sanitizeTerminalText(t))}`).join("\n");
 }
 
+/** One nested agent: status, name, turn and its latest call, then the agents it runs in turn. */
+function subagentLines(v: SubagentTaskView, indent: string, theme: Theme): string[] {
+	let line = `${indent}${statusIcon(v, theme)} ${theme.fg("accent", sanitizeTerminalText(v.agent))}`;
+	if (v.status === "running") {
+		const latest = recentCallLines(v).at(-1);
+		line += theme.fg("dim", ` turn ${v.turns}`);
+		if (latest) line += `${theme.fg("muted", " → ")}${theme.fg("dim", sanitizeTerminalText(latest))}`;
+	}
+	return [line, ...(v.status === "running" ? subagentBlock(v.subagents, indent + SUBAGENT_INDENT, theme) : [])];
+}
+
+/**
+ * The agents a running agent runs itself (through its own dev-team calls): a done count, then one
+ * line each, still-running ones first, the rest counted.
+ */
+function subagentBlock(subagents: SubagentTaskView[] | undefined, indent: string, theme: Theme): string[] {
+	if (!subagents?.length) return [];
+	const done = subagents.filter((s) => s.status !== "running").length;
+	const ordered = [...subagents.filter((s) => s.status === "running"), ...subagents.filter((s) => s.status !== "running")];
+	const lines = [theme.fg("muted", `${indent}subagents ${done}/${subagents.length} done`)];
+	for (const s of ordered.slice(0, SHOWN_SUBAGENTS)) lines.push(...subagentLines(s, indent + SUBAGENT_INDENT, theme));
+	const hidden = ordered.length - SHOWN_SUBAGENTS;
+	if (hidden > 0) lines.push(theme.fg("muted", `${indent}${SUBAGENT_INDENT}… +${hidden} more`));
+	return lines;
+}
+
 /** Collapsed block for one agent: header, latest tool calls or the start of its output, usage. */
 function renderCollapsed(v: SubagentTaskView, theme: Theme): string {
 	const lines = [headerLine(v, theme)];
@@ -138,6 +167,7 @@ function renderCollapsed(v: SubagentTaskView, theme: Theme): string {
 	else if (v.status === "running") {
 		const calls = recentCallLines(v);
 		lines.push(calls.length ? toolLines(calls.slice(-COLLAPSED_TOOLS), theme) : theme.fg("muted", "(starting…)"));
+		lines.push(...subagentBlock(v.subagents, SUBAGENT_INDENT, theme));
 	}
 	else if (v.output) {
 		lines.push(theme.fg("toolOutput", sanitizeTerminalText(v.output).trim().split("\n").slice(0, COLLAPSED_OUTPUT_LINES).join("\n")));

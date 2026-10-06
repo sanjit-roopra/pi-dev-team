@@ -81,10 +81,12 @@ export interface SubagentTaskView {
 	error?: string;
 	output?: string;
 	worktree?: WorktreeInfo;
+	/** Agents it is running right now through its own dev-team calls; set only while it runs. */
+	subagents?: SubagentTaskView[];
 }
 
 /** Progress fields a running child reports; status/ok are set only from the final result. */
-export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage">>;
+export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents">>;
 
 export interface SubagentDetails {
 	results: SubagentTaskView[];

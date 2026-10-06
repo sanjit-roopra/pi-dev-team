@@ -38,6 +38,38 @@ test("result while running: progress count and latest tool calls", () => {
 	assert.doesNotMatch(out, /Total:/);
 });
 
+test("result while running: the agents a running agent dispatched, live, running first", () => {
+	const reviewers = [
+		taskView({ agent: "naming-review", output: "x" }),
+		taskView({ agent: "security-review", status: "running", ok: false, turns: 4, recentCalls: [{ name: "read", args: { path: "src/auth.ts" } }], subagents: [taskView({ agent: "deep", status: "running", ok: false, turns: 1 })] }),
+		taskView({ agent: "test-review", status: "failed", ok: false }),
+	];
+	const orchestrator = taskView({ agent: "orchestrator", status: "running", ok: false, recentCalls: [{ name: "dev_team_subagent", args: { tasks: "3" } }], subagents: reviewers });
+	const lines = draw(renderSubagentResult(result({ results: [orchestrator] }), { expanded: false, isPartial: true }, theme)).split("\n").map((l) => l.trimEnd());
+	const at = lines.indexOf("  subagents 2/3 done");
+	assert.ok(at > 0, lines.join("\n"));
+	assert.deepEqual(lines.slice(at + 1, at + 6), [
+		"    ⏳ security-review turn 4 → read src/auth.ts",
+		"      subagents 0/1 done",
+		"        ⏳ deep turn 1",
+		"    ✓ naming-review",
+		"    ✗ test-review",
+	]);
+});
+
+test("result while running: many nested agents are capped and the rest counted", () => {
+	const subagents = Array.from({ length: 15 }, (_, i) => taskView({ agent: `r${i}`, status: "running", ok: false }));
+	const out = draw(renderSubagentResult(result({ results: [taskView({ status: "running", ok: false, subagents })] }), { expanded: false, isPartial: true }, theme));
+	assert.match(out, /⏳ r11 turn 1/);
+	assert.doesNotMatch(out, /r12/);
+	assert.match(out, /… \+3 more/);
+});
+
+test("finished agents do not list nested agents", () => {
+	const out = draw(renderSubagentResult(result({ results: [taskView({ output: "done", subagents: [taskView({ agent: "stale" })] })] }), { expanded: false, isPartial: false }, theme));
+	assert.doesNotMatch(out, /stale|subagents/);
+});
+
 test("result failed: error and the skipped project agents", () => {
 	const details = { results: [taskView({ status: "failed", ok: false, error: "boom", stopReason: "error", usage })], skippedProjectAgents: ["local-only"] };
 	const out = draw(renderSubagentResult(result(details), { expanded: false, isPartial: false }, theme));

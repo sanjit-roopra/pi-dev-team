@@ -188,6 +188,40 @@ test("child events: other event types change nothing", () => {
 	assert.equal(state.total.input, 0);
 });
 
+const reviewer = (agent: string, status: string, extra: Record<string, unknown> = {}) => ({ agent, task: "long task text", status, ok: status === "ok", turns: 3, recentCalls: [{ name: "ls" }, { name: "read", args: { path: "a.ts" } }], output: "big output", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 3 }, ...extra });
+const dispatchUpdate = (toolCallId: string, results: unknown[]) => ({ type: "tool_execution_update", toolCallId, toolName: "dev_team_subagent", partialResult: { details: { results } } });
+
+test("child events: a running dev-team call streams its agents, cut down to what the view draws", () => {
+	const state = newChildRunState();
+	const deep = reviewer("deep", "running");
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("security-review", "running", { subagents: [deep] }), reviewer("naming-review", "ok")]));
+	assert.deepEqual(patch?.subagents?.map((v) => [v.agent, v.status]), [["security-review", "running"], ["naming-review", "ok"]]);
+	const first = patch?.subagents?.[0];
+	assert.deepEqual(first?.recentCalls, [{ name: "read", args: { path: "a.ts" } }], "only the latest call");
+	assert.equal(first?.output, undefined);
+	assert.equal(first?.usage, undefined);
+	assert.equal(first?.task, "");
+	assert.deepEqual(first?.subagents?.map((v) => v.agent), ["deep"], "deeper agents are kept");
+	assert.equal(state.turns, 0, "progress is not a turn");
+});
+
+test("child events: two open dev-team calls show together; ending one leaves the other", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running")]));
+	applyChildEvent(state, dispatchUpdate("c2", [reviewer("b", "running")]));
+	assert.deepEqual(applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "ok")]))?.subagents?.map((v) => [v.agent, v.status]), [["a", "ok"], ["b", "running"]]);
+	assert.deepEqual(applyChildEvent(state, { type: "tool_execution_end", toolCallId: "c1", toolName: "dev_team_subagent" })?.subagents?.map((v) => v.agent), ["b"]);
+	const last = applyChildEvent(state, { type: "tool_execution_end", toolCallId: "c2", toolName: "dev_team_subagent" });
+	assert.ok(last && "subagents" in last && last.subagents === undefined, "cleared once no call is open");
+});
+
+test("child events: progress of other tools, and updates without agent details, change nothing", () => {
+	const state = newChildRunState();
+	assert.equal(applyChildEvent(state, { type: "tool_execution_update", toolCallId: "c1", toolName: "bash", partialResult: { details: { results: [] } } }), undefined);
+	assert.equal(applyChildEvent(state, { type: "tool_execution_update", toolCallId: "c1", toolName: "dev_team_subagent", partialResult: {} }), undefined);
+	assert.equal(applyChildEvent(state, { type: "tool_execution_end", toolCallId: "never-opened", toolName: "dev_team_subagent" }), undefined);
+});
+
 test("child events: usage on other tool results stays with the child", () => {
 	const state = newChildRunState();
 	applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "subagent", usage: turnUsage } as never });
@@ -289,6 +323,14 @@ test("progress: an update streams the turn and the latest tool calls", () => {
 	const { progress, updates } = recordedProgress();
 	progress.update(0, { turns: 2, recentCalls: [{ name: "read" }, { name: "bash", args: { command: "npm test" } }, { name: "find" }, { name: "ls" }] });
 	assert.equal(updates.at(-1)?.text, "a: turn 2 → $ npm test, find, ls\nb: turn 0");
+});
+
+test("progress: finish drops the live nested agents", () => {
+	const { progress, updates } = recordedProgress();
+	progress.update(0, { subagents: [{ agent: "x", task: "", status: "running", ok: false, turns: 1, recentCalls: [] }] });
+	assert.equal(updates.at(-1)?.details.results[0] && "subagents" in updates.at(-1)!.details.results[0], true);
+	progress.finish(0, runResult({ agent: "a" }));
+	assert.equal((updates.at(-1)?.details.results[0] as { subagents?: unknown }).subagents, undefined);
 });
 
 test("progress: finish sets status and ok from the result", () => {
