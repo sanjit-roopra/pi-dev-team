@@ -188,20 +188,18 @@ test("child events: other event types change nothing", () => {
 	assert.equal(state.total.input, 0);
 });
 
-const reviewer = (agent: string, status: string, extra: Record<string, unknown> = {}) => ({ agent, task: "long task text", status, ok: status === "ok", turns: 3, recentCalls: [{ name: "ls" }, { name: "read", args: { path: "a.ts" } }], output: "big output", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 3 }, ...extra });
-const dispatchUpdate = (toolCallId: string, results: unknown[]) => ({ type: "tool_execution_update", toolCallId, toolName: "dev_team_subagent", partialResult: { details: { results } } });
+const reviewer = (agent: string, status: string, extra: Record<string, unknown> = {}) => ({ agent, task: "long task text", status, ok: status === "ok", turns: 3, recentCalls: [{ name: "ls" }, { name: "read", args: { path: "a.ts" } }], output: "big output", model: "p/m", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 3 }, ...extra });
+const dispatchUpdate = (toolCallId: string, results: unknown[], toolName = "dev_team_subagent") => ({ type: "tool_execution_update", toolCallId, toolName, partialResult: { details: { results } } });
+const dispatchEnd = (toolCallId: string) => ({ type: "tool_execution_end", toolCallId, toolName: "dev_team_subagent" });
 
-test("child events: a running dev-team call streams its agents, cut down to what the view draws", () => {
+test("child events: a running dev-team call streams its agents, cut down to what the view draws at every level", () => {
 	const state = newChildRunState();
-	const deep = reviewer("deep", "running");
-	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("security-review", "running", { subagents: [deep] }), reviewer("naming-review", "ok")]));
-	assert.deepEqual(patch?.subagents?.map((v) => [v.agent, v.status]), [["security-review", "running"], ["naming-review", "ok"]]);
-	const first = patch?.subagents?.[0];
-	assert.deepEqual(first?.recentCalls, [{ name: "read", args: { path: "a.ts" } }], "only the latest call");
-	assert.equal(first?.output, undefined);
-	assert.equal(first?.usage, undefined);
-	assert.equal(first?.task, "");
-	assert.deepEqual(first?.subagents?.map((v) => v.agent), ["deep"], "deeper agents are kept");
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("security-review", "running", { subagents: [reviewer("deep", "running")] }), reviewer("naming-review", "ok")]));
+	const latestOnly = [{ name: "read", args: { path: "a.ts" } }];
+	assert.deepEqual(patch?.subagents, [
+		{ agent: "security-review", status: "running", turns: 3, recentCalls: latestOnly, subagents: [{ agent: "deep", status: "running", turns: 3, recentCalls: latestOnly }] },
+		{ agent: "naming-review", status: "ok", turns: 3, recentCalls: latestOnly },
+	]);
 	assert.equal(state.turns, 0, "progress is not a turn");
 });
 
@@ -210,16 +208,38 @@ test("child events: two open dev-team calls show together; ending one leaves the
 	applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running")]));
 	applyChildEvent(state, dispatchUpdate("c2", [reviewer("b", "running")]));
 	assert.deepEqual(applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "ok")]))?.subagents?.map((v) => [v.agent, v.status]), [["a", "ok"], ["b", "running"]]);
-	assert.deepEqual(applyChildEvent(state, { type: "tool_execution_end", toolCallId: "c1", toolName: "dev_team_subagent" })?.subagents?.map((v) => v.agent), ["b"]);
-	const last = applyChildEvent(state, { type: "tool_execution_end", toolCallId: "c2", toolName: "dev_team_subagent" });
+	assert.deepEqual(applyChildEvent(state, dispatchEnd("c1"))?.subagents?.map((v) => v.agent), ["b"]);
+	const last = applyChildEvent(state, dispatchEnd("c2"));
 	assert.ok(last && "subagents" in last && last.subagents === undefined, "cleared once no call is open");
+	assert.equal(state.openDevTeamCalls.size, 0);
 });
 
-test("child events: progress of other tools, and updates without agent details, change nothing", () => {
+for (const [title, ev] of [
+	["progress of another tool", dispatchUpdate("c1", [reviewer("a", "running")], "bash")],
+	["a dev-team update without agent details", { type: "tool_execution_update", toolCallId: "c1", toolName: "dev_team_subagent", partialResult: {} }],
+	["a dev-team update without a tool call id", { ...dispatchUpdate("c1", [reviewer("a", "running")]), toolCallId: undefined }],
+	["the end of a dev-team call that was never open", dispatchEnd("never-opened")],
+] as const) {
+	test(`child events: ${title} changes nothing`, () => {
+		const state = newChildRunState();
+		assert.equal(applyChildEvent(state, ev as never), undefined, "no patch");
+		assert.equal(state.openDevTeamCalls.size, 0, "no open call recorded");
+	});
+}
+
+test("child events: malformed agent entries from a child are dropped or made safe, never thrown on", () => {
 	const state = newChildRunState();
-	assert.equal(applyChildEvent(state, { type: "tool_execution_update", toolCallId: "c1", toolName: "bash", partialResult: { details: { results: [] } } }), undefined);
-	assert.equal(applyChildEvent(state, { type: "tool_execution_update", toolCallId: "c1", toolName: "dev_team_subagent", partialResult: {} }), undefined);
-	assert.equal(applyChildEvent(state, { type: "tool_execution_end", toolCallId: "never-opened", toolName: "dev_team_subagent" }), undefined);
+	let deep: Record<string, unknown> = reviewer("bottom", "running");
+	for (let i = 0; i < 1000; i++) deep = reviewer(`level${i}`, "running", { subagents: [deep] });
+	const entries = [null, 5, "x", [], { agent: 1, status: "running" }, { agent: "bad-status", status: "weird" }, reviewer("odd", "running", { turns: "\u001b]52;c;x\u0007", recentCalls: [null] }), reviewer("hostile-call", "running", { recentCalls: [{ name: "read", args: { path: { toString: 1 } } }] }), deep];
+	const patch = applyChildEvent(state, dispatchUpdate("c1", entries));
+	assert.deepEqual(patch?.subagents?.slice(0, 2), [
+		{ agent: "odd", status: "running", turns: 0, recentCalls: [] },
+		{ agent: "hostile-call", status: "running", turns: 3, recentCalls: [{ name: "read" }] },
+	]);
+	let levels = 0;
+	for (let v = patch?.subagents?.[2]; v; v = v.subagents?.[0]) levels++;
+	assert.equal(levels, 4, "deeper levels are dropped");
 });
 
 test("child events: usage on other tool results stays with the child", () => {
@@ -325,12 +345,13 @@ test("progress: an update streams the turn and the latest tool calls", () => {
 	assert.equal(updates.at(-1)?.text, "a: turn 2 → $ npm test, find, ls\nb: turn 0");
 });
 
-test("progress: finish drops the live nested agents", () => {
+test("progress: finish drops the live subagents", () => {
 	const { progress, updates } = recordedProgress();
-	progress.update(0, { subagents: [{ agent: "x", task: "", status: "running", ok: false, turns: 1, recentCalls: [] }] });
-	assert.equal(updates.at(-1)?.details.results[0] && "subagents" in updates.at(-1)!.details.results[0], true);
+	const shown = () => updates.at(-1)?.details.results[0] as { subagents?: unknown };
+	progress.update(0, { subagents: [{ agent: "x", status: "running", turns: 1, recentCalls: [] }] });
+	assert.ok(shown().subagents, "live subagents are streamed while the agent runs");
 	progress.finish(0, runResult({ agent: "a" }));
-	assert.equal((updates.at(-1)?.details.results[0] as { subagents?: unknown }).subagents, undefined);
+	assert.equal(shown().subagents, undefined, "finish drops them");
 });
 
 test("progress: finish sets status and ok from the result", () => {
