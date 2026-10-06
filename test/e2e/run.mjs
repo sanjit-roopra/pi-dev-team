@@ -423,6 +423,7 @@ const scenarios = {
 		assert(parentRuntime.tools.includes("dev_team_subagent") && parentRuntime.tools.includes("subagent"), JSON.stringify(parentRuntime.tools));
 		assert(parentRuntime.systemPrompt.includes("Agent/Task(subagent_type=X, prompt=P)=dev_team_subagent(agent=X, task=P)"), "parent prompt maps dispatch to the wrong tool");
 		assert(!parentRuntime.systemPrompt.includes("=subagent(agent=X, task=P)"), "parent prompt still maps dispatch to the external tool");
+		assert(/^- autoship/m.test(parentRuntime.systemPrompt), "parent prompt lacks the full skill index");
 
 		const inspectChild = () => {
 			const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "collision-probe", task: script([{ inspect: "runtime" }]) } }]), { ...options, json: true });
@@ -433,6 +434,8 @@ const scenarios = {
 			assert(runtime.systemPrompt.includes("Agent/Task=dev_team_subagent."), "child prompt maps dispatch to the wrong tool");
 			assert(!runtime.systemPrompt.includes("Agent/Task=subagent."), "child prompt still maps dispatch to the external tool");
 			assert(runtime.tools.includes("subagent"), "external tool was removed by dev-team's depth safeguard");
+			assert(!/^- autoship/m.test(runtime.systemPrompt), "child prompt still carries the full skill index");
+			assert(runtime.systemPrompt.includes("load any by name with the skill tool"), "child prompt lacks the skill note");
 			return runtime;
 		};
 		assert(inspectChild().tools.includes("dev_team_subagent"), "Claude Agent/Task did not enable namespaced child dispatch");

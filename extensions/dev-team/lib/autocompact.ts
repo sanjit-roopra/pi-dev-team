@@ -70,37 +70,47 @@ export function autocompactSetting(
 	return {};
 }
 
-/** Why autocompaction is due: the configured percentage, the token ceiling, or both. */
+/** Why autocompaction is due: the configured percentage, the context-token ceiling, or both. */
 export interface AutocompactDue {
 	usedPct: number;
 	/** The configured percentage, when that is what was reached. */
 	thresholdPct?: number;
-	/** The token ceiling and the current tokens, when that is what was reached. */
-	maxTokens?: number;
-	usedTokens?: number;
+	/** The ceiling and the current context tokens, when that is what was reached (always set together). */
+	tokens?: { max: number; used: number };
 }
 
 /**
  * Why the session should compact now, else undefined: usage at or over the configured percentage, or
- * context tokens at or over `maxTokens` (0 or an invalid value turns the ceiling off). Without either,
- * pi's own threshold applies (and the autocompact_setup_nudge advisory runs at session start).
+ * context tokens at or over `maxContextTokens` (0 or an invalid value turns the ceiling off). Without
+ * either, pi's own threshold applies (and the autocompact_setup_nudge advisory runs at session start).
  */
 export function autocompactDue(
 	ctx: Pick<ExtensionContext, "cwd" | "getContextUsage" | "isProjectTrusted">,
-	env: NodeJS.ProcessEnv = process.env,
-	maxTokens = 0,
+	opts: { env?: NodeJS.ProcessEnv; maxContextTokens?: number } = {},
 ): AutocompactDue | undefined {
+	const { env = process.env, maxContextTokens = 0 } = opts;
 	const { thresholdPct } = autocompactSetting(ctx.cwd, { env, projectTrusted: ctx.isProjectTrusted() });
-	const ceiling = Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : undefined;
-	if (thresholdPct === undefined && ceiling === undefined) return undefined;
+	const max = Number.isFinite(maxContextTokens) && maxContextTokens > 0 ? maxContextTokens : undefined;
+	if (thresholdPct === undefined && max === undefined) return undefined;
 	const usage = ctx.getContextUsage();
 	if (!usage || usage.percent == null) return undefined;
 	const byPct = thresholdPct !== undefined && usage.percent >= thresholdPct;
-	const byTokens = ceiling !== undefined && usage.tokens != null && usage.tokens >= ceiling;
+	const used = usage.tokens;
+	const byTokens = max !== undefined && used != null && used >= max;
 	if (!byPct && !byTokens) return undefined;
 	return {
 		usedPct: usage.percent,
 		...(byPct ? { thresholdPct } : {}),
-		...(byTokens ? { maxTokens: ceiling, usedTokens: usage.tokens as number } : {}),
+		...(byTokens ? { tokens: { max, used } } : {}),
 	};
+}
+
+/** The notice shown when compacting: every reason that fired. */
+export function describeAutocompact(due: AutocompactDue): string {
+	const k = (n: number) => `${Math.round(n / 1000)}k`;
+	const reasons = [
+		...(due.thresholdPct !== undefined ? [`autocompact threshold ${due.thresholdPct}%`] : []),
+		...(due.tokens ? [`${k(due.tokens.used)} tokens, autocompactMaxTokens ${k(due.tokens.max)}`] : []),
+	];
+	return `dev-team: context at ${Math.round(due.usedPct)}% (${reasons.join("; ")}), compacting.`;
 }

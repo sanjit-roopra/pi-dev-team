@@ -11,6 +11,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import type { DevTeamConfig } from "./config.ts";
 import { readSmallFile } from "./safe-read.ts";
 
 export interface SkillDef {
@@ -215,16 +216,35 @@ export function skillIndex(skills: Map<string, SkillDef>, mode: "compact" | "ful
 /**
  * The skills a subagent's instructions point to: its frontmatter `skills:`, every skill its body names
  * as `/name`, `/dev-team:name`, `skills/name` or `` `name` ``, and all project skills (the project's own
- * conventions, usually few). Subagents get this short list instead of the full index of ~90 skills,
- * which is about 5k tokens on every turn of every dispatch; other skills still load by name.
+ * conventions, usually few). Subagents get this short list instead of the full index of ~90 skills
+ * (21k characters in compact mode, about 5k tokens, on every turn of every dispatch); other skills
+ * still load by name. Matching is loose on purpose: a path such as `src/build/` may add `build`, which
+ * costs one line, while a missed skill costs the agent its instructions.
  */
 export function namedSkills(skills: Map<string, SkillDef>, frontmatterSkills: readonly string[], body: string): Map<string, SkillDef> {
-	const wanted = new Set(frontmatterSkills);
-	const out = new Map<string, SkillDef>();
-	for (const [name, def] of skills) {
-		const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		const named = new RegExp(`(?:/(?:dev-team:)?|skills/|\`)${escaped}(?![\\w-])`).test(body);
-		if (wanted.has(name) || named || def.source === "project") out.set(name, def);
+	const frontmatterNames = new Set(frontmatterSkills);
+	// One pass over the body: longest names first, so `code-review` wins over a shorter prefix.
+	const names = [...skills.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+	const bodyNames = new Set<string>();
+	if (names.length) {
+		for (const m of body.matchAll(new RegExp(`(?:/(?:dev-team:)?|skills/|\`)(${names.join("|")})(?![\\w-])`, "g"))) bodyNames.add(m[1]);
 	}
-	return out;
+	const relevant = new Map<string, SkillDef>();
+	for (const [name, def] of skills) {
+		if (frontmatterNames.has(name) || bodyNames.has(name) || def.source === "project") relevant.set(name, def);
+	}
+	return relevant;
+}
+
+/**
+ * The skill map an agent prompt lists from (see namedSkills), or undefined when `skillIndex` is off.
+ * `projectTrusted` must be the trust of the directory the agent runs in.
+ */
+export function agentSkills(
+	config: Pick<DevTeamConfig, "skillIndex">,
+	cwd: string,
+	packageRoot: string,
+	projectTrusted: boolean,
+): Map<string, SkillDef> | undefined {
+	return config.skillIndex === "off" ? undefined : discoverSkills(cwd, packageRoot, { includeProject: projectTrusted });
 }

@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import {
+	type AgentDef,
 	discoverAgents,
 	mapTools,
 	parseAgentFile,
@@ -14,7 +15,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverInvocableSkills, discoverSkills, expandSkill, namedSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkills, expandSkill, namedSkills, resolveSkillName, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -273,29 +274,58 @@ test("subagent system prompt carries runtime notes and skill hints", () => {
 	assert.doesNotMatch(prompt, /Agent\/Task=subagent\b/);
 });
 
-test("subagent system prompt lists only the skills the agent's instructions name", (t) => {
-	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
-	const skills = discoverSkills(os.tmpdir(), ROOT, { includeProject: false });
-	const def = agents.get("software-engineer");
-	assert.ok(def);
-	const prompt = buildSystemPrompt(def, ROOT, [], [], skills, 220);
-	assert.match(prompt, /Dev-team skills your instructions name/);
-	assert.match(prompt, /^- test-driven-development[ :]/m, "frontmatter skill");
-	assert.match(prompt, /^- systematic-debugging[ :]/m, "skill named in the body");
-	assert.doesNotMatch(prompt, /^- autoship[ :]/m, "an unrelated skill");
-	assert.match(prompt, /load any by name with the skill tool/);
-	const full = skillIndex(skills, "compact", 220);
+/** A package skill map with the given names (no files are read). */
+function skillMap(...names: string[]): Map<string, SkillDef> {
+	return new Map(names.map((name) => [name, { name, description: `${name} skill`, userInvocable: false, filePath: `/x/${name}/SKILL.md`, baseDir: `/x/${name}`, source: "package" as const }]));
+}
+
+/** An agent with the given frontmatter skills and body (no file is read). */
+function agentDef(skills: string[], body: string): AgentDef {
+	return { name: "fixture-agent", description: "fixture", skills, body, filePath: "/x/fixture-agent.md", source: "package" };
+}
+
+test("subagent prompt lists the frontmatter and body-named skills and no others", () => {
+	const prompt = buildSystemPrompt(agentDef(["alpha"], "Load `beta` when needed."), ROOT, [], [], skillMap("alpha", "beta", "gamma"), 220);
 	const listed = prompt.slice(prompt.indexOf("Dev-team skills your instructions name"));
-	assert.ok(listed.length < full.length / 4, `named list ${listed.length} vs full index ${full.length}`);
-	assert.doesNotMatch(buildSystemPrompt(def, ROOT, [], []), /Dev-team skills your instructions name/, "no list without the skill map");
+	assert.match(listed, /^- alpha: alpha skill$/m, "frontmatter skill");
+	assert.match(listed, /^- beta: beta skill$/m, "skill named in the body");
+	assert.doesNotMatch(listed, /gamma/, "a skill the agent never names");
 });
 
-test("namedSkills: frontmatter, body references and project skills", (t) => {
+test("subagent prompt says other skills load by name only when it lists skills", () => {
+	const def = agentDef(["alpha"], "body");
+	assert.match(buildSystemPrompt(def, ROOT, [], [], skillMap("alpha"), 220), /load any by name with the skill tool/);
+	const withoutMap = buildSystemPrompt(def, ROOT, [], []);
+	assert.doesNotMatch(withoutMap, /load any by name with the skill tool/);
+	assert.doesNotMatch(withoutMap, /Dev-team skills your instructions name/);
+});
+
+test("the real software-engineer agent lists a small part of the full skill index", () => {
+	const MAX_SHARE_OF_FULL_INDEX = 0.25;
+	const def = discoverAgents(os.tmpdir(), ROOT, { includeProject: false }).get("software-engineer");
+	assert.ok(def);
+	const skills = discoverSkills(os.tmpdir(), ROOT, { includeProject: false });
+	const prompt = buildSystemPrompt(def, ROOT, [], [], skills, 220);
+	const listed = prompt.slice(prompt.indexOf("Dev-team skills your instructions name"));
+	const full = skillIndex(skills, "compact", 220);
+	assert.ok(listed.length < full.length * MAX_SHARE_OF_FULL_INDEX, `named list ${listed.length} chars vs full index ${full.length}`);
+});
+
+test("namedSkills finds each reference form in the body", () => {
+	const skills = skillMap("plan", "code-review", "specs", "triage", "build");
+	const named = (body: string) => [...namedSkills(skills, [], body).keys()].sort();
+	assert.deepEqual(named("run /plan"), ["plan"], "/name");
+	assert.deepEqual(named("run /dev-team:code-review"), ["code-review"], "/dev-team:name");
+	assert.deepEqual(named("read skills/specs/SKILL.md"), ["specs"], "skills/name");
+	assert.deepEqual(named("use the `triage` skill"), ["triage"], "`name`");
+	assert.deepEqual(named("/planning and /code-review-x and plain build"), [], "longer words and bare words do not count");
+	assert.deepEqual([...namedSkills(skills, ["build"], "").keys()], ["build"], "frontmatter alone");
+});
+
+test("namedSkills always includes project skills", (t) => {
 	const dir = tempDir(t, "proj-");
 	fs.mkdirSync(path.join(dir, ".claude", "skills", "house-rules"), { recursive: true });
 	fs.writeFileSync(path.join(dir, ".claude", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
 	const skills = discoverSkills(dir, ROOT, { includeProject: true });
-	const body = "Run `/dev-team:code-review`, then read skills/specs/SKILL.md and use the `triage` skill. A plan is not /planning.";
-	const names = [...namedSkills(skills, ["build"], body).keys()].sort();
-	assert.deepEqual(names, ["build", "code-review", "house-rules", "specs", "triage"]);
+	assert.ok(namedSkills(skills, [], "no references").has("house-rules"));
 });

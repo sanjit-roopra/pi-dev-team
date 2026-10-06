@@ -9,7 +9,7 @@ type ToolDef = { name: string; exposure?: string; annotations?: Record<string, b
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 type CommandDef = { description?: string; getArgumentCompletions?: (prefix: string) => { value: string }[]; handler: (args: string, ctx: unknown) => Promise<void> | void };
 
-async function loadExtension() {
+async function loadExtension(opts: { flags?: Record<string, unknown> } = {}) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-load-"));
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
@@ -27,6 +27,7 @@ async function loadExtension() {
 		registerTool: (def: ToolDef) => (tools[def.name] = def),
 		registerCommand: (name: string, def: CommandDef) => (commands[name] = def),
 		on: (event: string, handler: Handler) => (handlers[event] ??= []).push(handler),
+		getFlag: (name: string) => opts.flags?.[name],
 	};
 	const fakePi = new Proxy({}, { get: (_t, key) => recorders[String(key)] ?? (() => undefined) });
 	const { default: devTeam } = await import("../../extensions/dev-team/index.ts");
@@ -80,6 +81,52 @@ test("the system prompt carries the GitHub style guide in block mode", async () 
 	const opts: { sections?: Record<string, string> } = {};
 	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
 	assert.match(opts.sections?.dev_team ?? "", /GitHub text style/);
+});
+
+test("the main session's guide lists every dev-team skill", async () => {
+	const { handlers } = await loaded;
+	const opts: { sections?: Record<string, string> } = {};
+	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	assert.match(opts.sections?.dev_team ?? "", /Dev-team skills \(load with the skill tool/);
+	assert.match(opts.sections?.dev_team ?? "", /^- autoship/m);
+});
+
+test("a dispatched agent's guide leaves the full skill index out (its own prompt lists its skills)", async () => {
+	const child = await loadExtension({ flags: { "dev-team-agent-prompt": "1" } });
+	try {
+		const opts: { sections?: Record<string, string> } = {};
+		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+		assert.match(opts.sections?.dev_team ?? "", /GitHub text style/, "the rest of the guide stays");
+		assert.doesNotMatch(opts.sections?.dev_team ?? "", /^- autoship/m);
+	} finally {
+		child.cleanup();
+	}
+});
+
+test("agent_settled compacts the main session once context reaches autocompactMaxTokens", async () => {
+	const { handlers } = await loaded;
+	const saved = process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;
+	process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "100"; // the user's own setting must not decide this test
+	try {
+		const settle = async (tokens: number) => {
+			let compacted = 0;
+			const ctx = {
+				cwd: os.tmpdir(),
+				mode: "tui",
+				hasUI: false,
+				isProjectTrusted: () => false,
+				getContextUsage: () => ({ tokens, contextWindow: 1_000_000, percent: tokens / 10_000 }),
+				compact: () => void compacted++,
+			};
+			await handlers.agent_settled[0]({}, ctx);
+			return compacted;
+		};
+		assert.equal(await settle(199_999), 0);
+		assert.equal(await settle(200_000), 1, "the default ceiling is 200k tokens");
+	} finally {
+		if (saved === undefined) delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;
+		else process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = saved;
+	}
 });
 
 test("tool_call blocks a breaking gh command before the guard hooks run; the same command sent again reaches them", async () => {

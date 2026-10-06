@@ -199,6 +199,14 @@ export function filterProjectConfig(data: Record<string, unknown>): { data: Reco
 	return { data: out, ignored };
 }
 
+/** Lowest context-token ceiling a project file may set; lower values would compact after nearly every run. */
+export const MIN_PROJECT_AUTOCOMPACT_TOKENS = 50_000;
+
+/** A project may turn the ceiling off (0) or set it at or above MIN_PROJECT_AUTOCOMPACT_TOKENS; the user's own file may set any value. */
+export function isProjectAutocompactCeilingAllowed(value: unknown): boolean {
+	return value === 0 || (typeof value === "number" && Number.isInteger(value) && value >= MIN_PROJECT_AUTOCOMPACT_TOKENS);
+}
+
 /**
  * User config, then the project's .pi/dev-team.json and .pi/dev-team.local.json. Project files are
  * filtered (filterProjectConfig), so callers pass `includeProject: ctx.isProjectTrusted()`.
@@ -217,6 +225,10 @@ export function loadConfig(
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
 		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
+		if (file !== userFile && "autocompactMaxTokens" in data && !isProjectAutocompactCeilingAllowed(data.autocompactMaxTokens)) {
+			delete data.autocompactMaxTokens;
+			ignoredProjectSettings.push("autocompactMaxTokens");
+		}
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);
