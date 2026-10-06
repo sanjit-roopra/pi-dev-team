@@ -1,6 +1,6 @@
 {
   "name": "pi-dev-team",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "pi port of Bryan Finster's dev-team (bdfinst/agentic-dev-team): persona-driven dev team, reviewer swarm, TDD-gated /specs -> /plan -> /build -> /pr workflow, guard hooks. Works with any pi model provider, including GitHub Copilot.",
   "license": "MIT",
   "author": "Sanjit Roopra (https://github.com/sanjit-roopra)",
@@ -12,10 +12,18 @@
   "bugs": {
     "url": "https://github.com/sanjit-roopra/pi-dev-team/issues"
   },
-  "keywords": ["pi-package", "agents", "code-review", "tdd", "dev-team"],
+  "keywords": [
+    "pi-package",
+    "agents",
+    "code-review",
+    "tdd",
+    "dev-team"
+  ],
   "type": "module",
   "pi": {
-    "extensions": ["./extensions/dev-team/index.ts"],
+    "extensions": [
+      "./extensions/dev-team/index.ts"
+    ],
     "skills": [],
     "prompts": [],
     "themes": []
@@ -32,5 +40,22 @@
     "test": "node --test test/unit/*.test.ts && python3 -m unittest discover -s test/py -p 'test_*.py'",
     "e2e": "node test/e2e/run.mjs"
   },
-  "files": ["extensions", "agents", "skills", "hooks", "scripts", "knowledge", "templates", "tools", "bin", "docs", "sync", "overrides", "UPSTREAM.json", "PORTING.md", "README.md", "LICENSE"]
+  "files": [
+    "extensions",
+    "agents",
+    "skills",
+    "hooks",
+    "scripts",
+    "knowledge",
+    "templates",
+    "tools",
+    "bin",
+    "docs",
+    "sync",
+    "overrides",
+    "UPSTREAM.json",
+    "PORTING.md",
+    "README.md",
+    "LICENSE"
+  ]
 }
