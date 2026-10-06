@@ -22,6 +22,7 @@ PORTING.md, README.md, package.json) is owned by the port and never touched.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import shutil
@@ -49,6 +50,15 @@ DROPPED_SKILLS = [
 IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc", ".pytest_cache", ".mypy_cache", ".ruff_cache")
 
 DESCRIPTION_LIMIT = 1024
+
+# Overrides that replace an upstream file, with the sha256 of the upstream
+# version each one was ported from. When upstream changes one of these files,
+# the override would silently discard that change, so sync fails until the
+# override is re-ported and its hash updated here.
+OVERRIDE_BASES: dict[str, str] = {
+    "hooks/pre_tool_guard.py": "761e83e9d9bb66544ce465aaf301d0d5a52fd84b988238e6b947a0202dcdc3d5",
+    "hooks/guards.json": "03916b358d3f5c5036d9517222d469f85404dc3c9cde1364dfb4d3bc7422c54b",
+}
 
 # (glob relative to package root, regex, replacement, description)
 PATCHES: list[tuple[str, str, str, str]] = [
@@ -182,6 +192,17 @@ def insert_note(skill_md: Path, note: str) -> None:
     skill_md.write_text(text, encoding="utf-8")
 
 
+def stale_override_bases(root: Path, bases: dict[str, str]) -> list[str]:
+    """Return the overridden files whose upstream copy under `root` no longer
+    matches the hash the override was ported from (or no longer exists)."""
+    stale = []
+    for rel, sha in bases.items():
+        f = root / rel
+        if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != sha:
+            stale.append(rel)
+    return stale
+
+
 def copy_tree(src: Path, dst: Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
@@ -221,6 +242,11 @@ def main() -> int:
             shutil.rmtree(target)
             dropped.append(skill)
 
+    failures: list[str] = [
+        f"{rel}: upstream changed this file, which overrides/{rel} replaces; re-port the override and update OVERRIDE_BASES"
+        for rel in stale_override_bases(PKG, OVERRIDE_BASES)
+    ]
+
     overridden: list[str] = []
     overrides = PKG / "overrides"
     if overrides.is_dir():
@@ -246,7 +272,6 @@ def main() -> int:
     ]
 
     patched: list[dict[str, object]] = []
-    failures: list[str] = []
     for pattern, regex, repl, why in PATCHES:
         files = sorted(PKG.glob(pattern))
         hits = 0
@@ -281,7 +306,7 @@ def main() -> int:
     print(f"synced dev-team {version} ({info['commit'][:10]})")
     print(f"  dropped {len(dropped)} skills, {len(overridden)} override files, {len(normalised)} frontmatter fixes")
     if failures:
-        print("PATCHES THAT NO LONGER MATCH (upstream changed; review and update PATCHES):", file=sys.stderr)
+        print("UPSTREAM DRIFT (review and update PATCHES / OVERRIDE_BASES):", file=sys.stderr)
         for f in failures:
             print("  - " + f, file=sys.stderr)
         return 1

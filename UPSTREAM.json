@@ -16,6 +16,8 @@
   "overridden": [
     "agents/Explore.md",
     "agents/general-purpose.md",
+    "hooks/guards.json",
+    "hooks/pre_tool_guard.py",
     "skills/headless-run/SKILL.md",
     "skills/upgrade/SKILL.md",
     "skills/version/SKILL.md"
