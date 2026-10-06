@@ -19,7 +19,7 @@ import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
-import type { DevTeamConfig } from "./config.ts";
+import { DEFAULT_CONFIG, type DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
 import { recentCallLines, renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
@@ -40,8 +40,9 @@ import {
 	type WorktreeInfo,
 } from "./subagent-types.ts";
 import { saveFullOutput } from "./session-files.ts";
+import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
-import { type ChildTrust, childTrustOf, trustArgs } from "./trust.ts";
+import { type ChildTrust, childTrusted, childTrustOf, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {
 	agent: string;
@@ -290,7 +291,9 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			let tools = mapping?.tools;
 			if (tools && deps.depth + 1 >= config.maxSubagentDepth) tools = tools.filter((t) => t !== DEV_TEAM_SUBAGENT_TOOL);
 
-			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? []);
+			// Project skills only from a directory the child itself is trusted in.
+			const skillPool = discoverSkillPool(config, runCwd, packageRoot, childTrusted(trust, runCwd, wt?.repoRoot));
+			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? [], skillPool, config.skillIndexChars);
 			const promptFile = path.join(tmpDir, `agent-${def.name}.md`);
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
@@ -300,6 +303,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (thinking) args.push("--thinking", thinking);
 			if (tools) args.push("--tools", tools.length ? tools.join(",") : "read");
 			args.push("--append-system-prompt", promptFile);
+			if (skillPool) args.push(`--${AGENT_PROMPT_FLAG}`, AGENT_PROMPT_FLAG_VALUE);
 			args.push(`Task: ${task}`);
 
 			const env: NodeJS.ProcessEnv = {
@@ -576,7 +580,24 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	return `${results.filter((r) => r.ok).length}/${results.length} agents succeeded\n\n${results.map(section).join("\n\n---\n\n")}${skipped}`;
 }
 
-export function buildSystemPrompt(def: AgentDef, packageRoot: string, scopedBash: string[], unmapped: string[]): string {
+/** Flag on a dispatched child whose appended prompt lists its skills; its guide then leaves out the full index. */
+export const AGENT_PROMPT_FLAG = "dev-team-agent-prompt";
+/** The flag's value. Explicit, because pi reads the token after an extension flag as its value. */
+export const AGENT_PROMPT_FLAG_VALUE = "1";
+
+/**
+ * The child's appended system prompt: agent body, runtime notes and, when `skillPool` is given, an index
+ * of only the skills the agent's instructions name (see namedSkills). The child's dev-team guide
+ * leaves out the full skill index, so this short list is all a subagent pays for.
+ */
+export function buildSystemPrompt(
+	def: AgentDef,
+	packageRoot: string,
+	scopedBash: string[],
+	unmapped: string[],
+	skillPool?: Map<string, SkillDef>,
+	skillIndexChars = DEFAULT_CONFIG.skillIndexChars,
+): string {
 	const parts = [def.body.trim()];
 	const runtime: string[] = [
 		`You are the dev-team agent "${def.name}", dispatched as a subagent. Your final message is returned to the dispatcher verbatim; make it the complete deliverable (for review agents: the JSON result exactly as your output contract specifies).`,
@@ -592,6 +613,13 @@ export function buildSystemPrompt(def: AgentDef, packageRoot: string, scopedBash
 	}
 	if (scopedBash.length) runtime.push(`Only use bash for: ${scopedBash.join("; ")}.`);
 	if (unmapped.length) runtime.push(`Unavailable in this runtime (fall back as your instructions describe): ${unmapped.join(", ")}.`);
+	if (skillPool) {
+		runtime.push(
+			`Other dev-team skills: load any by name with the skill tool; the names are the folders in ${packageRoot}/skills.`,
+		);
+	}
 	parts.push(`## Runtime (pi port of dev-team)\n\n${runtime.map((r) => `- ${r}`).join("\n")}`);
+	const named = skillPool ? namedSkills(skillPool, def.skills, def.body) : undefined;
+	if (named?.size) parts.push(`Dev-team skills your instructions name (load with the skill tool):\n${skillIndex(named, "compact", skillIndexChars)}`);
 	return `${parts.join("\n\n")}\n`;
 }

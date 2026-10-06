@@ -50,6 +50,8 @@ export interface DevTeamConfig {
 	skillIndex: "compact" | "full" | "off";
 	/** Max description characters per skill in the compact index. */
 	skillIndexChars: number;
+	/** Compact the main session between runs once its context reaches this many tokens (0 = off). */
+	autocompactMaxTokens: number;
 	/** Put the `claude` -> `pi` CLI shim on PATH for scripts that call `claude -p`. */
 	claudeShim: boolean;
 	/** Extra environment variables for tools, hooks, scripts and subagents (e.g. DEV_TEAM_MAX_PARALLEL_BUILDS). */
@@ -92,6 +94,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	githubStyle: "block",
 	skillIndex: "compact",
 	skillIndexChars: 220,
+	autocompactMaxTokens: 200_000,
 	claudeShim: true,
 	env: {},
 };
@@ -178,16 +181,29 @@ export function isProjectEnvSettingAllowed(key: string, value: unknown): boolean
 	return PROJECT_ENV_SETTINGS.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && PLAIN_SETTING_VALUE.test(String(value));
 }
 
+/** Lowest context-token ceiling a project file may set; lower values would compact after nearly every run. */
+export const MIN_PROJECT_AUTOCOMPACT_TOKENS = 50_000;
+
+/** A project may turn the ceiling off (0) or set it at or above MIN_PROJECT_AUTOCOMPACT_TOKENS; the user's own file may set any value. */
+export function isProjectAutocompactCeilingAllowed(value: unknown): boolean {
+	return value === 0 || (typeof value === "number" && Number.isInteger(value) && value >= MIN_PROJECT_AUTOCOMPACT_TOKENS);
+}
+
 /**
  * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
- * object is dropped whole), and no `hooks` at all, since hooks include the guards; hooks are set in the
- * user's own config. `ignored` names everything left out, as `env.KEY`, `env` or `hooks`.
+ * object is dropped whole), no `hooks` at all, since hooks include the guards (hooks are set in the
+ * user's own config), and `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed. `ignored`
+ * names everything left out, as `env.KEY`, `env`, `hooks` or `autocompactMaxTokens`.
  */
 export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
-	const { env, hooks, ...rest } = data;
+	const { env, hooks, autocompactMaxTokens, ...rest } = data;
 	const out: Record<string, unknown> = rest;
 	if (hooks !== undefined) ignored.push("hooks");
+	if (autocompactMaxTokens !== undefined) {
+		if (isProjectAutocompactCeilingAllowed(autocompactMaxTokens)) out.autocompactMaxTokens = autocompactMaxTokens;
+		else ignored.push("autocompactMaxTokens");
+	}
 	if (env === undefined) return { data: out, ignored };
 	if (!isPlainObject(env)) return { data: out, ignored: [...ignored, "env"] };
 	const entries = Object.entries(env);

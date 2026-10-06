@@ -147,3 +147,25 @@ test("loadConfig: an invalid project githubStyle does not override a valid user 
 	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ githubStyle: "off" }));
 	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "off", "a valid project value wins");
 });
+
+test("loadConfig: a project may turn the autocompact ceiling off or keep it at 50k tokens or more, never lower", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-config-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const project = path.join(dir, "project");
+	fs.mkdirSync(path.join(project, ".pi"), { recursive: true });
+	const userConfigFile = path.join(dir, "user.json");
+	const load = (projectValue: unknown, userValue?: number) => {
+		fs.writeFileSync(userConfigFile, JSON.stringify(userValue === undefined ? {} : { autocompactMaxTokens: userValue }));
+		fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ autocompactMaxTokens: projectValue }));
+		return loadConfig(project, { includeProject: true, userConfigFile });
+	};
+	assert.equal(load(0).config.autocompactMaxTokens, 0, "off");
+	assert.equal(load(300_000).config.autocompactMaxTokens, 300_000, "higher");
+	assert.equal(load(50_000).config.autocompactMaxTokens, 50_000, "at the floor");
+	for (const bad of [1, 49_999, -1, "200000", 100_000.5]) {
+		const { config, ignoredProjectSettings } = load(bad);
+		assert.equal(config.autocompactMaxTokens, DEFAULT_CONFIG.autocompactMaxTokens, `project value ${JSON.stringify(bad)} ignored`);
+		assert.deepEqual(ignoredProjectSettings, ["autocompactMaxTokens"]);
+	}
+	assert.equal(load(1, 10_000).config.autocompactMaxTokens, 10_000, "the user's own low value still applies");
+});

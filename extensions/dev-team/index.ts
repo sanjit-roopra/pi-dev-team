@@ -11,7 +11,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
-import { autocompactDue } from "./lib/autocompact.ts";
+import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -27,8 +27,8 @@ import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClau
 import { aiCreditsStatus } from "./lib/ai-credits.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { sessionEntries } from "./lib/session-spend.ts";
-import { commandText, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
-import { buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
+import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
+import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
@@ -63,6 +63,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	process.env.DEV_TEAM_ROOT = packageRoot;
 
 	pi.registerFlag("dev-team-agent", { type: "string", description: "Run this pi process as the named dev-team agent (used by the claude CLI shim)" });
+	pi.registerFlag(AGENT_PROMPT_FLAG, { type: "string", description: "Set by dev_team_subagent: the appended agent prompt lists this agent's skills, so the full skill index is left out" });
 	pi.registerFlag("dev-team-tier", { type: "string", description: "Model tier (opus|sonnet|haiku|fable) resolved through dev-team.json" });
 
 	function applyEnv(ctx: ExtensionContext) {
@@ -338,7 +339,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				);
 				return;
 			}
-			agentPrompt = buildSystemPrompt(def, packageRoot, [], []);
+			agentPrompt = buildSystemPrompt(def, packageRoot, [], [], discoverSkillPool(config, ctx.cwd, packageRoot, ctx.isProjectTrusted()), config.skillIndexChars);
 			frontmatterModel = def.model;
 			effort = def.effort;
 			const mapping = mapTools(def.claudeTools, pi.getAllTools().map((t) => t.name));
@@ -380,8 +381,15 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const opts = event.systemPromptOptions;
-		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
-		const index = config.skillIndex === "off" ? "" : skillIndex(skills, config.skillIndex, config.skillIndexChars);
+		// A dispatched agent (flag set by dev_team_subagent) or a process run as an agent gets only the
+		// skills its instructions name, in its appended prompt (buildSystemPrompt), so the guide stays the
+		// same for every agent and cacheable. Not keyed on DEV_TEAM_SUBAGENT: a plain `claude -p` from a
+		// subagent's bash inherits that env but has no agent prompt, and keeps the full index.
+		const promptListsSkills = agentPrompt !== undefined || pi.getFlag(AGENT_PROMPT_FLAG) === AGENT_PROMPT_FLAG_VALUE;
+		const index =
+			promptListsSkills || config.skillIndex === "off"
+				? ""
+				: skillIndex(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), config.skillIndex, config.skillIndexChars);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle)) };
 		if (agentPrompt) opts.appendSystemPrompt = `${opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n` : ""}${agentPrompt}`;
 		if (sessionContext.length) {
@@ -487,14 +495,14 @@ export default function devTeam(pi: ExtensionAPI) {
 		await hooks.run("Stop", { ...basePayload(ctx), stop_hook_active: false }, ctx.cwd);
 	});
 
-	// Autocompact at the configured percentage. agent_settled, not agent_end: agent_end fires inside the
+	// Autocompact at the configured percentage or the autocompactMaxTokens ceiling. agent_settled, not agent_end: agent_end fires inside the
 	// run, and ctx.compact() aborts a running turn, which would cancel pi's own retry and overflow
 	// recovery. Inside one long run pi's own threshold remains the backstop. Print/json runs end here.
 	pi.on("agent_settled", async (_event, ctx) => {
 		if (isSubagent || (ctx.mode !== "tui" && ctx.mode !== "rpc")) return;
-		const due = autocompactDue(ctx);
+		const due = autocompactDue(ctx, { maxContextTokens: config.autocompactMaxTokens });
 		if (!due) return;
-		notify(ctx, [`dev-team: context at ${Math.round(due.usedPct)}% (autocompact threshold ${due.thresholdPct}%), compacting.`], "info");
+		notify(ctx, [describeAutocompact(due)], "info");
 		ctx.compact({ onError: () => {} });
 	});
 

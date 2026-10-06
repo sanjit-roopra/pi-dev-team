@@ -3,6 +3,11 @@
  * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE percent (written by /setup via scripts/set_autocompact_env.py).
  * pi only compacts at `contextWindow - reserveTokens`, so the extension lowers that to the configured
  * percentage, measured with ctx.getContextUsage(), which knows every model's window.
+ *
+ * The port adds a token ceiling (`autocompactMaxTokens`) on top. Every turn re-reads the whole
+ * context, so a 1M-token window that grows to 400k+ makes each turn cost several times more, and
+ * a cache miss after a long human wait rewrites all of it. The ceiling applies whether or not a
+ * percentage is configured; whichever is reached first compacts.
  */
 import * as os from "node:os";
 import * as path from "node:path";
@@ -65,17 +70,47 @@ export function autocompactSetting(
 	return {};
 }
 
+/** Why autocompaction is due: the configured percentage, the context-token ceiling, or both. */
+export interface AutocompactDue {
+	usedPct: number;
+	/** The configured percentage, when that is what was reached. */
+	thresholdPct?: number;
+	/** The ceiling and the current context tokens, when that is what was reached (always set together). */
+	tokens?: { max: number; used: number };
+}
+
 /**
- * The threshold and current usage when the session should compact now, else undefined. Unconfigured
- * repos keep pi's default (and get the autocompact_setup_nudge advisory at session start).
+ * Why the session should compact now, else undefined: usage at or over the configured percentage, or
+ * context tokens at or over `maxContextTokens` (0 or an invalid value turns the ceiling off). Without
+ * either, pi's own threshold applies (and the autocompact_setup_nudge advisory runs at session start).
  */
 export function autocompactDue(
 	ctx: Pick<ExtensionContext, "cwd" | "getContextUsage" | "isProjectTrusted">,
-	env: NodeJS.ProcessEnv = process.env,
-): { thresholdPct: number; usedPct: number } | undefined {
+	opts: { env?: NodeJS.ProcessEnv; maxContextTokens?: number } = {},
+): AutocompactDue | undefined {
+	const { env = process.env, maxContextTokens = 0 } = opts;
 	const { thresholdPct } = autocompactSetting(ctx.cwd, { env, projectTrusted: ctx.isProjectTrusted() });
-	if (thresholdPct === undefined) return undefined;
+	const max = Number.isFinite(maxContextTokens) && maxContextTokens > 0 ? maxContextTokens : undefined;
+	if (thresholdPct === undefined && max === undefined) return undefined;
 	const usage = ctx.getContextUsage();
 	if (!usage || usage.percent == null) return undefined;
-	return usage.percent >= thresholdPct ? { thresholdPct, usedPct: usage.percent } : undefined;
+	const byPct = thresholdPct !== undefined && usage.percent >= thresholdPct;
+	const used = usage.tokens;
+	const byTokens = max !== undefined && used != null && used >= max;
+	if (!byPct && !byTokens) return undefined;
+	return {
+		usedPct: usage.percent,
+		...(byPct ? { thresholdPct } : {}),
+		...(byTokens ? { tokens: { max, used } } : {}),
+	};
+}
+
+/** The notice shown when compacting: every reason that fired. */
+export function describeAutocompact(due: AutocompactDue): string {
+	const formatThousands = (n: number) => `${Math.round(n / 1000)}k`;
+	const reasons = [
+		...(due.thresholdPct !== undefined ? [`autocompact threshold ${due.thresholdPct}%`] : []),
+		...(due.tokens ? [`${formatThousands(due.tokens.used)} tokens, autocompactMaxTokens ${formatThousands(due.tokens.max)}`] : []),
+	];
+	return `dev-team: context at ${Math.round(due.usedPct)}% (${reasons.join("; ")}), compacting.`;
 }

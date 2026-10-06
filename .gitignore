@@ -22,3 +22,6 @@ test/.tmp/
 /.claude/metrics/
 /.claude/plans/
 /.claude/worktrees/
+
+# Local reports from the dev-team Claude Code plugin (/code-review etc.)
+.dev-team-reports/

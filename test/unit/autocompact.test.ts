@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
-import { AUTOCOMPACT_KEY, autocompactDue, autocompactSetting } from "../../extensions/dev-team/lib/autocompact.ts";
+import { AUTOCOMPACT_KEY, autocompactDue, autocompactSetting, describeAutocompact } from "../../extensions/dev-team/lib/autocompact.ts";
 
 /** A throwaway project dir and HOME, removed after the test. */
 function sandbox(t: TestContext) {
@@ -121,11 +121,11 @@ test("autocompactDue compares current usage with the threshold, inclusive", (t) 
 		isProjectTrusted: () => true,
 		getContextUsage: () => (percent === undefined ? undefined : { tokens: percent === null ? null : 1, contextWindow: 100, percent }),
 	});
-	assert.equal(autocompactDue(ctx(39.9), box.env), undefined);
-	assert.deepEqual(autocompactDue(ctx(40), box.env), { thresholdPct: 40, usedPct: 40 });
-	assert.deepEqual(autocompactDue(ctx(40.1), box.env), { thresholdPct: 40, usedPct: 40.1 });
-	assert.equal(autocompactDue(ctx(null), box.env), undefined, "unknown usage right after a compaction");
-	assert.equal(autocompactDue(ctx(undefined), box.env), undefined, "no model");
+	assert.equal(autocompactDue(ctx(39.9), { env: box.env }), undefined);
+	assert.deepEqual(autocompactDue(ctx(40), { env: box.env }), { thresholdPct: 40, usedPct: 40 });
+	assert.deepEqual(autocompactDue(ctx(40.1), { env: box.env }), { thresholdPct: 40, usedPct: 40.1 });
+	assert.equal(autocompactDue(ctx(null), { env: box.env }), undefined, "unknown usage right after a compaction");
+	assert.equal(autocompactDue(ctx(undefined), { env: box.env }), undefined, "no model");
 });
 
 test("autocompactDue ignores a project's own threshold when the project is not trusted", (t) => {
@@ -133,13 +133,64 @@ test("autocompactDue ignores a project's own threshold when the project is not t
 	box.writeUserSetting("90");
 	box.writeSharedSetting("1");
 	const ctx = (trusted: boolean, percent: number) => ({ cwd: box.project, isProjectTrusted: () => trusted, getContextUsage: () => ({ tokens: percent, contextWindow: 100, percent }) });
-	assert.deepEqual(autocompactDue(ctx(true, 50), box.env), { thresholdPct: 1, usedPct: 50 });
-	assert.equal(autocompactDue(ctx(false, 50), box.env), undefined);
-	assert.deepEqual(autocompactDue(ctx(false, 95), box.env), { thresholdPct: 90, usedPct: 95 }, "the user's threshold applies");
+	assert.deepEqual(autocompactDue(ctx(true, 50), { env: box.env }), { thresholdPct: 1, usedPct: 50 });
+	assert.equal(autocompactDue(ctx(false, 50), { env: box.env }), undefined);
+	assert.deepEqual(autocompactDue(ctx(false, 95), { env: box.env }), { thresholdPct: 90, usedPct: 95 }, "the user's threshold applies");
 });
 
 test("autocompactDue is off when nothing configures a threshold", (t) => {
 	const box = sandbox(t);
 	const ctx = { cwd: box.project, isProjectTrusted: () => true, getContextUsage: () => ({ tokens: 99, contextWindow: 100, percent: 99 }) };
-	assert.equal(autocompactDue(ctx, box.env), undefined);
+	assert.equal(autocompactDue(ctx, { env: box.env }), undefined);
+});
+
+/** A context of `tokens` used out of `window`; null tokens is pi's "unknown right after a compaction". */
+function usageCtx(project: string, tokens: number | null, window = 1_000_000) {
+	return {
+		cwd: project,
+		isProjectTrusted: () => true,
+		getContextUsage: () => ({ tokens, contextWindow: window, percent: tokens === null ? null : (tokens / window) * 100 }),
+	};
+}
+
+test("autocompactDue: the token ceiling alone compacts at the ceiling, inclusive", (t) => {
+	const box = sandbox(t);
+	const due = (tokens: number | null) => autocompactDue(usageCtx(box.project, tokens), { env: box.env, maxContextTokens: 200_000 });
+	assert.equal(due(199_999), undefined, "one token below");
+	assert.deepEqual(due(200_000), { usedPct: 20, tokens: { max: 200_000, used: 200_000 } }, "at the ceiling");
+	assert.equal(due(null), undefined, "unknown usage right after a compaction");
+	const noModel = { cwd: box.project, isProjectTrusted: () => true, getContextUsage: () => undefined };
+	assert.equal(autocompactDue(noModel, { env: box.env, maxContextTokens: 200_000 }), undefined, "no model");
+});
+
+test("autocompactDue: a ceiling of 0, a negative or a non-number is off", (t) => {
+	const box = sandbox(t);
+	for (const max of [0, -1, Number.NaN, "200000" as unknown as number]) {
+		assert.equal(autocompactDue(usageCtx(box.project, 900_000), { env: box.env, maxContextTokens: max }), undefined, `ceiling ${String(max)}`);
+	}
+});
+
+test("autocompactDue: percentage and ceiling, whichever is reached first, and both", (t) => {
+	const box = sandbox(t);
+	box.writeUserSetting("40");
+	const due = (tokens: number, window?: number) => autocompactDue(usageCtx(box.project, tokens, window), { env: box.env, maxContextTokens: 200_000 });
+	assert.deepEqual(due(80_000, 200_000), { usedPct: 40, thresholdPct: 40 }, "percentage first on a 200k window");
+	assert.deepEqual(due(250_000), { usedPct: 25, tokens: { max: 200_000, used: 250_000 } }, "ceiling first on a 1M window");
+	assert.deepEqual(due(450_000), { usedPct: 45, thresholdPct: 40, tokens: { max: 200_000, used: 450_000 } }, "both reached");
+});
+
+test("autocompactDue: unknown tokens with a known percentage leave only the percentage", (t) => {
+	const box = sandbox(t);
+	box.writeUserSetting("40");
+	const ctx = { cwd: box.project, isProjectTrusted: () => true, getContextUsage: () => ({ tokens: null, contextWindow: 1_000_000, percent: 45 }) };
+	assert.deepEqual(autocompactDue(ctx, { env: box.env, maxContextTokens: 200_000 }), { usedPct: 45, thresholdPct: 40 });
+});
+
+test("describeAutocompact names every reason that fired", () => {
+	assert.equal(describeAutocompact({ usedPct: 40, thresholdPct: 40 }), "dev-team: context at 40% (autocompact threshold 40%), compacting.");
+	assert.equal(describeAutocompact({ usedPct: 25, tokens: { max: 200_000, used: 250_400 } }), "dev-team: context at 25% (250k tokens, autocompactMaxTokens 200k), compacting.");
+	assert.equal(
+		describeAutocompact({ usedPct: 45, thresholdPct: 40, tokens: { max: 200_000, used: 450_000 } }),
+		"dev-team: context at 45% (autocompact threshold 40%; 450k tokens, autocompactMaxTokens 200k), compacting.",
+	);
 });

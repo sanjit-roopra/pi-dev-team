@@ -9,7 +9,7 @@ import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { DispatchProgress, formatResultText, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
-import { type ChildTrust, canonicalDir, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
+import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -70,6 +70,22 @@ test("child trust: granted covers exactly the session directory", () => {
 test("child trust: a worktree inherits only when it was made from the session directory", () => {
 	assert.deepEqual(trustArgs(trusted, "/repo/.claude/worktrees/x", "/repo"), ["--approve"]);
 	assert.deepEqual(trustArgs({ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"), []);
+});
+
+test("childTrusted: only the session directory or its own worktree, and only when trusted", () => {
+	const cases: [ChildTrust, string, string | undefined, boolean][] = [
+		[declined, "/repo", undefined, false],
+		[trusted, "/repo", undefined, true],
+		[trusted, "/repo/sub", undefined, false],
+		[trusted, "/repo-sibling", undefined, false],
+		[trusted, "/repo/.claude/worktrees/x", "/repo", true],
+		[{ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo", false],
+	];
+	for (const [trust, cwd, wt, expected] of cases) {
+		const label = `${cwd} (worktree of ${wt ?? "none"}, trusted ${trust.projectTrusted})`;
+		assert.equal(childTrusted(trust, cwd, wt), expected, label);
+		assert.equal(trustArgs(trust, cwd, wt).includes("--approve"), expected, `trustArgs agrees: ${label}`);
+	}
 });
 
 test("child trust: a symlink to another directory is that directory", (t) => {
