@@ -107,10 +107,10 @@ export function autocompactDue(
 
 /** The notice shown when compacting: every reason that fired. */
 export function describeAutocompact(due: AutocompactDue): string {
-	const k = (n: number) => `${Math.round(n / 1000)}k`;
+	const formatThousands = (n: number) => `${Math.round(n / 1000)}k`;
 	const reasons = [
 		...(due.thresholdPct !== undefined ? [`autocompact threshold ${due.thresholdPct}%`] : []),
-		...(due.tokens ? [`${k(due.tokens.used)} tokens, autocompactMaxTokens ${k(due.tokens.max)}`] : []),
+		...(due.tokens ? [`${formatThousands(due.tokens.used)} tokens, autocompactMaxTokens ${formatThousands(due.tokens.max)}`] : []),
 	];
 	return `dev-team: context at ${Math.round(due.usedPct)}% (${reasons.join("; ")}), compacting.`;
 }

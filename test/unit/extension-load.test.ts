@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, test } from "node:test";
+import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
 type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean> };
@@ -14,10 +15,12 @@ async function loadExtension(opts: { flags?: Record<string, unknown> } = {}) {
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
 	fs.writeFileSync(fakePython, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, { mode: 0o755 });
-	const savedEnv = { DEV_TEAM_PYTHON: process.env.DEV_TEAM_PYTHON, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR };
+	const savedEnv = { DEV_TEAM_PYTHON: process.env.DEV_TEAM_PYTHON, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, DEV_TEAM_SUBAGENT: process.env.DEV_TEAM_SUBAGENT };
 	process.env.DEV_TEAM_PYTHON = fakePython;
 	// The user's own ~/.pi/agent/dev-team.json must not change what the extension does here.
 	process.env.PI_CODING_AGENT_DIR = dir;
+	// A run of this suite from inside a dispatched agent must still load the extension as a main session.
+	delete process.env.DEV_TEAM_SUBAGENT;
 	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block" }));
 	const tools: Record<string, ToolDef> = {};
 	const handlers: Record<string, Handler[]> = {};
@@ -92,7 +95,7 @@ test("the main session's guide lists every dev-team skill", async () => {
 });
 
 test("a dispatched agent's guide leaves the full skill index out (its own prompt lists its skills)", async () => {
-	const child = await loadExtension({ flags: { "dev-team-agent-prompt": "1" } });
+	const child = await loadExtension({ flags: { [AGENT_PROMPT_FLAG]: AGENT_PROMPT_FLAG_VALUE } });
 	try {
 		const opts: { sections?: Record<string, string> } = {};
 		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
@@ -121,7 +124,7 @@ test("agent_settled compacts the main session once context reaches autocompactMa
 			await handlers.agent_settled[0]({}, ctx);
 			return compacted;
 		};
-		assert.equal(await settle(199_999), 0);
+		assert.equal(await settle(199_999), 0, "below the ceiling");
 		assert.equal(await settle(200_000), 1, "the default ceiling is 200k tokens");
 	} finally {
 		if (saved === undefined) delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;

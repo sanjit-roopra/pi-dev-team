@@ -224,10 +224,10 @@ export function skillIndex(skills: Map<string, SkillDef>, mode: "compact" | "ful
 export function namedSkills(skills: Map<string, SkillDef>, frontmatterSkills: readonly string[], body: string): Map<string, SkillDef> {
 	const frontmatterNames = new Set(frontmatterSkills);
 	// One pass over the body: longest names first, so `code-review` wins over a shorter prefix.
-	const names = [...skills.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+	const escapedNames = [...skills.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 	const bodyNames = new Set<string>();
-	if (names.length) {
-		for (const m of body.matchAll(new RegExp(`(?:/(?:dev-team:)?|skills/|\`)(${names.join("|")})(?![\\w-])`, "g"))) bodyNames.add(m[1]);
+	if (escapedNames.length) {
+		for (const m of body.matchAll(new RegExp(`(?:/(?:dev-team:)?|skills/|\`)(${escapedNames.join("|")})(?![\\w-])`, "g"))) bodyNames.add(m[1]);
 	}
 	const relevant = new Map<string, SkillDef>();
 	for (const [name, def] of skills) {
@@ -237,10 +237,10 @@ export function namedSkills(skills: Map<string, SkillDef>, frontmatterSkills: re
 }
 
 /**
- * The skill map an agent prompt lists from (see namedSkills), or undefined when `skillIndex` is off.
- * `projectTrusted` must be the trust of the directory the agent runs in.
+ * Every skill an agent prompt may list from (namedSkills picks the agent's own), or undefined when
+ * `skillIndex` is off. `projectTrusted` must be the trust of the directory the agent runs in.
  */
-export function agentSkills(
+export function discoverSkillPool(
 	config: Pick<DevTeamConfig, "skillIndex">,
 	cwd: string,
 	packageRoot: string,

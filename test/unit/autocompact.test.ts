@@ -179,6 +179,13 @@ test("autocompactDue: percentage and ceiling, whichever is reached first, and bo
 	assert.deepEqual(due(450_000), { usedPct: 45, thresholdPct: 40, tokens: { max: 200_000, used: 450_000 } }, "both reached");
 });
 
+test("autocompactDue: unknown tokens with a known percentage leave only the percentage", (t) => {
+	const box = sandbox(t);
+	box.writeUserSetting("40");
+	const ctx = { cwd: box.project, isProjectTrusted: () => true, getContextUsage: () => ({ tokens: null, contextWindow: 1_000_000, percent: 45 }) };
+	assert.deepEqual(autocompactDue(ctx, { env: box.env, maxContextTokens: 200_000 }), { usedPct: 45, thresholdPct: 40 });
+});
+
 test("describeAutocompact names every reason that fired", () => {
 	assert.equal(describeAutocompact({ usedPct: 40, thresholdPct: 40 }), "dev-team: context at 40% (autocompact threshold 40%), compacting.");
 	assert.equal(describeAutocompact({ usedPct: 25, tokens: { max: 200_000, used: 250_400 } }), "dev-team: context at 25% (250k tokens, autocompactMaxTokens 200k), compacting.");

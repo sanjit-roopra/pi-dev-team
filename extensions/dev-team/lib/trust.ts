@@ -37,9 +37,19 @@ export function childTrustOf(ctx: Pick<ExtensionContext, "cwd" | "isProjectTrust
  */
 export function trustArgs(trust: ChildTrust, runCwd: string, worktreeRepoRoot?: string): string[] {
 	if (!trust.projectTrusted) return ["--no-approve"];
+	return childTrusted(trust, runCwd, worktreeRepoRoot) ? ["--approve"] : [];
+}
+
+/**
+ * Whether a child pi in `runCwd` inherits this session's trust: the session trusts its project and the
+ * child runs in that directory or in a worktree this session made from it. Otherwise the child decides
+ * for itself (or was refused), so the parent must not treat that directory's files as trusted.
+ */
+export function childTrusted(trust: ChildTrust, runCwd: string, worktreeRepoRoot?: string): boolean {
+	if (!trust.projectTrusted) return false;
 	const here = canonicalDir(runCwd) === trust.sessionDir;
 	const ownWorktree = worktreeRepoRoot !== undefined && canonicalDir(worktreeRepoRoot) === trust.sessionDir;
-	return here || ownWorktree ? ["--approve"] : [];
+	return here || ownWorktree;
 }
 
 /**

@@ -15,7 +15,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverInvocableSkills, discoverSkills, expandSkill, namedSkills, resolveSkillName, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, resolveSkillName, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -320,6 +320,21 @@ test("namedSkills finds each reference form in the body", () => {
 	assert.deepEqual(named("use the `triage` skill"), ["triage"], "`name`");
 	assert.deepEqual(named("/planning and /code-review-x and plain build"), [], "longer words and bare words do not count");
 	assert.deepEqual([...namedSkills(skills, ["build"], "").keys()], ["build"], "frontmatter alone");
+});
+
+test("namedSkills: a longer name wins over its prefix, names are matched literally, an empty pool lists nothing", () => {
+	assert.deepEqual([...namedSkills(skillMap("code", "code-review"), [], "run /code-review").keys()], ["code-review"], "prefix");
+	assert.deepEqual([...namedSkills(skillMap("a.b"), [], "run /axb").keys()], [], "a dot is not a wildcard");
+	assert.equal(namedSkills(new Map(), ["x"], "run /x").size, 0, "empty pool");
+});
+
+test("discoverSkillPool: project skills need trust, and skillIndex off lists nothing", (t) => {
+	const dir = tempDir(t, "proj-");
+	fs.mkdirSync(path.join(dir, ".claude", "skills", "house-rules"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".claude", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
+	assert.equal(discoverSkillPool({ skillIndex: "compact" }, dir, ROOT, true)?.has("house-rules"), true, "trusted");
+	assert.equal(discoverSkillPool({ skillIndex: "compact" }, dir, ROOT, false)?.has("house-rules"), false, "untrusted");
+	assert.equal(discoverSkillPool({ skillIndex: "off" }, dir, ROOT, true), undefined, "off");
 });
 
 test("namedSkills always includes project skills", (t) => {

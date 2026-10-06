@@ -181,30 +181,35 @@ export function isProjectEnvSettingAllowed(key: string, value: unknown): boolean
 	return PROJECT_ENV_SETTINGS.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && PLAIN_SETTING_VALUE.test(String(value));
 }
 
-/**
- * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
- * object is dropped whole), and no `hooks` at all, since hooks include the guards; hooks are set in the
- * user's own config. `ignored` names everything left out, as `env.KEY`, `env` or `hooks`.
- */
-export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
-	const ignored: string[] = [];
-	const { env, hooks, ...rest } = data;
-	const out: Record<string, unknown> = rest;
-	if (hooks !== undefined) ignored.push("hooks");
-	if (env === undefined) return { data: out, ignored };
-	if (!isPlainObject(env)) return { data: out, ignored: [...ignored, "env"] };
-	const entries = Object.entries(env);
-	out.env = Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v)));
-	for (const [k, v] of entries) if (!isProjectEnvSettingAllowed(k, v)) ignored.push(`env.${k}`);
-	return { data: out, ignored };
-}
-
 /** Lowest context-token ceiling a project file may set; lower values would compact after nearly every run. */
 export const MIN_PROJECT_AUTOCOMPACT_TOKENS = 50_000;
 
 /** A project may turn the ceiling off (0) or set it at or above MIN_PROJECT_AUTOCOMPACT_TOKENS; the user's own file may set any value. */
 export function isProjectAutocompactCeilingAllowed(value: unknown): boolean {
 	return value === 0 || (typeof value === "number" && Number.isInteger(value) && value >= MIN_PROJECT_AUTOCOMPACT_TOKENS);
+}
+
+/**
+ * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
+ * object is dropped whole), no `hooks` at all, since hooks include the guards (hooks are set in the
+ * user's own config), and `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed. `ignored`
+ * names everything left out, as `env.KEY`, `env`, `hooks` or `autocompactMaxTokens`.
+ */
+export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
+	const ignored: string[] = [];
+	const { env, hooks, autocompactMaxTokens, ...rest } = data;
+	const out: Record<string, unknown> = rest;
+	if (hooks !== undefined) ignored.push("hooks");
+	if (autocompactMaxTokens !== undefined) {
+		if (isProjectAutocompactCeilingAllowed(autocompactMaxTokens)) out.autocompactMaxTokens = autocompactMaxTokens;
+		else ignored.push("autocompactMaxTokens");
+	}
+	if (env === undefined) return { data: out, ignored };
+	if (!isPlainObject(env)) return { data: out, ignored: [...ignored, "env"] };
+	const entries = Object.entries(env);
+	out.env = Object.fromEntries(entries.filter(([k, v]) => isProjectEnvSettingAllowed(k, v)));
+	for (const [k, v] of entries) if (!isProjectEnvSettingAllowed(k, v)) ignored.push(`env.${k}`);
+	return { data: out, ignored };
 }
 
 /**
@@ -225,10 +230,6 @@ export function loadConfig(
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
 		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
-		if (file !== userFile && "autocompactMaxTokens" in data && !isProjectAutocompactCeilingAllowed(data.autocompactMaxTokens)) {
-			delete data.autocompactMaxTokens;
-			ignoredProjectSettings.push("autocompactMaxTokens");
-		}
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);

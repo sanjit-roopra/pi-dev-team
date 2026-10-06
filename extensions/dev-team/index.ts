@@ -27,8 +27,8 @@ import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClau
 import { aiCreditsStatus } from "./lib/ai-credits.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { sessionEntries } from "./lib/session-spend.ts";
-import { agentSkills, commandText, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
-import { AGENT_PROMPT_FLAG, buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
+import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
+import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
@@ -339,7 +339,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				);
 				return;
 			}
-			agentPrompt = buildSystemPrompt(def, packageRoot, [], [], agentSkills(config, ctx.cwd, packageRoot, ctx.isProjectTrusted()), config.skillIndexChars);
+			agentPrompt = buildSystemPrompt(def, packageRoot, [], [], discoverSkillPool(config, ctx.cwd, packageRoot, ctx.isProjectTrusted()), config.skillIndexChars);
 			frontmatterModel = def.model;
 			effort = def.effort;
 			const mapping = mapTools(def.claudeTools, pi.getAllTools().map((t) => t.name));
@@ -385,9 +385,9 @@ export default function devTeam(pi: ExtensionAPI) {
 		// skills its instructions name, in its appended prompt (buildSystemPrompt), so the guide stays the
 		// same for every agent and cacheable. Not keyed on DEV_TEAM_SUBAGENT: a plain `claude -p` from a
 		// subagent's bash inherits that env but has no agent prompt, and keeps the full index.
-		const asAgent = agentPrompt !== undefined || pi.getFlag(AGENT_PROMPT_FLAG) === "1";
+		const promptListsSkills = agentPrompt !== undefined || pi.getFlag(AGENT_PROMPT_FLAG) === AGENT_PROMPT_FLAG_VALUE;
 		const index =
-			asAgent || config.skillIndex === "off"
+			promptListsSkills || config.skillIndex === "off"
 				? ""
 				: skillIndex(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), config.skillIndex, config.skillIndexChars);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle)) };

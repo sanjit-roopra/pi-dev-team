@@ -344,6 +344,8 @@ const scenarios = {
 		const probe = script([{ inspect: "runtime" }]);
 		let r = pi(env, probe, { extra: ["--dev-team-agent", "security-review"] });
 		assert(r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent not used: ${r.out.slice(0, 300)} ${r.err}`);
+		const agentPrompt = JSON.parse(r.out).systemPrompt;
+		assert(!/^- autoship/m.test(agentPrompt) && agentPrompt.includes("load any by name with the skill tool"), "an agent run lists the full skill index instead of its own skills");
 		r = pi(env, probe, { extra: ["--no-approve", "--dev-team-agent", "security-review"] });
 		assert(!r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent used despite --no-approve: ${r.out.slice(0, 300)}`);
 		assert(r.out.includes(PACKAGE_SECURITY_REVIEW_MARKER), `package agent not used instead: ${r.out.slice(0, 300)} ${r.err}`);

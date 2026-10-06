@@ -9,7 +9,7 @@ import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { DispatchProgress, formatResultText, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
-import { type ChildTrust, canonicalDir, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
+import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -70,6 +70,20 @@ test("child trust: granted covers exactly the session directory", () => {
 test("child trust: a worktree inherits only when it was made from the session directory", () => {
 	assert.deepEqual(trustArgs(trusted, "/repo/.claude/worktrees/x", "/repo"), ["--approve"]);
 	assert.deepEqual(trustArgs({ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"), []);
+});
+
+test("childTrusted is true exactly where the child gets --approve", () => {
+	const cases: [ChildTrust, string, string | undefined][] = [
+		[declined, "/repo", undefined],
+		[trusted, "/repo", undefined],
+		[trusted, "/repo/sub", undefined],
+		[trusted, "/repo-sibling", undefined],
+		[trusted, "/repo/.claude/worktrees/x", "/repo"],
+		[{ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"],
+	];
+	for (const [trust, cwd, wt] of cases) {
+		assert.equal(childTrusted(trust, cwd, wt), trustArgs(trust, cwd, wt).includes("--approve"), `${cwd} (worktree of ${wt ?? "none"})`);
+	}
 });
 
 test("child trust: a symlink to another directory is that directory", (t) => {
