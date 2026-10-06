@@ -93,7 +93,7 @@ test("the guide keeps skills that need bash and write out of the orchestrator ag
 	const guide = opts.sections?.dev_team ?? "";
 	assert.match(guide, /is the session the user talks to, not the orchestrator agent/);
 	assert.match(guide, /In that session, run skills that run commands or write files \(\/code-review, \/build, \/pr, \/ship, \/fix/);
-	assert.match(guide, /A dispatched agent does its task and reports back; it does not start these pipelines/);
+	assert.match(guide, /A dispatched agent does its task and reports back; it does not start \/code-review, \/build, \/pr, \/ship or \/fix unless its task or its own agent instructions say to/);
 });
 
 test("the main session's guide lists every dev-team skill", async () => {
