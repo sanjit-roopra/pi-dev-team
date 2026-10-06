@@ -92,7 +92,16 @@ class SensitivePaths(GuardTestCase):
         (self.tmp / "notes.txt").symlink_to(self.tmp / ".env")
         (self.tmp / "report.md").symlink_to(self.tmp / ".env")
         self.assertEqual(self.code(str(self.tmp / "notes.txt")), 2)
-        self.assertEqual(self.code(str(self.tmp / "report.md")), 2)
+        code, lines = guard.evaluate(str(self.tmp / "report.md"), str(self.tmp), paths=self.paths)
+        self.assertEqual(code, 2)
+        self.assertIn("renaming the link does not help", lines[0])
+
+    def test_user_exception_on_a_symlinked_folder_still_applies(self):
+        shared = self.tmp / "shared"
+        shared.mkdir()
+        (self.tmp / "fixtures").symlink_to(shared)
+        os.environ[guard.ALLOWED_PATHS_ENV] = "fixtures/*"
+        self.assertEqual(self.code(str(self.tmp / "fixtures" / "fake.key")), 0)
 
     def test_pi_coding_agent_dir_config_is_protected(self):
         saved = os.environ.get("PI_CODING_AGENT_DIR")

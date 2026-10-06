@@ -275,13 +275,16 @@ def _read_allowed(path: Path | None) -> list[str] | None:
     return [p for p in data["allowed_paths"] if isinstance(p, str) and p]
 
 
-def _load_allowed(guards_path: Path) -> list[str]:
-    """Exceptions to the sensitive-path block: the plugin's `allowed_paths`
-    (default `_DEFAULT_ALLOWED`) plus the user's own in `ALLOWED_PATHS_ENV`."""
-    plugin_allowed = _read_allowed(guards_path)
-    allowed = list(_DEFAULT_ALLOWED) if plugin_allowed is None else plugin_allowed
-    user_allowed = os.environ.get(ALLOWED_PATHS_ENV, "")
-    return allowed + [p.strip() for p in user_allowed.split(",") if p.strip()]
+def _plugin_allowed(guards_path: Path) -> list[str]:
+    """The plugin's exceptions to the sensitive-path block: guards.json
+    `allowed_paths`, default `_DEFAULT_ALLOWED`."""
+    allowed = _read_allowed(guards_path)
+    return list(_DEFAULT_ALLOWED) if allowed is None else allowed
+
+
+def _user_allowed() -> list[str]:
+    """The user's own exceptions, comma-separated in `ALLOWED_PATHS_ENV`."""
+    return [p.strip() for p in os.environ.get(ALLOWED_PATHS_ENV, "").split(",") if p.strip()]
 
 
 def _load_freeze(freeze_path: Path) -> list[str] | None:
@@ -410,11 +413,13 @@ def evaluate(
 
     blocked_patterns, warn_patterns = _load_guards(paths.guards_path)
 
-    blocked_by = _sensitive_match(file_path, cwd, blocked_patterns, _load_allowed(paths.guards_path))
-    if blocked_by is not None:
+    match = _sensitive_match(file_path, cwd, blocked_patterns, paths.guards_path)
+    if match is not None:
+        blocked_by, subject = match
+        target = "" if subject == file_path else f" It is a link to '{subject}', so renaming the link does not help."
         emit_boundary_event(cwd, "pre_tool_guard", "Write", "block", "sensitive-path", session_id)
         return 2, [
-            f"BLOCKED: Write to '{file_path}' is not allowed.",
+            f"BLOCKED: Write to '{file_path}' is not allowed.{target}",
             f"It matches the sensitive-file pattern '{blocked_by}' in {paths.guards_path}.",
             "Approval in chat does not lift this block. If the file holds no secrets, rename it, "
             f"or ask the user to add a pattern for it to env.{ALLOWED_PATHS_ENV} in {USER_CONFIG_DISPLAY}.",
@@ -431,18 +436,25 @@ def evaluate(
 
 
 def _sensitive_match(
-    file_path: str, cwd: str, blocked: list[str], allowed: list[str]
-) -> str | None:
-    """Return the blocked pattern `file_path` hits, or None. The path is
-    checked as written and as resolved, so a harmless-looking symlink
-    (`notes.txt -> .env`) still hits; each form is exempted only by an
-    allowed pattern matching that same form, so a link's `.md` name cannot
-    exempt a sensitive target."""
+    file_path: str, cwd: str, blocked: list[str], guards_path: Path
+) -> tuple[str, str] | None:
+    """Return `(pattern, subject)` for the blocked pattern `file_path` hits,
+    or None. The path is checked as written and as resolved, so a
+    harmless-looking symlink (`notes.txt -> .env`) still hits. A plugin
+    exception (`*.md`) only exempts the same form it matches, so a link's
+    `.md` name cannot exempt a sensitive target. A user exception is the
+    user's own approval, so a match on either form exempts the write (a
+    pattern naming a symlinked folder still works)."""
     resolved = os.path.realpath(os.path.join(cwd, os.path.expanduser(file_path)))
-    for subject in (file_path, resolved):
+    forms = (file_path, resolved)
+    user_allowed = _user_allowed()
+    if user_allowed and any(_matching_pattern(f, user_allowed) is not None for f in forms):
+        return None
+    plugin_allowed = _plugin_allowed(guards_path)
+    for subject in forms:
         hit = _matching_pattern(subject, blocked)
-        if hit is not None and _matching_pattern(subject, allowed) is None:
-            return hit
+        if hit is not None and _matching_pattern(subject, plugin_allowed) is None:
+            return hit, subject
     return None
 
 
