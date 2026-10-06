@@ -306,7 +306,10 @@ test("the real software-engineer agent lists a small part of the full skill inde
 	assert.ok(def);
 	const skills = discoverSkills(os.tmpdir(), ROOT, { includeProject: false });
 	const prompt = buildSystemPrompt(def, ROOT, [], [], skills, 220);
-	const listed = prompt.slice(prompt.indexOf("Dev-team skills your instructions name"));
+	const at = prompt.indexOf("Dev-team skills your instructions name");
+	assert.ok(at >= 0, "the agent lists no skills at all");
+	const listed = prompt.slice(at);
+	assert.match(listed, /^- \S/m, "the list has at least one skill");
 	const full = skillIndex(skills, "compact", 220);
 	assert.ok(listed.length < full.length * MAX_SHARE_OF_FULL_INDEX, `named list ${listed.length} chars vs full index ${full.length}`);
 });
@@ -322,8 +325,9 @@ test("namedSkills finds each reference form in the body", () => {
 	assert.deepEqual([...namedSkills(skills, ["build"], "").keys()], ["build"], "frontmatter alone");
 });
 
-test("namedSkills: a longer name wins over its prefix, names are matched literally, an empty pool lists nothing", () => {
-	assert.deepEqual([...namedSkills(skillMap("code", "code-review"), [], "run /code-review").keys()], ["code-review"], "prefix");
+test("namedSkills: a name that prefixes another is not matched by it, names are matched literally, an empty pool lists nothing", () => {
+	assert.deepEqual([...namedSkills(skillMap("code", "code-review"), [], "run /code-review").keys()], ["code-review"], "longer name only");
+	assert.deepEqual([...namedSkills(skillMap("code", "code-review"), [], "run /code now").keys()], ["code"], "shorter name only");
 	assert.deepEqual([...namedSkills(skillMap("a.b"), [], "run /axb").keys()], [], "a dot is not a wildcard");
 	assert.equal(namedSkills(new Map(), ["x"], "run /x").size, 0, "empty pool");
 });

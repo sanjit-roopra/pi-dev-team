@@ -223,8 +223,8 @@ export function skillIndex(skills: Map<string, SkillDef>, mode: "compact" | "ful
  */
 export function namedSkills(skills: Map<string, SkillDef>, frontmatterSkills: readonly string[], body: string): Map<string, SkillDef> {
 	const frontmatterNames = new Set(frontmatterSkills);
-	// One pass over the body: longest names first, so `code-review` wins over a shorter prefix.
-	const escapedNames = [...skills.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+	// One pass over the body. The lookahead keeps `code` from matching inside `code-review`.
+	const escapedNames = [...skills.keys()].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
 	const bodyNames = new Set<string>();
 	if (escapedNames.length) {
 		for (const m of body.matchAll(new RegExp(`(?:/(?:dev-team:)?|skills/|\`)(${escapedNames.join("|")})(?![\\w-])`, "g"))) bodyNames.add(m[1]);

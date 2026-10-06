@@ -72,17 +72,19 @@ test("child trust: a worktree inherits only when it was made from the session di
 	assert.deepEqual(trustArgs({ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"), []);
 });
 
-test("childTrusted is true exactly where the child gets --approve", () => {
-	const cases: [ChildTrust, string, string | undefined][] = [
-		[declined, "/repo", undefined],
-		[trusted, "/repo", undefined],
-		[trusted, "/repo/sub", undefined],
-		[trusted, "/repo-sibling", undefined],
-		[trusted, "/repo/.claude/worktrees/x", "/repo"],
-		[{ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"],
+test("childTrusted: only the session directory or its own worktree, and only when trusted", () => {
+	const cases: [ChildTrust, string, string | undefined, boolean][] = [
+		[declined, "/repo", undefined, false],
+		[trusted, "/repo", undefined, true],
+		[trusted, "/repo/sub", undefined, false],
+		[trusted, "/repo-sibling", undefined, false],
+		[trusted, "/repo/.claude/worktrees/x", "/repo", true],
+		[{ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo", false],
 	];
-	for (const [trust, cwd, wt] of cases) {
-		assert.equal(childTrusted(trust, cwd, wt), trustArgs(trust, cwd, wt).includes("--approve"), `${cwd} (worktree of ${wt ?? "none"})`);
+	for (const [trust, cwd, wt, expected] of cases) {
+		const label = `${cwd} (worktree of ${wt ?? "none"}, trusted ${trust.projectTrusted})`;
+		assert.equal(childTrusted(trust, cwd, wt), expected, label);
+		assert.equal(trustArgs(trust, cwd, wt).includes("--approve"), expected, `trustArgs agrees: ${label}`);
 	}
 });
 
