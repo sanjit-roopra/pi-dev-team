@@ -177,6 +177,18 @@ Some hooks are off by default. A project file cannot change the `hooks` setting.
 
 To see which guard hooks are on, run `/dev-team hooks`.
 
+### Sensitive-file guard
+
+The `pre_tool_guard` hook blocks an agent from writing files whose name looks like a secret: `.env`, `*.key`, `*.pem`, or a name that contains `secret` or `credential`. The full list is in `hooks/guards.json`. The guard checks the file name, not the folders above it, and it does not block Markdown files, so a report named `secret-triage.md` can be written.
+
+The guard blocks every time; telling the agent in chat that the write is approved does not lift it. To allow a file that holds no secrets, add a pattern to `DEV_TEAM_GUARD_ALLOWED_PATHS` in your own `~/.pi/agent/dev-team.json`. Separate patterns with commas. A pattern with a `/` matches the end of the path:
+
+```json
+{ "env": { "DEV_TEAM_GUARD_ALLOWED_PATHS": "test/fixtures/*,*.example" } }
+```
+
+A project file cannot set this setting, and agents cannot edit `~/.pi/agent/dev-team.json`, so only you can approve an exception.
+
 ## Update
 
 To get the newest version, run:
