@@ -50,6 +50,8 @@ export interface DevTeamConfig {
 	skillIndex: "compact" | "full" | "off";
 	/** Max description characters per skill in the compact index. */
 	skillIndexChars: number;
+	/** Compact the main session between runs once its context reaches this many tokens (0 = off). */
+	autocompactMaxTokens: number;
 	/** Put the `claude` -> `pi` CLI shim on PATH for scripts that call `claude -p`. */
 	claudeShim: boolean;
 	/** Extra environment variables for tools, hooks, scripts and subagents (e.g. DEV_TEAM_MAX_PARALLEL_BUILDS). */
@@ -92,6 +94,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	githubStyle: "block",
 	skillIndex: "compact",
 	skillIndexChars: 220,
+	autocompactMaxTokens: 200_000,
 	claudeShim: true,
 	env: {},
 };

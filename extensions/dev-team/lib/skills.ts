@@ -211,3 +211,20 @@ export function skillIndex(skills: Map<string, SkillDef>, mode: "compact" | "ful
 		});
 	return lines.join("\n");
 }
+
+/**
+ * The skills a subagent's instructions point to: its frontmatter `skills:`, every skill its body names
+ * as `/name`, `/dev-team:name`, `skills/name` or `` `name` ``, and all project skills (the project's own
+ * conventions, usually few). Subagents get this short list instead of the full index of ~90 skills,
+ * which is about 5k tokens on every turn of every dispatch; other skills still load by name.
+ */
+export function namedSkills(skills: Map<string, SkillDef>, frontmatterSkills: readonly string[], body: string): Map<string, SkillDef> {
+	const wanted = new Set(frontmatterSkills);
+	const out = new Map<string, SkillDef>();
+	for (const [name, def] of skills) {
+		const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const named = new RegExp(`(?:/(?:dev-team:)?|skills/|\`)${escaped}(?![\\w-])`).test(body);
+		if (wanted.has(name) || named || def.source === "project") out.set(name, def);
+	}
+	return out;
+}

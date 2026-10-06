@@ -338,7 +338,8 @@ export default function devTeam(pi: ExtensionAPI) {
 				);
 				return;
 			}
-			agentPrompt = buildSystemPrompt(def, packageRoot, [], []);
+			const skills = config.skillIndex === "off" ? undefined : discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
+			agentPrompt = buildSystemPrompt(def, packageRoot, [], [], skills, config.skillIndexChars);
 			frontmatterModel = def.model;
 			effort = def.effort;
 			const mapping = mapTools(def.claudeTools, pi.getAllTools().map((t) => t.name));
@@ -380,8 +381,13 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const opts = event.systemPromptOptions;
-		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
-		const index = config.skillIndex === "off" ? "" : skillIndex(skills, config.skillIndex, config.skillIndexChars);
+		// A subagent (or a process run as an agent) gets only the skills its instructions name, in its
+		// appended prompt (buildSystemPrompt), so the guide stays the same for every agent and cacheable.
+		const asAgent = isSubagent || agentPrompt !== undefined;
+		const index =
+			asAgent || config.skillIndex === "off"
+				? ""
+				: skillIndex(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), config.skillIndex, config.skillIndexChars);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle)) };
 		if (agentPrompt) opts.appendSystemPrompt = `${opts.appendSystemPrompt ? `${opts.appendSystemPrompt}\n\n` : ""}${agentPrompt}`;
 		if (sessionContext.length) {
@@ -492,9 +498,13 @@ export default function devTeam(pi: ExtensionAPI) {
 	// recovery. Inside one long run pi's own threshold remains the backstop. Print/json runs end here.
 	pi.on("agent_settled", async (_event, ctx) => {
 		if (isSubagent || (ctx.mode !== "tui" && ctx.mode !== "rpc")) return;
-		const due = autocompactDue(ctx);
+		const due = autocompactDue(ctx, process.env, config.autocompactMaxTokens);
 		if (!due) return;
-		notify(ctx, [`dev-team: context at ${Math.round(due.usedPct)}% (autocompact threshold ${due.thresholdPct}%), compacting.`], "info");
+		const reason =
+			due.thresholdPct !== undefined
+				? `autocompact threshold ${due.thresholdPct}%`
+				: `${Math.round((due.usedTokens ?? 0) / 1000)}k tokens, autocompactMaxTokens ${Math.round((due.maxTokens ?? 0) / 1000)}k`;
+		notify(ctx, [`dev-team: context at ${Math.round(due.usedPct)}% (${reason}), compacting.`], "info");
 		ctx.compact({ onError: () => {} });
 	});
 

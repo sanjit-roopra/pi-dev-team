@@ -14,7 +14,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkills, expandSkill, namedSkills, resolveSkillName, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -271,4 +271,31 @@ test("subagent system prompt carries runtime notes and skill hints", () => {
 	assert.match(prompt, /Unavailable in this runtime/);
 	assert.match(prompt, /Agent\/Task=dev_team_subagent\./);
 	assert.doesNotMatch(prompt, /Agent\/Task=subagent\b/);
+});
+
+test("subagent system prompt lists only the skills the agent's instructions name", (t) => {
+	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
+	const skills = discoverSkills(os.tmpdir(), ROOT, { includeProject: false });
+	const def = agents.get("software-engineer");
+	assert.ok(def);
+	const prompt = buildSystemPrompt(def, ROOT, [], [], skills, 220);
+	assert.match(prompt, /Dev-team skills your instructions name/);
+	assert.match(prompt, /^- test-driven-development[ :]/m, "frontmatter skill");
+	assert.match(prompt, /^- systematic-debugging[ :]/m, "skill named in the body");
+	assert.doesNotMatch(prompt, /^- autoship[ :]/m, "an unrelated skill");
+	assert.match(prompt, /load any by name with the skill tool/);
+	const full = skillIndex(skills, "compact", 220);
+	const listed = prompt.slice(prompt.indexOf("Dev-team skills your instructions name"));
+	assert.ok(listed.length < full.length / 4, `named list ${listed.length} vs full index ${full.length}`);
+	assert.doesNotMatch(buildSystemPrompt(def, ROOT, [], []), /Dev-team skills your instructions name/, "no list without the skill map");
+});
+
+test("namedSkills: frontmatter, body references and project skills", (t) => {
+	const dir = tempDir(t, "proj-");
+	fs.mkdirSync(path.join(dir, ".claude", "skills", "house-rules"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".claude", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
+	const skills = discoverSkills(dir, ROOT, { includeProject: true });
+	const body = "Run `/dev-team:code-review`, then read skills/specs/SKILL.md and use the `triage` skill. A plan is not /planning.";
+	const names = [...namedSkills(skills, ["build"], body).keys()].sort();
+	assert.deepEqual(names, ["build", "code-review", "house-rules", "specs", "triage"]);
 });

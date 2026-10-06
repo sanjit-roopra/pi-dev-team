@@ -40,6 +40,7 @@ import {
 	type WorktreeInfo,
 } from "./subagent-types.ts";
 import { saveFullOutput } from "./session-files.ts";
+import { discoverSkills, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
 import { type ChildTrust, childTrustOf, trustArgs } from "./trust.ts";
 
@@ -290,7 +291,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			let tools = mapping?.tools;
 			if (tools && deps.depth + 1 >= config.maxSubagentDepth) tools = tools.filter((t) => t !== DEV_TEAM_SUBAGENT_TOOL);
 
-			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? []);
+			const skills = config.skillIndex === "off" ? undefined : discoverSkills(runCwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
+			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? [], skills, config.skillIndexChars);
 			const promptFile = path.join(tmpDir, `agent-${def.name}.md`);
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
@@ -576,7 +578,19 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	return `${results.filter((r) => r.ok).length}/${results.length} agents succeeded\n\n${results.map(section).join("\n\n---\n\n")}${skipped}`;
 }
 
-export function buildSystemPrompt(def: AgentDef, packageRoot: string, scopedBash: string[], unmapped: string[]): string {
+/**
+ * The child's appended system prompt: agent body, runtime notes and, when `skills` is given, an index
+ * of only the skills the agent's instructions name (see namedSkills). The child's dev-team guide
+ * leaves out the full skill index, so this short list is all a subagent pays for.
+ */
+export function buildSystemPrompt(
+	def: AgentDef,
+	packageRoot: string,
+	scopedBash: string[],
+	unmapped: string[],
+	skills?: Map<string, SkillDef>,
+	skillIndexChars = 220,
+): string {
 	const parts = [def.body.trim()];
 	const runtime: string[] = [
 		`You are the dev-team agent "${def.name}", dispatched as a subagent. Your final message is returned to the dispatcher verbatim; make it the complete deliverable (for review agents: the JSON result exactly as your output contract specifies).`,
@@ -592,6 +606,13 @@ export function buildSystemPrompt(def: AgentDef, packageRoot: string, scopedBash
 	}
 	if (scopedBash.length) runtime.push(`Only use bash for: ${scopedBash.join("; ")}.`);
 	if (unmapped.length) runtime.push(`Unavailable in this runtime (fall back as your instructions describe): ${unmapped.join(", ")}.`);
+	if (skills) {
+		runtime.push(
+			`Other dev-team skills: load any by name with the skill tool; the names are the folders in ${packageRoot}/skills.`,
+		);
+	}
 	parts.push(`## Runtime (pi port of dev-team)\n\n${runtime.map((r) => `- ${r}`).join("\n")}`);
+	const named = skills ? namedSkills(skills, def.skills, def.body) : undefined;
+	if (named?.size) parts.push(`Dev-team skills your instructions name (load with the skill tool):\n${skillIndex(named, "compact", skillIndexChars)}`);
 	return `${parts.join("\n\n")}\n`;
 }

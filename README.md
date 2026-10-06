@@ -166,6 +166,7 @@ All settings, with the default values:
   "githubStyle": "block",      // block, warn, or off: the rules and the check for pull request and issue text
   "skillIndex": "compact",     // compact, full, or off: the command list in the system prompt
   "skillIndexChars": 220,      // the maximum length of each description in the compact list
+  "autocompactMaxTokens": 200000, // compact your session between tasks at this many context tokens; 0 = off
   "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }

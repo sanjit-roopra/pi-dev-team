@@ -143,3 +143,21 @@ test("autocompactDue is off when nothing configures a threshold", (t) => {
 	const ctx = { cwd: box.project, isProjectTrusted: () => true, getContextUsage: () => ({ tokens: 99, contextWindow: 100, percent: 99 }) };
 	assert.equal(autocompactDue(ctx, box.env), undefined);
 });
+
+test("autocompactDue: the token ceiling compacts with or without a configured percentage", (t) => {
+	const box = sandbox(t);
+	const ctx = (tokens: number | null, window = 1_000_000) => ({
+		cwd: box.project,
+		isProjectTrusted: () => true,
+		getContextUsage: () => ({ tokens, contextWindow: window, percent: tokens === null ? null : (tokens / window) * 100 }),
+	});
+	assert.equal(autocompactDue(ctx(199_999), box.env, 200_000), undefined);
+	assert.deepEqual(autocompactDue(ctx(200_000), box.env, 200_000), { usedPct: 20, maxTokens: 200_000, usedTokens: 200_000 });
+	assert.equal(autocompactDue(ctx(null), box.env, 200_000), undefined, "unknown usage right after a compaction");
+	assert.equal(autocompactDue(ctx(900_000), box.env, 0), undefined, "0 turns the ceiling off");
+	assert.equal(autocompactDue(ctx(900_000), box.env, Number.NaN), undefined, "an invalid ceiling is off");
+	box.writeUserSetting("40");
+	assert.deepEqual(autocompactDue(ctx(80_000, 200_000), box.env, 200_000), { usedPct: 40, thresholdPct: 40 }, "the percentage still applies first on a small window");
+	assert.deepEqual(autocompactDue(ctx(450_000), box.env, 200_000), { usedPct: 45, thresholdPct: 40, maxTokens: 200_000, usedTokens: 450_000 }, "both reached");
+	assert.deepEqual(autocompactDue(ctx(250_000), box.env, 200_000), { usedPct: 25, maxTokens: 200_000, usedTokens: 250_000 }, "ceiling before percentage on a 1M window");
+});
