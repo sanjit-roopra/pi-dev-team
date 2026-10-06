@@ -57,11 +57,13 @@ You can also run the upstream Python test suite against the files of this packag
 
 ## Release a new version
 
-A GitHub Actions workflow (`.github/workflows/publish.yml`) publishes the package to npm when you push a `v*` tag. The workflow uses npm trusted publishing, so the repository has no npm token.
+A GitHub Actions workflow (`.github/workflows/publish.yml`) stages the package on npm when you push a `v*` tag. The workflow uses npm trusted publishing, so the repository has no npm token. A staged version is not live until a maintainer approves it with 2FA. So a stolen GitHub login or a bad workflow change cannot put a version live by itself.
 
 1. Bump the version. This changes `package.json`, makes a commit and makes a tag: `npm version patch` (or `minor`, `major`).
 2. Push the commit and the tag: `git push --follow-tags`
+3. Wait for the Publish workflow to pass on GitHub.
+4. Approve the staged version. On npmjs.com, open the package and approve the staged version. Or run `npm stage list pi-dev-team`, then `npm stage approve <stage-id>`.
 
 The workflow stops if the tag is not the same as the version in `package.json`. It also stops if `npm test` fails.
 
-To set up trusted publishing one time, go to the package settings on npmjs.com. Add a trusted publisher for GitHub Actions with the repository `sanjit-roopra/pi-dev-team` and the workflow `publish.yml`.
+To set up trusted publishing one time, go to the package settings on npmjs.com. Add a trusted publisher for GitHub Actions with the repository `sanjit-roopra/pi-dev-team` and the workflow `publish.yml`. Leave "Allow npm publish" unchecked, so the workflow can only stage.

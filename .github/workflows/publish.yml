@@ -46,4 +46,7 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-      - run: npm publish --access public
+      # `npm stage publish` needs a newer npm than Node 24 ships with.
+      - run: npm install -g npm@12.2.0
+      # Stage only. The package goes live when a maintainer approves it with 2FA.
+      - run: npm stage publish
