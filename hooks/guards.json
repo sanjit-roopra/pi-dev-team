@@ -11,7 +11,10 @@
     "*.token",
     "secrets/*",
     ".secrets/*",
-    "credentials/*"
+    "credentials/*",
+    "secret/*",
+    ".secret/*",
+    ".credentials/*"
   ],
   "warn_paths": [
     ".claude/settings.json",

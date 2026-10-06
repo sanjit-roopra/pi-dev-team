@@ -87,18 +87,30 @@ class SensitivePaths(GuardTestCase):
         (self.tmp / "link.json").symlink_to(config)
         self.assertEqual(self.code(str(self.tmp / "link.json")), 2)
 
+    def test_symlinks_to_sensitive_files_stay_blocked(self):
+        (self.tmp / ".env").write_text("")
+        (self.tmp / "notes.txt").symlink_to(self.tmp / ".env")
+        (self.tmp / "report.md").symlink_to(self.tmp / ".env")
+        self.assertEqual(self.code(str(self.tmp / "notes.txt")), 2)
+        self.assertEqual(self.code(str(self.tmp / "report.md")), 2)
+
     def test_pi_coding_agent_dir_config_is_protected(self):
         saved = os.environ.get("PI_CODING_AGENT_DIR")
         os.environ["PI_CODING_AGENT_DIR"] = str(self.tmp / "pi-home")
         try:
             self.assertEqual(self.code(str(self.tmp / "pi-home" / "dev-team.json")), 2)
+            dotfiles = self.tmp / "dotfiles"
+            dotfiles.mkdir()
+            (self.tmp / "pi-home").symlink_to(dotfiles)
+            self.assertEqual(self.code(str(dotfiles / "dev-team.json")), 2)
+            self.assertEqual(self.code(str(dotfiles / "other.json")), 0)
         finally:
             os.environ.pop("PI_CODING_AGENT_DIR")
             if saved is not None:
                 os.environ["PI_CODING_AGENT_DIR"] = saved
 
     def test_secret_folders_stay_blocked_but_lookalike_folders_do_not(self):
-        for path in ("/repo/k8s/secrets/db.yaml", "/repo/credentials/service-account.json", "/repo/.secrets/prod"):
+        for path in ("/repo/k8s/secrets/db.yaml", "/repo/credentials/service-account.json", "/repo/.secrets/prod", "/repo/secret/x", "/repo/.credentials/y"):
             with self.subTest(path=path):
                 self.assertEqual(self.code(path), 2)
         self.assertEqual(self.code("/repo/secrets-manager/src/app.ts"), 0)

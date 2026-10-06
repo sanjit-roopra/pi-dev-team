@@ -410,10 +410,8 @@ def evaluate(
 
     blocked_patterns, warn_patterns = _load_guards(paths.guards_path)
 
-    blocked_by = _matching_pattern(file_path, blocked_patterns)
-    if blocked_by is not None and _matching_pattern(
-        file_path, _load_allowed(paths.guards_path)
-    ) is None:
+    blocked_by = _sensitive_match(file_path, cwd, blocked_patterns, _load_allowed(paths.guards_path))
+    if blocked_by is not None:
         emit_boundary_event(cwd, "pre_tool_guard", "Write", "block", "sensitive-path", session_id)
         return 2, [
             f"BLOCKED: Write to '{file_path}' is not allowed.",
@@ -432,18 +430,47 @@ def evaluate(
     return 0, []
 
 
-def _is_user_config(file_path: str, cwd: str) -> bool:
-    """True when `file_path` is the user's dev-team config, as written or
-    through a symlink. pi reads it from `$PI_CODING_AGENT_DIR` when that is
-    set (the hook inherits pi's environment), else `~/.pi/agent/`."""
-    patterns = [USER_CONFIG_PATTERN]
+def _sensitive_match(
+    file_path: str, cwd: str, blocked: list[str], allowed: list[str]
+) -> str | None:
+    """Return the blocked pattern `file_path` hits, or None. The path is
+    checked as written and as resolved, so a harmless-looking symlink
+    (`notes.txt -> .env`) still hits; each form is exempted only by an
+    allowed pattern matching that same form, so a link's `.md` name cannot
+    exempt a sensitive target."""
+    resolved = os.path.realpath(os.path.join(cwd, os.path.expanduser(file_path)))
+    for subject in (file_path, resolved):
+        hit = _matching_pattern(subject, blocked)
+        if hit is not None and _matching_pattern(subject, allowed) is None:
+            return hit
+    return None
+
+
+def _user_config_realpaths() -> set[str]:
+    """Resolved, lowercased paths of the user's dev-team config: pi reads it
+    from `$PI_CODING_AGENT_DIR` when that is set (the hook inherits pi's
+    environment), else `~/.pi/agent/`. Resolving catches a config dir that is
+    itself a symlink, e.g. into a dotfiles checkout."""
+    dirs = ["~/.pi/agent"]
     agent_dir = os.environ.get("PI_CODING_AGENT_DIR")
     if agent_dir:
-        patterns.append(os.path.join(os.path.expanduser(agent_dir), "dev-team.json"))
-    candidate = os.path.join(cwd, os.path.expanduser(file_path))
-    return any(
-        _matching_pattern(subject, patterns) is not None
-        for subject in (file_path, os.path.realpath(candidate))
+        dirs.append(agent_dir)
+    return {
+        os.path.realpath(os.path.join(os.path.expanduser(d), "dev-team.json")).lower()
+        for d in dirs
+    }
+
+
+def _is_user_config(file_path: str, cwd: str) -> bool:
+    """True when `file_path` is the user's dev-team config: by its usual
+    `.pi/agent/dev-team.json` suffix, or because it resolves (through `..`
+    or symlinks) to the same file."""
+    if _matching_pattern(file_path, [USER_CONFIG_PATTERN]) is not None:
+        return True
+    resolved = os.path.realpath(os.path.join(cwd, os.path.expanduser(file_path)))
+    return (
+        _matching_pattern(resolved, [USER_CONFIG_PATTERN]) is not None
+        or resolved.lower() in _user_config_realpaths()
     )
 
 

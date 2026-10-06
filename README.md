@@ -179,7 +179,7 @@ To see which guard hooks are on, run `/dev-team hooks`.
 
 ### Sensitive-file guard
 
-The `pre_tool_guard` hook blocks an agent from writing files whose name looks like a secret: `.env`, `*.key`, `*.pem`, or a name that contains `secret` or `credential`. The full list is in `hooks/guards.json`. The name patterns check the file name, not the folders above it, and files inside a `secrets/`, `.secrets/` or `credentials/` folder are also blocked. The guard does not block Markdown files, so a report named `secret-triage.md` can be written.
+The `pre_tool_guard` hook blocks an agent from writing files whose name looks like a secret: `.env`, `*.key`, `*.pem`, or a name that contains `secret` or `credential`. The full list is in `hooks/guards.json`. The name patterns check the file name, not the folders above it, and files inside a `secret/`, `secrets/` or `credentials/` folder (also with a leading dot) are also blocked. A symlink to a blocked file is blocked too. The guard does not block Markdown files, so a report named `secret-triage.md` can be written.
 
 The guard blocks every time; telling the agent in chat that the write is approved does not lift it. To allow a file that holds no secrets, add a pattern to `DEV_TEAM_GUARD_ALLOWED_PATHS` in your own `~/.pi/agent/dev-team.json`. Separate patterns with commas. A pattern with a `/` matches the end of the path:
 
@@ -187,7 +187,7 @@ The guard blocks every time; telling the agent in chat that the write is approve
 { "env": { "DEV_TEAM_GUARD_ALLOWED_PATHS": "test/fixtures/*,*.example" } }
 ```
 
-A project file cannot set this setting, and the guard stops the agent's Write and Edit tools from changing `~/.pi/agent/dev-team.json` (or `$PI_CODING_AGENT_DIR/dev-team.json`), also through a symlink. The guard does not check bash commands.
+A project file cannot set this setting, and the guard stops the agent's Write and Edit tools from changing `~/.pi/agent/dev-team.json` (or `$PI_CODING_AGENT_DIR/dev-team.json`), also through a symlink or at the real path of a symlinked config folder. The guard does not check bash commands.
 
 ## Update
 
