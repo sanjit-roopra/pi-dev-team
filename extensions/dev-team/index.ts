@@ -12,7 +12,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
-import { ReadDedup } from "./lib/read-dedup.ts";
+import { ReadTracker } from "./lib/read-dedup.ts";
 import {
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
@@ -57,7 +57,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	const hooks = new HookBridge(packageRoot, getConfig);
 	const pendingAdvisories = new Map<string, string[]>();
 	const styleGate = createStyleGate();
-	const readDedup = new ReadDedup();
+	const readTracker = new ReadTracker();
 	let sessionContext: string[] = [];
 	let running = 0;
 
@@ -372,7 +372,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	// ---------------------------------------------------------------- lifecycle
 
 	pi.on("session_start", async (event, ctx) => {
-		readDedup.reset();
+		readTracker.reset();
 		applyEnv(ctx);
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
@@ -396,9 +396,10 @@ export default function devTeam(pi: ExtensionAPI) {
 		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle));
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
-			// The agent's own text goes last. pi renders the appended prompt before the project context and
-			// the sections, so left there it would end the prefix that every agent type shares; moved behind
-			// the guide, agents dispatched in parallel share one cached prefix up to their own instructions.
+			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
+			// project context and the sections, so left there it would end the prefix that agents share;
+			// moved behind the guide, agents with the same tools and model share one cached prefix up to
+			// their own instructions. Extensions loaded later (pi's mcp) may still add sections after it.
 			const agentText = [opts.appendSystemPrompt, agentPrompt].filter(Boolean).join("\n\n");
 			opts.appendSystemPrompt = "";
 			if (agentText) opts.sections = { ...opts.sections, dev_team_agent: agentText };
@@ -475,11 +476,11 @@ export default function devTeam(pi: ExtensionAPI) {
 		};
 		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
 		// Hooks see the real text; the model gets a note when it already has this exact read in context.
-		const readNote =
-			config.readDedup && event.toolName === "read" && !event.isError && event.content.every((c) => c.type === "text")
-				? readDedup.check({ cwd: ctx.cwd, input, text })
-				: undefined;
+		// Only reads the model sees: a codemode script's nested calls never reach the transcript.
+		const modelRead = event.toolName === "read" && !event.parentToolCallId && !event.isError && event.content.every((c) => c.type === "text");
+		const readNote = config.readDedup && modelRead ? readTracker.noteForRepeatedRead({ cwd: ctx.cwd, input, text }) : undefined;
 		const content = readNote ? [{ type: "text" as const, text: readNote }] : event.content;
+		const unchanged = readNote ? { content } : undefined;
 		if (config.autoFormat && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
 			outcomes.push(await hooks.runScript("post_format", "PostToolUse", payload, ctx.cwd));
 		}
@@ -487,14 +488,14 @@ export default function devTeam(pi: ExtensionAPI) {
 		pendingAdvisories.delete(event.toolCallId);
 		notify(ctx, outcomes.flatMap((o) => o.notices));
 		const block = outcomes.map((o) => o.block).filter(Boolean).join("\n\n");
-		if (!advisories.length && !block) return readNote ? { content } : undefined;
+		if (!advisories.length && !block) return unchanged;
 		const extra: string[] = [];
 		if (block) extra.push(`dev-team hook feedback (must address):\n${block}`);
 		if (advisories.length) {
 			if (config.hooks.outputToModel) extra.push(`dev-team hook notes:\n${advisories.join("\n")}`);
 			else notify(ctx, advisories, "info");
 		}
-		if (!extra.length) return readNote ? { content } : undefined;
+		if (!extra.length) return unchanged;
 		return {
 			content: [...content, { type: "text" as const, text: `\n\n${extra.join("\n\n")}` }],
 			structuredContent: event.structuredContent,
@@ -503,6 +504,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", async (_event, ctx) => {
+		readTracker.endTurn();
 		refreshAiCreditsStatus(ctx);
 	});
 
@@ -525,14 +527,14 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	// A branch switch rebuilds the context from another path of the session tree.
 	pi.on("session_tree", async () => {
-		readDedup.reset();
+		readTracker.reset();
 	});
 
 	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject uses it
 	// to restore /build state. triggerTurn: false adds it to the context (deferred to the end of the turn
 	// when one is running) without starting a model turn, as Claude's additionalContext does.
 	pi.on("session_compact", async (_event, ctx) => {
-		readDedup.reset();
+		readTracker.reset();
 		if (isSubagent) return;
 		const out = await runSessionStart(ctx, "compact");
 		if (out.context.length) {

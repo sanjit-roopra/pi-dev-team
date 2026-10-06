@@ -16,6 +16,17 @@ const PROVIDER = path.join(PKG, "test", "fixtures", "scripted-provider.ts");
 const EXTERNAL_SUBAGENT = path.join(PKG, "test", "fixtures", "external-subagent.ts");
 const filter = process.argv[2] ?? "";
 
+/** The agent's own text sits in a dev_team_agent section after the shared dev-team guide, not in pi's appended prompt. */
+function assertAgentAfterGuide(systemPrompt, agentMarker, who) {
+	const guideAt = systemPrompt.indexOf("<dev_team>");
+	const sectionAt = systemPrompt.indexOf("<dev_team_agent>");
+	const agentAt = systemPrompt.indexOf(agentMarker);
+	assert(guideAt >= 0, `${who}: no dev-team guide`);
+	assert(sectionAt > guideAt, `${who}: no dev_team_agent section after the guide`);
+	assert(agentAt > sectionAt, `${who}: agent text is not inside the dev_team_agent section`);
+	assert(!systemPrompt.includes("<addendum>"), `${who}: text left in pi's appended prompt`);
+}
+
 function script(steps) {
 	return `<<script>>${JSON.stringify(steps)}<</script>>`;
 }
@@ -345,6 +356,7 @@ const scenarios = {
 		let r = pi(env, probe, { extra: ["--dev-team-agent", "security-review"] });
 		assert(r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent not used: ${r.out.slice(0, 300)} ${r.err}`);
 		const agentPrompt = JSON.parse(r.out).systemPrompt;
+		assertAgentAfterGuide(agentPrompt, "PROJECT_OVERRIDE_PROMPT", "--dev-team-agent run");
 		assert(!/^- autoship/m.test(agentPrompt) && agentPrompt.includes("load any by name with the skill tool"), "an agent run lists the full skill index instead of its own skills");
 		r = pi(env, probe, { extra: ["--no-approve", "--dev-team-agent", "security-review"] });
 		assert(!r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent used despite --no-approve: ${r.out.slice(0, 300)}`);
@@ -438,9 +450,7 @@ const scenarios = {
 			assert(runtime.tools.includes("subagent"), "external tool was removed by dev-team's depth safeguard");
 			assert(!/^- autoship/m.test(runtime.systemPrompt), "child prompt still carries the full skill index");
 			assert(runtime.systemPrompt.includes("load any by name with the skill tool"), "child prompt lacks the skill note");
-			const guideAt = runtime.systemPrompt.indexOf("<dev_team>");
-			const agentAt = runtime.systemPrompt.indexOf("Inspect the runtime tools and prompt.");
-			assert(guideAt >= 0 && agentAt > guideAt && runtime.systemPrompt.lastIndexOf("<dev_team_agent>") < agentAt, "child agent prompt is not the last section after the shared guide");
+			assertAgentAfterGuide(runtime.systemPrompt, "Inspect the runtime tools and prompt.", "child");
 			return runtime;
 		};
 		assert(inspectChild().tools.includes("dev_team_subagent"), "Claude Agent/Task did not enable namespaced child dispatch");
