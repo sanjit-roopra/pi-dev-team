@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { formatToolCall, formatUsage, recentCallLines, renderSubagentCall, renderSubagentResult } from "../../extensions/dev-team/lib/subagent-render.ts";
-import type { SubagentDetails, SubagentTaskView, UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
+import type { LiveSubagentView, SubagentDetails, SubagentTaskView, UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 // A theme stub that returns text unchanged; the renderers only call fg() and bold().
 const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as never;
@@ -36,6 +36,56 @@ test("result while running: progress count and latest tool calls", () => {
 	assert.match(out, /1\/2 done, 1 running/);
 	assert.match(out, /→ grep \/TODO\/ in \./);
 	assert.doesNotMatch(out, /Total:/);
+});
+
+function live(agent: string, status: LiveSubagentView["status"], overrides: Partial<LiveSubagentView> = {}): LiveSubagentView {
+	return { agent, status, turns: 1, recentCalls: [], ...overrides };
+}
+
+function runningWith(subagents: LiveSubagentView[]) {
+	return result({ results: [taskView({ agent: "orchestrator", status: "running", ok: false, recentCalls: [{ name: "dev_team_subagent", args: { tasks: String(subagents.length) } }], subagents })] });
+}
+
+const drawLines = (r: ReturnType<typeof runningWith>) => draw(renderSubagentResult(r, { expanded: false, isPartial: true }, theme)).split("\n").map((l) => l.trimEnd());
+
+test("result while running: the subagents a running agent dispatched, live, running first", () => {
+	const reviewers = [
+		live("naming-review", "ok", { subagents: [live("stale-finished-child", "running")] }),
+		live("security-review", "running", { turns: 4, recentCalls: [{ name: "read", args: { path: "src/auth.ts" } }], subagents: [live("deep", "running")] }),
+		live("test-review", "failed"),
+	];
+	const lines = drawLines(runningWith(reviewers));
+	const at = lines.indexOf("  subagents 2/3 done");
+	assert.ok(at > 0, lines.join("\n"));
+	assert.deepEqual(lines.slice(at + 1, at + 6), [
+		"    ⏳ security-review turn 4 → read src/auth.ts",
+		"      subagents 0/1 done",
+		"        ⏳ deep turn 1",
+		"    ✓ naming-review",
+		"    ✗ test-review",
+	], "a finished subagent does not list the agents it ran");
+});
+
+test("result while running: subagents are capped at 12 and the rest counted, the header counts all", () => {
+	const SHOWN = 12;
+	const many = (n: number) => Array.from({ length: n }, (_, i) => live(`r${i}`, "running"));
+	const capped = drawLines(runningWith(many(SHOWN + 3)));
+	assert.ok(capped.includes(`  subagents 0/${SHOWN + 3} done`), capped.join("\n"));
+	assert.ok(capped.includes(`    ⏳ r${SHOWN - 1} turn 1`));
+	assert.ok(!capped.some((l) => l.includes(`⏳ r${SHOWN} `)), "the 13th is not listed");
+	assert.ok(capped.includes("    … +3 more"));
+	assert.ok(!drawLines(runningWith(many(SHOWN))).some((l) => l.includes("more")), "exactly the cap: nothing hidden");
+});
+
+test("result while running: subagent names and calls from child output cannot drive the terminal", () => {
+	const out = drawLines(runningWith([live("evil\u001b[31mred", "running", { recentCalls: [{ name: "read", args: { path: "a\u001b]52;c;x\u0007.ts" } }] })])).join("\n");
+	assert.doesNotMatch(out, /\u001b|\u0007/);
+	assert.match(out, /evil/);
+});
+
+test("finished agents do not list subagents", () => {
+	const out = draw(renderSubagentResult(result({ results: [taskView({ output: "done", subagents: [live("stale", "running")] })] }), { expanded: false, isPartial: false }, theme));
+	assert.doesNotMatch(out, /stale|subagents/);
 });
 
 test("result failed: error and the skipped project agents", () => {

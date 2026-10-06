@@ -81,10 +81,28 @@ export interface SubagentTaskView {
 	error?: string;
 	output?: string;
 	worktree?: WorktreeInfo;
+	/** Agents it is running right now through its own dev-team calls; set only while it runs. */
+	subagents?: LiveSubagentView[];
 }
 
-/** Progress fields a running child reports; status/ok are set only from the final result. */
-export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage">>;
+/**
+ * An agent that a running agent dispatched itself, as the progress view draws it: no task, output
+ * or usage, only its latest tool call. Built from child output by child-run.ts, at any depth.
+ */
+export interface LiveSubagentView {
+	agent: string;
+	status: SubagentTaskView["status"];
+	turns: number;
+	/** Its latest tool call, if it made one. */
+	recentCalls: ToolCallSummary[];
+	subagents?: LiveSubagentView[];
+}
+
+/**
+ * Progress fields a running child reports; status/ok are set only from the final result. A key set
+ * to undefined clears that field, as `subagents: undefined` does once no dev-team call is open.
+ */
+export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents">>;
 
 export interface SubagentDetails {
 	results: SubagentTaskView[];

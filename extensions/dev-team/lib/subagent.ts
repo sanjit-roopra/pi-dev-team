@@ -551,6 +551,7 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		error: r.error,
 		output: r.output ? outputForView(r.output, r.fullOutputFile) : undefined,
 		worktree: r.worktree,
+		subagents: undefined,
 	};
 }
 

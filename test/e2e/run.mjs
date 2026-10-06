@@ -372,6 +372,22 @@ const scenarios = {
 		assert(byAgent["dev-team:Explore"]?.input_tokens > 0, `grandchild not credited to its own agent: ${JSON.stringify(byAgent)}`);
 	},
 
+	"subagent: progress of a nested dispatch streams up to the top level"(env) {
+		const grandchild = script([{ tool: "bash", args: { command: "echo deep" } }, { text: "deep done" }]);
+		const child = script([{ tool: "dev_team_subagent", args: { agent: "Explore", task: grandchild } }]);
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "orchestrator", task: child } }]), { json: true });
+		const nested = [];
+		for (const line of r.out.split("\n")) {
+			try {
+				const e = JSON.parse(line);
+				if (e.type === "tool_execution_update" && e.toolName === "dev_team_subagent") nested.push(...(e.partialResult?.details?.results?.[0]?.subagents ?? []));
+			} catch {}
+		}
+		assert(nested.some((v) => v.agent === "Explore" && v.status === "running" && v.recentCalls?.at(-1)?.name === "bash"), `no live grandchild progress: ${JSON.stringify(nested).slice(0, 400)}`);
+		const final = toolResults(r.out).find((t) => t.tool === "dev_team_subagent");
+		assert(final && final.details?.results?.[0]?.subagents === undefined, `final result keeps live agents: ${JSON.stringify(final?.details).slice(0, 400)}`);
+	},
+
 	"cost meter row includes main and subagent spend by agent type"(env) {
 		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "security-review", task: script([{ text: "{}" }]) } }]));
 		const rows = readJsonl(path.join(env.repo, ".claude", "metrics", "cost-metering.jsonl"));
