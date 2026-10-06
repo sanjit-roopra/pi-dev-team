@@ -71,6 +71,55 @@ class SensitivePaths(GuardTestCase):
         self.assertIn("only a human edits it", lines[1])
         self.assertEqual(self.code("/repo/.pi/dev-team.json"), 0)
 
+    def test_dot_dot_segments_cannot_dodge_a_pattern(self):
+        os.environ[guard.ALLOWED_PATHS_ENV] = "fixtures/*"
+        self.assertEqual(self.code("/repo/fixtures/../.env"), 2)
+        self.assertEqual(self.code("/Users/me/.pi/agent/x/../dev-team.json"), 2)
+        self.assertEqual(self.code("/Users/me/.PI/Agent/dev-team.json"), 2)
+
+    def test_redundant_segments_and_symlinks_reach_the_user_config(self):
+        for path in ("/Users/me/.pi/agent/./dev-team.json", "/Users/me/.pi//agent/dev-team.json"):
+            with self.subTest(path=path):
+                self.assertEqual(self.code(path), 2)
+        config = self.tmp / ".pi" / "agent" / "dev-team.json"
+        config.parent.mkdir(parents=True)
+        config.write_text("{}")
+        (self.tmp / "link.json").symlink_to(config)
+        self.assertEqual(self.code(str(self.tmp / "link.json")), 2)
+
+    def test_pi_coding_agent_dir_config_is_protected(self):
+        saved = os.environ.get("PI_CODING_AGENT_DIR")
+        os.environ["PI_CODING_AGENT_DIR"] = str(self.tmp / "pi-home")
+        try:
+            self.assertEqual(self.code(str(self.tmp / "pi-home" / "dev-team.json")), 2)
+        finally:
+            os.environ.pop("PI_CODING_AGENT_DIR")
+            if saved is not None:
+                os.environ["PI_CODING_AGENT_DIR"] = saved
+
+    def test_secret_folders_stay_blocked_but_lookalike_folders_do_not(self):
+        for path in ("/repo/k8s/secrets/db.yaml", "/repo/credentials/service-account.json", "/repo/.secrets/prod"):
+            with self.subTest(path=path):
+                self.assertEqual(self.code(path), 2)
+        self.assertEqual(self.code("/repo/secrets-manager/src/app.ts"), 0)
+
+    def test_guards_json_without_allowed_paths_falls_back_to_markdown_default(self):
+        guards = self.tmp / "guards.json"
+        for content in (None, "{not json", "[]", json.dumps({"blocked_paths": ["*secret*"]})):
+            with self.subTest(content=content):
+                if content is None:
+                    guards.unlink(missing_ok=True)
+                else:
+                    guards.write_text(content)
+                paths = guard.GuardPaths(guards, self.tmp / "freeze-state.json")
+                self.assertEqual(guard.evaluate("/repo/secret-triage.md", str(self.tmp), paths=paths)[0], 0)
+
+    def test_empty_allowed_paths_in_guards_json_removes_the_default(self):
+        guards = self.tmp / "guards.json"
+        guards.write_text(json.dumps({"allowed_paths": [5, ""]}))
+        paths = guard.GuardPaths(guards, self.tmp / "freeze-state.json")
+        self.assertEqual(guard.evaluate("/repo/secret-triage.md", str(self.tmp), paths=paths)[0], 2)
+
     def test_block_message_names_pattern_and_real_config(self):
         _, lines = guard.evaluate("/repo/db-secret.yaml", str(self.tmp), paths=self.paths)
         self.assertIn("'*secret*'", lines[1])
@@ -108,6 +157,10 @@ class OverrideBases(unittest.TestCase):
         for rel in sync.OVERRIDE_BASES:
             with self.subTest(rel=rel):
                 self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes())
+
+    def test_every_hook_override_has_a_base_hash(self):
+        shipped = {p.relative_to(ROOT / "overrides").as_posix() for p in (ROOT / "overrides" / "hooks").rglob("*") if p.is_file() and "__pycache__" not in p.parts}
+        self.assertEqual(shipped, set(sync.OVERRIDE_BASES))
 
     def test_stale_override_bases_reports_changed_and_missing_files(self):
         root = Path(tempfile.mkdtemp())

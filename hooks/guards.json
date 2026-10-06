@@ -8,7 +8,10 @@
     "*.pfx",
     "*credential*",
     "*secret*",
-    "*.token"
+    "*.token",
+    "secrets/*",
+    ".secrets/*",
+    "credentials/*"
   ],
   "warn_paths": [
     ".claude/settings.json",

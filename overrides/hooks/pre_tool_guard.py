@@ -59,9 +59,11 @@ pi port changes (shipped from `overrides/hooks/`; see PORTING.md):
   credentials. The user adds more exceptions as comma-separated patterns in
   `DEV_TEAM_GUARD_ALLOWED_PATHS`, set in the `env` of their own
   `~/.pi/agent/dev-team.json`. That is how a human approves an exception:
-  a project's `.pi/dev-team.json` cannot set this variable, and agents
-  cannot Write or Edit the user's file, so neither a cloned repository nor
-  an agent can approve its own write.
+  a project's `.pi/dev-team.json` cannot set this variable, and the Write
+  and Edit tools cannot change the user's file (also through a symlink or
+  under `$PI_CODING_AGENT_DIR`), so neither a cloned repository nor an
+  agent's file edit can approve its own write. This guard does not see
+  bash commands.
 - The block message names the matching pattern and the config file the
   hook actually reads, and says that approval in chat does not lift it.
 """
@@ -71,6 +73,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import posixpath
 import sys
 from pathlib import Path
 from typing import NamedTuple
@@ -164,12 +167,13 @@ def _matching_pattern(file_path: str, patterns: list[str]) -> str | None:
     against the whole path, or any trailing part of it, so a repo-relative
     pattern also matches the absolute path a real session reports.
     """
-    lower_path = file_path.lower().replace(os.sep, "/")
+    # Collapse `.`/`..` first: `fixtures/../.env` must not match `fixtures/*`.
+    lower_path = posixpath.normpath(file_path.lower().replace(os.sep, "/"))
     lower_name = lower_path.rsplit("/", 1)[-1]
     for pattern in patterns:
         if not pattern:
             continue
-        lower_pattern = pattern.lower()
+        lower_pattern = pattern.lower().replace(os.sep, "/")
         if "/" in lower_pattern:
             if fnmatch.fnmatchcase(lower_path, lower_pattern) or fnmatch.fnmatchcase(
                 lower_path, "*/" + lower_pattern
@@ -396,7 +400,7 @@ def evaluate(
     if verdict is not None:
         return verdict
 
-    if _matching_pattern(file_path, [USER_CONFIG_PATTERN]) is not None:
+    if _is_user_config(file_path, cwd):
         emit_boundary_event(cwd, "pre_tool_guard", "Write", "block", "guard-exceptions", session_id)
         return 2, [
             f"BLOCKED: Write to '{file_path}' is not allowed.",
@@ -426,6 +430,21 @@ def evaluate(
         ]
 
     return 0, []
+
+
+def _is_user_config(file_path: str, cwd: str) -> bool:
+    """True when `file_path` is the user's dev-team config, as written or
+    through a symlink. pi reads it from `$PI_CODING_AGENT_DIR` when that is
+    set (the hook inherits pi's environment), else `~/.pi/agent/`."""
+    patterns = [USER_CONFIG_PATTERN]
+    agent_dir = os.environ.get("PI_CODING_AGENT_DIR")
+    if agent_dir:
+        patterns.append(os.path.join(os.path.expanduser(agent_dir), "dev-team.json"))
+    candidate = os.path.join(cwd, os.path.expanduser(file_path))
+    return any(
+        _matching_pattern(subject, patterns) is not None
+        for subject in (file_path, os.path.realpath(candidate))
+    )
 
 
 def _cheap_freeze_inactive(cwd: str) -> bool:
