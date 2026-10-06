@@ -86,6 +86,15 @@ test("the system prompt carries the GitHub style guide in block mode", async () 
 	assert.match(opts.sections?.dev_team ?? "", /GitHub text style/);
 });
 
+test("the guide keeps skills that need bash and write out of the orchestrator agent", async () => {
+	const { handlers } = await loaded;
+	const opts: { sections?: Record<string, string> } = {};
+	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	const guide = opts.sections?.dev_team ?? "";
+	assert.match(guide, /is the session the user talks to, not the orchestrator agent/);
+	assert.match(guide, /\/code-review, \/build, \/pr, \/ship, \/fix .* run them yourself/);
+});
+
 test("the main session's guide lists every dev-team skill", async () => {
 	const { handlers } = await loaded;
 	const opts: { sections?: Record<string, string> } = {};
