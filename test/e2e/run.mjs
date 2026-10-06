@@ -148,7 +148,7 @@ const scenarios = {
 		assert(r.out.includes('ECHO:<skill name="version"'), `unexpected output: ${r.out.slice(0, 300)} ${r.err}`);
 	},
 
-	// The scripted provider is not GitHub Copilot, so a session of it has no AI credits to show.
+	// A fresh HOME with --no-session and no model turn before the command: no spend in this session or this month.
 	// pi sends an extension's console.log to stderr in print mode, so these read both streams.
 	"/dev-team usage prints the session summary in print mode"(env) {
 		const r = pi(env, "/dev-team usage");
