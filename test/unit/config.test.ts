@@ -355,3 +355,10 @@ test("fileTierModels: only known tiers", (t) => {
 	const p = projectWith(t, { shared: { models: { haiku: "x/y", "x\u001b]52;c;x\u0007": "y", toString: "z" } } });
 	assert.deepEqual(fileTierModels(p.shared), { haiku: "x/y" });
 });
+
+test("loadConfig: a models value that is not a table sets nothing", (t) => {
+	for (const models of [null, ["a/b"], "a/b"]) {
+		const p = projectWith(t, { shared: { models } });
+		assert.deepEqual(loadConfig(p.cwd, { includeProject: true, userConfigFile: path.join(p.cwd, "none.json") }).config.models, DEFAULT_CONFIG.models, JSON.stringify(models));
+	}
+});

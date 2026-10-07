@@ -148,6 +148,17 @@ test("the main session's guide names the configured models pi knows, and only th
 	}
 });
 
+test("a models value that is not a table sets nothing, so the guide still names the default tiers", async () => {
+	const ext = await loadExtension({ config: { models: null } });
+	try {
+		const opts: { sections?: Record<string, string> } = {};
+		await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false, model: { provider: "p", id: "m" } });
+		assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*fable = this session's model \(p\/m\)\.$/m);
+	} finally {
+		ext.cleanup();
+	}
+});
+
 test("the main session's guide names the tiers even without a session model", async () => {
 	const { handlers } = await loaded;
 	const opts: { sections?: Record<string, string> } = {};
