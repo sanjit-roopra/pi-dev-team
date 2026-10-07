@@ -66,7 +66,7 @@ class SyncHelpers(unittest.TestCase):
             self.assertFalse((ROOT / "skills" / s).exists(), s)
         self.assertIn("pi port notes", (ROOT / "skills" / "setup" / "SKILL.md").read_text())
         notes = sorted((ROOT / "overrides" / "notes").glob("*.md"))
-        self.assertTrue(notes)
+        self.assertTrue(notes, "overrides/notes/*.md is empty; the note loop would check nothing")
         for note in notes:
             with self.subTest(note=note.name):
                 self.assertIn(note.stem, info["notes"])

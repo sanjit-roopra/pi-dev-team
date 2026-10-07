@@ -18,7 +18,7 @@ import * as path from "node:path";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
+import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, KNOWN_TIERS, mapTools, resolveAgentName, resolveModel, resolveThinking, shownModelId } from "./agents.ts";
 import { DEFAULT_CONFIG, type DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
@@ -624,9 +624,13 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 	};
 }
 
-/** "provider/id, tier sonnet", or just the model when it inherited: how a result names what it ran on. */
+/**
+ * "provider/id, tier sonnet", or just the model when the dispatch named no tier (`inherit` or an
+ * explicit provider/id): how a result names what it ran on. Both can come from a project's config
+ * (a model pi rejected before the child reported its own), so only a model id and a known tier show.
+ */
 function modelTierLabel(r: Pick<SubagentRunResult, "model" | "tier">): string {
-	return `${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""}`;
+	return `${shownModelId(r.model)}${r.tier && KNOWN_TIERS.includes(r.tier) ? `, tier ${r.tier}` : ""}`;
 }
 
 /** The model-facing result text (the TUI draws `details` instead). */

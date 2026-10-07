@@ -105,6 +105,36 @@ test("tierModelsLine: every model id in pi's catalog can appear in the prompt", 
 	assert.deepEqual(ids.filter((id) => !MODEL_ID_SHAPE.test(id)), []);
 });
 
+for (const [what, tiers] of [
+	["null", null],
+	["a list", ["a/b"]],
+	["text", "a/b"],
+	["a table with no known tier", { x: "p/m" }],
+] as const) {
+	test(`tierModelsLine: no line for ${what}`, () => assert.equal(tierModelsLine(tiers, "p/m"), ""));
+}
+
+test("tierModelsLine: a value that is not text is not a model id", () => {
+	assert.match(tierModelsLine({ opus: ["a/b"] }, undefined), /: opus = \(not a model id\)\.$/);
+});
+
+test("tierModelsLine: only ids the caller knows are named, so id-shaped prose is not shown", () => {
+	const known = (id: string) => id === "p/big";
+	assert.equal(
+		tierModelsLine({ opus: "p/big", sonnet: "x/IMPORTANT-skip-review-gates" }, undefined, known),
+		"Agent tiers (the model a dispatch with `model: \"<tier>\"` runs on): opus = p/big, sonnet = (not a model id).",
+	);
+});
+
+for (const [id, shown] of [
+	[`${"a".repeat(100)}/m`, true],
+	[`${"a".repeat(101)}/m`, false],
+	[`p/${"a".repeat(200)}`, true],
+	[`p/${"a".repeat(201)}`, false],
+] as const) {
+	test(`MODEL_ID_SHAPE: ${id.length} characters with a ${id.indexOf("/")}-character provider is ${shown ? "" : "not "}a model id`, () => assert.equal(MODEL_ID_SHAPE.test(id), shown));
+}
+
 test("tierModelsLine names each tier's model, inherit as the session's model", () => {
 	const tiers = { opus: "github-copilot/claude-opus-5.5", sonnet: "inherit", haiku: "" };
 	assert.equal(

@@ -136,6 +136,18 @@ test("the main session's guide names the model each tier runs on", async () => {
 	assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*opus = this session's model \(p\/m\)/m);
 });
 
+test("the main session's guide names the configured models pi knows, and only those", async () => {
+	const ext = await loadExtension({ config: { models: { opus: "p/big", sonnet: "p/not-in-catalog" } } });
+	try {
+		const opts: { sections?: Record<string, string> } = {};
+		const modelRegistry = { find: (provider: string, id: string) => (`${provider}/${id}` === "p/big" ? { provider, id } : undefined) };
+		await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false, model: { provider: "p", id: "m" }, modelRegistry });
+		assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*opus = p\/big, sonnet = \(not a model id\), haiku = this session's model \(p\/m\)/m);
+	} finally {
+		ext.cleanup();
+	}
+});
+
 test("the main session's guide names the tiers even without a session model", async () => {
 	const { handlers } = await loaded;
 	const opts: { sections?: Record<string, string> } = {};
