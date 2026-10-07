@@ -88,6 +88,14 @@ export function dispatchLabel(params: { tasks?: unknown[]; description?: unknown
 }
 
 /**
+ * The slot limit from `maxParallelAgents`: a whole number of at least 1. A project's own config can
+ * set it, so anything else (text, NaN, 0.5) falls back to the default instead of blocking every slot.
+ */
+export function parallelLimit(value: unknown): number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : DEFAULT_CONFIG.maxParallelAgents;
+}
+
+/**
  * Wait for a slot while `update` reports the place in line, then report the start: the place is
  * cleared, and the agent's clock and its first model step start. Returns the slot's release.
  */
@@ -234,7 +242,7 @@ export const SubagentParams = Type.Object({
 
 export function registerSubagentTool(deps: SubagentDeps): void {
 	const { pi, packageRoot, getConfig, hooks } = deps;
-	const semaphore = new Semaphore(getConfig().maxParallelAgents);
+	const semaphore = new Semaphore(parallelLimit(getConfig().maxParallelAgents));
 
 	async function runOne(
 		input: DispatchArgs,
@@ -481,7 +489,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			return out as never;
 		},
 		async execute(_id, params, signal, onUpdate, ctx) {
-			semaphore.limit = Math.max(1, getConfig().maxParallelAgents);
+			semaphore.limit = parallelLimit(getConfig().maxParallelAgents);
 			if (deps.depth >= getConfig().maxSubagentDepth) {
 				throw new Error(`Subagent nesting limit reached (maxSubagentDepth=${getConfig().maxSubagentDepth}).`);
 			}

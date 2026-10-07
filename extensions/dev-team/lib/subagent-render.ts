@@ -224,7 +224,8 @@ function runningLines(v: SubagentTaskView, theme: Theme, liveNow: number | undef
 	const hasExecutingCall = calls.some((c) => c.runningSince !== undefined);
 	const thinkingFor = hasExecutingCall ? undefined : formatElapsedSince(v.stepStartedAt, liveNow);
 	if (thinkingFor) lines.push(theme.fg("dim", `${SUBAGENT_INDENT}thinking… ${thinkingFor}`));
-	return lines.length ? lines : [theme.fg("muted", "(starting…)")];
+	// Nothing to show after its first turn means it is ending (its last message had no calls).
+	return lines.length || v.turns ? lines : [theme.fg("muted", "(starting…)")];
 }
 
 /** One subagent: status, name, turn and its latest call, then the agents it runs in turn. */

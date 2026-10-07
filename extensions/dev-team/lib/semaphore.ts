@@ -21,14 +21,14 @@ function notifyPosition(onPosition: ((position: number) => void) | undefined, po
 export class Semaphore {
 	private active = 0;
 	private readonly queue: Waiter[] = [];
-	/** Changeable at any time; the next acquire or release applies it. */
+	/** Changeable at any time; the next acquire or release applies it. Below 1 or not a number counts as 1. */
 	limit: number;
 	constructor(limit: number) {
 		this.limit = limit;
 	}
 	async acquire(onPosition?: (position: number) => void): Promise<() => void> {
 		this.grantFreeSlots();
-		if (this.active < this.limit) this.active++;
+		if (this.active < this.cap()) this.active++;
 		else
 			await new Promise<void>((grantSlot) => {
 				this.queue.push({ grantSlot, onPosition });
@@ -42,13 +42,17 @@ export class Semaphore {
 			this.grantFreeSlots();
 		};
 	}
+	/** The limit in effect: a slot always exists, so a bad limit can slow the line but never stop it. */
+	private cap(): number {
+		return Number.isFinite(this.limit) && this.limit >= 1 ? this.limit : 1;
+	}
 	/**
 	 * Give each free slot to the next waiter. The slot is counted when it is granted, not when the
 	 * waiter resumes, so an acquire in between cannot take it too. Then the rest of the line moves up.
 	 */
 	private grantFreeSlots(): void {
 		let granted = false;
-		while (this.active < this.limit && this.queue.length) {
+		while (this.active < this.cap() && this.queue.length) {
 			this.active++;
 			this.queue.shift()?.grantSlot();
 			granted = true;

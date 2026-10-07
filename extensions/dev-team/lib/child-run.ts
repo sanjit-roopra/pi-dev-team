@@ -20,12 +20,13 @@ import {
 } from "./subagent-types.ts";
 import type { PiMessageLike } from "./transcript.ts";
 
-const RECENT_CALLS_KEPT = 8;
+const TRACKED_CALLS_KEPT = 8;
 /**
- * Calls tracked at most, executing or of one message: a child that never ends its calls cannot grow
- * the maps further. Past it the oldest start is dropped, and that call is no longer marked.
+ * Entries kept at most in the maps keyed by call id, so a child that never ends its calls cannot grow
+ * them further: past it callStartTimes drops its oldest start (that call is no longer marked), and the
+ * calls of one message past it are not followed.
  */
-const RUNNING_CALLS_KEPT = 64;
+const CALLS_BY_ID_KEPT = 64;
 /** Levels of live subagents kept below a child; deeper ones are dropped. Above maxSubagentDepth. */
 const MAX_LIVE_SUBAGENT_LEVELS = 4;
 const SUBAGENT_STATUSES: ReadonlySet<string> = new Set(["running", "ok", "failed"]);
@@ -68,12 +69,12 @@ export interface ChildRunState {
 	total: Usage;
 	nested: NestedUsage[];
 	turns: number;
-	/** The latest tool calls with their ids, newest last: what the progress view shows (markedCalls). */
+	/** The last TRACKED_CALLS_KEPT tool calls with their ids, in call order; markedCalls turns them into the view's recentCalls. */
 	trackedCalls: TrackedCall[];
-	/** The calls of the latest assistant message by id, so one that starts out of view comes back. */
-	latestCalls: Map<string, ToolCallSummary>;
-	/** Calls of the latest assistant message that have not ended yet, by id. */
-	pendingCalls: Set<string>;
+	/** The calls of the latest assistant message by id, in message order, so one that starts out of view comes back in its place. */
+	latestMessageCalls: Map<string, ToolCallSummary>;
+	/** Calls of the latest assistant message that have not ended yet (not run yet, or executing), by id. */
+	unendedCalls: Set<string>;
 	/** When each executing call started (epoch ms), by tool call id. */
 	callStartTimes: Map<string, number>;
 	/** Live views of the agents each open dev-team call of the child is running, by tool call id. */
@@ -91,8 +92,8 @@ export function newChildRunState(model?: string): ChildRunState {
 		nested: [],
 		turns: 0,
 		trackedCalls: [],
-		latestCalls: new Map(),
-		pendingCalls: new Set(),
+		latestMessageCalls: new Map(),
+		unendedCalls: new Set(),
 		callStartTimes: new Map(),
 		openDevTeamCalls: new Map(),
 		model,
@@ -158,16 +159,28 @@ function applyDispatchProgress(state: ChildRunState, ev: ChildEvent): ProgressPa
 }
 
 /**
- * The latest RECENT_CALLS_KEPT calls; when there are more, finished calls go first, so a call that
+ * The last TRACKED_CALLS_KEPT calls; when there are more, finished calls go first, so a call that
  * still executes stays in view.
  */
 function trimTrackedCalls(state: ChildRunState, calls: TrackedCall[]): TrackedCall[] {
-	const kept = calls.slice(-(RECENT_CALLS_KEPT + RUNNING_CALLS_KEPT));
-	while (kept.length > RECENT_CALLS_KEPT) {
+	const kept = calls.slice(-(TRACKED_CALLS_KEPT + CALLS_BY_ID_KEPT));
+	while (kept.length > TRACKED_CALLS_KEPT) {
 		const finishedIndex = kept.findIndex((t) => t.id === undefined || !state.callStartTimes.has(t.id));
 		kept.splice(finishedIndex === -1 ? 0 : finishedIndex, 1);
 	}
 	return kept;
+}
+
+/**
+ * Put a call of the latest message back into the tracked calls at its place in the message: before
+ * the first tracked call of that message that comes after it.
+ */
+function withCallInPlace(state: ChildRunState, id: string, call: ToolCallSummary): TrackedCall[] {
+	const order = [...state.latestMessageCalls.keys()];
+	const place = order.indexOf(id);
+	const before = state.trackedCalls.findIndex((t) => t.id !== undefined && order.indexOf(t.id) > place);
+	const at = before === -1 ? state.trackedCalls.length : before;
+	return [...state.trackedCalls.slice(0, at), { id, call }, ...state.trackedCalls.slice(at)];
 }
 
 /** The calls the progress view shows: each a copy, an executing one marked with when it started. */
@@ -182,21 +195,21 @@ function markedCalls(state: ChildRunState): ToolCallSummary[] {
  * A tool of the child starts or ends executing. A start is kept by id, also before its message
  * arrives; a call the view dropped comes back when it starts. The model's step starts again (at
  * `now`) only once every call of the latest message has ended, so no thinking clock shows while a
- * call waits for its turn.
+ * call of the message has not run yet.
  */
 function applyToolExecution(state: ChildRunState, ev: ChildEvent, now: number): ProgressPatch | undefined {
 	const id = ev.toolCallId;
 	if (typeof id !== "string") return undefined;
 	if (ev.type === "tool_execution_start") {
 		state.callStartTimes.set(id, now);
-		if (state.callStartTimes.size > RUNNING_CALLS_KEPT) state.callStartTimes.delete(state.callStartTimes.keys().next().value as string);
-		const outOfView = state.latestCalls.get(id);
-		if (outOfView && !state.trackedCalls.some((t) => t.id === id)) state.trackedCalls = trimTrackedCalls(state, [...state.trackedCalls, { id, call: outOfView }]);
+		if (state.callStartTimes.size > CALLS_BY_ID_KEPT) state.callStartTimes.delete(state.callStartTimes.keys().next().value as string);
+		const outOfView = state.latestMessageCalls.get(id);
+		if (outOfView && !state.trackedCalls.some((t) => t.id === id)) state.trackedCalls = trimTrackedCalls(state, withCallInPlace(state, id, outOfView));
 		return { recentCalls: markedCalls(state) };
 	}
-	const wasPending = state.pendingCalls.delete(id);
+	const wasPending = state.unendedCalls.delete(id);
 	if (!state.callStartTimes.delete(id) && !wasPending) return undefined;
-	const stepStarts = !state.pendingCalls.size && !state.callStartTimes.size;
+	const stepStarts = !state.unendedCalls.size && !state.callStartTimes.size;
 	return { recentCalls: markedCalls(state), ...(stepStarts ? { stepStartedAt: now } : {}) };
 }
 
@@ -215,9 +228,9 @@ function applyAssistantMessage(state: ChildRunState, m: NonNullable<ChildEvent["
 	const calls = (Array.isArray(m.content) ? (m.content as { type: string; id?: unknown; name?: unknown; arguments?: unknown }[]) : [])
 		.filter((c): c is { type: string; id?: unknown; name: string; arguments?: unknown } => c.type === "toolCall" && typeof c.name === "string" && !!c.name)
 		.map((c): TrackedCall => ({ id: typeof c.id === "string" ? c.id : undefined, call: summarizeToolCall(c.name, c.arguments) }));
-	const withIds = calls.filter((t): t is TrackedCall & { id: string } => t.id !== undefined).slice(0, RUNNING_CALLS_KEPT);
-	state.latestCalls = new Map(withIds.map((t) => [t.id, t.call]));
-	state.pendingCalls = new Set(withIds.map((t) => t.id));
+	const withIds = calls.filter((t): t is TrackedCall & { id: string } => t.id !== undefined).slice(0, CALLS_BY_ID_KEPT);
+	state.latestMessageCalls = new Map(withIds.map((t) => [t.id, t.call]));
+	state.unendedCalls = new Set(withIds.map((t) => t.id));
 	state.trackedCalls = trimTrackedCalls(state, [...state.trackedCalls, ...calls]);
 	return {
 		turns: state.turns,

@@ -357,12 +357,12 @@ test("live: before its first turn, thinking counts from the agent's start", () =
 	assert.doesNotMatch(out, /starting/);
 });
 
-test("live: after the final message no thinking clock runs while the agent ends", () => {
+test("live: after the final message the row shows only the agent and its usage while it ends", () => {
 	const progress = new DispatchProgress([{ agent: "a", task: "t" }], [], undefined, { now: T0 });
 	progress.update(0, { slotGrantedAt: T0, stepStartedAt: T0 });
 	const final = applyChildEvent(newChildRunState(), { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }] } } as never, T0 + 5);
 	progress.update(0, final ?? {});
-	assert.doesNotMatch(drawLive(result(progress.snapshot())), /thinking/);
+	assert.deepEqual(drawLive(result(progress.snapshot())).split("\n"), ["⏳ a · 1m 05s", "1 turn ↑0 ↓0"], "no thinking clock, no (starting…)");
 });
 
 test("live: stored times that are not real times show no clock", () => {
@@ -413,9 +413,13 @@ test("live header: the spend so far, only once there is some", () => {
 });
 
 test("live header: the spend so far shows Copilot AI credits and what running agents dispatched", () => {
-	const nested = [{ agent: "deep", model: "github-copilot/claude-haiku-4.5", usage: { ...usage, cost: 0.02 } }];
+	const NESTED_COST = 0.02;
+	const nested = [{ agent: "deep", model: "github-copilot/claude-haiku-4.5", usage: { ...usage, cost: NESTED_COST } }];
 	const views = [runningView({ agent: "orchestrator", model: "github-copilot/claude-opus-5.5", usage, nested }), runningView({ agent: "b" })];
-	assert.match(header({ results: views }), /· \$0\.0212 \(2\.12 AI credits\) so far$/);
+	const spent = usage.cost + NESTED_COST;
+	// GitHub bills 1 AI credit for each $0.01 of Copilot token cost.
+	const expected = `· $${spent.toFixed(4)} (${(spent * 100).toFixed(2)} AI credits) so far`;
+	assert.ok(header({ results: views }).endsWith(expected), header({ results: views }));
 });
 
 test("live header: all of it in order", () => {
