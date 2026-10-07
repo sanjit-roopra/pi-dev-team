@@ -33,7 +33,7 @@ This is the pi port of `/setup`. Follow the steps below with these substitutions
 - **Step 9b (autocompact):** run `scripts/set_autocompact_env.py` exactly as written. It only merges `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` into `.claude/settings.json` (the one write to that file this port allows); the pi extension reads that value and compacts the session at that percentage of the model's window. pi's own threshold is `contextWindow - reserveTokens`, so the "values above ~83% have no effect" caveat becomes "values above pi's own threshold have no effect".
 - **Step 10 (/pr):** write the generated project command to `.claude/skills/pr/SKILL.md` as written. The pi port resolves project skills in `.pi/skills/` and `.claude/skills/` before the package's own.
 - **Step 11:** also add `.pi/dev-team.local.json` to the `.gitignore` block.
-- **Step 12 (report):** list `AGENTS.md` and `.pi/dev-team.json` instead of `.claude/CLAUDE.md`, and list `.claude/settings.json` only for the Step 9b `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` key. Add a line recommending `/dev-team models` to map the opus/sonnet/haiku agent tiers to this user's models.
+- **Step 12 (report):** list `AGENTS.md` and `.pi/dev-team.json` instead of `.claude/CLAUDE.md`, and list `.claude/settings.json` only for the Step 9b `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` key. Add a line recommending `/dev-team doctor`, then `/dev-team models`, to map the opus/sonnet/haiku agent tiers to this user's models. By default every tier runs on the session model, so with an expensive session model the haiku and sonnet agents cost as much as it does. Doctor names the preset that fits the session's provider and the models it maps, or the models the session cannot use.
 <!-- pi-port-notes -->
 
 

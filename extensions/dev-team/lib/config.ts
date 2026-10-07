@@ -119,6 +119,47 @@ export const MODEL_PRESETS: Record<string, Record<string, string>> = {
 	inherit: { opus: "inherit", sonnet: "inherit", haiku: "inherit", fable: "inherit" },
 };
 
+/** The tiers agents use by default, cheapest first. No agent uses `fable` unless the user maps it. */
+const AGENT_TIERS = ["haiku", "sonnet", "opus"] as const;
+
+/** Whether pi can run a provider/model-id: in its catalog and with auth configured. */
+export type ModelStatus = "ok" | "no-auth" | "unknown";
+
+/** How `/dev-team doctor` shows a ModelStatus. */
+export const MODEL_STATUS_TEXT: Record<ModelStatus, string> = { ok: "ok", "no-auth": "NO AUTH (/login)", unknown: "UNKNOWN MODEL" };
+
+function listWords(words: string[]): string {
+	return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")} and ${words.at(-1)}`;
+}
+
+/**
+ * The `/dev-team doctor` tip that names the preset for the session's provider, or undefined when it
+ * would change nothing. It covers only tiers that inherit the session model and whose preset model is a
+ * different one; a tier the user mapped explicitly is theirs. When the preset names a model pi cannot
+ * run, the tip lists those models instead of recommending the preset.
+ */
+export function modelPresetTip(
+	models: Record<string, string>,
+	sessionModel: string | undefined,
+	status: (model: string) => ModelStatus,
+): string[] | undefined {
+	if (!sessionModel) return undefined;
+	const presetName = sessionModel.split("/")[0];
+	const preset = presetName === "inherit" ? undefined : MODEL_PRESETS[presetName];
+	if (!preset) return undefined;
+	const tiers = AGENT_TIERS.filter((t) => (models[t] ?? "inherit") === "inherit" && preset[t] && preset[t] !== sessionModel);
+	if (!tiers.length) return undefined;
+	const head = `tip: ${listWords([...tiers])} agents run on ${sessionModel}, your session model.`;
+	const missing = tiers.flatMap((t) => {
+		const s = status(preset[t]);
+		return s === "ok" ? [] : [`${preset[t]} ${MODEL_STATUS_TEXT[s]}`];
+	});
+	if (missing.length) {
+		return [head, `     preset "${presetName}" needs models this session cannot use: ${missing.join(", ")}. Pick a model per tier with /dev-team models → custom.`];
+	}
+	return [head, `     /dev-team models → preset: ${presetName} maps ${tiers.map((t) => `${t} to ${preset[t]}`).join(", ")}.`];
+}
+
 export function userConfigPath(): string {
 	return path.join(getAgentDir(), "dev-team.json");
 }

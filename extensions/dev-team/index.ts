@@ -19,6 +19,9 @@ import {
 	isHookEnabled,
 	loadConfig,
 	MODEL_PRESETS,
+	MODEL_STATUS_TEXT,
+	type ModelStatus,
+	modelPresetTip,
 	projectConfigPath,
 	updateConfigFile,
 	userConfigPath,
@@ -274,20 +277,23 @@ export default function devTeam(pi: ExtensionAPI) {
 			["claude shim", which("claude")],
 			["semgrep (optional)", which("semgrep")],
 		] as const;
-		const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
-		const tierLines = Object.entries(config.models).map(([tier, m]) => {
-			if (m === "inherit") return `  ${tier}: inherit (${model})`;
+		const sessionModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+		const modelStatus = (m: string): ModelStatus => {
 			const [prov, ...rest] = m.split("/");
 			const found = ctx.modelRegistry.find(prov, rest.join("/"));
-			const auth = found ? ctx.modelRegistry.hasConfiguredAuth(found) : false;
-			return `  ${tier}: ${m} ${found ? (auth ? "ok" : "NO AUTH (/login)") : "UNKNOWN MODEL"}`;
-		});
+			if (!found) return "unknown";
+			return ctx.modelRegistry.hasConfiguredAuth(found) ? "ok" : "no-auth";
+		};
+		const tierLines = Object.entries(config.models).map(([tier, m]) =>
+			m === "inherit" ? `  ${tier}: inherit (${sessionModel ?? "none"})` : `  ${tier}: ${m} ${MODEL_STATUS_TEXT[modelStatus(m)]}`,
+		);
 		report(
 			ctx,
 			[
 				...rows.map(([name, p]) => `${p ? "ok     " : "MISSING"} ${name}${p ? `  ${p}` : ""}`),
 				`model tiers:`,
 				...tierLines,
+				...(modelPresetTip(config.models, sessionModel, modelStatus) ?? []),
 			].join("\n"),
 		);
 	}

@@ -4,7 +4,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { MAX_REPO_FILE_BYTES } from "../../extensions/dev-team/lib/safe-read.ts";
-import { DEFAULT_CONFIG, filterProjectConfig, isProjectEnvSettingAllowed, loadConfig } from "../../extensions/dev-team/lib/config.ts";
+import {
+	DEFAULT_CONFIG,
+	filterProjectConfig,
+	isProjectEnvSettingAllowed,
+	loadConfig,
+	MODEL_PRESETS,
+	type ModelStatus,
+	modelPresetTip,
+} from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
 function fixture(t: TestContext) {
@@ -168,4 +176,41 @@ test("loadConfig: a project may turn the autocompact ceiling off or keep it at 5
 		assert.deepEqual(ignoredProjectSettings, ["autocompactMaxTokens"]);
 	}
 	assert.equal(load(1, 10_000).config.autocompactMaxTokens, 10_000, "the user's own low value still applies");
+});
+
+const COPILOT_OPUS = "github-copilot/claude-opus-5.5";
+const allInherit = DEFAULT_CONFIG.models;
+const allOk = (): ModelStatus => "ok";
+
+test("modelPresetTip: a Copilot session with every tier on inherit names the github-copilot preset", () => {
+	assert.deepEqual(modelPresetTip(allInherit, COPILOT_OPUS, allOk), [
+		`tip: haiku and sonnet agents run on ${COPILOT_OPUS}, your session model.`,
+		"     /dev-team models → preset: github-copilot maps haiku to github-copilot/claude-haiku-4.5, sonnet to github-copilot/claude-sonnet-5.5.",
+	]);
+});
+
+test("modelPresetTip: an Anthropic session names the anthropic preset, for every tier when the session model is in none", () => {
+	const tip = modelPresetTip(allInherit, "anthropic/claude-sonnet-4-5", allOk);
+	assert.equal(tip?.[0], "tip: haiku, sonnet and opus agents run on anthropic/claude-sonnet-4-5, your session model.");
+	assert.match(tip?.[1] ?? "", /preset: anthropic maps haiku to anthropic\/claude-haiku-4-5, sonnet to anthropic\/claude-sonnet-5-5, opus to anthropic\/claude-opus-5-5\.$/);
+});
+
+test("modelPresetTip: no tip once the preset is applied, or when only explicitly mapped tiers differ", () => {
+	assert.equal(modelPresetTip(MODEL_PRESETS["github-copilot"], COPILOT_OPUS, allOk), undefined);
+	const custom = { ...allInherit, haiku: "github-copilot/gpt-5-mini", sonnet: "github-copilot/gpt-5.5" };
+	assert.equal(modelPresetTip(custom, COPILOT_OPUS, allOk), undefined, "the user mapped haiku and sonnet; opus already matches");
+});
+
+test("modelPresetTip: no tip for a provider without a preset, or without a session model", () => {
+	assert.equal(modelPresetTip(allInherit, "openai/gpt-5.5", allOk), undefined);
+	assert.equal(modelPresetTip(allInherit, "inherit/x", allOk), undefined);
+	assert.equal(modelPresetTip(allInherit, undefined, allOk), undefined);
+});
+
+test("modelPresetTip: names the preset models pi cannot run instead of recommending the preset", () => {
+	const status = (m: string): ModelStatus => (m.endsWith("haiku-4.5") ? "no-auth" : m.endsWith("sonnet-5.5") ? "unknown" : "ok");
+	assert.deepEqual(modelPresetTip(allInherit, COPILOT_OPUS, status), [
+		`tip: haiku and sonnet agents run on ${COPILOT_OPUS}, your session model.`,
+		'     preset "github-copilot" needs models this session cannot use: github-copilot/claude-haiku-4.5 NO AUTH (/login), github-copilot/claude-sonnet-5.5 UNKNOWN MODEL. Pick a model per tier with /dev-team models → custom.',
+	]);
 });
