@@ -7,8 +7,8 @@ import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "
 import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
-import { acquireSlot, Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
-import { DispatchProgress, dispatchLabel, formatResultText, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
+import { acquireSlot, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -180,8 +180,8 @@ test("child events: a failing turn records the stop reason and error", () => {
 test("child events: only the latest 8 tool calls are kept, nameless ones skipped", () => {
 	const state = newChildRunState();
 	const calls = Array.from({ length: 10 }, (_, i) => ({ type: "toolCall", name: `t${i}` }));
-	applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }] } as never });
-	assert.deepEqual(state.recentCalls.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"]);
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }, { type: "toolCall", name: 7 }] } as never });
+	assert.deepEqual(patch?.recentCalls?.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "nameless and non-string names skipped");
 });
 
 test("child events: a model without a provider is shown as is", () => {
@@ -450,86 +450,140 @@ test("result text and view carry the saved file for single and parallel results"
 
 const callMessage = (calls: { id?: string; command: string }[]) =>
 	({ type: "message_end", message: { role: "assistant", content: calls.map((c) => ({ type: "toolCall", id: c.id, name: "bash", arguments: { command: c.command } })) } }) as never;
-const execution = (type: "tool_execution_start" | "tool_execution_end", toolCallId: string, toolName = "bash") => ({ type, toolCallId, toolName });
+const executionEvent = (type: "tool_execution_start" | "tool_execution_end", toolCallId: unknown, toolName = "bash") => ({ type, toolCallId, toolName }) as never;
 const npmTest = { name: "bash", args: { command: "npm test" } };
+const commandsOf = (patch: ReturnType<typeof applyChildEvent>) => patch?.recentCalls?.map((c) => c.args?.command);
+const markedOf = (patch: ReturnType<typeof applyChildEvent>) => patch?.recentCalls?.filter((c) => c.runningSince !== undefined).map((c) => c.args?.command);
 
-test("child events: a message with calls starts the model's step", () => {
-	const state = newChildRunState();
-	assert.equal(applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }]), 1_000)?.stepStartedAt, 1_000);
+/** The patch exists and leaves the model's step as it is (no stepStartedAt key). */
+function assertStepUnchanged(patch: ReturnType<typeof applyChildEvent>, message: string) {
+	assert.ok(patch, `${message}: a patch`);
+	assert.ok(!("stepStartedAt" in patch), `${message}: no step change`);
+}
+
+test("child events: an assistant message ends the model's step, its calls run next", () => {
+	const patch = applyChildEvent(newChildRunState(), callMessage([{ id: "t1", command: "npm test" }]), 1_000);
+	assert.ok(patch && "stepStartedAt" in patch && patch.stepStartedAt === undefined);
+});
+
+test("child events: the final message (no calls) ends the model's step too", () => {
+	const patch = applyChildEvent(newChildRunState(), { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } } as never, 5);
+	assert.ok(patch && "stepStartedAt" in patch && patch.stepStartedAt === undefined);
 });
 
 test("child events: an executing call is marked with when it started", () => {
 	const state = newChildRunState();
 	applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }]), 1_000);
-	const started = applyChildEvent(state, execution("tool_execution_start", "t1"), 2_000);
+	const started = applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 2_000);
 	assert.deepEqual(started?.recentCalls, [{ ...npmTest, runningSince: 2_000 }]);
-	assert.ok(started && !("stepStartedAt" in started), "a call runs, so no model step starts");
+	assertStepUnchanged(started, "start");
 });
 
-test("child events: when the last call ends its mark goes and the model's step starts", () => {
+test("child events: when the message's last call ends, its mark goes and the model's step starts", () => {
 	const state = newChildRunState();
 	applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }]), 1_000);
-	applyChildEvent(state, execution("tool_execution_start", "t1"), 2_000);
-	const ended = applyChildEvent(state, execution("tool_execution_end", "t1"), 9_000);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 2_000);
+	const ended = applyChildEvent(state, executionEvent("tool_execution_end", "t1"), 9_000);
 	assert.deepEqual(ended?.recentCalls, [npmTest]);
 	assert.equal(ended?.stepStartedAt, 9_000);
 });
 
-test("child events: a start seen before its message still marks the call", () => {
+test("child events: between calls run one after another, the step does not start", () => {
 	const state = newChildRunState();
-	applyChildEvent(state, execution("tool_execution_start", "t1"), 2_000);
-	const patch = applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }, { id: "t2", command: "ls" }]), 2_500);
-	assert.deepEqual(patch?.recentCalls?.map((c) => c.runningSince), [2_000, undefined]);
-	assert.ok(patch && !("stepStartedAt" in patch), "a call is running");
+	applyChildEvent(state, callMessage([{ id: "t1", command: "a" }, { id: "t2", command: "b" }]), 0);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 1);
+	assertStepUnchanged(applyChildEvent(state, executionEvent("tool_execution_end", "t1"), 2), "t2 has not run yet");
+	applyChildEvent(state, executionEvent("tool_execution_start", "t2"), 3);
+	assert.equal(applyChildEvent(state, executionEvent("tool_execution_end", "t2"), 4)?.stepStartedAt, 4);
 });
 
 test("child events: parallel calls; the step starts only when the last one ends", () => {
 	const state = newChildRunState();
 	applyChildEvent(state, callMessage([{ id: "t1", command: "a" }, { id: "t2", command: "b" }]), 0);
-	applyChildEvent(state, execution("tool_execution_start", "t1"), 1);
-	applyChildEvent(state, execution("tool_execution_start", "t2"), 2);
-	const first = applyChildEvent(state, execution("tool_execution_end", "t2"), 3);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 1);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t2"), 2);
+	const first = applyChildEvent(state, executionEvent("tool_execution_end", "t2"), 3);
 	assert.deepEqual(first?.recentCalls?.map((c) => c.runningSince), [1, undefined]);
-	assert.ok(first && !("stepStartedAt" in first));
-	assert.equal(applyChildEvent(state, execution("tool_execution_end", "t1"), 4)?.stepStartedAt, 4);
+	assertStepUnchanged(first, "t1 still runs");
+	assert.equal(applyChildEvent(state, executionEvent("tool_execution_end", "t1"), 4)?.stepStartedAt, 4);
 });
 
-test("child events: the final message (no calls) ends the model's step", () => {
+test("child events: a start seen before its message still marks the call", () => {
 	const state = newChildRunState();
-	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } } as never, 5);
-	assert.ok(patch && "stepStartedAt" in patch && patch.stepStartedAt === undefined, "cleared, so no thinking clock while the child exits");
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 2_000);
+	const patch = applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }, { id: "t2", command: "ls" }]), 2_500);
+	assert.deepEqual(patch?.recentCalls?.map((c) => c.runningSince), [2_000, undefined]);
 });
 
-test("child events: past the kept calls, finished calls go first and an executing one stays", () => {
+test("child events: a call of a long message that starts out of view comes back, marked", () => {
 	const state = newChildRunState();
-	applyChildEvent(state, callMessage([{ id: "long", command: "npm test" }]), 0);
-	applyChildEvent(state, execution("tool_execution_start", "long"), 1);
 	const many = Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, command: `cmd ${i}` }));
-	const patch = applyChildEvent(state, callMessage(many), 2);
-	assert.equal(patch?.recentCalls?.length, 8);
-	assert.deepEqual(patch?.recentCalls?.[0], { ...npmTest, runningSince: 1 }, "the executing call is kept");
-	assert.equal(patch?.recentCalls?.at(-1)?.args?.command, "cmd 9");
-	const ninth = applyChildEvent(state, execution("tool_execution_start", "c8"), 3);
-	assert.deepEqual(ninth?.recentCalls?.filter((c) => c.runningSince !== undefined).map((c) => c.args?.command), ["npm test", "cmd 8"], "ids stay with their calls");
+	assert.deepEqual(commandsOf(applyChildEvent(state, callMessage(many), 0)), many.slice(2).map((c) => c.command), "the latest 8 shown");
+	const first = applyChildEvent(state, executionEvent("tool_execution_start", "c0"), 1);
+	assert.deepEqual(markedOf(first), ["cmd 0"], "c0 is back, executing");
+	assert.equal(first?.recentCalls?.length, 8, "a finished call made room");
+	for (const c of many.slice(2)) applyChildEvent(state, executionEvent("tool_execution_end", c.id), 2);
+	assert.deepEqual(markedOf(applyChildEvent(state, executionEvent("tool_execution_start", "c1"), 3)), ["cmd 0", "cmd 1"]);
 });
 
-test("child events: a call without an id is never marked; unknown or missing ids change nothing", () => {
+test("child events: past the kept calls, finished calls go first and executing ones stay", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, executionEvent("tool_execution_start", "long"), 1);
+	const many = [{ id: "long", command: "npm test" }, ...Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, command: `cmd ${i}` }))];
+	assert.deepEqual(commandsOf(applyChildEvent(state, callMessage(many), 2)), ["npm test", "cmd 2", "cmd 3", "cmd 4", "cmd 5", "cmd 6", "cmd 7", "cmd 8"]);
+});
+
+test("child events: with every kept call executing, the oldest one makes room", () => {
+	const state = newChildRunState();
+	const many = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, command: `cmd ${i}` }));
+	for (const c of many) applyChildEvent(state, executionEvent("tool_execution_start", c.id), 1);
+	assert.deepEqual(commandsOf(applyChildEvent(state, callMessage(many), 2)), many.slice(1).map((c) => c.command));
+});
+
+test("child events: a call without an id is never marked", () => {
 	const state = newChildRunState();
 	applyChildEvent(state, callMessage([{ command: "ls" }]), 0);
-	assert.equal(applyChildEvent(state, execution("tool_execution_end", "never-started"), 1), undefined);
-	assert.equal(applyChildEvent(state, { type: "tool_execution_start", toolCallId: 5 as never, toolName: "bash" }, 1), undefined);
-	assert.deepEqual(applyChildEvent(state, execution("tool_execution_start", "other"), 2)?.recentCalls, [{ name: "bash", args: { command: "ls" } }]);
+	assert.deepEqual(applyChildEvent(state, executionEvent("tool_execution_start", "other"), 1)?.recentCalls, [{ name: "bash", args: { command: "ls" } }]);
+});
+
+test("child events: the end of a call that never started changes nothing", () => {
+	assert.equal(applyChildEvent(newChildRunState(), executionEvent("tool_execution_end", "never-started"), 1), undefined);
+});
+
+test("child events: a non-string tool call id changes nothing", () => {
+	assert.equal(applyChildEvent(newChildRunState(), executionEvent("tool_execution_start", 5), 1), undefined);
+});
+
+test("child events: past 64 executing calls the oldest start is dropped; its end is then ignored", () => {
+	const state = newChildRunState();
+	for (let i = 0; i <= 64; i++) applyChildEvent(state, executionEvent("tool_execution_start", `c${i}`), i);
+	assert.equal(applyChildEvent(state, executionEvent("tool_execution_end", "c0"), 100), undefined, "c0 was dropped");
+	assert.ok(applyChildEvent(state, executionEvent("tool_execution_end", "c64"), 100), "the latest is still tracked");
 });
 
 test("child events: the end of a dev-team call clears both its running mark and its live agents", () => {
 	const state = newChildRunState();
-	applyChildEvent(state, execution("tool_execution_start", "c1", "dev_team_subagent"), 1);
+	applyChildEvent(state, executionEvent("tool_execution_start", "c1", "dev_team_subagent"), 1);
 	applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running")]));
 	const patch = applyChildEvent(state, dispatchEnd("c1"), 5);
 	assert.ok(patch, "the end yields a patch");
 	assert.ok("subagents" in patch, "with the live agents' key, so the view clears them");
 	assert.equal(patch.subagents, undefined);
 	assert.equal(patch.stepStartedAt, 5);
+});
+
+test("child events: a nested dispatch's spend reaches the live view when its result arrives", () => {
+	const state = newChildRunState();
+	const nestedView = { agent: "Explore", task: "t", status: "ok", ok: true, turns: 1, recentCalls: [], model: "p/haiku", usage: { input: 40, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0.04, turns: 1 } };
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "dev_team_subagent", details: { results: [nestedView] } } } as never);
+	assert.deepEqual(patch?.nested?.map((n) => [n.agent, n.usage.cost]), [["Explore", 0.04]]);
+	assert.equal(applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "bash" } } as never), undefined, "other results: no patch");
+});
+
+test("child events: a nested agent waiting for a slot keeps its place in line, a bad one is dropped", () => {
+	const state = newChildRunState();
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running", { queuePosition: 2 }), reviewer("b", "running", { queuePosition: "\u001b[2J" }), reviewer("c", "running", { queuePosition: 1.5 })]));
+	assert.deepEqual(patch?.subagents?.map((v) => v.queuePosition), [2, undefined, undefined]);
 });
 
 test("semaphore: a waiter learns its place in line when it joins", async () => {
@@ -553,8 +607,8 @@ test("semaphore: the line moves up as slots free", async () => {
 	const waitC = slots.acquire((n) => c.push(n));
 	const waitD = slots.acquire((n) => d.push(n));
 	releases[0]();
-	const releaseC = await waitC;
 	assert.deepEqual([c, d], [[1], [2, 1]], "d moves up when c gets the slot");
+	const releaseC = await waitC;
 	releases[1]();
 	(await waitD)();
 	releaseC();
@@ -566,22 +620,38 @@ test("semaphore: no place in line when a slot is free", async () => {
 	assert.deepEqual(told, []);
 });
 
+test("semaphore: a freed slot goes to the waiter, not to an acquire in the same tick", async () => {
+	const slots = new Semaphore(1);
+	const release = await slots.acquire();
+	const order: string[] = [];
+	const waiter = slots.acquire().then((r) => (order.push("waiter"), r));
+	release();
+	const sameTick = slots.acquire().then((r) => (order.push("same tick"), r));
+	(await waiter)();
+	(await sameTick)();
+	assert.deepEqual(order, ["waiter", "same tick"], "the limit of 1 holds");
+});
+
 test("semaphore: a throwing position callback never keeps the next waiter waiting", async () => {
 	const slots = new Semaphore(1);
 	const release = await slots.acquire();
-	const next = slots.acquire(() => {
+	let told = 0;
+	const order: string[] = [];
+	const throwing = () => {
+		told++;
 		throw new Error("view is gone");
-	});
-	const third = slots.acquire(() => {
-		throw new Error("view is gone");
-	});
+	};
+	const next = slots.acquire(throwing).then((r) => (order.push("next"), r));
+	const third = slots.acquire(throwing).then((r) => (order.push("third"), r));
+	assert.equal(told, 2, "both were told their place when they joined");
 	release();
-	const releaseNext = await next;
-	releaseNext();
+	assert.equal(told, 3, "third was told it moved up, and that threw too");
+	(await next)();
 	(await third)();
+	assert.deepEqual(order, ["next", "third"]);
 });
 
-test("acquireSlot: reports the place in line, then clears it and stamps the start", async () => {
+test("acquireSlot: reports the place in line, then clears it and starts the clock and the first step", async () => {
 	const slots = new Semaphore(1);
 	const first = await slots.acquire();
 	const patches: unknown[] = [];
@@ -589,22 +659,26 @@ test("acquireSlot: reports the place in line, then clears it and stamps the star
 	assert.deepEqual(patches, [{ queuePosition: 1 }]);
 	first();
 	(await waiting)();
-	assert.deepEqual(patches, [{ queuePosition: 1 }, { queuePosition: undefined, startedAt: 42 }]);
+	assert.deepEqual(patches, [{ queuePosition: 1 }, { queuePosition: undefined, slotGrantedAt: 42, stepStartedAt: 42 }]);
 });
 
-test("dispatchLabel: a parallel call's description, on one line and capped", () => {
-	const tasks = [{}, {}];
-	assert.equal(dispatchLabel({ tasks, description: "  code-review round 2/4 " }), "code-review round 2/4");
-	assert.equal(dispatchLabel({ tasks, description: "x\n✓ fake line" }), "x ✓ fake line");
-	assert.equal(dispatchLabel({ tasks, description: "   " }), undefined);
-	assert.equal(dispatchLabel({ tasks }), undefined);
-	assert.equal(dispatchLabel({ description: "single dispatch" }), undefined, "a single dispatch shows its agent instead");
-	assert.equal(dispatchLabel({ tasks, description: "y".repeat(200) })?.length, 80);
-});
+const tasks = [{}, {}];
+for (const [title, params, expected] of [
+	["trimmed", { tasks, description: "  code-review round 2/4 " }, "code-review round 2/4"],
+	["one line, words kept apart", { tasks, description: "x\n✓ fake line" }, "x ✓ fake line"],
+	["blank is none", { tasks, description: "   " }, undefined],
+	["missing is none", { tasks }, undefined],
+	["a non-string is none", { tasks, description: 5 }, undefined],
+	["a single dispatch shows its agent instead", { description: "single dispatch" }, undefined],
+	["capped by code points, trimmed after the cut", { tasks, description: `${"y".repeat(LABEL_CHARS - 1)} 😀😀` }, "y".repeat(LABEL_CHARS - 1)],
+	["an emoji at the cap stays whole", { tasks, description: `${"y".repeat(LABEL_CHARS - 1)}😀😀` }, `${"y".repeat(LABEL_CHARS - 1)}😀`],
+] as const) {
+	test(`dispatchLabel: ${title}`, () => assert.equal(dispatchLabel(params as never), expected));
+}
 
 test("progress: the snapshot carries the dispatch start and its label", () => {
 	const progress = new DispatchProgress([{ agent: "a", task: "t" }], [], undefined, { label: "code-review round 2/4", now: 42 });
-	assert.equal(progress.snapshot().startedAt, 42);
+	assert.equal(progress.snapshot().dispatchStartedAt, 42);
 	assert.equal(progress.snapshot().label, "code-review round 2/4");
 	assert.equal(new DispatchProgress([{ agent: "a", task: "t" }], [], undefined).snapshot().label, undefined);
 });
@@ -617,10 +691,11 @@ test("progress: a waiting agent's status line says so, in the view's words", () 
 
 test("progress: finish clears the live fields, executing marks included", () => {
 	const { progress } = recordedProgress();
-	progress.update(0, { queuePosition: 2, stepStartedAt: 5, recentCalls: [{ ...npmTest, runningSince: 3 }] });
+	progress.update(0, { queuePosition: 2, stepStartedAt: 5, slotGrantedAt: 3, recentCalls: [{ ...npmTest, runningSince: 3 }] });
 	progress.finish(0, runResult({}));
 	const view = progress.snapshot().results[0];
 	assert.equal(view.queuePosition, undefined);
 	assert.equal(view.stepStartedAt, undefined);
 	assert.deepEqual(view.recentCalls, [npmTest]);
+	assert.equal(view.slotGrantedAt, 3, "when it started stays");
 });

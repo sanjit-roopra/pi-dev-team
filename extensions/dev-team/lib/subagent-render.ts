@@ -17,6 +17,7 @@ import {
 	dispatchAgent,
 	type LiveSubagentView,
 	dispatchTask,
+	isRunningInSlot,
 	isWaitingForSlot,
 	type SubagentDetails,
 	type SubagentTaskView,
@@ -40,6 +41,9 @@ const MINUTE_S = 60;
 const HOUR_MIN = 60;
 const RUNNING_ICON = "⏳";
 const WAITING_ICON = "◌";
+const OK_ICON = "✓";
+const FAILED_ICON = "✗";
+const PARTLY_FAILED_ICON = "◐";
 const CALL_MARK = "→ ";
 const RUNNING_CALL_MARK = "▶ ";
 
@@ -73,7 +77,7 @@ export function formatElapsed(ms: number): string {
  * The elapsed time since `since`, when the view is live (`liveNow` is set only while the dispatch
  * runs) and `since` is a real time. A stored or final result never shows a clock that keeps counting.
  */
-function elapsedSince(since: unknown, liveNow: number | undefined): string | undefined {
+function formatElapsedSince(since: unknown, liveNow: number | undefined): string | undefined {
 	if (liveNow === undefined || typeof since !== "number" || !Number.isFinite(since)) return undefined;
 	return formatElapsed(liveNow - since);
 }
@@ -103,7 +107,7 @@ export function formatUsage(u: UsageTotals | undefined, { model, durationMs, aiC
 	if (u.cacheWrite) parts.push(`W${formatTokens(u.cacheWrite)}`);
 	if (u.cost) parts.push(formatCost(u.cost, aiCredits));
 	else if (aiCredits) parts.push(`(${formatAiCredits(aiCredits)})`);
-	if (durationMs !== undefined) parts.push(`${(durationMs / 1000).toFixed(1)}s`);
+	if (durationMs !== undefined) parts.push(`${(durationMs / SECOND_MS).toFixed(1)}s`);
 	if (model) parts.push(sanitizeTerminalText(model));
 	return parts.join(" ");
 }
@@ -138,16 +142,16 @@ function spendOf(views: SubagentTaskView[]): { totals: UsageTotals; aiCredits: n
 function statusIcon(v: Pick<SubagentTaskView, "status" | "queuePosition">, theme: Theme): string {
 	if (isWaitingForSlot(v)) return theme.fg("muted", WAITING_ICON);
 	if (v.status === "running") return theme.fg("warning", RUNNING_ICON);
-	return v.status === "ok" ? theme.fg("success", "✓") : theme.fg("error", "✗");
+	return v.status === "ok" ? theme.fg("success", OK_ICON) : theme.fg("error", FAILED_ICON);
 }
 
-/** `liveNow` is set only while the dispatch runs (a partial result); see elapsedSince. */
+/** `liveNow` is set only while the dispatch runs (a partial result); see formatElapsedSince. */
 function headerLine(v: SubagentTaskView, theme: Theme, liveNow?: number): string {
 	let line = `${statusIcon(v, theme)} ${theme.fg("toolTitle", theme.bold(sanitizeTerminalText(v.agent)))}`;
 	if (v.source === "project") line += theme.fg("muted", " (project)");
 	if (v.tier && v.tier !== "inherit") line += theme.fg("muted", ` [${sanitizeTerminalText(v.tier)}]`);
 	if (v.status === "failed" && v.stopReason && v.stopReason !== "stop") line += ` ${theme.fg("error", `[${sanitizeTerminalText(v.stopReason)}]`)}`;
-	const ranFor = v.status === "running" && !isWaitingForSlot(v) ? elapsedSince(v.startedAt, liveNow) : undefined;
+	const ranFor = isRunningInSlot(v) ? formatElapsedSince(v.slotGrantedAt, liveNow) : undefined;
 	if (ranFor) line += theme.fg("dim", ` · ${ranFor}`);
 	return line;
 }
@@ -178,9 +182,14 @@ export function formatToolCall(call: ToolCallSummary): string {
 	return text.length > TOOL_CALL_CHARS ? `${text.slice(0, TOOL_CALL_CHARS - 1)}…` : text;
 }
 
-/** A view's recent calls as display lines; stored sessions may still carry plain tool names. */
+/** A view's recent calls; stored sessions may still carry plain tool names instead. */
+function callsOf(v: Pick<SubagentTaskView, "recentCalls" | "tools">): ToolCallSummary[] {
+	return v.recentCalls ?? (v.tools ?? []).map((name) => ({ name }));
+}
+
+/** A view's recent calls as display lines. */
 export function recentCallLines(v: Pick<SubagentTaskView, "recentCalls" | "tools">): string[] {
-	return v.recentCalls ? v.recentCalls.map(formatToolCall) : (v.tools ?? []);
+	return callsOf(v).map(formatToolCall);
 }
 
 /** One call row: `→ call`, or `▶ call running 38s` while it executes. */
@@ -194,12 +203,12 @@ function toolLines(tools: string[], theme: Theme): string {
 }
 
 /**
- * The calls a running agent shows: the latest COLLAPSED_TOOLS, with every executing call kept in
- * (it replaces the oldest finished one), in their order.
+ * The calls a running agent shows, in their order: the latest COLLAPSED_TOOLS, where executing calls
+ * replace the oldest finished ones (up to COLLAPSED_TOOLS executing calls, the latest).
  */
 function shownCalls(calls: ToolCallSummary[]): ToolCallSummary[] {
-	const executing = calls.flatMap((c, i) => (c.runningSince === undefined ? [] : [i])).slice(-COLLAPSED_TOOLS);
-	const keep = new Set(executing);
+	const executingIndexes = calls.flatMap((c, i) => (c.runningSince === undefined ? [] : [i])).slice(-COLLAPSED_TOOLS);
+	const keep = new Set(executingIndexes);
 	for (let i = calls.length - 1; i >= 0 && keep.size < COLLAPSED_TOOLS; i--) keep.add(i);
 	return calls.filter((_, i) => keep.has(i));
 }
@@ -210,11 +219,10 @@ function shownCalls(calls: ToolCallSummary[]): ToolCallSummary[] {
  */
 function runningLines(v: SubagentTaskView, theme: Theme, liveNow: number | undefined): string[] {
 	if (isWaitingForSlot(v)) return [theme.fg("muted", waitingText(v.queuePosition))];
-	// Stored sessions may still carry plain tool names.
-	const calls = v.recentCalls ?? (v.tools ?? []).map((name) => ({ name }));
-	const lines = shownCalls(calls).map((call) => callRow(formatToolCall(call), theme, elapsedSince(call.runningSince, liveNow)));
-	const executing = calls.some((c) => c.runningSince !== undefined);
-	const thinkingFor = executing ? undefined : elapsedSince(v.stepStartedAt ?? v.startedAt, liveNow);
+	const calls = callsOf(v);
+	const lines = shownCalls(calls).map((call) => callRow(formatToolCall(call), theme, formatElapsedSince(call.runningSince, liveNow)));
+	const hasExecutingCall = calls.some((c) => c.runningSince !== undefined);
+	const thinkingFor = hasExecutingCall ? undefined : formatElapsedSince(v.stepStartedAt, liveNow);
 	if (thinkingFor) lines.push(theme.fg("dim", `${SUBAGENT_INDENT}thinking… ${thinkingFor}`));
 	return lines.length ? lines : [theme.fg("muted", "(starting…)")];
 }
@@ -222,6 +230,7 @@ function runningLines(v: SubagentTaskView, theme: Theme, liveNow: number | undef
 /** One subagent: status, name, turn and its latest call, then the agents it runs in turn. */
 function subagentLines(v: LiveSubagentView, indent: string, theme: Theme): string[] {
 	let line = `${indent}${statusIcon(v, theme)} ${theme.fg("accent", sanitizeTerminalText(v.agent))}`;
+	if (isWaitingForSlot(v)) return [`${line}${theme.fg("dim", ` ${waitingText(v.queuePosition)}`)}`];
 	if (v.status === "running") {
 		const latest = recentCallLines(v).at(-1);
 		line += theme.fg("dim", ` turn ${v.turns}`);
@@ -298,24 +307,23 @@ export function renderSubagentCall(args: DispatchArgs & { tasks?: DispatchArgs[]
 }
 
 /** The parallel header: done, running and waiting counts, the clock and the spend so far, or the outcome. */
-function summaryLine(details: SubagentDetails, theme: Theme, liveNow: number | undefined): string {
+function summaryLine(details: SubagentDetails, spend: ReturnType<typeof spendOf>, theme: Theme, liveNow: number | undefined): string {
 	const views = details.results;
 	const title = theme.fg("toolTitle", theme.bold("parallel "));
-	const running = views.filter((v) => v.status === "running");
-	if (!running.length) {
+	const unfinished = views.filter((v) => v.status === "running");
+	if (!unfinished.length) {
 		const failedCount = views.filter((v) => v.status === "failed").length;
-		const icon = failedCount ? theme.fg("warning", "◐") : theme.fg("success", "✓");
+		const icon = failedCount ? theme.fg("warning", PARTLY_FAILED_ICON) : theme.fg("success", OK_ICON);
 		return `${icon} ${title}${theme.fg("accent", `${views.length - failedCount}/${views.length} succeeded`)}`;
 	}
-	const waiting = running.filter(isWaitingForSlot).length;
-	let counts = `${views.length - running.length}/${views.length} done, ${running.length - waiting} running`;
+	const waiting = unfinished.filter(isWaitingForSlot).length;
+	let counts = `${views.length - unfinished.length}/${views.length} done, ${unfinished.length - waiting} running`;
 	if (waiting) counts += `, ${waiting} waiting`;
-	const label = details.label ? `${toSingleLine(details.label)} · ` : "";
+	const label = typeof details.label === "string" && details.label ? `${toSingleLine(details.label)} · ` : "";
 	let line = `${theme.fg("warning", RUNNING_ICON)} ${title}${theme.fg("accent", `${label}${counts}`)}`;
-	const elapsed = elapsedSince(details.startedAt, liveNow);
+	const elapsed = formatElapsedSince(details.dispatchStartedAt, liveNow);
 	if (elapsed) line += theme.fg("dim", ` · ${elapsed}`);
-	const { totals, aiCredits } = spendOf(views);
-	if (totals.cost) line += theme.fg("dim", ` · ${formatCost(totals.cost, aiCredits)} so far`);
+	if (spend.totals.cost) line += theme.fg("dim", ` · ${formatCost(spend.totals.cost, spend.aiCredits)} so far`);
 	return line;
 }
 
@@ -356,9 +364,9 @@ export function renderSubagentResult(
 		return new Text(text, 0, 0);
 	}
 
-	const header = summaryLine(details, theme, liveNow);
-	const { totals, aiCredits } = spendOf(views);
-	const totalUsageText = anyRunning ? "" : formatUsage(totals, { aiCredits });
+	const spend = spendOf(views);
+	const header = summaryLine(details, spend, theme, liveNow);
+	const totalUsageText = anyRunning ? "" : formatUsage(spend.totals, { aiCredits: spend.aiCredits });
 
 	if (expanded && !anyRunning) {
 		const c = new Container();

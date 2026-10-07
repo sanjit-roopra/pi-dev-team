@@ -1,16 +1,16 @@
 /**
- * The slot limiter behind maxParallelAgents. Waiters are told their place in line (1 = next) when
- * they join and each time the line moves, so the progress view can show it.
+ * The slot limiter behind maxParallelAgents. A waiter is told its place in line (1 = next) when it
+ * joins and each time the line moves.
  */
 
 /** A waiter for a slot. */
 interface Waiter {
-	start: () => void;
+	grantSlot: () => void;
 	onPosition?: (position: number) => void;
 }
 
 /** A position callback must not stop the line: a throw there is dropped. */
-function tell(onPosition: ((position: number) => void) | undefined, position: number): void {
+function notifyPosition(onPosition: ((position: number) => void) | undefined, position: number): void {
 	try {
 		onPosition?.(position);
 	} catch {
@@ -21,37 +21,38 @@ function tell(onPosition: ((position: number) => void) | undefined, position: nu
 export class Semaphore {
 	private active = 0;
 	private readonly queue: Waiter[] = [];
+	/** Changeable at any time; the next acquire or release applies it. */
 	limit: number;
 	constructor(limit: number) {
 		this.limit = limit;
 	}
 	async acquire(onPosition?: (position: number) => void): Promise<() => void> {
-		if (this.active >= this.limit) {
-			await new Promise<void>((start) => {
-				this.queue.push({ start, onPosition });
-				tell(onPosition, this.queue.length);
+		this.grantFreeSlots();
+		if (this.active < this.limit) this.active++;
+		else
+			await new Promise<void>((grantSlot) => {
+				this.queue.push({ grantSlot, onPosition });
+				notifyPosition(onPosition, this.queue.length);
 			});
-		}
-		this.active++;
+		let released = false;
 		return () => {
+			if (released) return;
+			released = true;
 			this.active--;
-			// Hand the slot on first, so nothing a waiter is told can keep the next one waiting.
-			this.queue.shift()?.start();
-			this.queue.forEach((w, i) => tell(w.onPosition, i + 1));
+			this.grantFreeSlots();
 		};
 	}
-}
-
-/**
- * Wait for a slot while `update` reports the place in line, then report the start: the place is
- * cleared and `startedAt` set. Returns the slot's release.
- */
-export async function acquireSlot(
-	semaphore: Semaphore,
-	update: (patch: { queuePosition?: number; startedAt?: number }) => void,
-	now: () => number = Date.now,
-): Promise<() => void> {
-	const release = await semaphore.acquire((position) => update({ queuePosition: position }));
-	update({ queuePosition: undefined, startedAt: now() });
-	return release;
+	/**
+	 * Give each free slot to the next waiter. The slot is counted when it is granted, not when the
+	 * waiter resumes, so an acquire in between cannot take it too. Then the rest of the line moves up.
+	 */
+	private grantFreeSlots(): void {
+		let granted = false;
+		while (this.active < this.limit && this.queue.length) {
+			this.active++;
+			this.queue.shift()?.grantSlot();
+			granted = true;
+		}
+		if (granted) this.queue.forEach((w, i) => notifyPosition(w.onPosition, i + 1));
+	}
 }

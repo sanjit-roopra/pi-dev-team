@@ -22,7 +22,7 @@ import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools
 import { DEFAULT_CONFIG, type DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
-import { acquireSlot, Semaphore } from "./semaphore.ts";
+import { Semaphore } from "./semaphore.ts";
 import { recentCallLines, renderSubagentCall, renderSubagentResult, waitingText } from "./subagent-render.ts";
 import {
 	type AgentSource,
@@ -72,19 +72,35 @@ export interface SubagentRunResult {
 }
 
 const TASK_PREVIEW_CHARS = 400;
-const LABEL_CHARS = 80;
-
-/**
- * The label a parallel call's progress header shows: its own `description`, on one line, capped.
- * A single dispatch shows its agent and task instead, so it has none.
- */
-export function dispatchLabel(params: { tasks?: unknown[]; description?: string }): string | undefined {
-	if (!params.tasks?.length || !params.description) return undefined;
-	return toSpacedSingleLine(params.description).trim().slice(0, LABEL_CHARS) || undefined;
-}
+/** Characters (code points) of a parallel call's label the progress header shows. */
+export const LABEL_CHARS = 80;
 const STATUS_LINE_TOOLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
+
+/**
+ * The label a parallel call's progress header shows: its own `description`, on one line, capped by
+ * code points. A single dispatch shows its agent and task instead, so it has none.
+ */
+export function dispatchLabel(params: { tasks?: unknown[]; description?: unknown }): string | undefined {
+	if (!params.tasks?.length || typeof params.description !== "string") return undefined;
+	return Array.from(toSpacedSingleLine(params.description).trim()).slice(0, LABEL_CHARS).join("").trim() || undefined;
+}
+
+/**
+ * Wait for a slot while `update` reports the place in line, then report the start: the place is
+ * cleared, and the agent's clock and its first model step start. Returns the slot's release.
+ */
+export async function acquireSlot(
+	semaphore: Semaphore,
+	update: (patch: Pick<ProgressPatch, "queuePosition" | "slotGrantedAt" | "stepStartedAt">) => void,
+	readClock: () => number = Date.now,
+): Promise<() => void> {
+	const release = await semaphore.acquire((position) => update({ queuePosition: position }));
+	const now = readClock();
+	update({ queuePosition: undefined, slotGrantedAt: now, stepStartedAt: now });
+	return release;
+}
 
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
@@ -333,7 +349,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 						return;
 					}
 					const patch = applyChildEvent(run, ev);
-					if (patch) update(patch);
+					try {
+						if (patch) update(patch);
+					} catch {
+						/* a view that fails to update must not stop the run */
+					}
 				};
 				proc.stdout.on("data", (d) => {
 					buf += d.toString();
@@ -499,7 +519,7 @@ export class DispatchProgress {
 	private readonly views: SubagentTaskView[];
 	private readonly skippedProjectAgents: string[];
 	private readonly onUpdate: DispatchUpdate | undefined;
-	private readonly startedAt: number;
+	private readonly dispatchStartedAt: number;
 	private readonly label: string | undefined;
 	constructor(
 		list: DispatchArgs[],
@@ -509,7 +529,7 @@ export class DispatchProgress {
 	) {
 		this.skippedProjectAgents = skippedProjectAgents;
 		this.onUpdate = onUpdate;
-		this.startedAt = now;
+		this.dispatchStartedAt = now;
 		this.label = label;
 		this.views = list.map((t) => ({
 			agent: dispatchAgent(t) || "(none)",
@@ -524,7 +544,7 @@ export class DispatchProgress {
 	snapshot(): SubagentDetails {
 		return {
 			results: this.views.map((v) => ({ ...v, recentCalls: [...v.recentCalls] })),
-			startedAt: this.startedAt,
+			dispatchStartedAt: this.dispatchStartedAt,
 			...(this.label ? { label: this.label } : {}),
 			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
@@ -534,10 +554,7 @@ export class DispatchProgress {
 		this.emit();
 	}
 	finish(taskIndex: number, result: SubagentRunResult): void {
-		const view = this.views[taskIndex];
-		// A call that never reported its end (the child was stopped) is not shown as executing.
-		const recentCalls = view.recentCalls.map(({ runningSince: _, ...call }) => call);
-		this.views[taskIndex] = { ...view, recentCalls, ...viewFromResult(result) };
+		this.views[taskIndex] = { ...withoutLiveFields(this.views[taskIndex]), ...viewFromResult(result) };
 		this.emit();
 	}
 	private emit(): void {
@@ -551,6 +568,21 @@ function statusLine(v: SubagentTaskView): string {
 	const calls = recentCallLines(v);
 	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
 	return `${v.agent}: turn ${v.turns}${tools}`;
+}
+
+/**
+ * A finished view keeps nothing that only a running agent has: its live subagents, its place in
+ * line, its model step, and the executing marks of calls that never reported their end (the child
+ * was stopped). Its slotGrantedAt stays, as when it started.
+ */
+export function withoutLiveFields(view: SubagentTaskView): SubagentTaskView {
+	return {
+		...view,
+		recentCalls: view.recentCalls.map(({ runningSince: _, ...call }) => call),
+		subagents: undefined,
+		queuePosition: undefined,
+		stepStartedAt: undefined,
+	};
 }
 
 export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
@@ -569,9 +601,6 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		error: r.error,
 		output: r.output ? outputForView(r.output, r.fullOutputFile) : undefined,
 		worktree: r.worktree,
-		subagents: undefined,
-		queuePosition: undefined,
-		stepStartedAt: undefined,
 	};
 }
 

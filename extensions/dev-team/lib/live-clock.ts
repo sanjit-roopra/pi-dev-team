@@ -17,10 +17,10 @@ interface ClockState {
 }
 
 /**
- * Start the clock while `running`, stop it otherwise. A new `details` object is a new update (each
+ * Start the clock while `isRunning`, stop it otherwise. A new `details` object is a new update (each
  * progress snapshot is a fresh object; a redraw passes the same one). A redraw that throws stops it.
  */
-export function syncClock(context: Pick<ToolRenderContext, "invalidate" | "state"> | undefined, details: unknown, running: boolean, now: number): void {
+export function syncClock(context: Pick<ToolRenderContext, "invalidate" | "state"> | undefined, details: unknown, isRunning: boolean, now: number): void {
 	const state = context?.state as ClockState | undefined;
 	if (!context || !state || typeof state !== "object") return;
 	if (state.devTeamLastDetails !== details) {
@@ -31,7 +31,7 @@ export function syncClock(context: Pick<ToolRenderContext, "invalidate" | "state
 		clearInterval(state.devTeamClock);
 		state.devTeamClock = undefined;
 	};
-	if (!running) return stop();
+	if (!isRunning) return stop();
 	if (state.devTeamClock) return;
 	state.devTeamClock = setInterval(() => {
 		if (Date.now() - (state.devTeamLastUpdateAt ?? 0) > CLOCK_IDLE_LIMIT_MS) return stop();

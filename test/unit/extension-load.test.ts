@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, test } from "node:test";
+import { CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
@@ -284,7 +285,10 @@ test("dev_team_subagent's registered renderer gets pi's render context, so a run
 	const theme = { fg: (_c: string, text: string) => text, bold: (text: string) => text };
 	const partial = { content: [], details: { results: [{ agent: "a", task: "t", status: "running", ok: false, turns: 0, recentCalls: [] }] } };
 	tools.dev_team_subagent.renderResult?.(partial, { expanded: false, isPartial: true }, theme, context);
-	t.mock.timers.tick(2_000);
+	t.mock.timers.tick(2 * CLOCK_TICK_MS);
 	assert.equal(redraws, 2);
-	tools.dev_team_subagent.renderResult?.({ ...partial, details: { results: [] } }, { expanded: false, isPartial: false }, theme, context);
+	const final = { content: [], details: { results: [{ ...partial.details.results[0], status: "ok", ok: true }] } };
+	tools.dev_team_subagent.renderResult?.(final, { expanded: false, isPartial: false }, theme, context);
+	t.mock.timers.tick(3 * CLOCK_TICK_MS);
+	assert.equal(redraws, 2, "the final result stops it");
 });
