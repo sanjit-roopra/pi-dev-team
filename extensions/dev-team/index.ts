@@ -21,6 +21,7 @@ import {
 	MODEL_PRESETS,
 	type ModelStatus,
 	presetAdvice,
+	projectFilesSettingModels,
 	projectConfigPath,
 	updateConfigFile,
 	userConfigPath,
@@ -297,7 +298,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				...rows.map(([name, p]) => `${p ? "ok     " : "MISSING"} ${name}${p ? `  ${p}` : ""}`),
 				`model tiers:`,
 				...tierLines,
-				...(advice && sessionModel ? presetTipLines(advice, sessionModel) : []),
+				...(advice && sessionModel ? presetTipLines(advice, sessionModel, projectFilesSettingModels(ctx.cwd, projectConfigOpts(ctx))) : []),
 			].join("\n"),
 		);
 	}
@@ -318,12 +319,14 @@ export default function devTeam(pi: ExtensionAPI) {
 		let models: Record<string, string>;
 		const preset = presetFromMenuLabel(mode);
 		if (preset) {
-			models = MODEL_PRESETS[preset];
+			models = { ...MODEL_PRESETS[preset] };
 		} else {
 			const available = ctx.modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`).sort();
 			models = { ...config.models };
 			for (const tier of Object.keys(DEFAULT_CONFIG.models)) {
-				const pick = await ctx.ui.select(`Model for tier "${tier}" (current: ${models[tier]})`, ["inherit", ...available]);
+				// The current model comes first, so taking the first entry keeps it.
+				const current = models[tier] || "inherit";
+				const pick = await ctx.ui.select(`Model for tier "${tier}" (current: ${current})`, [current, ...["inherit", ...available].filter((m) => m !== current)]);
 				if (pick) models[tier] = pick;
 			}
 		}

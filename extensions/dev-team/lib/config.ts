@@ -147,7 +147,7 @@ export interface PresetAdvice {
 }
 
 /** A tier left to inherit the session model: unset, empty or "inherit", as resolveModel reads it. */
-const inherits = (model: unknown) => !model || model === "inherit";
+export const inherits = (model: unknown) => !model || model === "inherit";
 
 /** The preset whose name is this provider id; the `inherit` reset option is not a provider's preset. */
 function presetForProvider(provider: string): Record<string, string> | undefined {
@@ -170,8 +170,8 @@ export function presetAdvice(
 	if (!preset) return undefined;
 	const tiersOnSessionModel = DEFAULT_USED_TIERS.filter((t) => inherits(tierModels[t]) && preset[t] && preset[t] !== sessionModel);
 	if (!tiersOnSessionModel.length) return undefined;
-	const mappedElsewhere = Object.keys(preset).some((t) => !inherits(tierModels[t]) && tierModels[t] !== preset[t]);
-	const action = mappedElsewhere ? "custom" : "preset";
+	const hasTierMappedElsewhere = Object.keys(preset).some((t) => !inherits(tierModels[t]) && tierModels[t] !== preset[t]);
+	const action = hasTierMappedElsewhere ? "custom" : "preset";
 	const changes =
 		action === "preset"
 			? Object.entries(preset)
@@ -304,6 +304,15 @@ export function loadConfig(
 		ignoredProjectSettings.push(...ignored);
 	}
 	return { config, sources, ignoredProjectSettings };
+}
+
+/**
+ * The project's config files (trusted projects only) that set `models`. They win over the user file,
+ * so a tier change saved for the user would not apply in this project.
+ */
+export function projectFilesSettingModels(cwd: string, opts: { includeProject: boolean }): string[] {
+	if (!opts.includeProject) return [];
+	return [projectConfigPath(cwd), projectConfigPath(cwd, true)].filter((file) => readJson(file)?.models !== undefined);
 }
 
 /** Read-modify-write one config file (used by /dev-team models). */

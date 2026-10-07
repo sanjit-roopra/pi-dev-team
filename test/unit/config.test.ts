@@ -12,6 +12,7 @@ import {
 	MODEL_PRESETS,
 	type ModelStatus,
 	presetAdvice,
+	projectFilesSettingModels,
 } from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
@@ -192,7 +193,7 @@ test("presetAdvice: a Copilot session on its preset's opus, every tier inheritin
 		preset: "github-copilot",
 		tiersOnSessionModel: ["haiku", "sonnet"],
 		action: "preset",
-		changes: changesOf(COPILOT, ["opus", "sonnet", "haiku", "fable"]),
+		changes: changesOf(COPILOT, Object.keys(COPILOT)),
 		unusable: [],
 	});
 });
@@ -221,9 +222,25 @@ test("presetAdvice: with a tier mapped to another model, custom steps for the in
 	});
 });
 
-test("presetAdvice: a tier already on its preset model does not count as mapped elsewhere", () => {
+for (const tier of ["opus", "sonnet", "haiku", "fable"]) {
+	test(`presetAdvice: ${tier} mapped to another model makes it custom steps`, () => {
+		const models = { ...allInherit(), [tier]: "github-copilot/elsewhere" };
+		assert.equal(presetAdvice(models, COPILOT.opus, allOk)?.action, "custom");
+	});
+}
+
+test("presetAdvice: a tier already on its preset model does not count as mapped elsewhere, and the preset leaves it out of what it sets", () => {
 	const models = { ...allInherit(), haiku: COPILOT.haiku };
-	assert.equal(presetAdvice(models, COPILOT.opus, allOk)?.action, "preset");
+	const advice = presetAdvice(models, COPILOT.opus, statusOf({ [COPILOT.haiku]: "no-auth" }));
+	assert.equal(advice?.action, "preset");
+	assert.deepEqual(advice?.changes, changesOf(COPILOT, ["opus", "sonnet", "fable"]));
+	assert.deepEqual(advice?.unusable, [], "a model the preset does not write is not checked");
+});
+
+test("presetAdvice: a tier set to the session model itself counts as the user's choice", () => {
+	const advice = presetAdvice({ ...allInherit(), haiku: COPILOT.opus }, COPILOT.opus, allOk);
+	assert.deepEqual(advice?.tiersOnSessionModel, ["sonnet"], "only inheriting tiers are named");
+	assert.equal(advice?.action, "custom");
 });
 
 test("presetAdvice: an empty tier inherits, as resolveModel reads it", () => {
@@ -268,4 +285,14 @@ test("presetAdvice: custom steps check only the models they set", () => {
 	const status = statusOf({ [COPILOT.fable]: "no-auth", [COPILOT.sonnet]: "unknown" });
 	const models = { ...allInherit(), haiku: "github-copilot/gpt-5-mini" };
 	assert.deepEqual(presetAdvice(models, COPILOT.opus, status)?.unusable, [{ model: COPILOT.sonnet, status: "unknown" }]);
+});
+
+test("projectFilesSettingModels: only a trusted project's files that set models", (t) => {
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-models-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	fs.mkdirSync(path.join(cwd, ".pi"));
+	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.json"), JSON.stringify({ models: { haiku: "x/y" } }));
+	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.local.json"), JSON.stringify({ autoFormat: true }));
+	assert.deepEqual(projectFilesSettingModels(cwd, { includeProject: true }), [path.join(cwd, ".pi", "dev-team.json")]);
+	assert.deepEqual(projectFilesSettingModels(cwd, { includeProject: false }), [], "an untrusted project's config is not read");
 });
