@@ -73,6 +73,8 @@ If you use GitHub Copilot, every agent uses AI credits for the tokens it sends a
 
 `/dev-team doctor` shows a tip when a preset fits your provider and some agent tiers still run on your session model. The tip names the preset and the model it sets for each tier. A preset replaces every tier, so if you set a tier to another model yourself, the tip lists the tiers to set one by one with `custom` instead. In `custom`, each tier offers first what the file you save to sets for it, so you can keep it; a tier that file does not set stays unset unless you pick a model, so a project file never overrides your own mapping by accident. If you cannot use one of the models, the tip names it. If a file of this project (`.pi/dev-team.json` or `.pi/dev-team.local.json`) sets those tiers, that file wins, so the tip tells you to change them there. `/dev-team models` does not write `.pi/dev-team.local.json`; edit it by hand.
 
+If a `/build` step fails in the same way twice, the team tries that step one more time with the next stronger tier, for example `opus` instead of `sonnet`. Only if that also fails does the build stop and ask you. This retry happens only when the stronger tier uses a different model, so it does not happen with the default `inherit` setting.
+
 ## Safety and cost
 
 The agents can do the same things that you can do in a terminal.

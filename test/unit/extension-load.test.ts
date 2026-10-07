@@ -111,13 +111,59 @@ test("the main session's guide lists every dev-team skill", async () => {
 test("a dispatched agent's guide leaves the full skill index out (its own prompt lists its skills)", async () => {
 	const child = await loadExtension({ flags: { [AGENT_PROMPT_FLAG]: AGENT_PROMPT_FLAG_VALUE } });
 	try {
-		const opts: { sections?: Record<string, string> } = {};
-		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
-		assert.match(opts.sections?.dev_team ?? "", /GitHub text style/, "the rest of the guide stays");
-		assert.doesNotMatch(opts.sections?.dev_team ?? "", /^- autoship/m);
+		const guideFor = async (model: { provider: string; id: string }) => {
+			const opts: { sections?: Record<string, string> } = {};
+			await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false, model });
+			return opts.sections?.dev_team ?? "";
+		};
+		const guide = await guideFor({ provider: "p", id: "m" });
+		assert.match(guide, /GitHub text style/, "the rest of the guide stays");
+		assert.doesNotMatch(guide, /^- autoship/m);
+		assert.doesNotMatch(guide, /Agent tiers|p\/m/, "no session model in the shared agent prefix");
+		assert.equal(await guideFor({ provider: "q", id: "other" }), guide, "agents on different models share one guide");
 	} finally {
 		child.cleanup();
 	}
+});
+
+test("the main session's guide names the model each tier runs on", async () => {
+	const { handlers } = await loaded;
+	const opts: { sections?: Record<string, string> } = {};
+	await handlers.before_agent_start[0](
+		{ systemPromptOptions: opts },
+		{ cwd: os.tmpdir(), isProjectTrusted: () => false, model: { provider: "p", id: "m" } },
+	);
+	assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*opus = this session's model \(p\/m\)/m);
+});
+
+test("the main session's guide names the configured models pi knows, and only those", async () => {
+	const ext = await loadExtension({ config: { models: { opus: "p/big", sonnet: "p/not-in-catalog" } } });
+	try {
+		const opts: { sections?: Record<string, string> } = {};
+		const modelRegistry = { find: (provider: string, id: string) => (`${provider}/${id}` === "p/big" ? { provider, id } : undefined) };
+		await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false, model: { provider: "p", id: "m" }, modelRegistry });
+		assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*opus = p\/big, sonnet = \(not a model id\), haiku = this session's model \(p\/m\)/m);
+	} finally {
+		ext.cleanup();
+	}
+});
+
+test("a models value that is not a table sets nothing, so the guide still names the default tiers", async () => {
+	const ext = await loadExtension({ config: { models: null } });
+	try {
+		const opts: { sections?: Record<string, string> } = {};
+		await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false, model: { provider: "p", id: "m" } });
+		assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*fable = this session's model \(p\/m\)\.$/m);
+	} finally {
+		ext.cleanup();
+	}
+});
+
+test("the main session's guide names the tiers even without a session model", async () => {
+	const { handlers } = await loaded;
+	const opts: { sections?: Record<string, string> } = {};
+	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*opus = this session's model[,.]/m);
 });
 
 test("agent_settled compacts the main session once context reaches autocompactMaxTokens", async () => {

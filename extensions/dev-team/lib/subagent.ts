@@ -18,7 +18,7 @@ import * as path from "node:path";
 import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./agents.ts";
+import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, KNOWN_TIERS, mapTools, resolveAgentName, resolveModel, resolveThinking, shownModelId } from "./agents.ts";
 import { DEFAULT_CONFIG, type DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
@@ -520,8 +520,12 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				}),
 			);
 			const usage = sumPiUsage(results.map((r) => r.totalUsage));
+			const isKnownModel = (id: string) => {
+				const [provider, ...rest] = id.split("/");
+				return !!ctx.modelRegistry?.find(provider, rest.join("/"));
+			};
 			return {
-				content: [{ type: "text", text: formatResultText(results, skippedProjectAgents) }],
+				content: [{ type: "text", text: formatResultText(results, skippedProjectAgents, isKnownModel) }],
 				details: progress.snapshot(),
 				...(usage ? { usage } : {}),
 				...(results.length === 1 && !results[0].ok ? { isError: true } : {}),
@@ -624,18 +628,30 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 	};
 }
 
+/**
+ * "provider/id, tier sonnet", or just the model when the dispatch named no tier (`inherit` or an
+ * explicit provider/id): how a result names what it ran on. Both can come from a project's config
+ * (a model pi rejected before the child reported its own), so only a model id and a known tier show.
+ */
+function modelTierLabel(r: Pick<SubagentRunResult, "model" | "tier">, isKnownModel?: (id: string) => boolean): string {
+	return `${shownModelId(r.model, isKnownModel)}${r.tier && KNOWN_TIERS.includes(r.tier) ? `, tier ${r.tier}` : ""}`;
+}
+
 /** The model-facing result text (the TUI draws `details` instead). */
-export function formatResultText(results: SubagentRunResult[], skippedProjectAgents: string[]): string {
+/** `isKnownModel` limits the model ids named to the ones pi's catalog has, as the Agent tiers line does. */
+export function formatResultText(results: SubagentRunResult[], skippedProjectAgents: string[], isKnownModel?: (id: string) => boolean): string {
 	const skipped = skippedProjectAgents.length
 		? `\n\n[project agents not run (project not trusted): ${skippedProjectAgents.join(", ")}. You declined trust for this project in pi; package agents were used where they exist.]`
 		: "";
 	if (results.length === 1) {
 		const r = results[0];
 		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
-		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
+		// Same model note as a parallel section's head; /build's stronger-tier retry reads it.
+		const modelNote = r.model ? `\n\n[model ${modelTierLabel(r, isKnownModel)}]` : "";
+		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${modelNote}${skipped}`;
 	}
 	const section = (r: SubagentRunResult) => {
-		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;
+		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${modelTierLabel(r, isKnownModel)})` : ""}`;
 		const body = r.ok
 			? outputForModel(r.output || "(no output)", r.fullOutputFile)
 			: `Error: ${r.error}${r.output ? `\n\nLast output:\n${outputForModel(r.output, r.fullOutputFile)}` : ""}`;

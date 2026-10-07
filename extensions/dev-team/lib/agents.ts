@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { inherits } from "./config.ts";
+import { DEFAULT_CONFIG, inherits } from "./config.ts";
 import { readSmallFile } from "./safe-read.ts";
 import type { AgentSource } from "./subagent-types.ts";
 
@@ -259,6 +259,43 @@ export function resolveModel(
 	const mapped = tiers[tier];
 	if (inherits(mapped)) return { model: parentModel, tier };
 	return { model: mapped, tier };
+}
+
+/** The tiers agent frontmatter can name (the default tier table's); a config may hold nothing else that reaches the prompt. */
+export const KNOWN_TIERS: readonly string[] = Object.keys(DEFAULT_CONFIG.models);
+/**
+ * A provider/model-id that can go into the prompt: letters, digits and the characters pi's catalog
+ * ids use (`._:@~+-`, `/`), so it cannot add a line, a separator of the Agent tiers line (`,`, `=`)
+ * or any other text of its own. Every id in pi's model catalog passes (a test checks this).
+ */
+export const MODEL_ID_SHAPE = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._:@~+/-]{1,200}$/;
+
+/** What the model is shown in place of a model id that config sets but that is not one; the /build note quotes it. */
+export const NOT_A_MODEL_ID = "(not a model id)";
+
+/**
+ * A model id for model-facing text: as is when it is text of that shape and `isKnownModel` accepts it
+ * (the caller can require pi's catalog to have it, so id-shaped prose does not get through either),
+ * otherwise NOT_A_MODEL_ID. A project's config can set these values.
+ */
+export function shownModelId(id: unknown, isKnownModel: (id: string) => boolean = () => true): string {
+	return typeof id === "string" && MODEL_ID_SHAPE.test(id) && isKnownModel(id) ? id : NOT_A_MODEL_ID;
+}
+
+/**
+ * One guide line naming the model each tier resolves to in this session, so the orchestrator can tell
+ * whether a dispatch at a stronger tier would run on a different model (see the /build port note).
+ * Empty when the table names no known tier, or is not a table at all (a project file can set it).
+ */
+export function tierModelsLine(tiers: unknown, sessionModel: string | undefined, isKnownModel?: (id: string) => boolean): string {
+	if (!tiers || typeof tiers !== "object" || Array.isArray(tiers)) return "";
+	const table = tiers as Record<string, string>;
+	const sessionModelLabel = sessionModel && MODEL_ID_SHAPE.test(sessionModel) ? `this session's model (${sessionModel})` : "this session's model";
+	const tierModelPairs = KNOWN_TIERS.filter((tier) => Object.hasOwn(table, tier)).map((tier) => {
+		const model = resolveModel(tier, undefined, table, undefined).model;
+		return `${tier} = ${model === undefined ? sessionModelLabel : shownModelId(model, isKnownModel)}`;
+	});
+	return tierModelPairs.length ? `Agent tiers (the model a dispatch with \`model: "<tier>"\` runs on): ${tierModelPairs.join(", ")}.` : "";
 }
 
 export function resolveThinking(

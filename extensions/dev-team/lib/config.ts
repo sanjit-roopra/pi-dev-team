@@ -316,6 +316,8 @@ export function loadConfig(
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
 		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
+		// A tier table that is not a table (null, a list) would replace the whole table; it sets nothing.
+		if ("models" in data && !isPlainObject(data.models)) delete data.models;
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);
