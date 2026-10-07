@@ -22,7 +22,8 @@ import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools
 import { DEFAULT_CONFIG, type DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
-import { recentCallLines, renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
+import { acquireSlot, Semaphore } from "./semaphore.ts";
+import { recentCallLines, renderSubagentCall, renderSubagentResult, waitingText } from "./subagent-render.ts";
 import {
 	type AgentSource,
 	type DispatchArgs,
@@ -30,6 +31,7 @@ import {
 	dispatchAgent,
 	dispatchTask,
 	emptyPiUsage,
+	isWaitingForSlot,
 	type NestedUsage,
 	type ProgressPatch,
 	type SubagentDetails,
@@ -42,6 +44,7 @@ import {
 import { saveFullOutput } from "./session-files.ts";
 import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
+import { toSpacedSingleLine } from "./terminal-text.ts";
 import { type ChildTrust, childTrusted, childTrustOf, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {
@@ -70,39 +73,18 @@ export interface SubagentRunResult {
 
 const TASK_PREVIEW_CHARS = 400;
 const LABEL_CHARS = 80;
+
+/**
+ * The label a parallel call's progress header shows: its own `description`, on one line, capped.
+ * A single dispatch shows its agent and task instead, so it has none.
+ */
+export function dispatchLabel(params: { tasks?: unknown[]; description?: string }): string | undefined {
+	if (!params.tasks?.length || !params.description) return undefined;
+	return toSpacedSingleLine(params.description).trim().slice(0, LABEL_CHARS) || undefined;
+}
 const STATUS_LINE_TOOLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
-
-/** A waiter for a slot; told its place in line (1 = next) when it joins and each time the line moves. */
-interface Waiter {
-	start: () => void;
-	onPosition?: (position: number) => void;
-}
-
-export class Semaphore {
-	private active = 0;
-	private readonly queue: Waiter[] = [];
-	limit: number;
-	constructor(limit: number) {
-		this.limit = limit;
-	}
-	async acquire(onPosition?: (position: number) => void): Promise<() => void> {
-		if (this.active >= this.limit) {
-			await new Promise<void>((start) => {
-				this.queue.push({ start, onPosition });
-				onPosition?.(this.queue.length);
-			});
-		}
-		this.active++;
-		return () => {
-			this.active--;
-			const next = this.queue.shift();
-			this.queue.forEach((w, i) => w.onPosition?.(i + 1));
-			next?.start();
-		};
-	}
-}
 
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
@@ -211,9 +193,7 @@ export interface SubagentDeps {
 const TaskFields = {
 	agent: Type.Optional(Type.String({ description: "Agent name (Claude: subagent_type), e.g. security-review, software-engineer, Explore" })),
 	task: Type.Optional(Type.String({ description: "Full task prompt for the agent (Claude: prompt). The agent sees only this, not the conversation." })),
-	description: Type.Optional(
-		Type.String({ description: 'Short 3-5 word label. On a call with `tasks`, the progress view shows it, e.g. "code-review round 2/4"' }),
-	),
+	description: Type.Optional(Type.String({ description: "Short 3-5 word label" })),
 	model: Type.Optional(
 		Type.String({ description: "Override model: a tier (opus|sonnet|haiku|fable|inherit) or provider/model-id" }),
 	),
@@ -226,6 +206,9 @@ const TaskFields = {
 
 export const SubagentParams = Type.Object({
 	...TaskFields,
+	description: Type.Optional(
+		Type.String({ description: 'Short 3-5 word label. On a call with `tasks`, the progress view shows it, e.g. "code-review round 2/4"' }),
+	),
 	tasks: Type.Optional(
 		Type.Array(Type.Object(TaskFields), {
 			description: "Run several agents concurrently. Each item has the same fields as a single dispatch.",
@@ -291,8 +274,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (typeof pre.updatedInput.additionalContext === "string") task = `${task}\n\n${pre.updatedInput.additionalContext}`;
 		}
 
-		const release = await semaphore.acquire((position) => update({ queuePosition: position }));
-		update({ queuePosition: undefined, startedAt: Date.now() });
+		const release = await acquireSlot(semaphore, update);
 		let wt: ReturnType<typeof createWorktree> | undefined;
 		const agentId = randomUUID().replace(/-/g, "").slice(0, 16);
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
@@ -489,8 +471,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			// One trust decision per call, shared by every child.
 			const trust = childTrustOf(ctx);
 			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
-			const label = params.tasks?.length ? params.description?.trim() || undefined : undefined;
-			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined, { label });
+			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined, { label: dispatchLabel(params) });
 			const results = await Promise.all(
 				list.map(async (t, i) => {
 					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), trust);
@@ -507,7 +488,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			};
 		},
 		renderCall: (args, theme) => renderSubagentCall(args as DispatchArgs & { tasks?: DispatchArgs[] }, theme),
-		renderResult: (result, options, theme) => renderSubagentResult(result, options, theme),
+		renderResult: (result, options, theme, context) => renderSubagentResult(result, options, theme, context),
 	});
 }
 
@@ -529,7 +510,7 @@ export class DispatchProgress {
 		this.skippedProjectAgents = skippedProjectAgents;
 		this.onUpdate = onUpdate;
 		this.startedAt = now;
-		this.label = label?.slice(0, LABEL_CHARS);
+		this.label = label;
 		this.views = list.map((t) => ({
 			agent: dispatchAgent(t) || "(none)",
 			task: dispatchTask(t).slice(0, TASK_PREVIEW_CHARS),
@@ -553,7 +534,10 @@ export class DispatchProgress {
 		this.emit();
 	}
 	finish(taskIndex: number, result: SubagentRunResult): void {
-		this.views[taskIndex] = { ...this.views[taskIndex], ...viewFromResult(result) };
+		const view = this.views[taskIndex];
+		// A call that never reported its end (the child was stopped) is not shown as executing.
+		const recentCalls = view.recentCalls.map(({ runningSince: _, ...call }) => call);
+		this.views[taskIndex] = { ...view, recentCalls, ...viewFromResult(result) };
 		this.emit();
 	}
 	private emit(): void {
@@ -563,7 +547,7 @@ export class DispatchProgress {
 
 function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
-	if (v.queuePosition) return `${v.agent}: waiting for a free agent slot (#${v.queuePosition})`;
+	if (isWaitingForSlot(v)) return `${v.agent}: ${waitingText(v.queuePosition)}`;
 	const calls = recentCallLines(v);
 	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
 	return `${v.agent}: turn ${v.turns}${tools}`;
@@ -587,7 +571,7 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		worktree: r.worktree,
 		subagents: undefined,
 		queuePosition: undefined,
-		activeSince: undefined,
+		stepStartedAt: undefined,
 	};
 }
 

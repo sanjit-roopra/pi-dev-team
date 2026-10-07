@@ -6,7 +6,7 @@ import { after, test } from "node:test";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
-type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean> };
+type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean>; renderResult?: (...args: unknown[]) => unknown };
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 type CommandDef = { description?: string; getArgumentCompletions?: (prefix: string) => { value: string }[]; handler: (args: string, ctx: unknown) => Promise<void> | void };
 
@@ -274,4 +274,17 @@ test("nested, failed and non-text reads, other tools and readDedup off are never
 			ext.cleanup();
 		}
 	}
+});
+
+test("dev_team_subagent's registered renderer gets pi's render context, so a running row redraws every second", async (t) => {
+	const { tools } = await loaded;
+	t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 1_000 });
+	let redraws = 0;
+	const context = { state: {}, invalidate: () => redraws++ };
+	const theme = { fg: (_c: string, text: string) => text, bold: (text: string) => text };
+	const partial = { content: [], details: { results: [{ agent: "a", task: "t", status: "running", ok: false, turns: 0, recentCalls: [] }] } };
+	tools.dev_team_subagent.renderResult?.(partial, { expanded: false, isPartial: true }, theme, context);
+	t.mock.timers.tick(2_000);
+	assert.equal(redraws, 2);
+	tools.dev_team_subagent.renderResult?.({ ...partial, details: { results: [] } }, { expanded: false, isPartial: false }, theme, context);
 });

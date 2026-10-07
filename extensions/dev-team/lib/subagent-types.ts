@@ -27,8 +27,8 @@ export interface UsageTotals {
 export interface ToolCallSummary {
 	name: string;
 	args?: Record<string, string>;
-	/** When the call started executing (epoch ms); set only while it runs. */
-	startedAt?: number;
+	/** Set only while the call executes: when it started (epoch ms). */
+	runningSince?: number;
 }
 
 /** Spend of an agent dispatched by a child (or deeper), credited to that agent and its model. */
@@ -89,8 +89,11 @@ export interface SubagentTaskView {
 	queuePosition?: number;
 	/** When it got its slot and started (epoch ms). */
 	startedAt?: number;
-	/** When its current model step began (epoch ms): its last message or the end of its last tool call. */
-	activeSince?: number;
+	/**
+	 * When the model's current step began (epoch ms): its last message with tool calls, or the end of
+	 * its last executing call. Cleared by its final message, when no step follows.
+	 */
+	stepStartedAt?: number;
 }
 
 /**
@@ -111,7 +114,7 @@ export interface LiveSubagentView {
  * to undefined clears that field, as `subagents: undefined` does once no dev-team call is open.
  */
 export type ProgressPatch = Partial<
-	Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents" | "queuePosition" | "startedAt" | "activeSince">
+	Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents" | "queuePosition" | "startedAt" | "stepStartedAt">
 >;
 
 export interface SubagentDetails {
@@ -137,6 +140,14 @@ export interface DispatchArgs {
 	thinking?: string;
 	cwd?: string;
 	isolation?: string;
+}
+
+/**
+ * A running agent that still waits for a free agent slot. Checks the type too: stored session details
+ * are file content, so a non-number there must not reach the view.
+ */
+export function isWaitingForSlot(v: Pick<SubagentTaskView, "status" | "queuePosition">): v is SubagentTaskView & { queuePosition: number } {
+	return v.status === "running" && typeof v.queuePosition === "number" && Number.isInteger(v.queuePosition) && v.queuePosition > 0;
 }
 
 export function dispatchAgent(args: DispatchArgs): string {

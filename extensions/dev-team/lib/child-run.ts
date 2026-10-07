@@ -20,6 +20,8 @@ import {
 import type { PiMessageLike } from "./transcript.ts";
 
 const RECENT_CALLS_KEPT = 8;
+/** Executing calls tracked at most; a child that never ends its calls cannot grow the map further. */
+const RUNNING_CALLS_KEPT = 64;
 /** Levels of live subagents kept below a child; deeper ones are dropped. Above maxSubagentDepth. */
 const MAX_LIVE_SUBAGENT_LEVELS = 4;
 const SUBAGENT_STATUSES: ReadonlySet<string> = new Set(["running", "ok", "failed"]);
@@ -44,10 +46,14 @@ export interface ChildEvent {
 	/** Set on tool_execution_* events. */
 	toolCallId?: string;
 	toolName?: string;
-	/** Set on tool_execution_start. */
-	args?: unknown;
 	partialResult?: { details?: unknown };
 	message?: PiMessageLike & { errorMessage?: string; provider?: string; toolName?: string; details?: unknown };
+}
+
+/** A call the child made, with the id its tool execution events carry. */
+export interface RecentCall {
+	id?: string;
+	call: ToolCallSummary;
 }
 
 export interface ChildRunState {
@@ -58,11 +64,12 @@ export interface ChildRunState {
 	total: Usage;
 	nested: NestedUsage[];
 	turns: number;
+	/** Most recent tool calls with their ids, newest last; the source the shown recentCalls are built from. */
+	recent: RecentCall[];
+	/** The shown recent calls: `recent`, each executing call marked with runningSince. */
 	recentCalls: ToolCallSummary[];
-	/** The tool call id of each entry in recentCalls, same order. */
-	recentCallIds: (string | undefined)[];
-	/** Calls executing right now: tool call id → when they started (epoch ms). */
-	runningCalls: Map<string, number>;
+	/** When each executing call started (epoch ms), by tool call id. */
+	runningSince: Map<string, number>;
 	/** Live views of the agents each open dev-team call of the child is running, by tool call id. */
 	openDevTeamCalls: Map<string, LiveSubagentView[]>;
 	model?: string;
@@ -77,9 +84,9 @@ export function newChildRunState(model?: string): ChildRunState {
 		total: emptyPiUsage(),
 		nested: [],
 		turns: 0,
+		recent: [],
 		recentCalls: [],
-		recentCallIds: [],
-		runningCalls: new Map(),
+		runningSince: new Map(),
 		openDevTeamCalls: new Map(),
 		model,
 	};
@@ -142,29 +149,80 @@ function applyDispatchProgress(state: ChildRunState, ev: ChildEvent): ProgressPa
 	return openSubagentsPatch(state);
 }
 
-/** recentCalls with each executing call marked by its start time, the others unmarked. */
-function markRunning(state: ChildRunState): ToolCallSummary[] {
-	return state.recentCalls.map((call, i) => {
-		const since = state.recentCallIds[i] === undefined ? undefined : state.runningCalls.get(state.recentCallIds[i] as string);
-		const { startedAt: _, ...rest } = call;
-		return since === undefined ? rest : { ...rest, startedAt: since };
+/**
+ * The latest RECENT_CALLS_KEPT calls; when there are more, finished calls go first, so a call that
+ * still executes stays in view.
+ */
+function keepRecent(state: ChildRunState, entries: RecentCall[]): RecentCall[] {
+	const kept = [...entries];
+	while (kept.length > RECENT_CALLS_KEPT) {
+		const finished = kept.findIndex((e) => e.id === undefined || !state.runningSince.has(e.id));
+		kept.splice(finished === -1 ? 0 : finished, 1);
+	}
+	return kept;
+}
+
+/** Rebuild the shown calls from `recent`: each executing call marked with when it started. */
+function refreshRecentCalls(state: ChildRunState): ToolCallSummary[] {
+	state.recentCalls = state.recent.map(({ id, call }) => {
+		const since = id === undefined ? undefined : state.runningSince.get(id);
+		return since === undefined ? call : { ...call, runningSince: since };
 	});
+	return state.recentCalls;
+}
+
+/** The model's step starts again (at `now`) once no call executes. */
+function stepPatch(state: ChildRunState, now: number): ProgressPatch {
+	return state.runningSince.size ? {} : { stepStartedAt: now };
 }
 
 /**
- * A tool of the child starts or ends executing. The call itself is already in recentCalls (from the
- * assistant message) or arrives with it, so a start is kept by id until then. When the last running
- * call ends, the agent is back to the model: `activeSince` marks when that step began.
+ * A tool of the child starts or ends executing. The call itself is in `recent` (from the assistant
+ * message) or arrives with it, so a start is kept by id until then.
  */
-function applyExecution(state: ChildRunState, ev: ChildEvent, now: number): ProgressPatch | undefined {
-	if (!ev.toolCallId) return undefined;
+function applyToolExecution(state: ChildRunState, ev: ChildEvent, now: number): ProgressPatch | undefined {
+	if (typeof ev.toolCallId !== "string") return undefined;
 	if (ev.type === "tool_execution_start") {
-		state.runningCalls.set(ev.toolCallId, now);
-	} else if (!state.runningCalls.delete(ev.toolCallId)) {
+		state.runningSince.set(ev.toolCallId, now);
+		if (state.runningSince.size > RUNNING_CALLS_KEPT) state.runningSince.delete(state.runningSince.keys().next().value as string);
+	} else if (!state.runningSince.delete(ev.toolCallId)) {
 		return undefined;
 	}
-	state.recentCalls = markRunning(state);
-	return { recentCalls: state.recentCalls, ...(state.runningCalls.size ? {} : { activeSince: now }) };
+	return { recentCalls: refreshRecentCalls(state), ...stepPatch(state, now) };
+}
+
+/** The child finished an assistant turn: usage, model, stop reason and the calls it made. */
+function applyAssistantMessage(state: ChildRunState, m: NonNullable<ChildEvent["message"]>, now: number): ProgressPatch {
+	state.messages.push(m);
+	state.turns++;
+	addPiUsage(state.own, m.usage as Partial<Usage> | undefined);
+	addPiUsage(state.total, m.usage as Partial<Usage> | undefined);
+	if (m.model) state.model = m.provider ? `${m.provider}/${m.model}` : m.model;
+	if (m.stopReason) state.stopReason = m.stopReason;
+	if (m.errorMessage) state.errorMessage = m.errorMessage;
+	const calls = Array.isArray(m.content)
+		? (m.content as { type: string; id?: string; name?: string; arguments?: unknown }[]).filter((c) => c.type === "toolCall" && !!c.name)
+		: [];
+	const added = calls.map((c) => ({ id: typeof c.id === "string" ? c.id : undefined, call: summarizeToolCall(c.name as string, c.arguments) }));
+	state.recent = keepRecent(state, [...state.recent, ...added]);
+	return {
+		turns: state.turns,
+		recentCalls: refreshRecentCalls(state),
+		model: state.model,
+		usage: toUsageTotals(state.own, state.turns),
+		// A message without calls is the child's last: no model step follows it.
+		...(calls.length ? stepPatch(state, now) : { stepStartedAt: undefined }),
+	};
+}
+
+/** A tool result: its usage, credited to the agents a nested dev-team dispatch ran, else to the child. */
+function applyToolResult(state: ChildRunState, m: NonNullable<ChildEvent["message"]>): void {
+	state.messages.push(m);
+	const usage = m.usage as Partial<Usage> | undefined;
+	addPiUsage(state.total, usage);
+	const runs = m.toolName === DEV_TEAM_SUBAGENT_TOOL ? nestedUsageOf(m.details) : [];
+	if (runs.length) state.nested = [...state.nested, ...runs];
+	else addPiUsage(state.own, usage);
 }
 
 /**
@@ -174,45 +232,22 @@ function applyExecution(state: ChildRunState, ev: ChildEvent, now: number): Prog
  * the event arrived (epoch ms).
  */
 export function applyChildEvent(state: ChildRunState, ev: ChildEvent, now = Date.now()): ProgressPatch | undefined {
-	if (ev.type === "tool_execution_start") return applyExecution(state, ev, now);
-	if (ev.type === "tool_execution_update") return applyDispatchProgress(state, ev);
-	if (ev.type === "tool_execution_end") {
-		const execution = applyExecution(state, ev, now);
-		const dispatch = applyDispatchProgress(state, ev);
-		return execution || dispatch ? { ...execution, ...dispatch } : undefined;
+	switch (ev.type) {
+		case "tool_execution_start":
+			return applyToolExecution(state, ev, now);
+		case "tool_execution_update":
+			return applyDispatchProgress(state, ev);
+		case "tool_execution_end": {
+			// Both may apply to a dev-team call; their patches share no key.
+			const execution = applyToolExecution(state, ev, now);
+			const dispatch = applyDispatchProgress(state, ev);
+			return execution || dispatch ? { ...execution, ...dispatch } : undefined;
+		}
+		case "message_end":
+			if (ev.message?.role === "assistant") return applyAssistantMessage(state, ev.message, now);
+			if (ev.message?.role === "toolResult") applyToolResult(state, ev.message);
+			return undefined;
+		default:
+			return undefined;
 	}
-	const m = ev.message;
-	if (ev.type !== "message_end" || !m) return undefined;
-	if (m.role === "assistant") {
-		state.messages.push(m);
-		state.turns++;
-		addPiUsage(state.own, m.usage as Partial<Usage> | undefined);
-		addPiUsage(state.total, m.usage as Partial<Usage> | undefined);
-		if (m.model) state.model = m.provider ? `${m.provider}/${m.model}` : m.model;
-		if (m.stopReason) state.stopReason = m.stopReason;
-		if (m.errorMessage) state.errorMessage = m.errorMessage;
-		const calls = Array.isArray(m.content)
-			? (m.content as { type: string; id?: string; name?: string; arguments?: unknown }[]).filter((c) => c.type === "toolCall" && !!c.name)
-			: [];
-		state.recentCalls = [...state.recentCalls, ...calls.map((c) => summarizeToolCall(c.name as string, c.arguments))].slice(-RECENT_CALLS_KEPT);
-		state.recentCallIds = [...state.recentCallIds, ...calls.map((c) => (typeof c.id === "string" ? c.id : undefined))].slice(-RECENT_CALLS_KEPT);
-		state.recentCalls = markRunning(state);
-		return {
-			turns: state.turns,
-			recentCalls: state.recentCalls,
-			model: state.model,
-			usage: toUsageTotals(state.own, state.turns),
-			...(state.runningCalls.size ? {} : { activeSince: now }),
-		};
-	}
-	if (m.role === "toolResult") {
-		state.messages.push(m);
-		const usage = m.usage as Partial<Usage> | undefined;
-		addPiUsage(state.total, usage);
-		// A nested dev-team dispatch reports its agents' spend; credit those agents, not this child.
-		const runs = m.toolName === DEV_TEAM_SUBAGENT_TOOL ? nestedUsageOf(m.details) : [];
-		if (runs.length) state.nested = [...state.nested, ...runs];
-		else addPiUsage(state.own, usage);
-	}
-	return undefined;
 }

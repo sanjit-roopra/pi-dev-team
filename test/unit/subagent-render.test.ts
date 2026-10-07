@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { test } from "node:test";
+import { CLOCK_IDLE_LIMIT_MS, CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { formatElapsed, formatToolCall, formatUsage, recentCallLines, renderSubagentCall, renderSubagentResult } from "../../extensions/dev-team/lib/subagent-render.ts";
 import type { LiveSubagentView, SubagentDetails, SubagentTaskView, UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
@@ -236,6 +237,11 @@ test("every child-derived field is sanitized before it is drawn", () => {
 	const labelled = draw(renderSubagentResult(result({ results: [running, running], label: HOSTILE }), { expanded: false, isPartial: true }, theme));
 	assert.doesNotMatch(labelled, UNSAFE, "parallel label");
 	assert.match(labelled, /FAKE/, "parallel label: drawn, sanitized");
+	const twoLines = draw(renderSubagentResult(result({ results: [running, running], label: "x\n✓ parallel 2/2 succeeded" }), { expanded: false, isPartial: true }, theme));
+	assert.equal(twoLines.split("\n")[0].trimEnd(), "⏳ parallel x✓ parallel 2/2 succeeded · 0/2 done, 2 running", "a stored label cannot draw a line of its own");
+	const storedPlace = draw(renderSubagentResult(result({ results: [taskView({ status: "running", ok: false, queuePosition: HOSTILE as never }), running] }), { expanded: false, isPartial: true }, theme));
+	assert.doesNotMatch(storedPlace, UNSAFE, "a non-number place in line from a stored session");
+	assert.doesNotMatch(storedPlace, /waiting/, "is not taken as a place in line");
 });
 
 const toolCallCases: [string, Parameters<typeof formatToolCall>[0], string][] = [
@@ -274,6 +280,7 @@ const drawLive = (r: ReturnType<typeof result>) =>
 		.split("\n")
 		.map((l) => l.trimEnd())
 		.join("\n");
+const running = (overrides: Partial<SubagentTaskView>) => taskView({ status: "running", ok: false, ...overrides });
 
 test("formatElapsed: seconds, then minutes and seconds, then hours and minutes", () => {
 	assert.equal(formatElapsed(0), "0s");
@@ -281,98 +288,122 @@ test("formatElapsed: seconds, then minutes and seconds, then hours and minutes",
 	assert.equal(formatElapsed(65_000), "1m 05s");
 	assert.equal(formatElapsed(3_600_000 + 2 * 60_000), "1h 02m");
 	assert.equal(formatElapsed(-5), "0s", "a clock never runs backwards");
+	assert.equal(formatElapsed(Number.NaN), "0s", "a broken time shows no NaN");
 });
 
-test("live: a running agent shows how long it has run, and an executing call how long it runs", () => {
-	const view = taskView({
-		status: "running",
-		ok: false,
-		startedAt: T0,
-		recentCalls: [{ name: "read", args: { path: "src/a.ts" } }, { name: "bash", args: { command: "npm test" }, startedAt: NOW - 38_000 }],
-	});
+test("live: a running agent shows how long it has run", () => {
+	assert.match(drawLive(result({ results: [running({ startedAt: T0 })] })), /^⏳ a · 1m 05s$/m);
+});
+
+test("live: an executing call is marked with how long it has run, and the model is not thinking", () => {
+	const view = running({ startedAt: T0, recentCalls: [{ name: "read", args: { path: "src/a.ts" } }, { name: "bash", args: { command: "npm test" }, runningSince: NOW - 38_000 }] });
 	const out = drawLive(result({ results: [view] }));
-	assert.match(out, /⏳ a · 1m 05s/);
-	assert.match(out, /→ read src\/a\.ts/);
-	assert.match(out, /▶ \$ npm test running 38s/);
-	assert.doesNotMatch(out, /thinking/, "a call is executing, so the model is not");
+	assert.match(out, /^→ read src\/a\.ts$/m);
+	assert.match(out, /^▶ \$ npm test running 38s$/m);
+	assert.doesNotMatch(out, /thinking/);
 });
 
-test("live: with no call executing, the time the model has spent on its current step", () => {
-	const view = taskView({ status: "running", ok: false, startedAt: T0, activeSince: NOW - 14_000, recentCalls: [{ name: "read", args: { path: "a" } }] });
-	assert.match(drawLive(result({ results: [view] })), /→ read a\n {2}thinking… 14s/);
-	const first = taskView({ status: "running", ok: false, startedAt: NOW - 3_000, recentCalls: [] });
-	const out = drawLive(result({ results: [first] }));
-	assert.match(out, /thinking… 3s/, "before its first turn, counted from its start");
+test("live: an executing call stays in view behind newer finished calls", () => {
+	const reads = ["a", "b", "c"].map((path) => ({ name: "read", args: { path } }));
+	const view = running({ startedAt: T0, recentCalls: [{ name: "bash", args: { command: "npm test" }, runningSince: T0 }, ...reads] });
+	const calls = drawLive(result({ results: [view] })).split("\n").slice(1, 4);
+	assert.deepEqual(calls, ["▶ $ npm test running 1m 05s", "→ read b", "→ read c"]);
+});
+
+test("live: after a step, thinking counts from the step's start", () => {
+	const view = running({ startedAt: T0, stepStartedAt: NOW - 14_000, recentCalls: [{ name: "read", args: { path: "a" } }] });
+	assert.match(drawLive(result({ results: [view] })), /^→ read a\n {2}thinking… 14s$/m);
+});
+
+test("live: before its first turn, thinking counts from the agent's start", () => {
+	const out = drawLive(result({ results: [running({ startedAt: NOW - 3_000 })] }));
+	assert.match(out, /^ {2}thinking… 3s$/m);
 	assert.doesNotMatch(out, /starting/);
 });
 
-test("live: an agent waiting for a slot shows its place in line, no clock", () => {
-	const waiting = (n: number) => taskView({ agent: `w${n}`, status: "running", ok: false, queuePosition: n });
-	const out = drawLive(result({ results: [waiting(1), waiting(2), waiting(3), waiting(11), waiting(22)] }));
-	for (const place of ["1st", "2nd", "3rd", "11th", "22nd"]) assert.match(out, new RegExp(`waiting for a free agent slot \\(${place} in line\\)`));
-	assert.match(out, /◌ w1\n/, "its own icon, and no elapsed time");
-	assert.doesNotMatch(out, /⏳ w1/);
+test("live: an agent waiting for a slot shows its place in line and no clock", () => {
+	const waiting = (n: number) => running({ agent: `w${n}`, queuePosition: n, startedAt: T0 });
+	const out = drawLive(result({ results: [1, 2, 3, 11, 22].map(waiting) }));
+	for (const place of ["1st", "2nd", "3rd", "11th", "22nd"]) assert.match(out, new RegExp(`waiting for a free agent slot \\(${place} in line\\)`), place);
+	assert.match(out, /^◌ w1$/m, "its own icon, and no elapsed time although startedAt is set");
+	assert.doesNotMatch(out, /thinking/);
 });
 
-test("live: the parallel header shows the label, waiting agents, the clock and the spend so far", () => {
-	const details: SubagentDetails = {
-		startedAt: T0,
-		label: "code-review round 2/4",
-		results: [
-			taskView({ agent: "naming-review", usage }),
-			taskView({ agent: "security-review", status: "running", ok: false, startedAt: T0, usage: { ...usage, cost: 0.061 } }),
-			taskView({ agent: "a11y-review", status: "running", ok: false, queuePosition: 1 }),
-		],
+const header = (details: SubagentDetails) => drawLive(result(details)).split("\n")[0];
+const reviewers = [taskView({ agent: "naming-review", usage }), running({ agent: "security-review", startedAt: T0, usage: { ...usage, cost: 0.061 } }), running({ agent: "a11y-review", queuePosition: 1 })];
+
+test("live header: done, running and waiting counts", () => {
+	assert.match(header({ results: reviewers }), /1\/3 done, 1 running, 1 waiting/);
+	assert.match(header({ results: [running({}), running({ agent: "b" })] }), /0\/2 done, 2 running$/, "no waiting segment when every agent has a slot");
+});
+
+test("live header: the call's label and the elapsed time", () => {
+	assert.match(header({ startedAt: T0, label: "code-review round 2/4", results: reviewers }), /^⏳ parallel code-review round 2\/4 · 1\/3 done.* · 1m 05s/);
+});
+
+test("live header: the spend so far, only once there is some", () => {
+	const spent = (usage.cost + 0.061).toFixed(4);
+	assert.match(header({ results: reviewers }), new RegExp(`· \\$${spent} so far$`));
+	assert.doesNotMatch(header({ results: [running({}), running({ agent: "b" })] }), /so far/);
+});
+
+test("live header: all of it in order", () => {
+	assert.equal(header({ startedAt: T0, label: "code-review round 2/4", results: reviewers }), "⏳ parallel code-review round 2/4 · 1/3 done, 1 running, 1 waiting · 1m 05s · $0.0622 so far");
+});
+
+test("a stored or final result draws no live clocks", () => {
+	const view = running({ startedAt: T0, stepStartedAt: T0, recentCalls: [{ name: "bash", args: { command: "npm test" }, runningSince: T0 }] });
+	const lines = draw(renderSubagentResult(result({ startedAt: T0, results: [view, view] }), { expanded: false, isPartial: false }, theme, undefined, NOW))
+		.split("\n")
+		.map((l) => l.trimEnd());
+	assert.equal(lines[0], "⏳ parallel 0/2 done, 2 running");
+	assert.deepEqual(lines.slice(2, 4), ["⏳ a", "→ $ npm test"]);
+});
+
+function clockContext() {
+	const context = { redraws: 0, invalidate: () => context.redraws++, state: {} };
+	return context;
+}
+
+test("clock: a running dispatch redraws every second and stops when it finishes", (t) => {
+	t.mock.timers.enable({ apis: ["setInterval", "Date"], now: T0 });
+	const context = clockContext();
+	const runningResult = result({ results: [running({})] });
+	renderSubagentResult(runningResult, { expanded: false, isPartial: true }, theme, context);
+	renderSubagentResult(runningResult, { expanded: false, isPartial: true }, theme, context);
+	t.mock.timers.tick(3 * CLOCK_TICK_MS);
+	assert.equal(context.redraws, 3, "one timer, however often the row is drawn");
+	renderSubagentResult(result({ results: [taskView({})] }), { expanded: false, isPartial: false }, theme, context);
+	t.mock.timers.tick(3 * CLOCK_TICK_MS);
+	assert.equal(context.redraws, 3, "stopped by the final result");
+});
+
+test("clock: without an update for the idle limit it stops; the next update starts it again", (t) => {
+	t.mock.timers.enable({ apis: ["setInterval", "Date"], now: T0 });
+	const context = clockContext();
+	const update = () => result({ results: [running({})] });
+	renderSubagentResult(update(), { expanded: false, isPartial: true }, theme, context, T0);
+	const ticksToLimit = CLOCK_IDLE_LIMIT_MS / CLOCK_TICK_MS;
+	t.mock.timers.tick(CLOCK_IDLE_LIMIT_MS);
+	assert.equal(context.redraws, ticksToLimit, "redraws every second up to the limit");
+	t.mock.timers.tick(10 * CLOCK_TICK_MS);
+	assert.equal(context.redraws, ticksToLimit, "stopped just past it");
+	renderSubagentResult(update(), { expanded: false, isPartial: true }, theme, context, Date.now());
+	t.mock.timers.tick(2 * CLOCK_TICK_MS);
+	assert.equal(context.redraws, ticksToLimit + 2, "a new update restarts it");
+});
+
+test("clock: a redraw that throws stops the clock", (t) => {
+	t.mock.timers.enable({ apis: ["setInterval", "Date"], now: T0 });
+	let calls = 0;
+	const context = {
+		state: {},
+		invalidate: () => {
+			calls++;
+			throw new Error("row is gone");
+		},
 	};
-	const header = drawLive(result(details)).split("\n")[0];
-	assert.equal(header, "⏳ parallel code-review round 2/4 · 1/3 done, 1 running, 1 waiting · 1m 05s · $0.0622 so far");
-});
-
-test("live: no waiting segment when every agent has a slot, no spend before any is known", () => {
-	const header = drawLive(result({ startedAt: T0, results: [taskView({ status: "running", ok: false }), taskView({ agent: "b", status: "running", ok: false })] })).split("\n")[0];
-	assert.equal(header, "⏳ parallel 0/2 done, 2 running · 1m 05s");
-});
-
-test("live: a stored or final result draws no live clocks", () => {
-	const view = taskView({ status: "running", ok: false, startedAt: T0, recentCalls: [{ name: "bash", args: { command: "npm test" }, startedAt: T0 }] });
-	const out = draw(renderSubagentResult(result({ startedAt: T0, results: [view, view] }), { expanded: false, isPartial: false }, theme, undefined, NOW));
-	assert.doesNotMatch(out, /1m 05s|running \d|thinking/);
-	assert.match(out, /→ \$ npm test/, "the call still shows, unmarked");
-});
-
-test("clock: a running dispatch redraws every second and stops when it finishes", () => {
-	mock.timers.enable({ apis: ["setInterval", "Date"], now: T0 });
-	try {
-		let redraws = 0;
-		const context = { invalidate: () => redraws++, state: {} };
-		const running = result({ results: [taskView({ status: "running", ok: false })] });
-		renderSubagentResult(running, { expanded: false, isPartial: true }, theme, context);
-		renderSubagentResult(running, { expanded: false, isPartial: true }, theme, context);
-		mock.timers.tick(3_000);
-		assert.equal(redraws, 3, "one timer, however often the row is drawn");
-		renderSubagentResult(result({ results: [taskView({})] }), { expanded: false, isPartial: false }, theme, context);
-		mock.timers.tick(3_000);
-		assert.equal(redraws, 3, "stopped by the final result");
-	} finally {
-		mock.timers.reset();
-	}
-});
-
-test("clock: a row with no update for two hours stops; the next update starts it again", () => {
-	mock.timers.enable({ apis: ["setInterval", "Date"], now: T0 });
-	try {
-		let redraws = 0;
-		const context = { invalidate: () => redraws++, state: {} };
-		const running = () => result({ results: [taskView({ status: "running", ok: false })] });
-		renderSubagentResult(running(), { expanded: false, isPartial: true }, theme, context, T0);
-		mock.timers.tick(2 * 60 * 60 * 1000 + 5_000);
-		const stoppedAt = redraws;
-		mock.timers.tick(10_000);
-		assert.equal(redraws, stoppedAt, "stopped after the idle limit");
-		renderSubagentResult(running(), { expanded: false, isPartial: true }, theme, context, Date.now());
-		mock.timers.tick(2_000);
-		assert.equal(redraws, stoppedAt + 2, "a new update restarts it");
-	} finally {
-		mock.timers.reset();
-	}
+	renderSubagentResult(result({ results: [running({})] }), { expanded: false, isPartial: true }, theme, context);
+	t.mock.timers.tick(5 * CLOCK_TICK_MS);
+	assert.equal(calls, 1);
 });
