@@ -167,6 +167,7 @@ All settings, with the default values:
   "skillIndex": "compact",     // compact, full, or off: the command list in the system prompt (agents get a short compact list of their own skills; off removes it too)
   "skillIndexChars": 220,      // the maximum length of each description in the compact list
   "autocompactMaxTokens": 200000, // compact your session between tasks at this many context tokens; 0 = off (a project file: 0 or 50000 and more)
+  "readDedup": true,           // a repeated read of an unchanged file returns a short note, since the text is already in the context
   "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }

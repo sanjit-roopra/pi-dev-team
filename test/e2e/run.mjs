@@ -16,6 +16,17 @@ const PROVIDER = path.join(PKG, "test", "fixtures", "scripted-provider.ts");
 const EXTERNAL_SUBAGENT = path.join(PKG, "test", "fixtures", "external-subagent.ts");
 const filter = process.argv[2] ?? "";
 
+/** The agent's own text sits in a dev_team_agent section after the shared dev-team guide, not in pi's appended prompt. */
+function assertAgentAfterGuide(systemPrompt, agentMarker, who) {
+	const guideAt = systemPrompt.indexOf("<dev_team>");
+	const sectionAt = systemPrompt.indexOf("<dev_team_agent>");
+	const agentAt = systemPrompt.indexOf(agentMarker);
+	assert(guideAt >= 0, `${who}: no dev-team guide`);
+	assert(sectionAt > guideAt, `${who}: no dev_team_agent section after the guide`);
+	assert(agentAt > sectionAt, `${who}: agent text is not inside the dev_team_agent section`);
+	assert(!systemPrompt.includes("<addendum>"), `${who}: text left in pi's appended prompt`);
+}
+
 function script(steps) {
 	return `<<script>>${JSON.stringify(steps)}<</script>>`;
 }
@@ -187,6 +198,18 @@ const scenarios = {
 		assert(/sid=\S+/.test(r.out), "CLAUDE_SESSION_ID unset");
 	},
 
+	"a repeated read in a later turn returns a note; parallel reads in one turn return the text"(env) {
+		fs.writeFileSync(path.join(env.repo, "big.txt"), "line of text\n".repeat(400));
+		const read = { tool: "read", args: { path: "big.txt" } };
+		const r = pi(env, script([{ tools: [read, read] }, read, read, { text: "done" }]), { json: true });
+		assert(r.code === 0, r.err);
+		const reads = toolResults(r.out).filter((x) => x.tool === "read");
+		assert(reads.length === 4, `expected 4 reads, got ${reads.length}`);
+		assert(reads.slice(0, 2).every((x) => x.text.includes("line of text")), "parallel reads in one turn must both return the text");
+		assert(reads[2].text.includes("big.txt is unchanged") && !reads[2].text.includes("line of text"), `the read in the next turn should be a note: ${reads[2].text.slice(0, 200)}`);
+		assert(reads[3].text.includes("line of text"), "asking again right after a note returns the text");
+	},
+
 	"pre_tool_guard blocks writing .env"(env) {
 		const r = pi(env, script([{ tool: "write", args: { path: ".env", content: "SECRET=1" } }]));
 		assert(r.out.includes("[pre_tool_guard] BLOCKED"), r.out);
@@ -345,6 +368,7 @@ const scenarios = {
 		let r = pi(env, probe, { extra: ["--dev-team-agent", "security-review"] });
 		assert(r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent not used: ${r.out.slice(0, 300)} ${r.err}`);
 		const agentPrompt = JSON.parse(r.out).systemPrompt;
+		assertAgentAfterGuide(agentPrompt, "PROJECT_OVERRIDE_PROMPT", "--dev-team-agent run");
 		assert(!/^- autoship/m.test(agentPrompt) && agentPrompt.includes("load any by name with the skill tool"), "an agent run lists the full skill index instead of its own skills");
 		r = pi(env, probe, { extra: ["--no-approve", "--dev-team-agent", "security-review"] });
 		assert(!r.out.includes("PROJECT_OVERRIDE_PROMPT"), `project agent used despite --no-approve: ${r.out.slice(0, 300)}`);
@@ -438,6 +462,7 @@ const scenarios = {
 			assert(runtime.tools.includes("subagent"), "external tool was removed by dev-team's depth safeguard");
 			assert(!/^- autoship/m.test(runtime.systemPrompt), "child prompt still carries the full skill index");
 			assert(runtime.systemPrompt.includes("load any by name with the skill tool"), "child prompt lacks the skill note");
+			assertAgentAfterGuide(runtime.systemPrompt, "Inspect the runtime tools and prompt.", "child");
 			return runtime;
 		};
 		assert(inspectChild().tools.includes("dev_team_subagent"), "Claude Agent/Task did not enable namespaced child dispatch");

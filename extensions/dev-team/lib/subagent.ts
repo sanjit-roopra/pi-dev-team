@@ -303,7 +303,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (thinking) args.push("--thinking", thinking);
 			if (tools) args.push("--tools", tools.length ? tools.join(",") : "read");
 			args.push("--append-system-prompt", promptFile);
-			if (skillPool) args.push(`--${AGENT_PROMPT_FLAG}`, AGENT_PROMPT_FLAG_VALUE);
+			args.push(`--${AGENT_PROMPT_FLAG}`, AGENT_PROMPT_FLAG_VALUE);
 			args.push(`Task: ${task}`);
 
 			const env: NodeJS.ProcessEnv = {
@@ -580,7 +580,7 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	return `${results.filter((r) => r.ok).length}/${results.length} agents succeeded\n\n${results.map(section).join("\n\n---\n\n")}${skipped}`;
 }
 
-/** Flag on a dispatched child whose appended prompt lists its skills; its guide then leaves out the full index. */
+/** Flag on a dispatched child: its appended prompt is an agent prompt (own skill list, placed after the shared guide). */
 export const AGENT_PROMPT_FLAG = "dev-team-agent-prompt";
 /** The flag's value. Explicit, because pi reads the token after an extension flag as its value. */
 export const AGENT_PROMPT_FLAG_VALUE = "1";

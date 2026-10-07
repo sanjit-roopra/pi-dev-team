@@ -52,6 +52,8 @@ export interface DevTeamConfig {
 	skillIndexChars: number;
 	/** Compact the main session between runs once its context reaches this many tokens (0 = off). */
 	autocompactMaxTokens: number;
+	/** Replace a repeated read whose text is already in the context with a one-line note (read-dedup.ts). */
+	readDedup: boolean;
 	/** Put the `claude` -> `pi` CLI shim on PATH for scripts that call `claude -p`. */
 	claudeShim: boolean;
 	/** Extra environment variables for tools, hooks, scripts and subagents (e.g. DEV_TEAM_MAX_PARALLEL_BUILDS). */
@@ -95,6 +97,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	skillIndex: "compact",
 	skillIndexChars: 220,
 	autocompactMaxTokens: 200_000,
+	readDedup: true,
 	claudeShim: true,
 	env: {},
 };

@@ -10,7 +10,7 @@ type ToolDef = { name: string; exposure?: string; annotations?: Record<string, b
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 type CommandDef = { description?: string; getArgumentCompletions?: (prefix: string) => { value: string }[]; handler: (args: string, ctx: unknown) => Promise<void> | void };
 
-async function loadExtension(opts: { flags?: Record<string, unknown> } = {}) {
+async function loadExtension(opts: { flags?: Record<string, unknown>; config?: Record<string, unknown> } = {}) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-load-"));
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
@@ -21,7 +21,7 @@ async function loadExtension(opts: { flags?: Record<string, unknown> } = {}) {
 	process.env.PI_CODING_AGENT_DIR = dir;
 	// A run of this suite from inside a dispatched agent must still load the extension as a main session.
 	delete process.env.DEV_TEAM_SUBAGENT;
-	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block" }));
+	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block", ...opts.config }));
 	const tools: Record<string, ToolDef> = {};
 	const handlers: Record<string, Handler[]> = {};
 	const commands: Record<string, CommandDef> = {};
@@ -173,4 +173,105 @@ test("/dev-team usage <unknown> reports the usage line instead of opening anythi
 	t.mock.method(console, "log", (...args: unknown[]) => void printed.push(args.join(" ")));
 	await commands["dev-team"].handler("usage histroy", { hasUI: false });
 	assert.deepEqual(printed, ["Usage: /dev-team usage [session|month]"]);
+});
+
+test("a dispatched agent's own prompt goes after the shared guide, not in pi's appended prompt", async () => {
+	const child = await loadExtension({ flags: { [AGENT_PROMPT_FLAG]: AGENT_PROMPT_FLAG_VALUE } });
+	try {
+		const opts: { appendSystemPrompt?: string; sections?: Record<string, string> } = { appendSystemPrompt: "AGENT BODY" };
+		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+		assert.equal(opts.appendSystemPrompt, "", "nothing left in pi's appended prompt");
+		assert.deepEqual(Object.keys(opts.sections ?? {}), ["dev_team", "dev_team_agent"], "agent section after the guide");
+		assert.equal(opts.sections?.dev_team_agent, "AGENT BODY");
+	} finally {
+		child.cleanup();
+	}
+});
+
+test("a dispatched agent with an empty appended prompt gets no agent section", async () => {
+	const child = await loadExtension({ flags: { [AGENT_PROMPT_FLAG]: AGENT_PROMPT_FLAG_VALUE } });
+	try {
+		const opts: { appendSystemPrompt?: string; sections?: Record<string, string> } = { appendSystemPrompt: "" };
+		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+		assert.deepEqual(Object.keys(opts.sections ?? {}), ["dev_team"]);
+	} finally {
+		child.cleanup();
+	}
+});
+
+test("the main session keeps pi's appended prompt where it is", async () => {
+	const { handlers } = await loaded;
+	const opts: { appendSystemPrompt?: string; sections?: Record<string, string> } = { appendSystemPrompt: "USER APPEND" };
+	await handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	assert.equal(opts.appendSystemPrompt, "USER APPEND");
+	assert.equal(opts.sections?.dev_team_agent, undefined);
+});
+
+/** A fresh extension, and a read through its tool_result handler: the text the model gets, or "passthrough". */
+async function readHarness(config?: Record<string, unknown>) {
+	const ext = await loadExtension({ config });
+	const ctx = { cwd: os.tmpdir(), hasUI: false, mode: "print", sessionManager: { getSessionId: () => "s", getSessionFile: () => undefined } };
+	const text = "line\n".repeat(1000);
+	const result = async (event: Record<string, unknown>) => {
+		const r = (await ext.handlers.tool_result[0]({ toolName: "read", toolCallId: "x", input: { path: "big.ts" }, content: [{ type: "text", text }], isError: false, ...event }, ctx)) as
+			| { content?: { text: string }[] }
+			| undefined;
+		return r?.content?.[0].text ?? "passthrough";
+	};
+	const endTurn = async () => {
+		for (const h of ext.handlers.turn_end) await h({}, ctx);
+	};
+	const fire = async (event: string) => {
+		for (const h of ext.handlers[event] ?? []) await h({}, ctx);
+	};
+	return { ext, result, endTurn, fire };
+}
+
+test("a repeated read in a later turn reaches the model as a note", async () => {
+	const { ext, result, endTurn } = await readHarness();
+	try {
+		assert.equal(await result({}), "passthrough", "first read");
+		await endTurn();
+		assert.match(await result({}), /big\.ts is unchanged/);
+	} finally {
+		ext.cleanup();
+	}
+});
+
+test("compaction and a branch switch forget earlier reads", async () => {
+	for (const event of ["session_compact", "session_tree"]) {
+		const { ext, result, endTurn, fire } = await readHarness();
+		try {
+			await result({});
+			await endTurn();
+			await fire(event);
+			assert.equal(await result({}), "passthrough", event);
+		} finally {
+			ext.cleanup();
+		}
+	}
+});
+
+test("nested, failed and non-text reads, other tools and readDedup off are never noted", async () => {
+	const nested = { parentToolCallId: "p" };
+	// Long enough to be noted on text alone, so only the text-only rule keeps it out.
+	const withImage = { content: [{ type: "text", text: "line\n".repeat(1000) }, { type: "image", data: "", mimeType: "image/png" }] };
+	const cases: [string, Record<string, unknown> | undefined, Record<string, unknown>, Record<string, unknown>][] = [
+		["a script repeats the model's read", undefined, {}, nested],
+		["the model repeats a script's read", undefined, nested, {}],
+		["failed read", undefined, { isError: true }, { isError: true }],
+		["text with an image", undefined, withImage, withImage],
+		["bash with the same output", undefined, { toolName: "bash" }, { toolName: "bash" }],
+		["readDedup off", { readDedup: false }, {}, {}],
+	];
+	for (const [label, config, first, second] of cases) {
+		const { ext, result, endTurn } = await readHarness(config);
+		try {
+			await result(first);
+			await endTurn();
+			assert.doesNotMatch(await result(second), /is unchanged/, label);
+		} finally {
+			ext.cleanup();
+		}
+	}
 });
