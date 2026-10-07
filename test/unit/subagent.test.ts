@@ -180,8 +180,8 @@ test("child events: a failing turn records the stop reason and error", () => {
 test("child events: only the latest 8 tool calls are kept, nameless ones skipped", () => {
 	const state = newChildRunState();
 	const calls = Array.from({ length: 10 }, (_, i) => ({ type: "toolCall", name: `t${i}` }));
-	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }, { type: "toolCall", name: 7 }] } as never });
-	assert.deepEqual(patch?.recentCalls?.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "nameless and non-string names skipped");
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }, { type: "toolCall", name: 7 }, { type: "toolCall", name: " \n " }] } as never });
+	assert.deepEqual(patch?.recentCalls?.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "nameless, non-string and blank names skipped");
 });
 
 test("child events: a model without a provider is shown as is", () => {
@@ -420,6 +420,12 @@ test("child events: a nested agent's name is one line and bounded; a blank one i
 	const state = newChildRunState();
 	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("x\n✓ parallel 3/3 succeeded", "running"), reviewer("y".repeat(500), "running"), reviewer(" \n ", "running")]));
 	assert.deepEqual(patch?.subagents?.map((v) => v.agent), ["x ✓ parallel 3/3 succeeded", "y".repeat(200)]);
+});
+
+test("child events: a nested agent's blank latest call is no call", () => {
+	const state = newChildRunState();
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running", { recentCalls: [{ name: " \n " }] })]));
+	assert.deepEqual(patch?.subagents?.[0].recentCalls, []);
 });
 
 const OUTPUT_CAP = 50 * 1024;
@@ -753,10 +759,10 @@ test("acquireSlot: reports the place in line, then clears it and starts the cloc
 	const slots = new Semaphore(1);
 	const first = await slots.acquire();
 	const patches: unknown[] = [];
-	const waiting = acquireSlot(slots, (p) => patches.push(p), () => 42);
+	const waiting = acquireSlot(slots, (p) => patches.push(p), { readClock: () => 42 });
 	assert.deepEqual(patches, [{ queuePosition: 1 }]);
 	first();
-	(await waiting)();
+	(await waiting)?.();
 	assert.deepEqual(patches, [{ queuePosition: 1 }, { queuePosition: undefined, slotGrantedAt: 42, stepStartedAt: 42 }]);
 });
 
@@ -767,9 +773,22 @@ test("acquireSlot: a view that throws on the start still gets the slot back to i
 	});
 	const next = slots.acquire();
 	assert.equal(await hasSettled(next), false, "the slot is held");
-	release();
+	release?.();
 	assert.ok(await hasSettled(next), "and released by its owner");
 	(await next)();
+});
+
+test("acquireSlot: aborted while waiting, it gives the slot back and reports no start", async () => {
+	const slots = new Semaphore(1);
+	const first = await slots.acquire();
+	const patches: unknown[] = [];
+	const abort = new AbortController();
+	const waiting = acquireSlot(slots, (p) => patches.push(p), { signal: abort.signal });
+	abort.abort();
+	first();
+	assert.equal(await waiting, undefined, "no release: the dispatch stops");
+	assert.deepEqual(patches, [{ queuePosition: 1 }], "no start reported");
+	assert.ok(await hasSettled(slots.acquire()), "the slot is free again");
 });
 
 const tasks = [{}, {}];

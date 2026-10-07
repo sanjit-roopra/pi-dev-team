@@ -198,8 +198,8 @@ function callRow(text: string, theme: Theme, runningFor?: string): string {
 	return runningFor ? `${theme.fg("warning", RUNNING_CALL_MARK)}${call}${theme.fg("dim", ` running ${runningFor}`)}` : `${theme.fg("muted", CALL_MARK)}${call}`;
 }
 
-function toolLines(callLines: string[], theme: Theme): string {
-	return callLines.map((t) => callRow(t, theme)).join("\n");
+function joinCallRows(callLines: string[], theme: Theme): string {
+	return callLines.map((line) => callRow(line, theme)).join("\n");
 }
 
 /**
@@ -278,7 +278,7 @@ function renderExpandedInto(container: Container, v: SubagentTaskView, theme: Th
 	container.addChild(new Text(headerLine(v, theme), 0, 0));
 	container.addChild(new Text(`${theme.fg("muted", "Task: ")}${theme.fg("dim", sanitizeTerminalText(v.task))}`, 0, 0));
 	const callLines = recentCallLines(v);
-	if (callLines.length) container.addChild(new Text(toolLines(callLines, theme), 0, 0));
+	if (callLines.length) container.addChild(new Text(joinCallRows(callLines, theme), 0, 0));
 	if (v.status === "failed" && v.error) container.addChild(new Text(theme.fg("error", `Error: ${sanitizeTerminalText(v.error)}`), 0, 0));
 	if (v.output) {
 		container.addChild(new Spacer(1));

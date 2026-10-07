@@ -303,6 +303,6 @@ test("dev_team_subagent's execute labels a parallel dispatch's progress and stam
 	const execute = (tools.dev_team_subagent as unknown as { execute: (...args: unknown[]) => Promise<{ details: { label?: string; dispatchStartedAt?: number } }> }).execute;
 	const final = await execute("call-1", params, undefined, (u: (typeof updates)[number]) => updates.push(u), ctx);
 	assert.ok(updates.length > 0, "progress was streamed");
-	for (const u of updates) assert.deepEqual([u.details?.label, u.details?.dispatchStartedAt], ["code-review round 2/4", 5_000]);
-	assert.equal(final.details.label, "code-review round 2/4");
+	updates.forEach((u, i) => assert.deepEqual([u.details?.label, u.details?.dispatchStartedAt], ["code-review round 2/4", 5_000], `update ${i}`));
+	assert.deepEqual([final.details.label, final.details.dispatchStartedAt], ["code-review round 2/4", 5_000], "the final details the view keeps");
 });

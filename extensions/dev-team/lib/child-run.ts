@@ -33,10 +33,10 @@ const MAX_LIVE_SUBAGENT_LEVELS = 4;
 const SUBAGENT_STATUSES: ReadonlySet<string> = new Set(["running", "ok", "failed"]);
 /** Arguments the progress view shows, by name; anything else in a call is not kept. */
 const SHOWN_ARGS = ["command", "pattern", "path", "file_path", "url", "name", "agent", "subagent_type"] as const;
-const SHOWN_ARG_CHARS = 200;
+const SHOWN_TEXT_CHARS = 200;
 
 /** Child text the view shows on one line: whitespace runs (newlines too) become one space, bounded. */
-const oneLine = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, SHOWN_ARG_CHARS);
+const toCappedSingleLine = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, SHOWN_TEXT_CHARS);
 
 /** The parts of a tool call the progress view needs, its name and each argument one line and bounded. */
 export function summarizeToolCall(name: string, args: unknown): ToolCallSummary {
@@ -44,10 +44,10 @@ export function summarizeToolCall(name: string, args: unknown): ToolCallSummary 
 	const shown: Record<string, string> = {};
 	for (const key of SHOWN_ARGS) {
 		const value = record[key];
-		if (typeof value === "string" && value.trim()) shown[key] = oneLine(value);
+		if (typeof value === "string" && value.trim()) shown[key] = toCappedSingleLine(value);
 	}
 	if (Array.isArray(record.tasks)) shown.tasks = String(record.tasks.length);
-	const oneLineName = oneLine(name);
+	const oneLineName = toCappedSingleLine(name);
 	return Object.keys(shown).length ? { name: oneLineName, args: shown } : { name: oneLineName };
 }
 
@@ -129,10 +129,10 @@ function liveViews(entries: unknown, level = 1): LiveSubagentView[] {
 		const latest = Array.isArray(v.recentCalls) ? v.recentCalls.at(-1) : undefined;
 		const subagents = level < MAX_LIVE_SUBAGENT_LEVELS ? liveViews(v.subagents, level + 1) : [];
 		const view: LiveSubagentView = {
-			agent: oneLine(v.agent),
+			agent: toCappedSingleLine(v.agent),
 			status: v.status as LiveSubagentView["status"],
 			turns: typeof v.turns === "number" && Number.isFinite(v.turns) ? v.turns : 0,
-			recentCalls: isRecord(latest) && typeof latest.name === "string" ? [summarizeToolCall(latest.name, latest.args)] : [],
+			recentCalls: isRecord(latest) && typeof latest.name === "string" && latest.name.trim() ? [summarizeToolCall(latest.name, latest.args)] : [],
 			...(typeof v.queuePosition === "number" ? { queuePosition: v.queuePosition } : {}),
 			...(subagents.length ? { subagents } : {}),
 		};

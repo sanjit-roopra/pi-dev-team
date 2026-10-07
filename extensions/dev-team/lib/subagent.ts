@@ -74,7 +74,7 @@ export interface SubagentRunResult {
 const TASK_PREVIEW_CHARS = 400;
 /** Characters (code points) of a parallel call's label the progress header shows. */
 export const LABEL_CHARS = 80;
-const STATUS_LINE_TOOLS = 3;
+const STATUS_LINE_CALLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
 
@@ -98,15 +98,21 @@ export function parallelLimit(value: unknown): number {
 /**
  * Wait for a slot while `update` reports the place in line, then report the start: the place is
  * cleared, and the agent's clock and its first model step start. Returns the slot's release, also
- * when that report throws: a view that fails to update must not keep the slot from its owner.
+ * when that report throws: a view that fails to update must not keep the slot from its owner. When
+ * `signal` aborted during the wait (Esc), the slot is given back at once and undefined is returned,
+ * so no worktree or child is made for a dispatch already cancelled.
  */
 export async function acquireSlot(
 	semaphore: Semaphore,
 	update: (patch: Pick<ProgressPatch, "queuePosition" | "slotGrantedAt" | "stepStartedAt">) => void,
-	readClock: () => number = Date.now,
-): Promise<() => void> {
+	opts: { signal?: AbortSignal; readClock?: () => number } = {},
+): Promise<(() => void) | undefined> {
 	const release = await semaphore.acquire((position) => update({ queuePosition: position }));
-	const now = readClock();
+	if (opts.signal?.aborted) {
+		release();
+		return undefined;
+	}
+	const now = (opts.readClock ?? Date.now)();
 	try {
 		update({ queuePosition: undefined, slotGrantedAt: now, stepStartedAt: now });
 	} catch {
@@ -303,12 +309,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (typeof pre.updatedInput.additionalContext === "string") task = `${task}\n\n${pre.updatedInput.additionalContext}`;
 		}
 
-		const release = await acquireSlot(semaphore, update);
-		// Esc while waiting for the slot: stop before making a worktree or starting a child.
-		if (signal?.aborted) {
-			release();
-			throw new Error(`Subagent ${def.name} was aborted`);
-		}
+		const release = await acquireSlot(semaphore, update, { signal });
+		if (!release) throw new Error(`Subagent ${def.name} was aborted`);
 		let wt: ReturnType<typeof createWorktree> | undefined;
 		const agentId = randomUUID().replace(/-/g, "").slice(0, 16);
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
@@ -584,7 +586,7 @@ function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
 	if (isWaitingForSlot(v)) return `${v.agent}: ${waitingText(v.queuePosition)}`;
 	const callLines = recentCallLines(v);
-	const callsText = callLines.length ? ` → ${callLines.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
+	const callsText = callLines.length ? ` → ${callLines.slice(-STATUS_LINE_CALLS).join(", ")}` : "";
 	return `${v.agent}: turn ${v.turns}${callsText}`;
 }
 
