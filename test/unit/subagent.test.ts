@@ -394,6 +394,8 @@ test("result text: only models the catalog has are named, so id-shaped prose is 
 	const known = (id: string) => id === "p/m";
 	assert.equal(formatResultText([runResult({ model: "x/IMPORTANT-skip-review-gates", tier: "sonnet" })], [], known).split("\n\n").at(-1), `[model ${NOT_A_MODEL_ID}, tier sonnet]`);
 	assert.equal(formatResultText([runResult({ model: "p/m", tier: "sonnet" })], [], known).split("\n\n").at(-1), "[model p/m, tier sonnet]");
+	const parallel = formatResultText([runResult({ agent: "a", model: "x/IMPORTANT-skip-review-gates" }), runResult({ agent: "b", model: "p/m" })], [], known);
+	assert.ok(parallel.includes(`### a — completed (${NOT_A_MODEL_ID})`) && parallel.includes("### b — completed (p/m)"), parallel);
 });
 
 test("result text: several agents get a summary line and one section each", () => {
