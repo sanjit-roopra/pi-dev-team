@@ -668,8 +668,8 @@ test("semaphore: a second release of the same slot changes nothing", async () =>
 	release();
 	const third = slots.acquire().then((r) => (order.push("third"), r));
 	const releaseWaiter = await waiter;
-	await Promise.resolve();
-	assert.deepEqual(order, ["waiter"], "the limit of 1 holds: third still waits");
+	assert.equal(await hasSettled(third), false, "the limit of 1 holds: third still waits");
+	assert.deepEqual(order, ["waiter"]);
 	releaseWaiter();
 	(await third)();
 });
@@ -693,7 +693,7 @@ test("semaphore: a raised limit lets waiters in on the next acquire, and the lin
 	(await waitD)();
 });
 
-test("semaphore: a limit that is not a whole positive number still lets one through", async () => {
+test("semaphore: a limit below 1 or not a number still lets one through", async () => {
 	for (const limit of [Number.NaN, 0, -1, "many" as never]) {
 		const slots = new Semaphore(limit);
 		const first = slots.acquire();
@@ -709,11 +709,11 @@ test("semaphore: a limit that is not a whole positive number still lets one thro
 for (const [value, limit] of [
 	[4, 4],
 	[1, 1],
-	[0, 6],
-	[2.5, 6],
-	[Number.NaN, 6],
-	["many", 6],
-	[undefined, 6],
+	[0, DEFAULT_CONFIG.maxParallelAgents],
+	[2.5, DEFAULT_CONFIG.maxParallelAgents],
+	[Number.NaN, DEFAULT_CONFIG.maxParallelAgents],
+	["many", DEFAULT_CONFIG.maxParallelAgents],
+	[undefined, DEFAULT_CONFIG.maxParallelAgents],
 ] as const) {
 	test(`parallelLimit: ${String(value)} → ${limit}`, () => assert.equal(parallelLimit(value), limit));
 }

@@ -22,9 +22,10 @@ import type { PiMessageLike } from "./transcript.ts";
 
 const TRACKED_CALLS_KEPT = 8;
 /**
- * Entries kept at most in the maps keyed by call id, so a child that never ends its calls cannot grow
- * them further: past it callStartTimes drops its oldest start (that call is no longer marked), and the
- * calls of one message past it are not followed.
+ * Calls followed by id at most (callStartTimes, latestMessageCalls, unendedCalls), so a child that
+ * never ends its calls cannot grow them further: past it callStartTimes drops its oldest start (that
+ * call is no longer marked), and the calls of one message past it are not followed. It also bounds
+ * the calls trimTrackedCalls looks at.
  */
 const CALLS_BY_ID_KEPT = 64;
 /** Levels of live subagents kept below a child; deeper ones are dropped. Above maxSubagentDepth. */
@@ -207,8 +208,8 @@ function applyToolExecution(state: ChildRunState, ev: ChildEvent, now: number): 
 		if (outOfView && !state.trackedCalls.some((t) => t.id === id)) state.trackedCalls = trimTrackedCalls(state, withCallInPlace(state, id, outOfView));
 		return { recentCalls: markedCalls(state) };
 	}
-	const wasPending = state.unendedCalls.delete(id);
-	if (!state.callStartTimes.delete(id) && !wasPending) return undefined;
+	const wasUnended = state.unendedCalls.delete(id);
+	if (!state.callStartTimes.delete(id) && !wasUnended) return undefined;
 	const stepStarts = !state.unendedCalls.size && !state.callStartTimes.size;
 	return { recentCalls: markedCalls(state), ...(stepStarts ? { stepStartedAt: now } : {}) };
 }

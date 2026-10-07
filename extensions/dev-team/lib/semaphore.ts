@@ -21,14 +21,17 @@ function notifyPosition(onPosition: ((position: number) => void) | undefined, po
 export class Semaphore {
 	private active = 0;
 	private readonly queue: Waiter[] = [];
-	/** Changeable at any time; the next acquire or release applies it. Below 1 or not a number counts as 1. */
+	/**
+	 * Changeable at any time; the next acquire or release applies it. Callers pass a checked value
+	 * (subagent.ts parallelLimit); as a safety net, a limit that is not a finite number of at least 1 counts as 1.
+	 */
 	limit: number;
 	constructor(limit: number) {
 		this.limit = limit;
 	}
 	async acquire(onPosition?: (position: number) => void): Promise<() => void> {
 		this.grantFreeSlots();
-		if (this.active < this.cap()) this.active++;
+		if (this.active < this.effectiveLimit()) this.active++;
 		else
 			await new Promise<void>((grantSlot) => {
 				this.queue.push({ grantSlot, onPosition });
@@ -43,7 +46,7 @@ export class Semaphore {
 		};
 	}
 	/** The limit in effect: a slot always exists, so a bad limit can slow the line but never stop it. */
-	private cap(): number {
+	private effectiveLimit(): number {
 		return Number.isFinite(this.limit) && this.limit >= 1 ? this.limit : 1;
 	}
 	/**
@@ -52,7 +55,7 @@ export class Semaphore {
 	 */
 	private grantFreeSlots(): void {
 		let granted = false;
-		while (this.active < this.cap() && this.queue.length) {
+		while (this.active < this.effectiveLimit() && this.queue.length) {
 			this.active++;
 			this.queue.shift()?.grantSlot();
 			granted = true;
