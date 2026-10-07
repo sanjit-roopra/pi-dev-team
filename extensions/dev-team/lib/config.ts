@@ -128,8 +128,8 @@ const DEFAULT_USED_TIERS = ["haiku", "sonnet", "opus"] as const;
 /** Whether pi can run a provider/model-id: in its catalog and with auth configured. */
 export type ModelStatus = "ok" | "no-auth" | "unknown";
 
-/** A tier set to a model. */
-export interface TierModel {
+/** A tier and the model a change sets it to. */
+export interface TierChange {
 	tier: string;
 	model: string;
 }
@@ -146,7 +146,7 @@ export interface PresetAdvice {
 	presetName: string;
 	tiersOnSessionModel: string[];
 	action: "preset" | "custom";
-	changes: TierModel[];
+	changes: TierChange[];
 	unusable: { model: string; status: ModelStatus }[];
 }
 
@@ -341,11 +341,13 @@ export function projectFileSettingTiers(cwd: string, opts: { includeProject: boo
 		.at(-1);
 }
 
-/** The tier models one config file sets itself, text values only; what `/dev-team models` starts from. */
+/** The tier models one config file sets itself, known tiers with text values only; what `/dev-team models` starts from. */
 export function fileTierModels(file: string): Record<string, string> {
 	const models = readJson(file)?.models;
 	if (!isPlainObject(models)) return {};
-	return Object.fromEntries(Object.entries(models).filter((e): e is [string, string] => typeof e[1] === "string"));
+	return Object.fromEntries(
+		Object.entries(models).filter((e): e is [string, string] => Object.hasOwn(DEFAULT_CONFIG.models, e[0]) && typeof e[1] === "string"),
+	);
 }
 
 /** Read-modify-write one config file (used by /dev-team models). */

@@ -22,13 +22,12 @@ import {
 	type ModelStatus,
 	presetAdvice,
 	fileTierModels,
-	inherits,
 	projectFileSettingTiers,
 	projectConfigPath,
 	updateConfigFile,
 	userConfigPath,
 } from "./lib/config.ts";
-import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine } from "./lib/doctor-text.ts";
+import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
 import { toSingleLine } from "./lib/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
@@ -322,25 +321,28 @@ export default function devTeam(pi: ExtensionAPI) {
 		]);
 		if (!mode) return;
 		let models: Record<string, string>;
-		const preset = presetFromMenuLabel(mode);
-		if (preset) {
-			models = { ...MODEL_PRESETS[preset] };
+		const presetName = presetFromMenuLabel(mode);
+		if (presetName) {
+			models = { ...MODEL_PRESETS[presetName] };
 		} else {
 			const available = ctx.modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`).sort();
-			// Start from what this file sets itself: another file's tiers (a project's, say) must not be copied into it.
-			models = { ...DEFAULT_CONFIG.models, ...fileTierModels(file) };
+			// Only what this file sets itself: another file's tiers must not be copied into it, a tier it does
+			// not set stays unset (so a project file does not override the user's own mapping), and the file of
+			// a project pi does not trust is not read.
+			const fileModels = scope.startsWith("user") || ctx.isProjectTrusted() ? fileTierModels(file) : {};
+			models = {};
 			for (const tier of Object.keys(DEFAULT_CONFIG.models)) {
-				// The tier's own model comes first, so taking the first entry keeps it.
-				const own = inherits(models[tier]) ? "inherit" : models[tier];
-				const choices = [own, ...["inherit", ...available].filter((m) => m !== own)];
-				const shown = choices.map(toSingleLine);
-				const pick = await ctx.ui.select(`Model for tier "${tier}" (in this file: ${toSingleLine(own)})`, shown);
-				if (pick) models[tier] = choices[shown.indexOf(pick)] ?? own;
+				const choices = tierMenuChoices(fileModels[tier], config.models[tier], available);
+				const labels = choices.map((c) => c.label);
+				const pick = await ctx.ui.select(`Model for tier "${tier}"`, labels);
+				const value = choices[pick === undefined ? 0 : labels.indexOf(pick)]?.value;
+				if (value !== undefined) models[tier] = value;
 			}
 		}
 		updateConfigFile(file, { models });
 		config = loadConfig(ctx.cwd, projectConfigOpts(ctx)).config;
-		ctx.ui.notify(`Saved to ${file}:\n${Object.entries(models).map(([k, v]) => `${k} = ${v}`).join("\n")}`, "info");
+		const saved = Object.entries(models).map(([tier, model]) => `${tier} = ${toSingleLine(model)}`);
+		ctx.ui.notify(`Saved to ${file}:\n${saved.length ? saved.join("\n") : "(no tier set)"}`, "info");
 	}
 
 	// ---------------------------------------------------------------- agent mode (claude shim: --dev-team-agent)

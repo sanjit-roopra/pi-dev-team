@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelStatus, PresetAdvice } from "../../extensions/dev-team/lib/config.ts";
-import { CUSTOM_MENU_LABEL, joinWithAnd, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine } from "../../extensions/dev-team/lib/doctor-text.ts";
+import { CUSTOM_MENU_LABEL, joinWithAnd, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "../../extensions/dev-team/lib/doctor-text.ts";
 
 const SESSION = "github-copilot/claude-opus-5.5";
 const advice = (overrides: Partial<PresetAdvice>): PresetAdvice => ({
@@ -96,4 +96,34 @@ for (const [title, tier, model, session, line] of [
 
 test("tierLine: a project's model id or tier name cannot drive the terminal", () => {
 	assert.equal(tierLine("hai\u001b[2Jku", "p/\u001b]52;c;eA==\u0007x\nFAKE", "p/s", status), "  haiku: p/xFAKE UNKNOWN MODEL");
+});
+
+test("tierMenuChoices: the file's own model first, then inherit and the available models, no duplicate", () => {
+	assert.deepEqual(tierMenuChoices("p/a", "p/a", ["p/a", "p/b"]), [
+		{ label: "p/a (in this file)", value: "p/a" },
+		{ label: "inherit", value: "inherit" },
+		{ label: "p/b", value: "p/b" },
+	]);
+});
+
+test("tierMenuChoices: a file set to inherit (or empty) offers inherit first, once", () => {
+	for (const own of ["inherit", ""]) {
+		assert.deepEqual(tierMenuChoices(own, undefined, ["p/b"]).map((c) => c.label), ["inherit (in this file)", "p/b"], JSON.stringify(own));
+	}
+});
+
+test("tierMenuChoices: a tier the file does not set is left unset by its first entry, which names the model it runs on now", () => {
+	assert.deepEqual(tierMenuChoices(undefined, "p/user", ["p/b"])[0], { label: "not set in this file (now p/user)", value: undefined });
+	assert.equal(tierMenuChoices(undefined, undefined, [])[0].label, "not set in this file (now inherit)");
+	assert.equal(tierMenuChoices(undefined, 5, [])[0].label, "not set in this file (now inherit)", "a value that is not a model id");
+});
+
+test("tierMenuChoices: labels are one line and unique, so a picked label maps back to one model", () => {
+	const choices = tierMenuChoices("p/x\u0000", undefined, ["p/x", "p/y\u001b[2J", "p/y"]);
+	assert.deepEqual(choices, [
+		{ label: "p/x (in this file)", value: "p/x\u0000" },
+		{ label: "inherit", value: "inherit" },
+		{ label: "p/x", value: "p/x" },
+		{ label: "p/y", value: "p/y\u001b[2J" },
+	], "the file's look-alike is marked, and a later look-alike is dropped");
 });

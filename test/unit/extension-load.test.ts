@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { after, test } from "node:test";
+import { after, type TestContext, test } from "node:test";
 import { CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { MODEL_PRESETS } from "../../extensions/dev-team/lib/config.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
@@ -283,21 +283,21 @@ test("nested, failed and non-text reads, other tools and readDedup off are never
 test("/dev-team doctor: tier rows with their status, then the tip for the session's provider", async (t) => {
 	// opus is the session model and haiku is mapped elsewhere, so the advice is about sonnet. Its preset model
 	// has no auth here, so the tip names it instead of the custom steps.
-	const preset = MODEL_PRESETS["github-copilot"];
+	const presetModels = MODEL_PRESETS["github-copilot"];
 	const ext = await loadExtension({ config: { models: { haiku: "github-copilot/gpt-5-mini", sonnet: "inherit", opus: "inherit", fable: "nowhere/model" } } });
 	try {
 		const printed: string[] = [];
 		t.mock.method(console, "log", (...args: unknown[]) => void printed.push(args.join(" ")));
-		const known: Record<string, boolean> = { "github-copilot/gpt-5-mini": true, [preset.sonnet]: false };
-		const [provider, ...id] = preset.opus.split("/");
+		const authByModel: Record<string, boolean> = { "github-copilot/gpt-5-mini": true, [presetModels.sonnet]: false };
+		const [provider, ...id] = presetModels.opus.split("/");
 		const ctx = {
 			hasUI: false,
 			cwd: os.tmpdir(),
 			isProjectTrusted: () => false,
 			model: { provider, id: id.join("/") },
 			modelRegistry: {
-				find: (provider: string, id: string) => (`${provider}/${id}` in known ? { provider, id } : undefined),
-				hasConfiguredAuth: (m: { provider: string; id: string }) => known[`${m.provider}/${m.id}`],
+				find: (provider: string, id: string) => (`${provider}/${id}` in authByModel ? { provider, id } : undefined),
+				hasConfiguredAuth: (m: { provider: string; id: string }) => authByModel[`${m.provider}/${m.id}`],
 			},
 		};
 		await ext.commands["dev-team"].handler("doctor", ctx);
@@ -306,12 +306,12 @@ test("/dev-team doctor: tier rows with their status, then the tip for the sessio
 		assert.ok(from > 0, lines.join("\n"));
 		// Rows follow DEFAULT_CONFIG's tier order.
 		assert.deepEqual(lines.slice(from + 1), [
-			`  opus: inherit (${preset.opus})`,
-			`  sonnet: inherit (${preset.opus})`,
+			`  opus: inherit (${presetModels.opus})`,
+			`  sonnet: inherit (${presetModels.opus})`,
 			"  haiku: github-copilot/gpt-5-mini ok",
 			"  fable: nowhere/model UNKNOWN MODEL",
-			`tip: sonnet agents run on ${preset.opus}, your session model.`,
-			`     preset "github-copilot" needs models this session cannot use: ${preset.sonnet} NO AUTH (/login). Pick a model per tier with /dev-team models → custom.`,
+			`tip: sonnet agents run on ${presetModels.opus}, your session model.`,
+			`     preset "github-copilot" needs models this session cannot use: ${presetModels.sonnet} NO AUTH (/login). Pick a model per tier with /dev-team models → custom.`,
 		]);
 	} finally {
 		ext.cleanup();
@@ -359,62 +359,103 @@ test("/dev-team models custom: each tier offers its own model first, so taking t
 		const { offered, ui } = scriptedUi([userScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ["Model for tier", (o) => o[0]]]);
 		const registry = { getAvailable: () => [{ provider: "p", id: "mapped" }, { provider: "p", id: "other" }] };
 		await ext.commands["dev-team"].handler("models", modelsCtx(ui, { modelRegistry: registry }));
-		assert.deepEqual(offered.find((o) => o.title.startsWith('Model for tier "haiku"'))?.options, ["p/mapped", "inherit", "p/other"], "its own model first, no duplicate");
-		assert.equal(ext.savedModels().haiku, "p/mapped", "kept");
-		assert.equal(ext.savedModels().sonnet, "inherit");
+		assert.deepEqual(offered.find((o) => o.title.startsWith('Model for tier "haiku"'))?.options, ["p/mapped (in this file)", "inherit", "p/other"], "its own model first, no duplicate");
+		assert.equal(offered.find((o) => o.title.startsWith('Model for tier "sonnet"'))?.options[0], "not set in this file (now inherit)");
+		assert.deepEqual(ext.savedModels(), { haiku: "p/mapped" }, "kept; the tiers the file does not set stay unset");
 	} finally {
 		ext.cleanup();
 	}
 });
 
-test("/dev-team models custom: another file's tiers are not offered first or copied into the file being saved", async (t) => {
-	// The user file maps sonnet; saving for the project must start from the project file's own tiers.
-	const ext = await loadExtension({ config: { models: { sonnet: "p/user" } } });
+test("/dev-team models custom: a cancelled tier keeps the file's own value", async () => {
+	const ext = await loadExtension({ config: { models: { haiku: "p/mapped" } } });
+	try {
+		const { ui } = scriptedUi([userScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ["Model for tier", () => undefined]]);
+		await ext.commands["dev-team"].handler("models", modelsCtx(ui, { modelRegistry: { getAvailable: () => [] } }));
+		assert.deepEqual(ext.savedModels(), { haiku: "p/mapped" });
+	} finally {
+		ext.cleanup();
+	}
+});
+
+const projectScope = ["Save tier mapping", (o: string[]) => o.find((x) => x.startsWith("project"))] as [string, (o: string[]) => string | undefined];
+const savedProjectModels = (cwd: string) => JSON.parse(fs.readFileSync(path.join(cwd, ".pi", "dev-team.json"), "utf-8")).models;
+
+test("/dev-team models custom: a project file gets only the tiers picked for it, so the user's other mappings still apply there", async (t) => {
+	// The user file maps sonnet and haiku; the project changes only opus.
+	const ext = await loadExtension({ config: { models: { sonnet: "p/user", haiku: "p/user-haiku" } } });
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-project-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	try {
-		const projectScope = ["Save tier mapping", (o: string[]) => o.find((x) => x.startsWith("project"))] as [string, (o: string[]) => string | undefined];
-		const { offered, ui } = scriptedUi([projectScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ["Model for tier", (o) => o[0]]]);
-		const registry = { getAvailable: () => [{ provider: "p", id: "user" }] };
+		const { offered, ui } = scriptedUi([projectScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ['Model for tier "opus"', () => "p/big"], ["Model for tier", (o) => o[0]]]);
+		const registry = { getAvailable: () => [{ provider: "p", id: "user" }, { provider: "p", id: "big" }] };
 		await ext.commands["dev-team"].handler("models", modelsCtx(ui, { cwd, isProjectTrusted: () => true, modelRegistry: registry }));
-		assert.equal(offered.find((o) => o.title.startsWith('Model for tier "sonnet"'))?.options[0], "inherit", "the project file's own value comes first");
-		const saved = JSON.parse(fs.readFileSync(path.join(cwd, ".pi", "dev-team.json"), "utf-8")).models;
-		assert.equal(saved.sonnet, "inherit", "the user's mapping is not copied into the project file");
+		assert.equal(offered.find((o) => o.title.startsWith('Model for tier "sonnet"'))?.options[0], "not set in this file (now p/user)", "the user's mapping is shown, not offered as the project's");
+		assert.deepEqual(savedProjectModels(cwd), { opus: "p/big" }, "no user mapping copied, no inherit written over it");
 	} finally {
 		ext.cleanup();
 	}
 });
 
-test("/dev-team doctor: when a trusted project file sets the advised tiers, the tip names that file", async (t) => {
-	const preset = MODEL_PRESETS["github-copilot"];
+test("/dev-team models custom: the file of an untrusted project is not read, and what is saved is shown on one line", async (t) => {
 	const ext = await loadExtension();
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-project-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	fs.mkdirSync(path.join(cwd, ".pi"));
-	const projectFile = path.join(cwd, ".pi", "dev-team.json");
+	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.json"), JSON.stringify({ models: { haiku: "p/evil\u001b]52;c;x\u0007" } }));
+	try {
+		const notes: string[] = [];
+		const { offered, ui } = scriptedUi([projectScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ['Model for tier "opus"', () => "p/odd"], ["Model for tier", (o) => o[0]]]);
+		const registry = { getAvailable: () => [{ provider: "p", id: "odd\u001b[2J" }] };
+		await ext.commands["dev-team"].handler("models", modelsCtx({ ...ui, notify: (text: string) => notes.push(text) }, { cwd, isProjectTrusted: () => false, modelRegistry: registry }));
+		assert.equal(offered.find((o) => o.title.startsWith('Model for tier "haiku"'))?.options[0], "not set in this file (now inherit)", "not read");
+		assert.equal(savedProjectModels(cwd).opus, "p/odd\u001b[2J", "the picked label saves the model's own id");
+		assert.doesNotMatch(notes.join("\n"), /\u001b|\u0007/);
+	} finally {
+		ext.cleanup();
+	}
+});
+
+/** Doctor's last line in a project whose `.pi/<fileName>` maps sonnet to inherit, on the github-copilot preset's opus. */
+async function doctorTipWithProjectFile(t: TestContext, fileName: string, trusted: boolean) {
+	const presetModels = MODEL_PRESETS["github-copilot"];
+	const ext = await loadExtension();
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-project-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	fs.mkdirSync(path.join(cwd, ".pi"));
+	const projectFile = path.join(cwd, ".pi", fileName);
 	fs.writeFileSync(projectFile, JSON.stringify({ models: { sonnet: "inherit" } }));
 	try {
 		const printed: string[] = [];
 		t.mock.method(console, "log", (...args: unknown[]) => void printed.push(args.join(" ")));
-		const [provider, ...id] = preset.opus.split("/");
+		const [provider, ...id] = presetModels.opus.split("/");
 		const ctx = {
 			hasUI: false,
 			cwd,
-			isProjectTrusted: () => true,
+			isProjectTrusted: () => trusted,
 			model: { provider, id: id.join("/") },
 			modelRegistry: { find: (p: string, i: string) => ({ provider: p, id: i }), hasConfiguredAuth: () => true },
 		};
-		for (const trust of [true, false]) {
-			printed.length = 0;
-			ctx.isProjectTrusted = () => trust;
-			await ext.commands["dev-team"].handler("doctor", ctx);
-			const last = printed.join("\n").split("\n").at(-1);
-			if (trust) assert.equal(last, `     ${projectFile} sets some of these tiers for this project and wins: change them in that file.`);
-			else assert.match(last ?? "", /^ {5}\/dev-team models → preset: github-copilot sets /, "an untrusted project's file is not read");
-		}
+		await ext.commands["dev-team"].handler("doctor", ctx);
+		return { projectFile, last: printed.join("\n").split("\n").at(-1) ?? "" };
 	} finally {
 		ext.cleanup();
 	}
+}
+
+test("/dev-team doctor: when a trusted project file sets the advised tiers, the tip names that file", async (t) => {
+	const { projectFile, last } = await doctorTipWithProjectFile(t, "dev-team.json", true);
+	assert.equal(last, `     ${projectFile} sets some of these tiers for this project and wins: change them in that file.`);
+});
+
+test("/dev-team doctor: a trusted project's local file is named with the edit-by-hand note", async (t) => {
+	const { projectFile, last } = await doctorTipWithProjectFile(t, "dev-team.local.json", true);
+	assert.equal(last, `     ${projectFile} sets some of these tiers for this project and wins: change them in that file by hand (/dev-team models does not write it).`);
+});
+
+test("/dev-team doctor: an untrusted project's file is not read, so the tip points to the preset", async (t) => {
+	const { last } = await doctorTipWithProjectFile(t, "dev-team.json", false);
+	assert.match(last, /^ {5}\/dev-team models → preset: github-copilot sets /);
 });
 
 test("dev_team_subagent's registered renderer gets pi's render context, so a running row redraws every second", async (t) => {

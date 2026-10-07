@@ -63,6 +63,7 @@ test("resolveModel: tiers, inherit, explicit ids, overrides", () => {
 	assert.deepEqual(resolveModel("opus", "haiku", tiers, "p/m"), { model: "github-copilot/claude-haiku-4.5", tier: "haiku" });
 	assert.deepEqual(resolveModel("opus", "openai/gpt-5.5", tiers, "p/m"), { model: "openai/gpt-5.5" });
 	assert.deepEqual(resolveModel("fable", undefined, tiers, undefined), { model: undefined, tier: "fable" });
+	assert.deepEqual(resolveModel("sonnet", undefined, { sonnet: "" }, "p/m"), { model: "p/m", tier: "sonnet" }, "empty inherits, as doctor reads it");
 });
 
 test("resolveThinking maps effort", () => {

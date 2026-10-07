@@ -350,3 +350,8 @@ test("fileTierModels: the text tier values one file sets itself", (t) => {
 	assert.deepEqual(fileTierModels(p.local), {}, "a list is not a tier mapping");
 	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["0"]), undefined, "nor does it set a tier named 0");
 });
+
+test("fileTierModels: only known tiers", (t) => {
+	const p = projectWith(t, { shared: { models: { haiku: "x/y", "x\u001b]52;c;x\u0007": "y", toString: "z" } } });
+	assert.deepEqual(fileTierModels(p.shared), { haiku: "x/y" });
+});
