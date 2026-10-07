@@ -27,6 +27,8 @@ export interface UsageTotals {
 export interface ToolCallSummary {
 	name: string;
 	args?: Record<string, string>;
+	/** When the call started executing (epoch ms); set only while it runs. */
+	startedAt?: number;
 }
 
 /** Spend of an agent dispatched by a child (or deeper), credited to that agent and its model. */
@@ -83,6 +85,12 @@ export interface SubagentTaskView {
 	worktree?: WorktreeInfo;
 	/** Agents it is running right now through its own dev-team calls; set only while it runs. */
 	subagents?: LiveSubagentView[];
+	/** Place in line (1 = next) while it waits for a free agent slot (maxParallelAgents). */
+	queuePosition?: number;
+	/** When it got its slot and started (epoch ms). */
+	startedAt?: number;
+	/** When its current model step began (epoch ms): its last message or the end of its last tool call. */
+	activeSince?: number;
 }
 
 /**
@@ -102,10 +110,16 @@ export interface LiveSubagentView {
  * Progress fields a running child reports; status/ok are set only from the final result. A key set
  * to undefined clears that field, as `subagents: undefined` does once no dev-team call is open.
  */
-export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents">>;
+export type ProgressPatch = Partial<
+	Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents" | "queuePosition" | "startedAt" | "activeSince">
+>;
 
 export interface SubagentDetails {
 	results: SubagentTaskView[];
+	/** When the dispatch began (epoch ms). */
+	startedAt?: number;
+	/** The call's short label (its `description`), shown in the parallel header. */
+	label?: string;
 	/** Project agents that were requested but not run because pi trust was declined for the project. */
 	skippedProjectAgents?: string[];
 	/** Earlier name of skippedProjectAgents, still found in stored sessions. */

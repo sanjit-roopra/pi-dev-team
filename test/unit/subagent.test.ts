@@ -7,7 +7,7 @@ import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "
 import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
-import { DispatchProgress, formatResultText, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { DispatchProgress, formatResultText, Semaphore, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -445,4 +445,79 @@ test("result text and view carry the saved file for single and parallel results"
 	assert.match(formatResultText([oversized, runResult({ agent: "b" })], []), /complete output is in \/tmp\/full\.md/);
 	assert.match(formatResultText([runResult({ ok: false, error: "e", output: big, fullOutputFile: file }), runResult({ agent: "b" })], []), /Last output:[\s\S]*complete output is in \/tmp\/full\.md/);
 	assert.match(viewFromResult(oversized).output ?? "", /complete output: \/tmp\/full\.md/);
+});
+
+const callMessage = (calls: { id: string; command: string }[]) =>
+	({ type: "message_end", message: { role: "assistant", content: calls.map((c) => ({ type: "toolCall", id: c.id, name: "bash", arguments: { command: c.command } })) } }) as never;
+const execution = (type: "tool_execution_start" | "tool_execution_end", toolCallId: string, toolName = "bash") => ({ type, toolCallId, toolName, args: {} });
+
+test("child events: an executing call is marked with its start until it ends", () => {
+	const state = newChildRunState();
+	const afterMessage = applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }]), 1_000);
+	assert.equal(afterMessage?.activeSince, 1_000, "no call runs yet: the model's step starts");
+	const started = applyChildEvent(state, execution("tool_execution_start", "t1"), 2_000);
+	assert.deepEqual(started?.recentCalls, [{ name: "bash", args: { command: "npm test" }, startedAt: 2_000 }]);
+	assert.equal(started?.activeSince, undefined);
+	const ended = applyChildEvent(state, execution("tool_execution_end", "t1"), 9_000);
+	assert.deepEqual(ended?.recentCalls, [{ name: "bash", args: { command: "npm test" } }]);
+	assert.equal(ended?.activeSince, 9_000, "back to the model when the last call ends");
+	assert.equal(state.runningCalls.size, 0);
+});
+
+test("child events: a start seen before its message still marks the call", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, execution("tool_execution_start", "t1"), 2_000);
+	const patch = applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }, { id: "t2", command: "ls" }]), 2_500);
+	assert.deepEqual(patch?.recentCalls?.map((c) => c.startedAt), [2_000, undefined]);
+	assert.equal(patch?.activeSince, undefined, "a call is running");
+});
+
+test("child events: parallel calls; the step goes back to the model only when the last one ends", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage([{ id: "t1", command: "a" }, { id: "t2", command: "b" }]), 0);
+	applyChildEvent(state, execution("tool_execution_start", "t1"), 1);
+	applyChildEvent(state, execution("tool_execution_start", "t2"), 2);
+	const first = applyChildEvent(state, execution("tool_execution_end", "t2"), 3);
+	assert.deepEqual(first?.recentCalls?.map((c) => c.startedAt), [1, undefined]);
+	assert.equal(first?.activeSince, undefined);
+	assert.equal(applyChildEvent(state, execution("tool_execution_end", "t1"), 4)?.activeSince, 4);
+});
+
+test("child events: the end of a dev-team call clears both its running mark and its live agents", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, execution("tool_execution_start", "c1", "dev_team_subagent"), 1);
+	applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running")]));
+	const patch = applyChildEvent(state, dispatchEnd("c1"), 5);
+	assert.ok(patch && "subagents" in patch && patch.subagents === undefined);
+	assert.equal(patch?.activeSince, 5);
+});
+
+test("semaphore: waiters learn their place in line, and it moves up as slots free", async () => {
+	const slots = new Semaphore(1);
+	const releaseFirst = await slots.acquire();
+	const places: Record<string, number[]> = { b: [], c: [] };
+	const b = slots.acquire((n) => places.b.push(n));
+	const c = slots.acquire((n) => places.c.push(n));
+	assert.deepEqual(places, { b: [1], c: [2] });
+	releaseFirst();
+	const releaseB = await b;
+	assert.deepEqual(places, { b: [1], c: [2, 1] }, "c moves up when b gets the slot");
+	releaseB();
+	(await c)();
+	const free = await slots.acquire((n) => places.b.push(n));
+	assert.deepEqual(places.b, [1], "no place in line when a slot is free");
+	free();
+});
+
+test("progress: the snapshot carries the dispatch start and its label", () => {
+	const progress = new DispatchProgress([{ agent: "a", task: "t" }], [], undefined, { label: "code-review round 2/4", now: 42 });
+	assert.equal(progress.snapshot().startedAt, 42);
+	assert.equal(progress.snapshot().label, "code-review round 2/4");
+	assert.equal(new DispatchProgress([{ agent: "a", task: "t" }], [], undefined).snapshot().label, undefined);
+});
+
+test("progress: a waiting agent's status line says so", () => {
+	const { progress, updates } = recordedProgress();
+	progress.update(1, { queuePosition: 2 });
+	assert.equal(updates.at(-1)?.text, "a: turn 0\nb: waiting for a free agent slot (#2)");
 });

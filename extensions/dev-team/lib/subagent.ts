@@ -69,23 +69,37 @@ export interface SubagentRunResult {
 }
 
 const TASK_PREVIEW_CHARS = 400;
+const LABEL_CHARS = 80;
 const STATUS_LINE_TOOLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
 
-class Semaphore {
+/** A waiter for a slot; told its place in line (1 = next) when it joins and each time the line moves. */
+interface Waiter {
+	start: () => void;
+	onPosition?: (position: number) => void;
+}
+
+export class Semaphore {
 	private active = 0;
-	private readonly queue: (() => void)[] = [];
+	private readonly queue: Waiter[] = [];
 	limit: number;
 	constructor(limit: number) {
 		this.limit = limit;
 	}
-	async acquire(): Promise<() => void> {
-		if (this.active >= this.limit) await new Promise<void>((r) => this.queue.push(r));
+	async acquire(onPosition?: (position: number) => void): Promise<() => void> {
+		if (this.active >= this.limit) {
+			await new Promise<void>((start) => {
+				this.queue.push({ start, onPosition });
+				onPosition?.(this.queue.length);
+			});
+		}
 		this.active++;
 		return () => {
 			this.active--;
-			this.queue.shift()?.();
+			const next = this.queue.shift();
+			this.queue.forEach((w, i) => w.onPosition?.(i + 1));
+			next?.start();
 		};
 	}
 }
@@ -197,7 +211,9 @@ export interface SubagentDeps {
 const TaskFields = {
 	agent: Type.Optional(Type.String({ description: "Agent name (Claude: subagent_type), e.g. security-review, software-engineer, Explore" })),
 	task: Type.Optional(Type.String({ description: "Full task prompt for the agent (Claude: prompt). The agent sees only this, not the conversation." })),
-	description: Type.Optional(Type.String({ description: "Short 3-5 word label" })),
+	description: Type.Optional(
+		Type.String({ description: 'Short 3-5 word label. On a call with `tasks`, the progress view shows it, e.g. "code-review round 2/4"' }),
+	),
 	model: Type.Optional(
 		Type.String({ description: "Override model: a tier (opus|sonnet|haiku|fable|inherit) or provider/model-id" }),
 	),
@@ -275,7 +291,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (typeof pre.updatedInput.additionalContext === "string") task = `${task}\n\n${pre.updatedInput.additionalContext}`;
 		}
 
-		const release = await semaphore.acquire();
+		const release = await semaphore.acquire((position) => update({ queuePosition: position }));
+		update({ queuePosition: undefined, startedAt: Date.now() });
 		let wt: ReturnType<typeof createWorktree> | undefined;
 		const agentId = randomUUID().replace(/-/g, "").slice(0, 16);
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
@@ -472,7 +489,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			// One trust decision per call, shared by every child.
 			const trust = childTrustOf(ctx);
 			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
-			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined);
+			const label = params.tasks?.length ? params.description?.trim() || undefined : undefined;
+			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined, { label });
 			const results = await Promise.all(
 				list.map(async (t, i) => {
 					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), trust);
@@ -500,9 +518,18 @@ export class DispatchProgress {
 	private readonly views: SubagentTaskView[];
 	private readonly skippedProjectAgents: string[];
 	private readonly onUpdate: DispatchUpdate | undefined;
-	constructor(list: DispatchArgs[], skippedProjectAgents: string[], onUpdate: DispatchUpdate | undefined) {
+	private readonly startedAt: number;
+	private readonly label: string | undefined;
+	constructor(
+		list: DispatchArgs[],
+		skippedProjectAgents: string[],
+		onUpdate: DispatchUpdate | undefined,
+		{ label, now = Date.now() }: { label?: string; now?: number } = {},
+	) {
 		this.skippedProjectAgents = skippedProjectAgents;
 		this.onUpdate = onUpdate;
+		this.startedAt = now;
+		this.label = label?.slice(0, LABEL_CHARS);
 		this.views = list.map((t) => ({
 			agent: dispatchAgent(t) || "(none)",
 			task: dispatchTask(t).slice(0, TASK_PREVIEW_CHARS),
@@ -516,6 +543,8 @@ export class DispatchProgress {
 	snapshot(): SubagentDetails {
 		return {
 			results: this.views.map((v) => ({ ...v, recentCalls: [...v.recentCalls] })),
+			startedAt: this.startedAt,
+			...(this.label ? { label: this.label } : {}),
 			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
 	}
@@ -534,6 +563,7 @@ export class DispatchProgress {
 
 function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
+	if (v.queuePosition) return `${v.agent}: waiting for a free agent slot (#${v.queuePosition})`;
 	const calls = recentCallLines(v);
 	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
 	return `${v.agent}: turn ${v.turns}${tools}`;
@@ -556,6 +586,8 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		output: r.output ? outputForView(r.output, r.fullOutputFile) : undefined,
 		worktree: r.worktree,
 		subagents: undefined,
+		queuePosition: undefined,
+		activeSince: undefined,
 	};
 }
 

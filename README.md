@@ -79,6 +79,13 @@ The agents can do the same things that you can do in a terminal.
 - They can run shell commands, for example your tests.
 - They can make many model calls. Up to 6 agents run at the same time by default.
 
+While agents run, pi shows each agent on its own lines. The view updates every second:
+
+- How long each agent has run, and the total time and cost so far
+- The command or tool that an agent runs now, and for how long (`▶ $ npm test running 38s`)
+- `thinking… 14s` when the model works on its next step
+- `waiting for a free agent slot (2nd in line)` when all slots are in use
+
 The guard hooks reduce the risk. For example, they stop `gh pr create` until a code review passes, and they keep the tests fixed while the team cleans up code. The guards need Python.
 
 To limit the work, set these values in `~/.pi/agent/dev-team.json`:
