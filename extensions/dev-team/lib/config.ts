@@ -323,7 +323,7 @@ export function projectFileSettingTiers(cwd: string, opts: { includeProject: boo
 	return projectConfigFiles(cwd, opts)
 		.filter((file) => {
 			const models = readJson(file)?.models;
-			return !!models && typeof models === "object" && tiers.some((t) => Object.hasOwn(models, t));
+			return isPlainObject(models) && tiers.some((t) => Object.hasOwn(models, t));
 		})
 		.at(-1);
 }
@@ -331,7 +331,7 @@ export function projectFileSettingTiers(cwd: string, opts: { includeProject: boo
 /** The tier models one config file sets itself, text values only; what `/dev-team models` starts from. */
 export function fileTierModels(file: string): Record<string, string> {
 	const models = readJson(file)?.models;
-	if (!models || typeof models !== "object") return {};
+	if (!isPlainObject(models)) return {};
 	return Object.fromEntries(Object.entries(models).filter((e): e is [string, string] => typeof e[1] === "string"));
 }
 

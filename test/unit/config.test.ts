@@ -324,4 +324,7 @@ test("fileTierModels: the text tier values one file sets itself", (t) => {
 	const p = projectWith(t, { shared: { models: { haiku: "x/y", sonnet: 5, opus: { toString: 1 } } } });
 	assert.deepEqual(fileTierModels(p.shared), { haiku: "x/y" });
 	assert.deepEqual(fileTierModels(p.local), {}, "a missing file sets nothing");
+	fs.writeFileSync(p.local, JSON.stringify({ models: ["x/y"] }));
+	assert.deepEqual(fileTierModels(p.local), {}, "a list is not a tier mapping");
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["0"]), undefined, "nor does it set a tier named 0");
 });
