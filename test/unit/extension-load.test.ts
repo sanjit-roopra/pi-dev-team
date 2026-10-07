@@ -3,10 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { after, test } from "node:test";
+import { CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
-type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean> };
+type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean>; renderResult?: (...args: unknown[]) => unknown };
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 type CommandDef = { description?: string; getArgumentCompletions?: (prefix: string) => { value: string }[]; handler: (args: string, ctx: unknown) => Promise<void> | void };
 
@@ -274,4 +275,34 @@ test("nested, failed and non-text reads, other tools and readDedup off are never
 			ext.cleanup();
 		}
 	}
+});
+
+test("dev_team_subagent's registered renderer gets pi's render context, so a running row redraws every second", async (t) => {
+	const { tools } = await loaded;
+	t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 1_000 });
+	let redraws = 0;
+	const context = { state: {}, invalidate: () => redraws++ };
+	const theme = { fg: (_c: string, text: string) => text, bold: (text: string) => text };
+	const partial = { content: [], details: { results: [{ agent: "a", task: "t", status: "running", ok: false, turns: 0, recentCalls: [] }] } };
+	tools.dev_team_subagent.renderResult?.(partial, { expanded: false, isPartial: true }, theme, context);
+	t.mock.timers.tick(2 * CLOCK_TICK_MS);
+	assert.equal(redraws, 2);
+	const final = { content: [], details: { results: [{ ...partial.details.results[0], status: "ok", ok: true }] } };
+	tools.dev_team_subagent.renderResult?.(final, { expanded: false, isPartial: false }, theme, context);
+	t.mock.timers.tick(3 * CLOCK_TICK_MS);
+	assert.equal(redraws, 2, "the final result stops it");
+});
+
+test("dev_team_subagent's execute labels a parallel dispatch's progress and stamps its start", async (t) => {
+	const { tools } = await loaded;
+	t.mock.timers.enable({ apis: ["Date"], now: 5_000 });
+	const updates: { details?: { label?: string; dispatchStartedAt?: number } }[] = [];
+	const ctx = { cwd: os.tmpdir(), isProjectTrusted: () => false };
+	// Unknown agents fail before any hook or child process, so the dispatch finishes at once.
+	const params = { description: "code-review round 2/4", tasks: [{ agent: "no-such-agent-a", task: "x" }, { agent: "no-such-agent-b", task: "y" }] };
+	const execute = (tools.dev_team_subagent as unknown as { execute: (...args: unknown[]) => Promise<{ details: { label?: string; dispatchStartedAt?: number } }> }).execute;
+	const final = await execute("call-1", params, undefined, (u: (typeof updates)[number]) => updates.push(u), ctx);
+	assert.ok(updates.length > 0, "progress was streamed");
+	updates.forEach((u, i) => assert.deepEqual([u.details?.label, u.details?.dispatchStartedAt], ["code-review round 2/4", 5_000], `update ${i}`));
+	assert.deepEqual([final.details.label, final.details.dispatchStartedAt], ["code-review round 2/4", 5_000], "the final details the view keeps");
 });

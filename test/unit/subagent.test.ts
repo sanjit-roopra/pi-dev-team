@@ -7,7 +7,8 @@ import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "
 import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
-import { DispatchProgress, formatResultText, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
+import { acquireSlot, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -179,8 +180,8 @@ test("child events: a failing turn records the stop reason and error", () => {
 test("child events: only the latest 8 tool calls are kept, nameless ones skipped", () => {
 	const state = newChildRunState();
 	const calls = Array.from({ length: 10 }, (_, i) => ({ type: "toolCall", name: `t${i}` }));
-	applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }] } as never });
-	assert.deepEqual(state.recentCalls.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"]);
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "assistant", content: [...calls, { type: "toolCall" }, { type: "toolCall", name: 7 }, { type: "toolCall", name: " \n " }] } as never });
+	assert.deepEqual(patch?.recentCalls?.map((c) => c.name), ["t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9"], "nameless, non-string and blank names skipped");
 });
 
 test("child events: a model without a provider is shown as is", () => {
@@ -410,6 +411,23 @@ test("a tool call keeps only the arguments the view shows, one line and bounded"
 	assert.deepEqual(summarizeToolCall("ask_user", null), { name: "ask_user" });
 });
 
+test("a tool call's name is one line and bounded too", () => {
+	assert.equal(summarizeToolCall("read\n✓ security-review", {}).name, "read ✓ security-review");
+	assert.equal(summarizeToolCall("x".repeat(500), {}).name.length, 200);
+});
+
+test("child events: a nested agent's name is one line and bounded; a blank one is dropped", () => {
+	const state = newChildRunState();
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("x\n✓ parallel 3/3 succeeded", "running"), reviewer("y".repeat(500), "running"), reviewer(" \n ", "running")]));
+	assert.deepEqual(patch?.subagents?.map((v) => v.agent), ["x ✓ parallel 3/3 succeeded", "y".repeat(200)]);
+});
+
+test("child events: a nested agent's blank latest call is no call", () => {
+	const state = newChildRunState();
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running", { recentCalls: [{ name: " \n " }] })]));
+	assert.deepEqual(patch?.subagents?.[0].recentCalls, []);
+});
+
 const OUTPUT_CAP = 50 * 1024;
 const big = "y".repeat(OUTPUT_CAP + 1);
 
@@ -445,4 +463,368 @@ test("result text and view carry the saved file for single and parallel results"
 	assert.match(formatResultText([oversized, runResult({ agent: "b" })], []), /complete output is in \/tmp\/full\.md/);
 	assert.match(formatResultText([runResult({ ok: false, error: "e", output: big, fullOutputFile: file }), runResult({ agent: "b" })], []), /Last output:[\s\S]*complete output is in \/tmp\/full\.md/);
 	assert.match(viewFromResult(oversized).output ?? "", /complete output: \/tmp\/full\.md/);
+});
+
+const callMessage = (calls: { id?: string; command: string }[]) =>
+	({ type: "message_end", message: { role: "assistant", content: calls.map((c) => ({ type: "toolCall", id: c.id, name: "bash", arguments: { command: c.command } })) } }) as never;
+const executionEvent = (type: "tool_execution_start" | "tool_execution_end", toolCallId: unknown, toolName = "bash") => ({ type, toolCallId, toolName }) as never;
+const npmTest = { name: "bash", args: { command: "npm test" } };
+const commandsOf = (patch: ReturnType<typeof applyChildEvent>) => patch?.recentCalls?.map((c) => c.args?.command);
+const markedOf = (patch: ReturnType<typeof applyChildEvent>) => patch?.recentCalls?.filter((c) => c.runningSince !== undefined).map((c) => c.args?.command);
+
+/** The patch exists and leaves the model's step as it is (no stepStartedAt key). */
+function assertStepUnchanged(patch: ReturnType<typeof applyChildEvent>, message: string) {
+	assert.ok(patch, `${message}: a patch`);
+	assert.ok(!("stepStartedAt" in patch), `${message}: no step change`);
+}
+
+/** The patch exists and clears the model's step (the key is there, set to undefined). */
+function assertStepCleared(patch: ReturnType<typeof applyChildEvent>, message: string) {
+	assert.ok(patch, `${message}: a patch`);
+	assert.ok("stepStartedAt" in patch, `${message}: the step key is there`);
+	assert.equal(patch.stepStartedAt, undefined, `${message}: cleared`);
+}
+
+test("child events: an assistant message ends the model's step, its calls run next", () => {
+	assertStepCleared(applyChildEvent(newChildRunState(), callMessage([{ id: "t1", command: "npm test" }]), 1_000), "message with calls");
+});
+
+test("child events: the final message (no calls) ends the model's step too", () => {
+	const final = { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }], stopReason: "stop" } } as never;
+	assertStepCleared(applyChildEvent(newChildRunState(), final, 5), "final message");
+});
+
+test("child events: an executing call is marked with when it started", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }]), 1_000);
+	const started = applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 2_000);
+	assert.deepEqual(started?.recentCalls, [{ ...npmTest, runningSince: 2_000 }]);
+	assertStepUnchanged(started, "start");
+});
+
+test("child events: when the message's last call ends, its mark goes and the model's step starts", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }]), 1_000);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 2_000);
+	const ended = applyChildEvent(state, executionEvent("tool_execution_end", "t1"), 9_000);
+	assert.deepEqual(ended?.recentCalls, [npmTest]);
+	assert.equal(ended?.stepStartedAt, 9_000);
+});
+
+test("child events: between calls run one after another, the step does not start", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage([{ id: "t1", command: "a" }, { id: "t2", command: "b" }]), 0);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 1);
+	assertStepUnchanged(applyChildEvent(state, executionEvent("tool_execution_end", "t1"), 2), "t2 has not run yet");
+	applyChildEvent(state, executionEvent("tool_execution_start", "t2"), 3);
+	assert.equal(applyChildEvent(state, executionEvent("tool_execution_end", "t2"), 4)?.stepStartedAt, 4);
+});
+
+test("child events: parallel calls; the step starts only when the last one ends", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage([{ id: "t1", command: "a" }, { id: "t2", command: "b" }]), 0);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 1);
+	applyChildEvent(state, executionEvent("tool_execution_start", "t2"), 2);
+	const first = applyChildEvent(state, executionEvent("tool_execution_end", "t2"), 3);
+	assert.deepEqual(first?.recentCalls?.map((c) => c.runningSince), [1, undefined]);
+	assertStepUnchanged(first, "t1 still runs");
+	assert.equal(applyChildEvent(state, executionEvent("tool_execution_end", "t1"), 4)?.stepStartedAt, 4);
+});
+
+test("child events: a start seen before its message still marks the call", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, executionEvent("tool_execution_start", "t1"), 2_000);
+	const patch = applyChildEvent(state, callMessage([{ id: "t1", command: "npm test" }, { id: "t2", command: "ls" }]), 2_500);
+	assert.deepEqual(patch?.recentCalls?.map((c) => c.runningSince), [2_000, undefined]);
+});
+
+const tenCalls = () => Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, command: `cmd ${i}` }));
+
+test("child events: a long message shows its last 8 calls", () => {
+	const many = tenCalls();
+	assert.deepEqual(commandsOf(applyChildEvent(newChildRunState(), callMessage(many), 0)), many.slice(2).map((c) => c.command));
+});
+
+test("child events: a call that starts out of view comes back marked, in its place in the message", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage(tenCalls()), 0);
+	const first = applyChildEvent(state, executionEvent("tool_execution_start", "c0"), 1);
+	assert.deepEqual(markedOf(first), ["cmd 0"], "c0 is back, executing");
+	assert.deepEqual(commandsOf(first), ["cmd 0", "cmd 3", "cmd 4", "cmd 5", "cmd 6", "cmd 7", "cmd 8", "cmd 9"], "first, as in the message; the oldest finished call made room");
+});
+
+test("child events: a second call that starts out of view comes back while the first still runs", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage(tenCalls()), 0);
+	applyChildEvent(state, executionEvent("tool_execution_start", "c0"), 1);
+	const second = applyChildEvent(state, executionEvent("tool_execution_start", "c1"), 2);
+	assert.deepEqual(markedOf(second), ["cmd 0", "cmd 1"], "both marked, in message order");
+	assert.deepEqual(commandsOf(second)?.slice(0, 3), ["cmd 0", "cmd 1", "cmd 4"]);
+});
+
+test("child events: past the kept calls, finished calls go first and executing ones stay", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, executionEvent("tool_execution_start", "long"), 1);
+	const many = [{ id: "long", command: "npm test" }, ...Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, command: `cmd ${i}` }))];
+	assert.deepEqual(commandsOf(applyChildEvent(state, callMessage(many), 2)), ["npm test", "cmd 2", "cmd 3", "cmd 4", "cmd 5", "cmd 6", "cmd 7", "cmd 8"]);
+});
+
+test("child events: with every kept call executing, the oldest one makes room", () => {
+	const state = newChildRunState();
+	const many = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, command: `cmd ${i}` }));
+	for (const c of many) applyChildEvent(state, executionEvent("tool_execution_start", c.id), 1);
+	assert.deepEqual(commandsOf(applyChildEvent(state, callMessage(many), 2)), many.slice(1).map((c) => c.command));
+});
+
+test("child events: a call without an id is never marked", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, callMessage([{ command: "ls" }]), 0);
+	assert.deepEqual(applyChildEvent(state, executionEvent("tool_execution_start", "other"), 1)?.recentCalls, [{ name: "bash", args: { command: "ls" } }]);
+});
+
+test("child events: the end of a call that never started changes nothing", () => {
+	assert.equal(applyChildEvent(newChildRunState(), executionEvent("tool_execution_end", "never-started"), 1), undefined);
+});
+
+test("child events: a non-string tool call id changes nothing", () => {
+	assert.equal(applyChildEvent(newChildRunState(), executionEvent("tool_execution_start", 5), 1), undefined);
+});
+
+test("child events: past 64 executing calls the oldest start is dropped; its end is then ignored", () => {
+	const state = newChildRunState();
+	for (let i = 0; i <= 64; i++) applyChildEvent(state, executionEvent("tool_execution_start", `c${i}`), i);
+	assert.equal(applyChildEvent(state, executionEvent("tool_execution_end", "c0"), 100), undefined, "c0 was dropped");
+	assert.ok(applyChildEvent(state, executionEvent("tool_execution_end", "c64"), 100), "the latest is still tracked");
+});
+
+test("child events: the end of a dev-team call clears both its running mark and its live agents", () => {
+	const state = newChildRunState();
+	applyChildEvent(state, executionEvent("tool_execution_start", "c1", "dev_team_subagent"), 1);
+	applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running")]));
+	const patch = applyChildEvent(state, dispatchEnd("c1"), 5);
+	assert.ok(patch, "the end yields a patch");
+	assert.ok("subagents" in patch, "with the live agents' key, so the view clears them");
+	assert.equal(patch.subagents, undefined);
+	assert.equal(patch.stepStartedAt, 5);
+});
+
+test("child events: a nested dispatch's spend reaches the live view when its result arrives", () => {
+	const state = newChildRunState();
+	const nestedView = { agent: "Explore", task: "t", status: "ok", ok: true, turns: 1, recentCalls: [], model: "p/haiku", usage: { input: 40, output: 4, cacheRead: 0, cacheWrite: 0, cost: 0.04, turns: 1 } };
+	const patch = applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "dev_team_subagent", details: { results: [nestedView] } } } as never);
+	assert.deepEqual(patch?.nested?.map((n) => [n.agent, n.usage.cost]), [["Explore", 0.04]]);
+	assert.equal(applyChildEvent(state, { type: "message_end", message: { role: "toolResult", toolName: "bash" } } as never), undefined, "other results: no patch");
+});
+
+test("child events: a nested agent waiting for a slot keeps its place in line, a bad one is dropped", () => {
+	const state = newChildRunState();
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("a", "running", { queuePosition: 2 }), reviewer("b", "running", { queuePosition: "\u001b[2J" }), reviewer("c", "running", { queuePosition: 1.5 })]));
+	assert.deepEqual(patch?.subagents?.map((v) => v.queuePosition), [2, undefined, undefined]);
+});
+
+test("semaphore: a waiter learns its place in line when it joins", async () => {
+	const slots = new Semaphore(1);
+	const release = await slots.acquire();
+	const b: number[] = [];
+	const c: number[] = [];
+	const waitB = slots.acquire((n) => b.push(n));
+	const waitC = slots.acquire((n) => c.push(n));
+	assert.deepEqual([b, c], [[1], [2]]);
+	release();
+	(await waitB)();
+	(await waitC)();
+});
+
+test("semaphore: the line moves up as slots free", async () => {
+	const slots = new Semaphore(2);
+	const releases = [await slots.acquire(), await slots.acquire()];
+	const c: number[] = [];
+	const d: number[] = [];
+	const waitC = slots.acquire((n) => c.push(n));
+	const waitD = slots.acquire((n) => d.push(n));
+	releases[0]();
+	assert.deepEqual([c, d], [[1], [2, 1]], "d moves up when c gets the slot");
+	const releaseC = await waitC;
+	releases[1]();
+	(await waitD)();
+	releaseC();
+});
+
+test("semaphore: no place in line when a slot is free", async () => {
+	const told: number[] = [];
+	(await new Semaphore(1).acquire((n) => told.push(n)))();
+	assert.deepEqual(told, []);
+});
+
+test("semaphore: a freed slot goes to the waiter, not to an acquire in the same tick", async () => {
+	const slots = new Semaphore(1);
+	const release = await slots.acquire();
+	const order: string[] = [];
+	const waiter = slots.acquire().then((r) => (order.push("waiter"), r));
+	release();
+	const sameTick = slots.acquire().then((r) => (order.push("same tick"), r));
+	(await waiter)();
+	(await sameTick)();
+	assert.deepEqual(order, ["waiter", "same tick"], "the limit of 1 holds");
+});
+
+/** Whether `promise` has settled once pending callbacks ran, so a stuck waiter fails an assertion instead of hanging. */
+async function hasSettled(promise: Promise<unknown>): Promise<boolean> {
+	let settled = false;
+	void promise.then(() => (settled = true));
+	// A macrotask runs after every queued microtask, however many promise hops the semaphore takes.
+	await new Promise((resolve) => setImmediate(resolve));
+	return settled;
+}
+
+test("semaphore: a second release of the same slot changes nothing", async () => {
+	const slots = new Semaphore(1);
+	const release = await slots.acquire();
+	const order: string[] = [];
+	const waiter = slots.acquire().then((r) => (order.push("waiter"), r));
+	release();
+	release();
+	const third = slots.acquire().then((r) => (order.push("third"), r));
+	const releaseWaiter = await waiter;
+	assert.equal(await hasSettled(third), false, "the limit of 1 holds: third still waits");
+	assert.deepEqual(order, ["waiter"]);
+	releaseWaiter();
+	(await third)();
+});
+
+test("semaphore: a raised limit lets waiters in on the next acquire, and the line moves up", async () => {
+	const slots = new Semaphore(1);
+	const release = await slots.acquire();
+	const b: number[] = [];
+	const c: number[] = [];
+	const waitB = slots.acquire((n) => b.push(n));
+	const waitC = slots.acquire((n) => c.push(n));
+	slots.limit = 2;
+	const waitD = slots.acquire();
+	assert.ok(await hasSettled(waitB), "b got the new slot");
+	assert.equal(await hasSettled(waitD), false, "d waits behind c");
+	const releaseB = await waitB;
+	assert.deepEqual([b, c], [[1], [2, 1]], "c moved up");
+	release();
+	(await waitC)();
+	releaseB();
+	(await waitD)();
+});
+
+test("semaphore: a limit below 1 or not a number still lets one through", async () => {
+	for (const limit of [Number.NaN, 0, -1, "many" as never]) {
+		const slots = new Semaphore(limit);
+		const first = slots.acquire();
+		assert.ok(await hasSettled(first), `${String(limit)}: the first acquire gets a slot`);
+		const next = slots.acquire();
+		assert.equal(await hasSettled(next), false, `${String(limit)}: one at a time`);
+		(await first)();
+		assert.ok(await hasSettled(next), `${String(limit)}: the next gets it on release`);
+		(await next)();
+	}
+});
+
+for (const [value, limit] of [
+	[4, 4],
+	[1, 1],
+	[0, DEFAULT_CONFIG.maxParallelAgents],
+	[2.5, DEFAULT_CONFIG.maxParallelAgents],
+	[Number.NaN, DEFAULT_CONFIG.maxParallelAgents],
+	["many", DEFAULT_CONFIG.maxParallelAgents],
+	[undefined, DEFAULT_CONFIG.maxParallelAgents],
+] as const) {
+	test(`parallelLimit: ${String(value)} → ${limit}`, () => assert.equal(parallelLimit(value), limit));
+}
+
+test("semaphore: a throwing position callback never keeps the next waiter waiting", async () => {
+	const slots = new Semaphore(1);
+	const release = await slots.acquire();
+	let told = 0;
+	const order: string[] = [];
+	const throwing = () => {
+		told++;
+		throw new Error("view is gone");
+	};
+	const next = slots.acquire(throwing).then((r) => (order.push("next"), r));
+	const third = slots.acquire(throwing).then((r) => (order.push("third"), r));
+	assert.equal(told, 2, "both were told their place when they joined");
+	release();
+	assert.equal(told, 3, "third was told it moved up, and that threw too");
+	(await next)();
+	(await third)();
+	assert.deepEqual(order, ["next", "third"]);
+});
+
+test("acquireSlot: reports the place in line, then clears it and starts the clock and the first step", async () => {
+	const slots = new Semaphore(1);
+	const first = await slots.acquire();
+	const patches: unknown[] = [];
+	const waiting = acquireSlot(slots, (p) => patches.push(p), { readClock: () => 42 });
+	assert.deepEqual(patches, [{ queuePosition: 1 }]);
+	first();
+	(await waiting)?.();
+	assert.deepEqual(patches, [{ queuePosition: 1 }, { queuePosition: undefined, slotGrantedAt: 42, stepStartedAt: 42 }]);
+});
+
+test("acquireSlot: a view that throws on the start still gets the slot back to its owner", async () => {
+	const slots = new Semaphore(1);
+	const release = await acquireSlot(slots, (p) => {
+		if (p.slotGrantedAt !== undefined) throw new Error("view is gone");
+	});
+	const next = slots.acquire();
+	assert.equal(await hasSettled(next), false, "the slot is held");
+	release?.();
+	assert.ok(await hasSettled(next), "and released by its owner");
+	(await next)();
+});
+
+test("acquireSlot: aborted while waiting, it gives the slot back and reports no start", async () => {
+	const slots = new Semaphore(1);
+	const first = await slots.acquire();
+	const patches: unknown[] = [];
+	const abort = new AbortController();
+	const waiting = acquireSlot(slots, (p) => patches.push(p), { signal: abort.signal });
+	abort.abort();
+	first();
+	assert.equal(await waiting, undefined, "no release: the dispatch stops");
+	assert.deepEqual(patches, [{ queuePosition: 1 }], "no start reported");
+	assert.ok(await hasSettled(slots.acquire()), "the slot is free again");
+});
+
+const tasks = [{}, {}];
+for (const [title, params, expected] of [
+	["trimmed", { tasks, description: "  code-review round 2/4 " }, "code-review round 2/4"],
+	["one line, words kept apart", { tasks, description: "x\n✓ fake line" }, "x ✓ fake line"],
+	["blank is none", { tasks, description: "   " }, undefined],
+	["missing is none", { tasks }, undefined],
+	["a non-string is none", { tasks, description: 5 }, undefined],
+	["a single dispatch shows its agent instead", { description: "single dispatch" }, undefined],
+	["capped by code points, trimmed after the cut", { tasks, description: `${"y".repeat(LABEL_CHARS - 1)} 😀😀` }, "y".repeat(LABEL_CHARS - 1)],
+	["an emoji at the cap stays whole", { tasks, description: `${"y".repeat(LABEL_CHARS - 1)}😀😀` }, `${"y".repeat(LABEL_CHARS - 1)}😀`],
+] as const) {
+	test(`dispatchLabel: ${title}`, () => assert.equal(dispatchLabel(params as never), expected));
+}
+
+test("progress: the snapshot carries the dispatch start and its label", () => {
+	const progress = new DispatchProgress([{ agent: "a", task: "t" }], [], undefined, { label: "code-review round 2/4", now: 42 });
+	assert.equal(progress.snapshot().dispatchStartedAt, 42);
+	assert.equal(progress.snapshot().label, "code-review round 2/4");
+	assert.equal(new DispatchProgress([{ agent: "a", task: "t" }], [], undefined).snapshot().label, undefined);
+});
+
+test("progress: a waiting agent's status line says so, in the view's words", () => {
+	const { progress, updates } = recordedProgress();
+	progress.update(1, { queuePosition: 2 });
+	assert.equal(updates.at(-1)?.text, "a: turn 0\nb: waiting for a free agent slot (2nd in line)");
+});
+
+test("progress: finish clears the live fields, executing marks included", () => {
+	const { progress } = recordedProgress();
+	progress.update(0, { queuePosition: 2, stepStartedAt: 5, slotGrantedAt: 3, recentCalls: [{ ...npmTest, runningSince: 3 }] });
+	progress.finish(0, runResult({}));
+	const view = progress.snapshot().results[0];
+	assert.equal(view.queuePosition, undefined);
+	assert.equal(view.stepStartedAt, undefined);
+	assert.deepEqual(view.recentCalls, [npmTest]);
+	assert.equal(view.slotGrantedAt, 3, "when it started stays");
 });
