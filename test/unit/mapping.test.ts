@@ -66,6 +66,13 @@ test("resolveModel: tiers, inherit, explicit ids, overrides", () => {
 	assert.deepEqual(resolveModel("fable", undefined, tiers, undefined), { model: undefined, tier: "fable" });
 });
 
+test("tierModelsLine: with the default config every tier runs on the session's model", () => {
+	assert.equal(
+		tierModelsLine(DEFAULT_CONFIG.models, "p/m"),
+		"Agent tiers (the model a dispatch with `model: \"<tier>\"` runs on): opus = this session's model (p/m), sonnet = this session's model (p/m), haiku = this session's model (p/m), fable = this session's model (p/m).",
+	);
+});
+
 test("tierModelsLine names each tier's model, inherit as the session's model", () => {
 	const tiers = { opus: "github-copilot/claude-opus-5.5", sonnet: "inherit", haiku: "" };
 	assert.equal(

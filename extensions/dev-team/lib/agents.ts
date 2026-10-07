@@ -265,9 +265,9 @@ export function resolveModel(
  * whether a dispatch at a stronger tier would run on a different model (see the /build port note).
  */
 export function tierModelsLine(tiers: Record<string, string>, parentModel: string | undefined): string {
-	const session = parentModel ? `this session's model (${parentModel})` : "this session's model";
-	const parts = Object.keys(tiers).map((tier) => `${tier} = ${resolveModel(tier, undefined, tiers, undefined).model ?? session}`);
-	return `Agent tiers (the model a dispatch with \`model: "<tier>"\` runs on): ${parts.join(", ")}.`;
+	const sessionModelLabel = parentModel ? `this session's model (${parentModel})` : "this session's model";
+	const tierModelPairs = Object.keys(tiers).map((tier) => `${tier} = ${resolveModel(tier, undefined, tiers, undefined).model ?? sessionModelLabel}`);
+	return `Agent tiers (the model a dispatch with \`model: "<tier>"\` runs on): ${tierModelPairs.join(", ")}.`;
 }
 
 export function resolveThinking(

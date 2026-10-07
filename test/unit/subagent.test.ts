@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
-import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested } from "../../extensions/dev-team/lib/agents.ts";
+import { discoverDispatchAgents, parseAgentFile, projectAgentsRequested, tierModelsLine } from "../../extensions/dev-team/lib/agents.ts";
 import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../extensions/dev-team/lib/child-run.ts";
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
@@ -329,10 +329,27 @@ test("result text: one agent returns its output, or the failure", () => {
 	assert.equal(formatResultText([runResult({ worktree: wt })], []), "out\n\n[worktree removed: no changes]");
 });
 
-test("result text: one agent names the model and tier it ran on", () => {
-	assert.equal(formatResultText([runResult({ model: "p/m", tier: "sonnet" })], []), "out\n\n[model p/m, tier sonnet]");
-	assert.equal(formatResultText([runResult({ model: "p/m", tier: "inherit" })], []), "out\n\n[model p/m]");
-	assert.equal(formatResultText([runResult({ ok: false, error: "boom", output: "", model: "p/m", tier: "opus" })], []), "Agent a failed: boom\n\n[model p/m, tier opus]");
+for (const [title, overrides, skipped, text] of [
+	["names the model and tier it ran on", { model: "p/m", tier: "sonnet" }, [], "out\n\n[model p/m, tier sonnet]"],
+	["leaves out an inherit tier", { model: "p/m", tier: "inherit" }, [], "out\n\n[model p/m]"],
+	["names them on a failure too", { ok: false, error: "boom", output: "", model: "p/m", tier: "opus" }, [], "Agent a failed: boom\n\n[model p/m, tier opus]"],
+	["has no note without a known model", { tier: "sonnet" }, [], "out"],
+	["puts the note after the worktree note", { model: "p/m", worktree: { path: "/r/w", branch: "b", kept: false, dirty: false, commits: 0 } }, [], "out\n\n[worktree removed: no changes]\n\n[model p/m]"],
+] as const) {
+	test(`result text: one agent ${title}`, () => assert.equal(formatResultText([runResult(overrides as Partial<SubagentRunResult>)], [...skipped]), text));
+}
+
+test("result text: one agent's model note comes before the skipped project agents", () => {
+	const text = formatResultText([runResult({ model: "p/m" })], ["local-only"]);
+	assert.ok(text.startsWith("out\n\n[model p/m]\n\n[project agents not run"), text);
+});
+
+test("the /build note quotes the model note and the Agent tiers line as the code writes them", () => {
+	const note = fs.readFileSync(path.join(import.meta.dirname, "..", "..", "overrides", "notes", "build.md"), "utf-8");
+	const single = formatResultText([runResult({ model: "p/m", tier: "sonnet" })], []).split("\n\n").at(-1) ?? "";
+	assert.ok(note.includes(single.replace("p/m", "<provider/id>").replace("sonnet", "<tier>")), single);
+	assert.ok(note.includes('"Agent tiers" line'));
+	assert.ok(tierModelsLine({ opus: "inherit" }, "p/m").startsWith("Agent tiers "));
 });
 
 test("result text: several agents get a summary line and one section each", () => {

@@ -65,9 +65,12 @@ class SyncHelpers(unittest.TestCase):
         for s in info["droppedSkills"]:
             self.assertFalse((ROOT / "skills" / s).exists(), s)
         self.assertIn("pi port notes", (ROOT / "skills" / "setup" / "SKILL.md").read_text())
-        for note in sorted((ROOT / "overrides" / "notes").glob("*.md")):
-            self.assertIn(note.stem, info["notes"], note.name)
-            self.assertIn(note.read_text().strip(), (ROOT / "skills" / note.stem / "SKILL.md").read_text(), note.name)
+        notes = sorted((ROOT / "overrides" / "notes").glob("*.md"))
+        self.assertTrue(notes)
+        for note in notes:
+            with self.subTest(note=note.name):
+                self.assertIn(note.stem, info["notes"])
+                self.assertIn(note.read_text().strip(), (ROOT / "skills" / note.stem / "SKILL.md").read_text())
         self.assertIn("DEV_TEAM_INTERACTIVE", (ROOT / "skills" / "plan" / "SKILL.md").read_text())
 
 
