@@ -11,7 +11,7 @@ export const MODEL_STATUS_TEXT: Record<ModelStatus, string> = { ok: "ok", "no-au
 
 /** The `/dev-team models` menu entry for a preset, and how to read the preset back from it. */
 const PRESET_MENU_PREFIX = "preset: ";
-export const presetMenuLabel = (preset: string) => `${PRESET_MENU_PREFIX}${preset}`;
+export const presetMenuLabel = (presetName: string) => `${PRESET_MENU_PREFIX}${presetName}`;
 export const presetFromMenuLabel = (label: string) => (label.startsWith(PRESET_MENU_PREFIX) ? label.slice(PRESET_MENU_PREFIX.length) : undefined);
 /** The `/dev-team models` menu entry that picks a model per tier, and the name the tip uses for it. */
 const CUSTOM_MENU_NAME = "custom";
@@ -28,13 +28,15 @@ export interface TierMenuChoice {
 /**
  * The entries for one tier, the file's own setting first so taking the first entry keeps it: the model
  * the file sets, or, when it sets none, an entry that leaves the tier unset (it keeps running on
- * `currentModel`, which another file or the default decides). Then inherit and the available models.
- * Labels are one line and unique, so a picked label maps back to exactly one value.
+ * `currentModel`, which another file or the default decides). A file that was not read (the project
+ * is not trusted) gets an entry that leaves whatever it sets as it is. Then inherit and the available
+ * models. Labels are one line and unique, so a picked label maps back to exactly one value.
  */
-export function tierMenuChoices(fileModel: string | undefined, currentModel: unknown, available: readonly string[]): TierMenuChoice[] {
+export function tierMenuChoices(fileModel: string | undefined, currentModel: unknown, available: readonly string[], fileRead = true): TierMenuChoice[] {
 	const own = fileModel === undefined ? undefined : inherits(fileModel) ? "inherit" : fileModel;
 	const current = inherits(currentModel) || typeof currentModel !== "string" ? "inherit" : toSingleLine(currentModel);
-	const first: TierMenuChoice = own === undefined ? { label: `not set in this file (now ${current})`, value: undefined } : { label: `${toSingleLine(own)} (in this file)`, value: own };
+	const leaveAsIs = fileRead ? `not set in this file (now ${current})` : "keep what this file sets (not read: project not trusted)";
+	const first: TierMenuChoice = own === undefined ? { label: leaveAsIs, value: undefined } : { label: `${toSingleLine(own)} (in this file)`, value: own };
 	const rest = ["inherit", ...available].filter((m) => m !== own).map((m) => ({ label: toSingleLine(m), value: m }));
 	const seen = new Set<string>();
 	return [first, ...rest].filter((c) => !seen.has(c.label) && !!seen.add(c.label));

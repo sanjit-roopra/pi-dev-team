@@ -329,10 +329,11 @@ export default function devTeam(pi: ExtensionAPI) {
 			// Only what this file sets itself: another file's tiers must not be copied into it, a tier it does
 			// not set stays unset (so a project file does not override the user's own mapping), and the file of
 			// a project pi does not trust is not read.
-			const fileModels = scope.startsWith("user") || ctx.isProjectTrusted() ? fileTierModels(file) : {};
+			const fileRead = scope.startsWith("user") || ctx.isProjectTrusted();
+			const fileModels = fileRead ? fileTierModels(file) : {};
 			models = {};
 			for (const tier of Object.keys(DEFAULT_CONFIG.models)) {
-				const choices = tierMenuChoices(fileModels[tier], config.models[tier], available);
+				const choices = tierMenuChoices(fileModels[tier], config.models[tier], available, fileRead);
 				const labels = choices.map((c) => c.label);
 				const pick = await ctx.ui.select(`Model for tier "${tier}"`, labels);
 				const value = choices[pick === undefined ? 0 : labels.indexOf(pick)]?.value;
@@ -342,7 +343,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		updateConfigFile(file, { models });
 		config = loadConfig(ctx.cwd, projectConfigOpts(ctx)).config;
 		const saved = Object.entries(models).map(([tier, model]) => `${tier} = ${toSingleLine(model)}`);
-		ctx.ui.notify(`Saved to ${file}:\n${saved.length ? saved.join("\n") : "(no tier set)"}`, "info");
+		ctx.ui.notify(`Saved to ${file}:\n${saved.length ? saved.join("\n") : "(no tier changed)"}`, "info");
 	}
 
 	// ---------------------------------------------------------------- agent mode (claude shim: --dev-team-agent)

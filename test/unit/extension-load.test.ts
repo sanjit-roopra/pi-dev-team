@@ -370,9 +370,26 @@ test("/dev-team models custom: each tier offers its own model first, so taking t
 test("/dev-team models custom: a cancelled tier keeps the file's own value", async () => {
 	const ext = await loadExtension({ config: { models: { haiku: "p/mapped" } } });
 	try {
-		const { ui } = scriptedUi([userScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ["Model for tier", () => undefined]]);
-		await ext.commands["dev-team"].handler("models", modelsCtx(ui, { modelRegistry: { getAvailable: () => [] } }));
-		assert.deepEqual(ext.savedModels(), { haiku: "p/mapped" });
+		const notes: string[] = [];
+		const { offered, ui } = scriptedUi([userScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ["Model for tier", () => undefined]]);
+		await ext.commands["dev-team"].handler("models", modelsCtx({ ...ui, notify: (text: string) => notes.push(text) }, { modelRegistry: { getAvailable: () => [] } }));
+		assert.ok(offered.some((o) => o.title.startsWith('Model for tier "haiku"')), "the tier was offered");
+		assert.deepEqual(notes, [`Saved to ${path.join(process.env.PI_CODING_AGENT_DIR ?? "", "dev-team.json")}:\nhaiku = p/mapped`], "saved as the file's own value");
+	} finally {
+		ext.cleanup();
+	}
+});
+
+test("/dev-team models custom: a trusted project's own file is read, its value offered first", async (t) => {
+	const ext = await loadExtension();
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-project-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	fs.mkdirSync(path.join(cwd, ".pi"));
+	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.json"), JSON.stringify({ models: { haiku: "p/mapped" } }));
+	try {
+		const { offered, ui } = scriptedUi([projectScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ["Model for tier", (o) => o[0]]]);
+		await ext.commands["dev-team"].handler("models", modelsCtx(ui, { cwd, isProjectTrusted: () => true, modelRegistry: { getAvailable: () => [] } }));
+		assert.equal(offered.find((o) => o.title.startsWith('Model for tier "haiku"'))?.options[0], "p/mapped (in this file)");
 	} finally {
 		ext.cleanup();
 	}
@@ -397,23 +414,34 @@ test("/dev-team models custom: a project file gets only the tiers picked for it,
 	}
 });
 
-test("/dev-team models custom: the file of an untrusted project is not read, and what is saved is shown on one line", async (t) => {
+/** `/dev-team models` custom in an untrusted project whose file maps haiku to an id with escapes; opus is set to a model whose id has one too. */
+async function customInUntrustedProject(t: TestContext) {
 	const ext = await loadExtension();
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-project-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	fs.mkdirSync(path.join(cwd, ".pi"));
-	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.json"), JSON.stringify({ models: { haiku: "p/evil\u001b]52;c;x\u0007" } }));
+	const file = path.join(cwd, ".pi", "dev-team.json");
+	fs.writeFileSync(file, JSON.stringify({ models: { haiku: "p/evil\u001b]52;c;x\u0007" } }));
 	try {
 		const notes: string[] = [];
 		const { offered, ui } = scriptedUi([projectScope, ["Map dev-team agent tiers", () => "custom: pick a model per tier"], ['Model for tier "opus"', () => "p/odd"], ["Model for tier", (o) => o[0]]]);
 		const registry = { getAvailable: () => [{ provider: "p", id: "odd\u001b[2J" }] };
 		await ext.commands["dev-team"].handler("models", modelsCtx({ ...ui, notify: (text: string) => notes.push(text) }, { cwd, isProjectTrusted: () => false, modelRegistry: registry }));
-		assert.equal(offered.find((o) => o.title.startsWith('Model for tier "haiku"'))?.options[0], "not set in this file (now inherit)", "not read");
-		assert.equal(savedProjectModels(cwd).opus, "p/odd\u001b[2J", "the picked label saves the model's own id");
-		assert.doesNotMatch(notes.join("\n"), /\u001b|\u0007/);
+		return { file, notes, offered, saved: savedProjectModels(cwd) };
 	} finally {
 		ext.cleanup();
 	}
+}
+
+test("/dev-team models custom: the file of an untrusted project is not read, and what it sets is left as it is", async (t) => {
+	const { offered, saved } = await customInUntrustedProject(t);
+	assert.equal(offered.find((o) => o.title.startsWith('Model for tier "haiku"'))?.options[0], "keep what this file sets (not read: project not trusted)");
+	assert.deepEqual(saved, { haiku: "p/evil\u001b]52;c;x\u0007", opus: "p/odd\u001b[2J" }, "the picked label saves the model's own id");
+});
+
+test("/dev-team models custom: what is saved is shown on one line", async (t) => {
+	const { file, notes } = await customInUntrustedProject(t);
+	assert.deepEqual(notes, [`Saved to ${file}:\nopus = p/odd`]);
 });
 
 /** Doctor's last line in a project whose `.pi/<fileName>` maps sonnet to inherit, on the github-copilot preset's opus. */

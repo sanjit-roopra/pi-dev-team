@@ -106,16 +106,27 @@ test("tierMenuChoices: the file's own model first, then inherit and the availabl
 	]);
 });
 
-test("tierMenuChoices: a file set to inherit (or empty) offers inherit first, once", () => {
-	for (const own of ["inherit", ""]) {
-		assert.deepEqual(tierMenuChoices(own, undefined, ["p/b"]).map((c) => c.label), ["inherit (in this file)", "p/b"], JSON.stringify(own));
-	}
-});
+for (const own of ["inherit", ""]) {
+	test(`tierMenuChoices: a file set to ${JSON.stringify(own)} offers inherit first, once, and keeps it as inherit`, () => {
+		assert.deepEqual(tierMenuChoices(own, undefined, ["p/b"]), [
+			{ label: "inherit (in this file)", value: "inherit" },
+			{ label: "p/b", value: "p/b" },
+		]);
+	});
+}
 
 test("tierMenuChoices: a tier the file does not set is left unset by its first entry, which names the model it runs on now", () => {
 	assert.deepEqual(tierMenuChoices(undefined, "p/user", ["p/b"])[0], { label: "not set in this file (now p/user)", value: undefined });
 	assert.equal(tierMenuChoices(undefined, undefined, [])[0].label, "not set in this file (now inherit)");
 	assert.equal(tierMenuChoices(undefined, 5, [])[0].label, "not set in this file (now inherit)", "a value that is not a model id");
+});
+
+test("tierMenuChoices: the model a tier runs on now is shown on one line", () => {
+	assert.equal(tierMenuChoices(undefined, "p/\u001b]52;c;x\u0007m\nFAKE", [])[0].label, "not set in this file (now p/mFAKE)");
+});
+
+test("tierMenuChoices: a file that was not read is left as it is by the first entry", () => {
+	assert.deepEqual(tierMenuChoices(undefined, "p/user", [], false)[0], { label: "keep what this file sets (not read: project not trusted)", value: undefined });
 });
 
 test("tierMenuChoices: labels are one line and unique, so a picked label maps back to one model", () => {
