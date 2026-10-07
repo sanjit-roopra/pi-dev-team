@@ -262,20 +262,33 @@ export function isProjectAutocompactCeilingAllowed(value: unknown): boolean {
 	return value === 0 || (typeof value === "number" && Number.isInteger(value) && value >= MIN_PROJECT_AUTOCOMPACT_TOKENS);
 }
 
+/** Most agents a project file may let run at once; more would start that many children (and their spend) at once. */
+export const MAX_PROJECT_PARALLEL_AGENTS = 16;
+
+/** A project may set a whole number of parallel agents from 1 to MAX_PROJECT_PARALLEL_AGENTS; the user's own file may set any. */
+export function isProjectParallelLimitAllowed(value: unknown): boolean {
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= MAX_PROJECT_PARALLEL_AGENTS;
+}
+
 /**
  * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
  * object is dropped whole), no `hooks` at all, since hooks include the guards (hooks are set in the
- * user's own config), and `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed. `ignored`
- * names everything left out, as `env.KEY`, `env`, `hooks` or `autocompactMaxTokens`.
+ * user's own config), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
+ * `maxParallelAgents` only when isProjectParallelLimitAllowed. `ignored` names everything left out, as
+ * `env.KEY`, `env`, `hooks`, `autocompactMaxTokens` or `maxParallelAgents`.
  */
 export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
-	const { env, hooks, autocompactMaxTokens, ...rest } = data;
+	const { env, hooks, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
 	const out: Record<string, unknown> = rest;
 	if (hooks !== undefined) ignored.push("hooks");
 	if (autocompactMaxTokens !== undefined) {
 		if (isProjectAutocompactCeilingAllowed(autocompactMaxTokens)) out.autocompactMaxTokens = autocompactMaxTokens;
 		else ignored.push("autocompactMaxTokens");
+	}
+	if (maxParallelAgents !== undefined) {
+		if (isProjectParallelLimitAllowed(maxParallelAgents)) out.maxParallelAgents = maxParallelAgents;
+		else ignored.push("maxParallelAgents");
 	}
 	if (env === undefined) return { data: out, ignored };
 	if (!isPlainObject(env)) return { data: out, ignored: [...ignored, "env"] };

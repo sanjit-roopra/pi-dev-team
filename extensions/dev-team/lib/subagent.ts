@@ -22,7 +22,8 @@ import { type AgentDef, DEV_TEAM_SUBAGENT_TOOL, discoverDispatchAgents, mapTools
 import { DEFAULT_CONFIG, type DevTeamConfig } from "./config.ts";
 import type { HookBridge } from "./hooks.ts";
 import { applyChildEvent, type ChildEvent, newChildRunState } from "./child-run.ts";
-import { recentCallLines, renderSubagentCall, renderSubagentResult } from "./subagent-render.ts";
+import { Semaphore } from "./semaphore.ts";
+import { recentCallLines, renderSubagentCall, renderSubagentResult, waitingText } from "./subagent-render.ts";
 import {
 	type AgentSource,
 	type DispatchArgs,
@@ -30,6 +31,7 @@ import {
 	dispatchAgent,
 	dispatchTask,
 	emptyPiUsage,
+	isWaitingForSlot,
 	type NestedUsage,
 	type ProgressPatch,
 	type SubagentDetails,
@@ -42,6 +44,7 @@ import {
 import { saveFullOutput } from "./session-files.ts";
 import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
+import { toSpacedSingleLine } from "./terminal-text.ts";
 import { type ChildTrust, childTrusted, childTrustOf, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {
@@ -69,25 +72,53 @@ export interface SubagentRunResult {
 }
 
 const TASK_PREVIEW_CHARS = 400;
-const STATUS_LINE_TOOLS = 3;
+/** Characters (code points) of a parallel call's label the progress header shows. */
+export const LABEL_CHARS = 80;
+const STATUS_LINE_CALLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
 
-class Semaphore {
-	private active = 0;
-	private readonly queue: (() => void)[] = [];
-	limit: number;
-	constructor(limit: number) {
-		this.limit = limit;
+/**
+ * The label a parallel call's progress header shows: its own `description`, on one line, capped by
+ * code points. A single dispatch shows its agent and task instead, so it has none.
+ */
+export function dispatchLabel(params: { tasks?: unknown[]; description?: unknown }): string | undefined {
+	if (!params.tasks?.length || typeof params.description !== "string") return undefined;
+	return Array.from(toSpacedSingleLine(params.description).trim()).slice(0, LABEL_CHARS).join("").trim() || undefined;
+}
+
+/**
+ * The slot limit from `maxParallelAgents`: a whole number of at least 1. A project's own config can
+ * set it, so anything else (text, NaN, 0.5) falls back to the default instead of blocking every slot.
+ */
+export function parallelLimit(value: unknown): number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : DEFAULT_CONFIG.maxParallelAgents;
+}
+
+/**
+ * Wait for a slot while `update` reports the place in line, then report the start: the place is
+ * cleared, and the agent's clock and its first model step start. Returns the slot's release, also
+ * when that report throws: a view that fails to update must not keep the slot from its owner. When
+ * `signal` aborted during the wait (Esc), the slot is given back at once and undefined is returned,
+ * so no worktree or child is made for a dispatch already cancelled.
+ */
+export async function acquireSlot(
+	semaphore: Semaphore,
+	update: (patch: Pick<ProgressPatch, "queuePosition" | "slotGrantedAt" | "stepStartedAt">) => void,
+	opts: { signal?: AbortSignal; readClock?: () => number } = {},
+): Promise<(() => void) | undefined> {
+	const release = await semaphore.acquire((position) => update({ queuePosition: position }));
+	if (opts.signal?.aborted) {
+		release();
+		return undefined;
 	}
-	async acquire(): Promise<() => void> {
-		if (this.active >= this.limit) await new Promise<void>((r) => this.queue.push(r));
-		this.active++;
-		return () => {
-			this.active--;
-			this.queue.shift()?.();
-		};
+	const now = (opts.readClock ?? Date.now)();
+	try {
+		update({ queuePosition: undefined, slotGrantedAt: now, stepStartedAt: now });
+	} catch {
+		// view only
 	}
+	return release;
 }
 
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
@@ -210,6 +241,9 @@ const TaskFields = {
 
 export const SubagentParams = Type.Object({
 	...TaskFields,
+	description: Type.Optional(
+		Type.String({ description: 'Short 3-5 word label. On a call with `tasks`, the progress view shows it, e.g. "code-review round 2/4"' }),
+	),
 	tasks: Type.Optional(
 		Type.Array(Type.Object(TaskFields), {
 			description: "Run several agents concurrently. Each item has the same fields as a single dispatch.",
@@ -219,7 +253,7 @@ export const SubagentParams = Type.Object({
 
 export function registerSubagentTool(deps: SubagentDeps): void {
 	const { pi, packageRoot, getConfig, hooks } = deps;
-	const semaphore = new Semaphore(getConfig().maxParallelAgents);
+	const semaphore = new Semaphore(parallelLimit(getConfig().maxParallelAgents));
 
 	async function runOne(
 		input: DispatchArgs,
@@ -275,7 +309,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			if (typeof pre.updatedInput.additionalContext === "string") task = `${task}\n\n${pre.updatedInput.additionalContext}`;
 		}
 
-		const release = await semaphore.acquire();
+		const release = await acquireSlot(semaphore, update, { signal });
+		if (!release) throw new Error(`Subagent ${def.name} was aborted`);
 		let wt: ReturnType<typeof createWorktree> | undefined;
 		const agentId = randomUUID().replace(/-/g, "").slice(0, 16);
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
@@ -334,7 +369,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 						return;
 					}
 					const patch = applyChildEvent(run, ev);
-					if (patch) update(patch);
+					try {
+						if (patch) update(patch);
+					} catch {
+						/* a view that fails to update must not stop the run */
+					}
 				};
 				proc.stdout.on("data", (d) => {
 					buf += d.toString();
@@ -462,7 +501,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			return out as never;
 		},
 		async execute(_id, params, signal, onUpdate, ctx) {
-			semaphore.limit = Math.max(1, getConfig().maxParallelAgents);
+			semaphore.limit = parallelLimit(getConfig().maxParallelAgents);
 			if (deps.depth >= getConfig().maxSubagentDepth) {
 				throw new Error(`Subagent nesting limit reached (maxSubagentDepth=${getConfig().maxSubagentDepth}).`);
 			}
@@ -472,7 +511,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			// One trust decision per call, shared by every child.
 			const trust = childTrustOf(ctx);
 			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
-			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined);
+			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined, { label: dispatchLabel(params) });
 			const results = await Promise.all(
 				list.map(async (t, i) => {
 					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), trust);
@@ -489,7 +528,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			};
 		},
 		renderCall: (args, theme) => renderSubagentCall(args as DispatchArgs & { tasks?: DispatchArgs[] }, theme),
-		renderResult: (result, options, theme) => renderSubagentResult(result, options, theme),
+		renderResult: (result, options, theme, context) => renderSubagentResult(result, options, theme, context),
 	});
 }
 
@@ -500,9 +539,18 @@ export class DispatchProgress {
 	private readonly views: SubagentTaskView[];
 	private readonly skippedProjectAgents: string[];
 	private readonly onUpdate: DispatchUpdate | undefined;
-	constructor(list: DispatchArgs[], skippedProjectAgents: string[], onUpdate: DispatchUpdate | undefined) {
+	private readonly dispatchStartedAt: number;
+	private readonly label: string | undefined;
+	constructor(
+		list: DispatchArgs[],
+		skippedProjectAgents: string[],
+		onUpdate: DispatchUpdate | undefined,
+		{ label, now = Date.now() }: { label?: string; now?: number } = {},
+	) {
 		this.skippedProjectAgents = skippedProjectAgents;
 		this.onUpdate = onUpdate;
+		this.dispatchStartedAt = now;
+		this.label = label;
 		this.views = list.map((t) => ({
 			agent: dispatchAgent(t) || "(none)",
 			task: dispatchTask(t).slice(0, TASK_PREVIEW_CHARS),
@@ -516,6 +564,8 @@ export class DispatchProgress {
 	snapshot(): SubagentDetails {
 		return {
 			results: this.views.map((v) => ({ ...v, recentCalls: [...v.recentCalls] })),
+			dispatchStartedAt: this.dispatchStartedAt,
+			...(this.label ? { label: this.label } : {}),
 			...(this.skippedProjectAgents.length ? { skippedProjectAgents: this.skippedProjectAgents } : {}),
 		};
 	}
@@ -524,7 +574,7 @@ export class DispatchProgress {
 		this.emit();
 	}
 	finish(taskIndex: number, result: SubagentRunResult): void {
-		this.views[taskIndex] = { ...this.views[taskIndex], ...viewFromResult(result) };
+		this.views[taskIndex] = { ...withoutLiveFields(this.views[taskIndex]), ...viewFromResult(result) };
 		this.emit();
 	}
 	private emit(): void {
@@ -534,9 +584,25 @@ export class DispatchProgress {
 
 function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
-	const calls = recentCallLines(v);
-	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
-	return `${v.agent}: turn ${v.turns}${tools}`;
+	if (isWaitingForSlot(v)) return `${v.agent}: ${waitingText(v.queuePosition)}`;
+	const callLines = recentCallLines(v);
+	const callsText = callLines.length ? ` → ${callLines.slice(-STATUS_LINE_CALLS).join(", ")}` : "";
+	return `${v.agent}: turn ${v.turns}${callsText}`;
+}
+
+/**
+ * A finished view keeps nothing that only a running agent has: its live subagents, its place in
+ * line, its model step, and the executing marks of calls that never reported their end (the child
+ * was stopped). Its slotGrantedAt stays, as when it started.
+ */
+export function withoutLiveFields(view: SubagentTaskView): SubagentTaskView {
+	return {
+		...view,
+		recentCalls: view.recentCalls.map(({ runningSince: _, ...call }) => call),
+		subagents: undefined,
+		queuePosition: undefined,
+		stepStartedAt: undefined,
+	};
 }
 
 export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> {
@@ -555,7 +621,6 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 		error: r.error,
 		output: r.output ? outputForView(r.output, r.fullOutputFile) : undefined,
 		worktree: r.worktree,
-		subagents: undefined,
 	};
 }
 
