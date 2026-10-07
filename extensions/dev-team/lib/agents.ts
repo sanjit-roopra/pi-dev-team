@@ -13,6 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { inherits } from "./config.ts";
 import { readSmallFile } from "./safe-read.ts";
 import type { AgentSource } from "./subagent-types.ts";
 
@@ -256,7 +257,7 @@ export function resolveModel(
 	const tier = wanted.toLowerCase();
 	if (tier === "inherit") return { model: parentModel, tier: "inherit" };
 	const mapped = tiers[tier];
-	if (!mapped || mapped === "inherit") return { model: parentModel, tier };
+	if (inherits(mapped)) return { model: parentModel, tier };
 	return { model: mapped, tier };
 }
 

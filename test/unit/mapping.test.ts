@@ -66,6 +66,7 @@ test("resolveModel: tiers, inherit, explicit ids, overrides", () => {
 	assert.deepEqual(resolveModel("opus", "haiku", tiers, "p/m"), { model: "github-copilot/claude-haiku-4.5", tier: "haiku" });
 	assert.deepEqual(resolveModel("opus", "openai/gpt-5.5", tiers, "p/m"), { model: "openai/gpt-5.5" });
 	assert.deepEqual(resolveModel("fable", undefined, tiers, undefined), { model: undefined, tier: "fable" });
+	assert.deepEqual(resolveModel("sonnet", undefined, { sonnet: "" }, "p/m"), { model: "p/m", tier: "sonnet" }, "empty inherits, as doctor reads it");
 });
 
 test("tierModelsLine: with the default config every tier runs on the session's model", () => {
@@ -128,6 +129,8 @@ test("every upstream agent parses and maps to at least one pi tool", () => {
 		if (m) assert.ok(m.tools.length > 0, `${def.name} maps to no tools`);
 		assert.ok(def.body.trim().length > 50, `${def.name} has an empty body`);
 		assert.ok(!def.model || ["opus", "sonnet", "haiku", "fable", "inherit"].includes(def.model) || def.model.includes("/"), `${def.name} model ${def.model}`);
+		// The doctor tip treats haiku, sonnet and opus as the tiers agents use (config.ts DEFAULT_USED_TIERS).
+		assert.notEqual(def.model, "fable", `${def.name} uses the fable tier`);
 	}
 	assert.equal(resolveAgentName(agents, "dev-team:security-review")?.name, "security-review");
 	assert.equal(resolveAgentName(agents, "explore")?.name, "Explore");

@@ -63,13 +63,15 @@ Each agent has a tier. The tier tells the agent how strong a model it needs:
 | `haiku` | Small, cheap checks |
 | `fable` | The strongest model. No agent uses this tier by default. |
 
-By default, every tier uses the model that you selected in pi. To use a different model for each tier, run `/dev-team models` and select a preset:
+By default, every tier uses your session model (the model that you selected in pi). To use a different model for each tier, run `/dev-team models` and select a preset:
 
 - `github-copilot`: Uses the Claude models that GitHub Copilot gives you.
 - `anthropic`: Uses the Claude models from the Anthropic API.
-- `inherit`: Every agent uses your current model. This is the default.
+- `inherit`: Every agent uses your session model. This is the default.
 
 If you use GitHub Copilot, every agent uses AI credits for the tokens it sends and receives. A code review can start more than 20 agents, so a less expensive model for the lower tiers can reduce the cost a lot.
+
+`/dev-team doctor` shows a tip when a preset fits your provider and some agent tiers still run on your session model. The tip names the preset and the model it sets for each tier. A preset replaces every tier, so if you set a tier to another model yourself, the tip lists the tiers to set one by one with `custom` instead. In `custom`, each tier offers first what the file you save to sets for it, so you can keep it; a tier that file does not set stays unset unless you pick a model, so a project file never overrides your own mapping by accident. If you cannot use one of the models, the tip names it. If a file of this project (`.pi/dev-team.json` or `.pi/dev-team.local.json`) sets those tiers, that file wins, so the tip tells you to change them there. `/dev-team models` does not write `.pi/dev-team.local.json`; edit it by hand.
 
 If a `/build` step fails in the same way twice, the team tries that step one more time with the next stronger tier, for example `opus` instead of `sonnet`. Only if that also fails does the build stop and ask you. This retry happens only when the stronger tier uses a different model, so it does not happen with the default `inherit` setting.
 
@@ -80,6 +82,13 @@ The agents can do the same things that you can do in a terminal.
 - They can read and change files in your repository.
 - They can run shell commands, for example your tests.
 - They can make many model calls. Up to 6 agents run at the same time by default.
+
+While agents run, pi shows each agent on its own lines. The view updates every second:
+
+- How long each agent has run, and the total time and cost so far
+- The command or tool that an agent runs now, and for how long (`▶ $ npm test running 38s`)
+- `thinking… 14s` when the model works on its next step
+- `waiting for a free agent slot (2nd in line)` when all slots are in use
 
 The guard hooks reduce the risk. For example, they stop `gh pr create` until a code review passes, and they keep the tests fixed while the team cleans up code. The guards need Python.
 
@@ -161,7 +170,7 @@ All settings, with the default values:
 {
   "models": { "opus": "inherit", "sonnet": "inherit", "haiku": "inherit", "fable": "inherit" },
   "thinking": { "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" }, // agent effort -> pi thinking level
-  "maxParallelAgents": 6,      // agents that run at the same time
+  "maxParallelAgents": 6,      // agents that run at the same time (a project file: 1 to 16)
   "maxSubagentDepth": 2,       // agents can start other agents, 2 levels deep
   "subagentTimeoutSec": 3600,  // stop an agent after this time
   "autoFormat": false,         // format files after each edit (/setup turns this on)

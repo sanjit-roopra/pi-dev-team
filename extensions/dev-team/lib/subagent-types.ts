@@ -1,7 +1,7 @@
 /**
  * Shapes and small pure helpers shared by the `dev_team_subagent` tool, its TUI renderers and the
- * cost meter. A leaf module: it imports nothing from the tool or the renderers, so both depend on it
- * rather than on each other.
+ * cost meter. A leaf module: it imports nothing from the tool or the renderers. The renderers never
+ * import the tool; the tool imports the renderers to register them and for the progress text.
  */
 import type { Usage } from "@earendil-works/pi-ai";
 
@@ -27,6 +27,8 @@ export interface UsageTotals {
 export interface ToolCallSummary {
 	name: string;
 	args?: Record<string, string>;
+	/** Set only while the call executes: when it started (epoch ms). */
+	runningSince?: number;
 }
 
 /** Spend of an agent dispatched by a child (or deeper), credited to that agent and its model. */
@@ -83,6 +85,18 @@ export interface SubagentTaskView {
 	worktree?: WorktreeInfo;
 	/** Agents it is running right now through its own dev-team calls; set only while it runs. */
 	subagents?: LiveSubagentView[];
+	/** Place in line (1 = next) while it waits for a free agent slot (maxParallelAgents). */
+	queuePosition?: number;
+	/**
+	 * When it got its slot and started (epoch ms): its live clock counts from here. Its final
+	 * `durationMs` also counts the dispatch hooks and the wait for the slot.
+	 */
+	slotGrantedAt?: number;
+	/**
+	 * When the model's current step began (epoch ms): the agent's start, or the end of its last
+	 * executing call. Unset while its calls wait to run or run, and after its final message.
+	 */
+	stepStartedAt?: number;
 }
 
 /**
@@ -95,17 +109,27 @@ export interface LiveSubagentView {
 	turns: number;
 	/** Its latest tool call, if it made one. */
 	recentCalls: ToolCallSummary[];
+	/** Place in line while it waits for a free agent slot in its parent's limiter. */
+	queuePosition?: number;
 	subagents?: LiveSubagentView[];
 }
 
 /**
- * Progress fields a running child reports; status/ok are set only from the final result. A key set
- * to undefined clears that field, as `subagents: undefined` does once no dev-team call is open.
+ * Progress fields of a running dispatch: the slot limiter's (queuePosition, slotGrantedAt and the
+ * first stepStartedAt, set through acquireSlot) and what the child reports (child-run.ts). status/ok
+ * are set only from the final result. A key set to undefined clears that field, as
+ * `subagents: undefined` does once no dev-team call is open.
  */
-export type ProgressPatch = Partial<Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents">>;
+export type ProgressPatch = Partial<
+	Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents" | "queuePosition" | "slotGrantedAt" | "stepStartedAt" | "nested">
+>;
 
 export interface SubagentDetails {
 	results: SubagentTaskView[];
+	/** When the dispatch began (epoch ms), the hooks and any wait for slots included. */
+	dispatchStartedAt?: number;
+	/** The call's short label (its `description`), shown in the parallel header. */
+	label?: string;
 	/** Project agents that were requested but not run because pi trust was declined for the project. */
 	skippedProjectAgents?: string[];
 	/** Earlier name of skippedProjectAgents, still found in stored sessions. */
@@ -123,6 +147,19 @@ export interface DispatchArgs {
 	thinking?: string;
 	cwd?: string;
 	isolation?: string;
+}
+
+/**
+ * A running agent that still waits for a free agent slot. Checks the type too: stored session details
+ * are file content, so a non-number there must not reach the view.
+ */
+export function isWaitingForSlot<V extends Pick<SubagentTaskView, "status" | "queuePosition">>(v: V): v is V & { queuePosition: number } {
+	return v.status === "running" && typeof v.queuePosition === "number" && Number.isInteger(v.queuePosition) && v.queuePosition > 0;
+}
+
+/** A running agent that has its slot (not waiting for one). */
+export function isRunningInSlot(v: Pick<SubagentTaskView, "status" | "queuePosition">): boolean {
+	return v.status === "running" && !isWaitingForSlot(v);
 }
 
 export function dispatchAgent(args: DispatchArgs): string {

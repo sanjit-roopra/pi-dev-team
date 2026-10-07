@@ -4,7 +4,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { MAX_REPO_FILE_BYTES } from "../../extensions/dev-team/lib/safe-read.ts";
-import { DEFAULT_CONFIG, filterProjectConfig, isProjectEnvSettingAllowed, loadConfig } from "../../extensions/dev-team/lib/config.ts";
+import {
+	DEFAULT_CONFIG,
+	filterProjectConfig,
+	isProjectEnvSettingAllowed,
+	loadConfig,
+	MAX_PROJECT_PARALLEL_AGENTS,
+	MODEL_PRESETS,
+	type ModelStatus,
+	presetAdvice,
+	fileTierModels,
+	projectFileSettingTiers,
+} from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
 function fixture(t: TestContext) {
@@ -148,6 +159,27 @@ test("loadConfig: an invalid project githubStyle does not override a valid user 
 	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "off", "a valid project value wins");
 });
 
+test("loadConfig: a project may run 1 to 16 agents at once, never more; the user's own file may set more", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-config-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const project = path.join(dir, "project");
+	fs.mkdirSync(path.join(project, ".pi"), { recursive: true });
+	const userConfigFile = path.join(dir, "user.json");
+	const load = (projectValue: unknown, userValue?: number) => {
+		fs.writeFileSync(userConfigFile, JSON.stringify(userValue === undefined ? {} : { maxParallelAgents: userValue }));
+		fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ maxParallelAgents: projectValue }));
+		return loadConfig(project, { includeProject: true, userConfigFile });
+	};
+	assert.equal(load(1).config.maxParallelAgents, 1, "the lowest");
+	assert.equal(load(MAX_PROJECT_PARALLEL_AGENTS).config.maxParallelAgents, MAX_PROJECT_PARALLEL_AGENTS, "at the ceiling");
+	for (const bad of [MAX_PROJECT_PARALLEL_AGENTS + 1, 100_000, Number.MAX_SAFE_INTEGER, 0, 2.5, "8"]) {
+		const { config, ignoredProjectSettings } = load(bad);
+		assert.equal(config.maxParallelAgents, DEFAULT_CONFIG.maxParallelAgents, `project value ${JSON.stringify(bad)} ignored`);
+		assert.deepEqual(ignoredProjectSettings, ["maxParallelAgents"]);
+	}
+	assert.equal(load(100, 40).config.maxParallelAgents, 40, "the user's own high value still applies");
+});
+
 test("loadConfig: a project may turn the autocompact ceiling off or keep it at 50k tokens or more, never lower", (t) => {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-config-"));
 	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -168,4 +200,158 @@ test("loadConfig: a project may turn the autocompact ceiling off or keep it at 5
 		assert.deepEqual(ignoredProjectSettings, ["autocompactMaxTokens"]);
 	}
 	assert.equal(load(1, 10_000).config.autocompactMaxTokens, 10_000, "the user's own low value still applies");
+});
+
+const COPILOT = MODEL_PRESETS["github-copilot"];
+const ANTHROPIC = MODEL_PRESETS.anthropic;
+/** Every tier left to inherit the session model, fresh for each test. */
+const allInherit = (): Record<string, string> => ({ opus: "inherit", sonnet: "inherit", haiku: "inherit", fable: "inherit" });
+const allOk = (): ModelStatus => "ok";
+/** A status stub keyed by exact model id; any other model is usable. */
+const statusOf = (statuses: Record<string, ModelStatus>) => (model: string): ModelStatus => statuses[model] ?? "ok";
+const changesOf = (preset: Record<string, string>, tiers: string[]) => tiers.map((tier) => ({ tier, model: preset[tier] }));
+
+test("presetAdvice: a Copilot session on its preset's opus, every tier inheriting: the preset, for haiku and sonnet", () => {
+	assert.deepEqual(presetAdvice(allInherit(), COPILOT.opus, allOk), {
+		presetName: "github-copilot",
+		tiersOnSessionModel: ["haiku", "sonnet"],
+		action: "preset",
+		changes: changesOf(COPILOT, Object.keys(COPILOT)),
+		unusable: [],
+	});
+});
+
+test("presetAdvice: an Anthropic session on a model in no tier names all three default tiers", () => {
+	assert.deepEqual(presetAdvice(allInherit(), "anthropic/claude-sonnet-4-5", allOk)?.tiersOnSessionModel, ["haiku", "sonnet", "opus"]);
+});
+
+test("presetAdvice: a session on the preset's haiku leaves haiku out", () => {
+	assert.deepEqual(presetAdvice(allInherit(), ANTHROPIC.haiku, allOk)?.tiersOnSessionModel, ["sonnet", "opus"]);
+});
+
+test("presetAdvice: one default tier on the session model is enough", () => {
+	const models = { ...allInherit(), haiku: COPILOT.haiku };
+	assert.deepEqual(presetAdvice(models, COPILOT.opus, allOk)?.tiersOnSessionModel, ["sonnet"]);
+});
+
+test("presetAdvice: with a tier mapped to another model, custom steps for the inheriting tiers instead of the preset", () => {
+	const models = { ...allInherit(), haiku: "github-copilot/gpt-5-mini" };
+	assert.deepEqual(presetAdvice(models, COPILOT.opus, allOk), {
+		presetName: "github-copilot",
+		tiersOnSessionModel: ["sonnet"],
+		action: "custom",
+		changes: changesOf(COPILOT, ["sonnet"]),
+		unusable: [],
+	});
+});
+
+for (const tier of Object.keys(allInherit())) {
+	test(`presetAdvice: ${tier} mapped to another model makes it custom steps`, () => {
+		const models = { ...allInherit(), [tier]: "github-copilot/elsewhere" };
+		assert.equal(presetAdvice(models, COPILOT.opus, allOk)?.action, "custom");
+	});
+}
+
+test("presetAdvice: a tier already on its preset model does not count as mapped elsewhere, and the preset leaves it out of what it sets", () => {
+	const models = { ...allInherit(), haiku: COPILOT.haiku };
+	const advice = presetAdvice(models, COPILOT.opus, statusOf({ [COPILOT.haiku]: "no-auth" }));
+	assert.equal(advice?.action, "preset");
+	assert.deepEqual(advice?.changes, changesOf(COPILOT, ["opus", "sonnet", "fable"]));
+	assert.deepEqual(advice?.unusable, [], "a model the preset does not write is not checked");
+});
+
+test("presetAdvice: a tier set to the session model itself counts as the user's choice", () => {
+	const advice = presetAdvice({ ...allInherit(), haiku: COPILOT.opus }, COPILOT.opus, allOk);
+	assert.deepEqual(advice?.tiersOnSessionModel, ["sonnet"], "only inheriting tiers are named");
+	assert.equal(advice?.action, "custom");
+});
+
+test("presetAdvice: an empty tier inherits, as resolveModel reads it", () => {
+	assert.deepEqual(presetAdvice({ ...allInherit(), haiku: "" }, COPILOT.opus, allOk)?.tiersOnSessionModel, ["haiku", "sonnet"]);
+	assert.deepEqual(presetAdvice({}, COPILOT.opus, allOk)?.tiersOnSessionModel, ["haiku", "sonnet"], "no tiers set at all");
+});
+
+test("presetAdvice: no advice once the preset is applied", () => {
+	assert.equal(presetAdvice({ ...COPILOT }, COPILOT.opus, allOk), undefined);
+});
+
+test("presetAdvice: no advice when every default tier is mapped; fable is not one of them", () => {
+	const models = { opus: "github-copilot/a", sonnet: "github-copilot/b", haiku: "github-copilot/c", fable: "inherit" };
+	assert.equal(presetAdvice(models, COPILOT.opus, allOk), undefined);
+});
+
+test("presetAdvice: no advice for a provider without a preset", () => {
+	assert.equal(presetAdvice(allInherit(), "openai/gpt-5.5", allOk), undefined);
+});
+
+test("presetAdvice: a provider named inherit does not get the inherit reset option as its preset", () => {
+	assert.equal(presetAdvice(allInherit(), "inherit/x", allOk), undefined);
+});
+
+test("presetAdvice: a provider named like an object key gets no preset", () => {
+	for (const provider of ["__proto__", "constructor", "toString"]) assert.equal(presetAdvice(allInherit(), `${provider}/x`, allOk), undefined, provider);
+});
+
+test("presetAdvice: no advice without a session model", () => {
+	assert.equal(presetAdvice(allInherit(), undefined, allOk), undefined);
+});
+
+test("presetAdvice: every model the preset writes is checked, fable included, and only unusable ones are listed", () => {
+	const status = statusOf({ [COPILOT.sonnet]: "unknown", [COPILOT.fable]: "no-auth" });
+	assert.deepEqual(presetAdvice(allInherit(), COPILOT.opus, status)?.unusable, [
+		{ model: COPILOT.sonnet, status: "unknown" },
+		{ model: COPILOT.fable, status: "no-auth" },
+	]);
+});
+
+test("presetAdvice: custom steps check only the models they set", () => {
+	const status = statusOf({ [COPILOT.fable]: "no-auth", [COPILOT.sonnet]: "unknown" });
+	const models = { ...allInherit(), haiku: "github-copilot/gpt-5-mini" };
+	assert.deepEqual(presetAdvice(models, COPILOT.opus, status)?.unusable, [{ model: COPILOT.sonnet, status: "unknown" }]);
+});
+
+function projectWith(t: TestContext, files: { shared?: unknown; local?: unknown }) {
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-models-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	fs.mkdirSync(path.join(cwd, ".pi"));
+	const shared = path.join(cwd, ".pi", "dev-team.json");
+	const local = path.join(cwd, ".pi", "dev-team.local.json");
+	if (files.shared !== undefined) fs.writeFileSync(shared, JSON.stringify(files.shared));
+	if (files.local !== undefined) fs.writeFileSync(local, JSON.stringify(files.local));
+	return { cwd, shared, local };
+}
+const trusted = { includeProject: true };
+
+test("projectFileSettingTiers: the project file that sets one of the tiers", (t) => {
+	const p = projectWith(t, { shared: { models: { sonnet: "x/y" } }, local: { autoFormat: true } });
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["haiku", "sonnet"]), p.shared);
+});
+
+test("projectFileSettingTiers: the local file wins when both set the tiers, as loadConfig merges it last", (t) => {
+	const p = projectWith(t, { shared: { models: { sonnet: "x/y" } }, local: { models: { haiku: "inherit" } } });
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["haiku", "sonnet"]), p.local);
+});
+
+test("projectFileSettingTiers: a project file that sets only other tiers does not count", (t) => {
+	const p = projectWith(t, { shared: { models: { opus: "x/y" } } });
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["haiku", "sonnet"]), undefined);
+});
+
+test("projectFileSettingTiers: an untrusted project's config is not read", (t) => {
+	const p = projectWith(t, { shared: { models: { sonnet: "x/y" } } });
+	assert.equal(projectFileSettingTiers(p.cwd, { includeProject: false }, ["sonnet"]), undefined);
+});
+
+test("fileTierModels: the text tier values one file sets itself", (t) => {
+	const p = projectWith(t, { shared: { models: { haiku: "x/y", sonnet: 5, opus: { toString: 1 } } } });
+	assert.deepEqual(fileTierModels(p.shared), { haiku: "x/y" });
+	assert.deepEqual(fileTierModels(p.local), {}, "a missing file sets nothing");
+	fs.writeFileSync(p.local, JSON.stringify({ models: ["x/y"] }));
+	assert.deepEqual(fileTierModels(p.local), {}, "a list is not a tier mapping");
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["0"]), undefined, "nor does it set a tier named 0");
+});
+
+test("fileTierModels: only known tiers", (t) => {
+	const p = projectWith(t, { shared: { models: { haiku: "x/y", "x\u001b]52;c;x\u0007": "y", toString: "z" } } });
+	assert.deepEqual(fileTierModels(p.shared), { haiku: "x/y" });
 });

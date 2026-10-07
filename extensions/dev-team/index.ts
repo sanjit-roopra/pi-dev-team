@@ -19,10 +19,16 @@ import {
 	isHookEnabled,
 	loadConfig,
 	MODEL_PRESETS,
+	type ModelStatus,
+	presetAdvice,
+	fileTierModels,
+	projectFileSettingTiers,
 	projectConfigPath,
 	updateConfigFile,
 	userConfigPath,
 } from "./lib/config.ts";
+import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
+import { toSingleLine } from "./lib/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { aiCreditsStatus } from "./lib/ai-credits.ts";
@@ -259,6 +265,12 @@ export default function devTeam(pi: ExtensionAPI) {
 		report(ctx, `hooks (${packageRoot}/hooks/hooks.json):\n${lines.join("\n")}\nChange with "hooks": {"disabled": [...], "enable": [...]} in dev-team.json`);
 	}
 
+	/** A provider/model-id in pi's catalog (the id may itself contain "/"). */
+	function findModel(ctx: ExtensionContext, id: string) {
+		const [provider, ...rest] = id.split("/");
+		return ctx.modelRegistry.find(provider, rest.join("/"));
+	}
+
 	function doctor(ctx: ExtensionContext) {
 		const which = (bin: string) => {
 			for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
@@ -274,20 +286,23 @@ export default function devTeam(pi: ExtensionAPI) {
 			["claude shim", which("claude")],
 			["semgrep (optional)", which("semgrep")],
 		] as const;
-		const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "none";
-		const tierLines = Object.entries(config.models).map(([tier, m]) => {
-			if (m === "inherit") return `  ${tier}: inherit (${model})`;
-			const [prov, ...rest] = m.split("/");
-			const found = ctx.modelRegistry.find(prov, rest.join("/"));
-			const auth = found ? ctx.modelRegistry.hasConfiguredAuth(found) : false;
-			return `  ${tier}: ${m} ${found ? (auth ? "ok" : "NO AUTH (/login)") : "UNKNOWN MODEL"}`;
-		});
+		const sessionModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+		const getModelStatus = (id: string): ModelStatus => {
+			const found = findModel(ctx, id);
+			if (!found) return "unknown";
+			return ctx.modelRegistry.hasConfiguredAuth(found) ? "ok" : "no-auth";
+		};
+		const tierLines = Object.entries(config.models).map(([tier, m]) => tierLine(tier, m, sessionModel, getModelStatus));
+		const advice = presetAdvice(config.models, sessionModel, getModelStatus);
 		report(
 			ctx,
 			[
 				...rows.map(([name, p]) => `${p ? "ok     " : "MISSING"} ${name}${p ? `  ${p}` : ""}`),
 				`model tiers:`,
 				...tierLines,
+				...(advice && sessionModel
+					? presetTipLines(advice, sessionModel, projectFileSettingTiers(ctx.cwd, projectConfigOpts(ctx), advice.changes.map((c) => c.tier)))
+					: []),
 			].join("\n"),
 		);
 	}
@@ -301,24 +316,34 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (!scope) return;
 		const file = scope.startsWith("user") ? userConfigPath() : projectConfigPath(ctx.cwd);
 		const mode = await ctx.ui.select("Map dev-team agent tiers (opus/sonnet/haiku/fable) to models", [
-			...Object.keys(MODEL_PRESETS).map((p) => `preset: ${p}`),
-			"custom: pick a model per tier",
+			...Object.keys(MODEL_PRESETS).map(presetMenuLabel),
+			CUSTOM_MENU_LABEL,
 		]);
 		if (!mode) return;
 		let models: Record<string, string>;
-		if (mode.startsWith("preset: ")) {
-			models = MODEL_PRESETS[mode.slice(8)];
+		const presetName = presetFromMenuLabel(mode);
+		if (presetName) {
+			models = { ...MODEL_PRESETS[presetName] };
 		} else {
 			const available = ctx.modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`).sort();
-			models = { ...config.models };
+			// Only what this file sets itself: another file's tiers must not be copied into it, a tier it does
+			// not set stays unset (so a project file does not override the user's own mapping), and the file of
+			// a project pi does not trust is not read.
+			const fileRead = scope.startsWith("user") || ctx.isProjectTrusted();
+			const fileModels = fileRead ? fileTierModels(file) : {};
+			models = {};
 			for (const tier of Object.keys(DEFAULT_CONFIG.models)) {
-				const pick = await ctx.ui.select(`Model for tier "${tier}" (current: ${models[tier]})`, ["inherit", ...available]);
-				if (pick) models[tier] = pick;
+				const choices = tierMenuChoices(fileModels[tier], config.models[tier], available, fileRead);
+				const labels = choices.map((c) => c.label);
+				const pick = await ctx.ui.select(`Model for tier "${tier}"`, labels);
+				const value = choices[pick === undefined ? 0 : labels.indexOf(pick)]?.value;
+				if (value !== undefined) models[tier] = value;
 			}
 		}
 		updateConfigFile(file, { models });
 		config = loadConfig(ctx.cwd, projectConfigOpts(ctx)).config;
-		ctx.ui.notify(`Saved to ${file}:\n${Object.entries(models).map(([k, v]) => `${k} = ${v}`).join("\n")}`, "info");
+		const saved = Object.entries(models).map(([tier, model]) => `${tier} = ${toSingleLine(model)}`);
+		ctx.ui.notify(`Saved to ${file}:\n${saved.length ? saved.join("\n") : "(no tier changed)"}`, "info");
 	}
 
 	// ---------------------------------------------------------------- agent mode (claude shim: --dev-team-agent)
@@ -350,8 +375,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (typeof agentName === "string" || typeof tierFlag === "string") {
 			const choice = resolveModel(frontmatterModel, typeof tierFlag === "string" ? tierFlag : undefined, config.models, parentModel);
 			if (choice.model && choice.model !== (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined)) {
-				const [prov, ...rest] = choice.model.split("/");
-				const m = ctx.modelRegistry.find(prov, rest.join("/"));
+				const m = findModel(ctx, choice.model);
 				if (m) await pi.setModel(m);
 			}
 			const thinking = resolveThinking(effort, undefined, config.thinking, undefined);
