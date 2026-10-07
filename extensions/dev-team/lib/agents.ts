@@ -263,11 +263,11 @@ export function resolveModel(
 /** The tiers agent frontmatter can name; the tier table of a config may hold nothing else that reaches the prompt. */
 const KNOWN_TIERS = ["opus", "sonnet", "haiku", "fable"] as const;
 /**
- * A provider/model-id that can go into the prompt: no whitespace or line breaks, quotes, backticks
- * or backslashes, so it cannot add a line or text of its own. Every id in pi's model catalog passes
- * (a test checks this).
+ * A provider/model-id that can go into the prompt: letters, digits and the characters pi's catalog
+ * ids use (`._:@~+-`, `/`), so it cannot add a line, a separator of the Agent tiers line (`,`, `=`)
+ * or any other text of its own. Every id in pi's model catalog passes (a test checks this).
  */
-export const MODEL_ID_SHAPE = /^[^\s"'`\\/]{1,100}\/[^\s"'`\\]{1,200}$/;
+export const MODEL_ID_SHAPE = /^[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._:@~+/-]{1,200}$/;
 
 /** A model id for the system prompt: as is when it has the shape of one, otherwise a placeholder (a project's config sets it). */
 function shownModelId(id: string): string {
