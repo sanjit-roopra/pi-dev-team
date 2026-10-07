@@ -44,7 +44,7 @@ const tierModelText = (changes: readonly TierModel[]) => joinWithAnd(changes.map
  */
 export function presetTipLines(advice: PresetAdvice, sessionModel: string, projectFile?: string): string[] {
 	const head = `tip: ${joinWithAnd(advice.tiersOnSessionModel)} agents run on ${toSingleLine(sessionModel)}, your session model.`;
-	const scope = projectFile ? [`${TIP_INDENT}${toSingleLine(projectFile)} sets these tiers for this project and wins: change them in that file.`] : [];
+	const scope = projectFile ? [`${TIP_INDENT}${toSingleLine(projectFile)} sets some of these tiers for this project and wins: change them in that file${projectFile.endsWith(".local.json") ? " by hand (/dev-team models does not write it)" : ""}.`] : [];
 	if (advice.unusable.length) {
 		const models = advice.unusable.map((u) => `${u.model} ${MODEL_STATUS_TEXT[u.status]}`).join(", ");
 		return [head, `${TIP_INDENT}preset "${advice.presetName}" needs models this session cannot use: ${models}. Pick a model per tier with /dev-team models → ${CUSTOM_MENU_NAME}.`, ...scope];

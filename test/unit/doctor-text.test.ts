@@ -47,7 +47,7 @@ for (const [branch, shape] of [
 ] as const) {
 	test(`presetTipLines (${branch}): a project file that sets these tiers is named as the place to change them`, () => {
 		const lines = presetTipLines(advice(shape as Partial<PresetAdvice>), SESSION, "/repo/.pi/dev-team.local.json");
-		assert.equal(lines.at(-1), "     /repo/.pi/dev-team.local.json sets these tiers for this project and wins: change them in that file.");
+		assert.equal(lines.at(-1), "     /repo/.pi/dev-team.local.json sets some of these tiers for this project and wins: change them in that file by hand (/dev-team models does not write it).");
 		assert.equal(presetTipLines(advice(shape as Partial<PresetAdvice>), SESSION).length, 2, "no such line without one");
 	});
 }

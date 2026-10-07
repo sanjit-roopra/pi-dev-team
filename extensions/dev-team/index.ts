@@ -334,7 +334,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				const own = inherits(models[tier]) ? "inherit" : models[tier];
 				const choices = [own, ...["inherit", ...available].filter((m) => m !== own)];
 				const shown = choices.map(toSingleLine);
-				const pick = await ctx.ui.select(`Model for tier "${tier}" (now: ${toSingleLine(own)})`, shown);
+				const pick = await ctx.ui.select(`Model for tier "${tier}" (in this file: ${toSingleLine(own)})`, shown);
 				if (pick) models[tier] = choices[shown.indexOf(pick)] ?? own;
 			}
 		}

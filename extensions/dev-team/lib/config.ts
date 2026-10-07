@@ -120,8 +120,8 @@ export const MODEL_PRESETS: Record<string, Record<string, string>> = {
 };
 
 /**
- * The tiers the package's agents use, cheapest first. No agent names `fable` in its frontmatter
- * (a test guards this), so only a per-call override can use it.
+ * The tiers the package's agents use, cheapest first. No bundled agent names `fable` in its
+ * frontmatter (a test guards this); only a per-call override or a user or project agent uses it.
  */
 const DEFAULT_USED_TIERS = ["haiku", "sonnet", "opus"] as const;
 

@@ -408,7 +408,7 @@ test("/dev-team doctor: when a trusted project file sets the advised tiers, the 
 			ctx.isProjectTrusted = () => trust;
 			await ext.commands["dev-team"].handler("doctor", ctx);
 			const last = printed.join("\n").split("\n").at(-1);
-			if (trust) assert.equal(last, `     ${projectFile} sets these tiers for this project and wins: change them in that file.`);
+			if (trust) assert.equal(last, `     ${projectFile} sets some of these tiers for this project and wins: change them in that file.`);
 			else assert.match(last ?? "", /^ {5}\/dev-team models → preset: github-copilot sets /, "an untrusted project's file is not read");
 		}
 	} finally {
