@@ -166,7 +166,7 @@ All settings, with the default values:
 {
   "models": { "opus": "inherit", "sonnet": "inherit", "haiku": "inherit", "fable": "inherit" },
   "thinking": { "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" }, // agent effort -> pi thinking level
-  "maxParallelAgents": 6,      // agents that run at the same time
+  "maxParallelAgents": 6,      // agents that run at the same time (a project file: 1 to 16)
   "maxSubagentDepth": 2,       // agents can start other agents, 2 levels deep
   "subagentTimeoutSec": 3600,  // stop an agent after this time
   "autoFormat": false,         // format files after each edit (/setup turns this on)

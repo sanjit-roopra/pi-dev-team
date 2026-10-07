@@ -411,6 +411,17 @@ test("a tool call keeps only the arguments the view shows, one line and bounded"
 	assert.deepEqual(summarizeToolCall("ask_user", null), { name: "ask_user" });
 });
 
+test("a tool call's name is one line and bounded too", () => {
+	assert.equal(summarizeToolCall("read\n✓ security-review", {}).name, "read ✓ security-review");
+	assert.equal(summarizeToolCall("x".repeat(500), {}).name.length, 200);
+});
+
+test("child events: a nested agent's name is one line and bounded; a blank one is dropped", () => {
+	const state = newChildRunState();
+	const patch = applyChildEvent(state, dispatchUpdate("c1", [reviewer("x\n✓ parallel 3/3 succeeded", "running"), reviewer("y".repeat(500), "running"), reviewer(" \n ", "running")]));
+	assert.deepEqual(patch?.subagents?.map((v) => v.agent), ["x ✓ parallel 3/3 succeeded", "y".repeat(200)]);
+});
+
 const OUTPUT_CAP = 50 * 1024;
 const big = "y".repeat(OUTPUT_CAP + 1);
 
@@ -655,7 +666,8 @@ test("semaphore: a freed slot goes to the waiter, not to an acquire in the same 
 async function hasSettled(promise: Promise<unknown>): Promise<boolean> {
 	let settled = false;
 	void promise.then(() => (settled = true));
-	for (let i = 0; i < 5; i++) await Promise.resolve();
+	// A macrotask runs after every queued microtask, however many promise hops the semaphore takes.
+	await new Promise((resolve) => setImmediate(resolve));
 	return settled;
 }
 
@@ -746,6 +758,18 @@ test("acquireSlot: reports the place in line, then clears it and starts the cloc
 	first();
 	(await waiting)();
 	assert.deepEqual(patches, [{ queuePosition: 1 }, { queuePosition: undefined, slotGrantedAt: 42, stepStartedAt: 42 }]);
+});
+
+test("acquireSlot: a view that throws on the start still gets the slot back to its owner", async () => {
+	const slots = new Semaphore(1);
+	const release = await acquireSlot(slots, (p) => {
+		if (p.slotGrantedAt !== undefined) throw new Error("view is gone");
+	});
+	const next = slots.acquire();
+	assert.equal(await hasSettled(next), false, "the slot is held");
+	release();
+	assert.ok(await hasSettled(next), "and released by its owner");
+	(await next)();
 });
 
 const tasks = [{}, {}];

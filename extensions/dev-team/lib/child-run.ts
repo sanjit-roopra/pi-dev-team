@@ -35,16 +35,20 @@ const SUBAGENT_STATUSES: ReadonlySet<string> = new Set(["running", "ok", "failed
 const SHOWN_ARGS = ["command", "pattern", "path", "file_path", "url", "name", "agent", "subagent_type"] as const;
 const SHOWN_ARG_CHARS = 200;
 
-/** The parts of a tool call the progress view needs, each argument one line and bounded. */
+/** Child text the view shows on one line: whitespace runs (newlines too) become one space, bounded. */
+const oneLine = (text: string) => text.replace(/\s+/g, " ").trim().slice(0, SHOWN_ARG_CHARS);
+
+/** The parts of a tool call the progress view needs, its name and each argument one line and bounded. */
 export function summarizeToolCall(name: string, args: unknown): ToolCallSummary {
 	const record = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
 	const shown: Record<string, string> = {};
 	for (const key of SHOWN_ARGS) {
 		const value = record[key];
-		if (typeof value === "string" && value.trim()) shown[key] = value.replace(/\s+/g, " ").trim().slice(0, SHOWN_ARG_CHARS);
+		if (typeof value === "string" && value.trim()) shown[key] = oneLine(value);
 	}
 	if (Array.isArray(record.tasks)) shown.tasks = String(record.tasks.length);
-	return Object.keys(shown).length ? { name, args: shown } : { name };
+	const oneLineName = oneLine(name);
+	return Object.keys(shown).length ? { name: oneLineName, args: shown } : { name: oneLineName };
 }
 
 export interface ChildEvent {
@@ -121,11 +125,11 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 function liveViews(entries: unknown, level = 1): LiveSubagentView[] {
 	if (!Array.isArray(entries)) return [];
 	return entries.flatMap((v): LiveSubagentView[] => {
-		if (!isRecord(v) || typeof v.agent !== "string" || typeof v.status !== "string" || !SUBAGENT_STATUSES.has(v.status)) return [];
+		if (!isRecord(v) || typeof v.agent !== "string" || !v.agent.trim() || typeof v.status !== "string" || !SUBAGENT_STATUSES.has(v.status)) return [];
 		const latest = Array.isArray(v.recentCalls) ? v.recentCalls.at(-1) : undefined;
 		const subagents = level < MAX_LIVE_SUBAGENT_LEVELS ? liveViews(v.subagents, level + 1) : [];
 		const view: LiveSubagentView = {
-			agent: v.agent,
+			agent: oneLine(v.agent),
 			status: v.status as LiveSubagentView["status"],
 			turns: typeof v.turns === "number" && Number.isFinite(v.turns) ? v.turns : 0,
 			recentCalls: isRecord(latest) && typeof latest.name === "string" ? [summarizeToolCall(latest.name, latest.args)] : [],
@@ -204,30 +208,31 @@ function applyToolExecution(state: ChildRunState, ev: ChildEvent, now: number): 
 	if (ev.type === "tool_execution_start") {
 		state.callStartTimes.set(id, now);
 		if (state.callStartTimes.size > CALLS_BY_ID_KEPT) state.callStartTimes.delete(state.callStartTimes.keys().next().value as string);
-		const outOfView = state.latestMessageCalls.get(id);
-		if (outOfView && !state.trackedCalls.some((t) => t.id === id)) state.trackedCalls = trimTrackedCalls(state, withCallInPlace(state, id, outOfView));
+		const latestMessageCall = state.latestMessageCalls.get(id);
+		const isTracked = state.trackedCalls.some((t) => t.id === id);
+		if (latestMessageCall && !isTracked) state.trackedCalls = trimTrackedCalls(state, withCallInPlace(state, id, latestMessageCall));
 		return { recentCalls: markedCalls(state) };
 	}
 	const wasUnended = state.unendedCalls.delete(id);
 	if (!state.callStartTimes.delete(id) && !wasUnended) return undefined;
-	const stepStarts = !state.unendedCalls.size && !state.callStartTimes.size;
-	return { recentCalls: markedCalls(state), ...(stepStarts ? { stepStartedAt: now } : {}) };
+	const allCallsEnded = !state.unendedCalls.size && !state.callStartTimes.size;
+	return { recentCalls: markedCalls(state), ...(allCallsEnded ? { stepStartedAt: now } : {}) };
 }
 
 /**
  * The child finished an assistant turn: usage, model, stop reason and the calls it made. Its model
  * step is over: the calls run next, or, without calls, the child is done.
  */
-function applyAssistantMessage(state: ChildRunState, m: NonNullable<ChildEvent["message"]>): ProgressPatch {
-	state.messages.push(m);
+function applyAssistantMessage(state: ChildRunState, message: NonNullable<ChildEvent["message"]>): ProgressPatch {
+	state.messages.push(message);
 	state.turns++;
-	addPiUsage(state.own, m.usage as Partial<Usage> | undefined);
-	addPiUsage(state.total, m.usage as Partial<Usage> | undefined);
-	if (m.model) state.model = m.provider ? `${m.provider}/${m.model}` : m.model;
-	if (m.stopReason) state.stopReason = m.stopReason;
-	if (m.errorMessage) state.errorMessage = m.errorMessage;
-	const calls = (Array.isArray(m.content) ? (m.content as { type: string; id?: unknown; name?: unknown; arguments?: unknown }[]) : [])
-		.filter((c): c is { type: string; id?: unknown; name: string; arguments?: unknown } => c.type === "toolCall" && typeof c.name === "string" && !!c.name)
+	addPiUsage(state.own, message.usage as Partial<Usage> | undefined);
+	addPiUsage(state.total, message.usage as Partial<Usage> | undefined);
+	if (message.model) state.model = message.provider ? `${message.provider}/${message.model}` : message.model;
+	if (message.stopReason) state.stopReason = message.stopReason;
+	if (message.errorMessage) state.errorMessage = message.errorMessage;
+	const calls = (Array.isArray(message.content) ? (message.content as { type: string; id?: unknown; name?: unknown; arguments?: unknown }[]) : [])
+		.filter((c): c is { type: string; id?: unknown; name: string; arguments?: unknown } => c.type === "toolCall" && typeof c.name === "string" && !!c.name.trim())
 		.map((c): TrackedCall => ({ id: typeof c.id === "string" ? c.id : undefined, call: summarizeToolCall(c.name, c.arguments) }));
 	const withIds = calls.filter((t): t is TrackedCall & { id: string } => t.id !== undefined).slice(0, CALLS_BY_ID_KEPT);
 	state.latestMessageCalls = new Map(withIds.map((t) => [t.id, t.call]));
@@ -246,11 +251,11 @@ function applyAssistantMessage(state: ChildRunState, m: NonNullable<ChildEvent["
  * A tool result: its usage, credited to the agents a nested dev-team dispatch ran, else to the child.
  * Returns the nested runs once there are new ones, so the view's spend so far includes them.
  */
-function applyToolResult(state: ChildRunState, m: NonNullable<ChildEvent["message"]>): ProgressPatch | undefined {
-	state.messages.push(m);
-	const usage = m.usage as Partial<Usage> | undefined;
+function applyToolResult(state: ChildRunState, message: NonNullable<ChildEvent["message"]>): ProgressPatch | undefined {
+	state.messages.push(message);
+	const usage = message.usage as Partial<Usage> | undefined;
 	addPiUsage(state.total, usage);
-	const runs = m.toolName === DEV_TEAM_SUBAGENT_TOOL ? nestedUsageOf(m.details) : [];
+	const runs = message.toolName === DEV_TEAM_SUBAGENT_TOOL ? nestedUsageOf(message.details) : [];
 	if (!runs.length) {
 		addPiUsage(state.own, usage);
 		return undefined;

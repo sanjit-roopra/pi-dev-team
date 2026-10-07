@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { MAX_REPO_FILE_BYTES } from "../../extensions/dev-team/lib/safe-read.ts";
-import { DEFAULT_CONFIG, filterProjectConfig, isProjectEnvSettingAllowed, loadConfig } from "../../extensions/dev-team/lib/config.ts";
+import { DEFAULT_CONFIG, filterProjectConfig, isProjectEnvSettingAllowed, loadConfig, MAX_PROJECT_PARALLEL_AGENTS } from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
 function fixture(t: TestContext) {
@@ -146,6 +146,27 @@ test("loadConfig: an invalid project githubStyle does not override a valid user 
 	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "warn");
 	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ githubStyle: "off" }));
 	assert.equal(loadConfig(dir, { includeProject: true, userConfigFile }).config.githubStyle, "off", "a valid project value wins");
+});
+
+test("loadConfig: a project may run 1 to 16 agents at once, never more; the user's own file may set more", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-config-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const project = path.join(dir, "project");
+	fs.mkdirSync(path.join(project, ".pi"), { recursive: true });
+	const userConfigFile = path.join(dir, "user.json");
+	const load = (projectValue: unknown, userValue?: number) => {
+		fs.writeFileSync(userConfigFile, JSON.stringify(userValue === undefined ? {} : { maxParallelAgents: userValue }));
+		fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ maxParallelAgents: projectValue }));
+		return loadConfig(project, { includeProject: true, userConfigFile });
+	};
+	assert.equal(load(1).config.maxParallelAgents, 1, "the lowest");
+	assert.equal(load(MAX_PROJECT_PARALLEL_AGENTS).config.maxParallelAgents, MAX_PROJECT_PARALLEL_AGENTS, "at the ceiling");
+	for (const bad of [MAX_PROJECT_PARALLEL_AGENTS + 1, 100_000, Number.MAX_SAFE_INTEGER, 0, 2.5, "8"]) {
+		const { config, ignoredProjectSettings } = load(bad);
+		assert.equal(config.maxParallelAgents, DEFAULT_CONFIG.maxParallelAgents, `project value ${JSON.stringify(bad)} ignored`);
+		assert.deepEqual(ignoredProjectSettings, ["maxParallelAgents"]);
+	}
+	assert.equal(load(100, 40).config.maxParallelAgents, 40, "the user's own high value still applies");
 });
 
 test("loadConfig: a project may turn the autocompact ceiling off or keep it at 50k tokens or more, never lower", (t) => {

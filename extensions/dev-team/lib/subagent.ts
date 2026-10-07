@@ -97,7 +97,8 @@ export function parallelLimit(value: unknown): number {
 
 /**
  * Wait for a slot while `update` reports the place in line, then report the start: the place is
- * cleared, and the agent's clock and its first model step start. Returns the slot's release.
+ * cleared, and the agent's clock and its first model step start. Returns the slot's release, also
+ * when that report throws: a view that fails to update must not keep the slot from its owner.
  */
 export async function acquireSlot(
 	semaphore: Semaphore,
@@ -106,7 +107,11 @@ export async function acquireSlot(
 ): Promise<() => void> {
 	const release = await semaphore.acquire((position) => update({ queuePosition: position }));
 	const now = readClock();
-	update({ queuePosition: undefined, slotGrantedAt: now, stepStartedAt: now });
+	try {
+		update({ queuePosition: undefined, slotGrantedAt: now, stepStartedAt: now });
+	} catch {
+		// view only
+	}
 	return release;
 }
 
@@ -299,6 +304,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		}
 
 		const release = await acquireSlot(semaphore, update);
+		// Esc while waiting for the slot: stop before making a worktree or starting a child.
+		if (signal?.aborted) {
+			release();
+			throw new Error(`Subagent ${def.name} was aborted`);
+		}
 		let wt: ReturnType<typeof createWorktree> | undefined;
 		const agentId = randomUUID().replace(/-/g, "").slice(0, 16);
 		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
@@ -573,9 +583,9 @@ export class DispatchProgress {
 function statusLine(v: SubagentTaskView): string {
 	if (v.status !== "running") return `${v.agent}: ${v.status}`;
 	if (isWaitingForSlot(v)) return `${v.agent}: ${waitingText(v.queuePosition)}`;
-	const calls = recentCallLines(v);
-	const tools = calls.length ? ` → ${calls.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
-	return `${v.agent}: turn ${v.turns}${tools}`;
+	const callLines = recentCallLines(v);
+	const callsText = callLines.length ? ` → ${callLines.slice(-STATUS_LINE_TOOLS).join(", ")}` : "";
+	return `${v.agent}: turn ${v.turns}${callsText}`;
 }
 
 /**

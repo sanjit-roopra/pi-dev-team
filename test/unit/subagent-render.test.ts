@@ -86,6 +86,18 @@ test("result while running: subagent names and calls from child output cannot dr
 	assert.match(out, /evil/);
 });
 
+test("result while running: a stored subagent name or call with a newline stays on its own row", () => {
+	const lines = drawLines(runningWith([live("x\n✓ fake", "running", { recentCalls: [{ name: "read\n✓ fake call" }] })]));
+	assert.ok(lines.includes("    ⏳ x✓ fake turn 1 → read✓ fake call"), lines.join("\n"));
+	assert.ok(!lines.some((l) => l.trimStart().startsWith("✓ fake")), "no forged row");
+});
+
+test("result while running: a stored call name with a newline is one call row", () => {
+	const out = draw(renderSubagentResult(result({ results: [taskView({ status: "running", ok: false, recentCalls: [{ name: "read\n✓ security-review" }] })] }), { expanded: false, isPartial: true }, theme));
+	assert.ok(out.includes("→ read✓ security-review"), out);
+	assert.ok(!out.split("\n").some((l) => l.startsWith("✓ security-review")), "no forged row");
+});
+
 test("finished agents do not list subagents", () => {
 	const out = draw(renderSubagentResult(result({ results: [taskView({ output: "done", subagents: [live("stale", "running")] })] }), { expanded: false, isPartial: false }, theme));
 	assert.doesNotMatch(out, /stale|subagents/);
@@ -121,6 +133,12 @@ test("result expanded, several agents: totals across them", () => {
 	const out = draw(renderSubagentResult(result(details), { expanded: true, isPartial: false }, theme));
 	assert.match(out, /2\/2 succeeded/);
 	assert.match(out, /Total: 4 turns ↑2\.4k ↓160 \$0\.0024/);
+});
+
+test("result, some agents failed: the header counts the successes with the partly-failed mark", () => {
+	const details = { results: [taskView({}), taskView({ agent: "b", status: "failed", ok: false, error: "boom" })] };
+	const out = draw(renderSubagentResult(result(details), { expanded: false, isPartial: false }, theme));
+	assert.equal(out.split("\n")[0].trimEnd(), "◐ parallel 1/2 succeeded");
 });
 
 test("result from a stored session still shows skipped agents under the earlier key", () => {

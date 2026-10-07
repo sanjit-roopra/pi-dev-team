@@ -115,8 +115,10 @@ export interface LiveSubagentView {
 }
 
 /**
- * Progress fields a running child reports; status/ok are set only from the final result. A key set
- * to undefined clears that field, as `subagents: undefined` does once no dev-team call is open.
+ * Progress fields of a running dispatch: the slot limiter's (queuePosition, slotGrantedAt and the
+ * first stepStartedAt, set through acquireSlot) and what the child reports (child-run.ts). status/ok
+ * are set only from the final result. A key set to undefined clears that field, as
+ * `subagents: undefined` does once no dev-team call is open.
  */
 export type ProgressPatch = Partial<
 	Pick<SubagentTaskView, "agent" | "source" | "turns" | "recentCalls" | "model" | "usage" | "subagents" | "queuePosition" | "slotGrantedAt" | "stepStartedAt" | "nested">

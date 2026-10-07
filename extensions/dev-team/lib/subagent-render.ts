@@ -151,8 +151,8 @@ function headerLine(v: SubagentTaskView, theme: Theme, liveNow?: number): string
 	if (v.source === "project") line += theme.fg("muted", " (project)");
 	if (v.tier && v.tier !== "inherit") line += theme.fg("muted", ` [${sanitizeTerminalText(v.tier)}]`);
 	if (v.status === "failed" && v.stopReason && v.stopReason !== "stop") line += ` ${theme.fg("error", `[${sanitizeTerminalText(v.stopReason)}]`)}`;
-	const ranFor = isRunningInSlot(v) ? formatElapsedSince(v.slotGrantedAt, liveNow) : undefined;
-	if (ranFor) line += theme.fg("dim", ` · ${ranFor}`);
+	const runningFor = isRunningInSlot(v) ? formatElapsedSince(v.slotGrantedAt, liveNow) : undefined;
+	if (runningFor) line += theme.fg("dim", ` · ${runningFor}`);
 	return line;
 }
 
@@ -194,12 +194,12 @@ export function recentCallLines(v: Pick<SubagentTaskView, "recentCalls" | "tools
 
 /** One call row: `→ call`, or `▶ call running 38s` while it executes. */
 function callRow(text: string, theme: Theme, runningFor?: string): string {
-	const call = theme.fg("accent", sanitizeTerminalText(text));
+	const call = theme.fg("accent", toSingleLine(text));
 	return runningFor ? `${theme.fg("warning", RUNNING_CALL_MARK)}${call}${theme.fg("dim", ` running ${runningFor}`)}` : `${theme.fg("muted", CALL_MARK)}${call}`;
 }
 
-function toolLines(tools: string[], theme: Theme): string {
-	return tools.map((t) => callRow(t, theme)).join("\n");
+function toolLines(callLines: string[], theme: Theme): string {
+	return callLines.map((t) => callRow(t, theme)).join("\n");
 }
 
 /**
@@ -230,12 +230,12 @@ function runningLines(v: SubagentTaskView, theme: Theme, liveNow: number | undef
 
 /** One subagent: status, name, turn and its latest call, then the agents it runs in turn. */
 function subagentLines(v: LiveSubagentView, indent: string, theme: Theme): string[] {
-	let line = `${indent}${statusIcon(v, theme)} ${theme.fg("accent", sanitizeTerminalText(v.agent))}`;
+	let line = `${indent}${statusIcon(v, theme)} ${theme.fg("accent", toSingleLine(v.agent))}`;
 	if (isWaitingForSlot(v)) return [`${line}${theme.fg("dim", ` ${waitingText(v.queuePosition)}`)}`];
 	if (v.status === "running") {
 		const latest = recentCallLines(v).at(-1);
 		line += theme.fg("dim", ` turn ${v.turns}`);
-		if (latest) line += `${theme.fg("muted", " → ")}${theme.fg("dim", sanitizeTerminalText(latest))}`;
+		if (latest) line += `${theme.fg("muted", " → ")}${theme.fg("dim", toSingleLine(latest))}`;
 	}
 	return [line, ...(v.status === "running" ? subagentBlock(v.subagents, indent + SUBAGENT_INDENT, theme) : [])];
 }
@@ -277,8 +277,8 @@ function renderCollapsed(v: SubagentTaskView, theme: Theme, liveNow?: number): s
 function renderExpandedInto(container: Container, v: SubagentTaskView, theme: Theme): void {
 	container.addChild(new Text(headerLine(v, theme), 0, 0));
 	container.addChild(new Text(`${theme.fg("muted", "Task: ")}${theme.fg("dim", sanitizeTerminalText(v.task))}`, 0, 0));
-	const calls = recentCallLines(v);
-	if (calls.length) container.addChild(new Text(toolLines(calls, theme), 0, 0));
+	const callLines = recentCallLines(v);
+	if (callLines.length) container.addChild(new Text(toolLines(callLines, theme), 0, 0));
 	if (v.status === "failed" && v.error) container.addChild(new Text(theme.fg("error", `Error: ${sanitizeTerminalText(v.error)}`), 0, 0));
 	if (v.output) {
 		container.addChild(new Spacer(1));
@@ -337,8 +337,8 @@ export function renderSubagentResult(
 ): Component {
 	const details = result.details as SubagentDetails | undefined;
 	const views = details?.results ?? [];
-	const anyRunning = views.some((v) => v.status === "running");
-	syncClock(context, result.details, isPartial && anyRunning, now);
+	const anyUnfinished = views.some((v) => v.status === "running");
+	syncClock(context, result.details, isPartial && anyUnfinished, now);
 	if (!details || !views.length) {
 		const first = result.content[0];
 		return new Text(sanitizeTerminalText(first?.type === "text" ? first.text : "(no output)"), 0, 0);
@@ -367,9 +367,9 @@ export function renderSubagentResult(
 
 	const spend = spendOf(views);
 	const header = summaryLine(details, spend, theme, liveNow);
-	const totalUsageText = anyRunning ? "" : formatUsage(spend.totals, { aiCredits: spend.aiCredits });
+	const totalUsageText = anyUnfinished ? "" : formatUsage(spend.totals, { aiCredits: spend.aiCredits });
 
-	if (expanded && !anyRunning) {
+	if (expanded && !anyUnfinished) {
 		const c = new Container();
 		c.addChild(new Text(header, 0, 0));
 		for (const v of views) {
@@ -387,6 +387,6 @@ export function renderSubagentResult(
 	for (const v of views) text += `\n\n${renderCollapsed(v, theme, liveNow)}`;
 	if (skippedNote) text += `\n\n${skippedNote}`;
 	if (totalUsageText) text += `\n\n${theme.fg("dim", `Total: ${totalUsageText}`)}`;
-	if (!anyRunning) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
+	if (!anyUnfinished) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
 	return new Text(text, 0, 0);
 }
