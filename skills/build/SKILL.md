@@ -14,6 +14,24 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
 
 # Build
 
+<!-- pi-port-notes -->
+## pi port notes (read first)
+
+**One retry on a stronger model before a dead-end stops the build.** This adds one step before the hard stop of sub-step 2a and the Escalation section. Use it when a step reaches the failure-signature dead-end, whether your own repair loop finds it or the `software-engineer` step report says so:
+
+1. Commit the dead-end checkpoint exactly as sub-step 2a says.
+2. Find the next tier up from the tier the step ran on: `haiku` → `sonnet` → `opus`. The dispatch result names the model and tier the step ran on (`[model <provider/id>, tier <tier>]`). The "Agent tiers" line in the system prompt names the model of each tier. A step that ran in this session, not in a dispatched agent, ran on this session's model.
+3. Skip to step 6 when the step ran on `opus` or `fable`, or when the next tier runs on the same model the step already ran on. With the default config every tier is `inherit`, so all tiers are the same model and there is no retry.
+4. Dispatch `software-engineer` once more for the same step with `model: "<next tier>"`, in the same working tree (for a worktree slice, set `cwd` to that worktree; do not make a new one). Give it the step, its Gherkin scenario(s), the checkpoint commit ref, the improved and remaining failure signatures, and a short list of the fixes already tried, and tell it not to repeat them. Its repair loop uses the same dead-end rule.
+5. If the retry reaches green, continue the step normally (REFACTOR, self-verification, review checkpoint). The step report says "escalated to `<tier>` (`<model>`) after a dead-end at `<checkpoint ref>`", so `/pr` lists it under Decisions & Assumptions.
+6. If the retry also dead-ends, or step 3 skipped it, do the hard stop of sub-step 2a and the Escalation section unchanged. When there were two attempts, name both (tier, model, checkpoint ref) and count the fix attempts of both toward the "3+ failed fix attempts" rule.
+
+- Retry at most once per step. Never chain it (`sonnet` → `opus` → `fable`), and never let it reset or raise an iteration cap, for example the review loop's 5 iterations.
+- Non-interactive runs (`--yes`, `DEV_TEAM_AUTO_APPROVE=1`, `/ship`, `/autoship`) do the same. The retry is automatic, not a human gate, so it runs before the escalation file is written.
+- The retry applies only to the failure-signature dead-end. Every other Escalation condition stops as written.
+<!-- pi-port-notes -->
+
+
 Role: orchestrator. This command implements an approved plan — it does not create plans or specs.
 
 You have been invoked with the `/build` command.

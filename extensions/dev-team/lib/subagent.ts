@@ -567,7 +567,9 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	if (results.length === 1) {
 		const r = results[0];
 		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
-		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${skipped}`;
+		// Same model note as a parallel section's head; /build's tier escalation compares against it.
+		const ran = r.model ? `\n\n[model ${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""}]` : "";
+		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${ran}${skipped}`;
 	}
 	const section = (r: SubagentRunResult) => {
 		const head = `### ${r.agent} — ${r.ok ? "completed" : "failed"}${r.model ? ` (${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""})` : ""}`;

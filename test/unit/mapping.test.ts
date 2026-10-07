@@ -12,6 +12,7 @@ import {
 	resolveModel,
 	resolveThinking,
 	splitToolList,
+	tierModelsLine,
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
@@ -63,6 +64,15 @@ test("resolveModel: tiers, inherit, explicit ids, overrides", () => {
 	assert.deepEqual(resolveModel("opus", "haiku", tiers, "p/m"), { model: "github-copilot/claude-haiku-4.5", tier: "haiku" });
 	assert.deepEqual(resolveModel("opus", "openai/gpt-5.5", tiers, "p/m"), { model: "openai/gpt-5.5" });
 	assert.deepEqual(resolveModel("fable", undefined, tiers, undefined), { model: undefined, tier: "fable" });
+});
+
+test("tierModelsLine names each tier's model, inherit as the session's model", () => {
+	const tiers = { opus: "github-copilot/claude-opus-5.5", sonnet: "inherit", haiku: "" };
+	assert.equal(
+		tierModelsLine(tiers, "p/m"),
+		"Agent tiers (the model a dispatch with `model: \"<tier>\"` runs on): opus = github-copilot/claude-opus-5.5, sonnet = this session's model (p/m), haiku = this session's model (p/m).",
+	);
+	assert.match(tierModelsLine({ opus: "inherit" }, undefined), /opus = this session's model\.$/);
 });
 
 test("resolveThinking maps effort", () => {

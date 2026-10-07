@@ -329,6 +329,12 @@ test("result text: one agent returns its output, or the failure", () => {
 	assert.equal(formatResultText([runResult({ worktree: wt })], []), "out\n\n[worktree removed: no changes]");
 });
 
+test("result text: one agent names the model and tier it ran on", () => {
+	assert.equal(formatResultText([runResult({ model: "p/m", tier: "sonnet" })], []), "out\n\n[model p/m, tier sonnet]");
+	assert.equal(formatResultText([runResult({ model: "p/m", tier: "inherit" })], []), "out\n\n[model p/m]");
+	assert.equal(formatResultText([runResult({ ok: false, error: "boom", output: "", model: "p/m", tier: "opus" })], []), "Agent a failed: boom\n\n[model p/m, tier opus]");
+});
+
 test("result text: several agents get a summary line and one section each", () => {
 	const text = formatResultText([runResult({ agent: "a", model: "p/m", tier: "sonnet" }), runResult({ agent: "b", ok: false, error: "boom", output: "partial" })], []);
 	assert.match(text, /^1\/2 agents succeeded/);

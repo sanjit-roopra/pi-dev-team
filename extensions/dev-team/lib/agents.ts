@@ -260,6 +260,16 @@ export function resolveModel(
 	return { model: mapped, tier };
 }
 
+/**
+ * One guide line naming the model each tier resolves to in this session, so the orchestrator can tell
+ * whether a dispatch at a stronger tier would run on a different model (see the /build port note).
+ */
+export function tierModelsLine(tiers: Record<string, string>, parentModel: string | undefined): string {
+	const session = parentModel ? `this session's model (${parentModel})` : "this session's model";
+	const parts = Object.keys(tiers).map((tier) => `${tier} = ${resolveModel(tier, undefined, tiers, undefined).model ?? session}`);
+	return `Agent tiers (the model a dispatch with \`model: "<tier>"\` runs on): ${parts.join(", ")}.`;
+}
+
 export function resolveThinking(
 	effort: string | undefined,
 	override: string | undefined,

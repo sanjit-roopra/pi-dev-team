@@ -456,7 +456,8 @@ const scenarios = {
 			assert(r.code === 0, r.err);
 			const dispatch = toolResults(r.out).find((x) => x.tool === "dev_team_subagent");
 			assert(dispatch && !dispatch.isError && dispatch.details?.results?.[0]?.ok, JSON.stringify(dispatch));
-			const runtime = JSON.parse(dispatch.text);
+			assert(/\n\n\[model [^\]\n]+\]$/.test(dispatch.text), "single dispatch result does not name the model it ran on");
+			const runtime = JSON.parse(dispatch.text.replace(/\n\n\[model [^\]\n]+\]$/, ""));
 			assert(runtime.systemPrompt.includes("Agent/Task=dev_team_subagent."), "child prompt maps dispatch to the wrong tool");
 			assert(!runtime.systemPrompt.includes("Agent/Task=subagent."), "child prompt still maps dispatch to the external tool");
 			assert(runtime.tools.includes("subagent"), "external tool was removed by dev-team's depth safeguard");

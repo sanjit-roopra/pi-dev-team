@@ -111,9 +111,20 @@ test("a dispatched agent's guide leaves the full skill index out (its own prompt
 		await child.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
 		assert.match(opts.sections?.dev_team ?? "", /GitHub text style/, "the rest of the guide stays");
 		assert.doesNotMatch(opts.sections?.dev_team ?? "", /^- autoship/m);
+		assert.doesNotMatch(opts.sections?.dev_team ?? "", /Agent tiers/, "no session model in the shared agent prefix");
 	} finally {
 		child.cleanup();
 	}
+});
+
+test("the main session's guide names the model each tier runs on", async () => {
+	const { handlers } = await loaded;
+	const opts: { sections?: Record<string, string> } = {};
+	await handlers.before_agent_start[0](
+		{ systemPromptOptions: opts },
+		{ cwd: os.tmpdir(), isProjectTrusted: () => false, model: { provider: "p", id: "m" } },
+	);
+	assert.match(opts.sections?.dev_team ?? "", /^- Agent tiers .*opus = this session's model \(p\/m\)/m);
 });
 
 test("agent_settled compacts the main session once context reaches autocompactMaxTokens", async () => {

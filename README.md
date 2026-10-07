@@ -71,6 +71,8 @@ By default, every tier uses the model that you selected in pi. To use a differen
 
 If you use GitHub Copilot, every agent uses AI credits for the tokens it sends and receives. A code review can start more than 20 agents, so a less expensive model for the lower tiers can reduce the cost a lot.
 
+If a `/build` step fails in the same way twice, the team tries that step one more time with the next stronger tier, for example `opus` instead of `sonnet`. Only if that also fails does the build stop and ask you. This retry happens only when the stronger tier uses a different model, so it does not happen with the default `inherit` setting.
+
 ## Safety and cost
 
 The agents can do the same things that you can do in a terminal.

@@ -10,7 +10,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking } from "./lib/agents.ts";
+import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking, tierModelsLine } from "./lib/agents.ts";
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
 import { isModelVisibleRead, ReadTracker } from "./lib/read-dedup.ts";
 import {
@@ -393,7 +393,9 @@ export default function devTeam(pi: ExtensionAPI) {
 			hasAgentPrompt || config.skillIndex === "off"
 				? ""
 				: skillIndex(discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() }), config.skillIndex, config.skillIndexChars);
-		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle));
+		// Only the orchestrator dispatches by tier; agents keep a guide without the session's model in it.
+		const tiers = hasAgentPrompt ? "" : tierModelsLine(config.models, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined);
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle), tiers);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
 			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
@@ -551,7 +553,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 }
 
-function compatGuide(packageRoot: string, index: string, interactive: boolean, styleGuide: string | undefined): string {
+function compatGuide(packageRoot: string, index: string, interactive: boolean, styleGuide: string | undefined, tiers: string): string {
 	return [
 		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
 		`- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=${DEV_TEAM_SUBAGENT_TOOL}(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).`,
@@ -565,6 +567,7 @@ function compatGuide(packageRoot: string, index: string, interactive: boolean, s
 			: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
 		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
+		...(tiers ? [`- ${tiers}`] : []),
 		styleGuide ? `\n${styleGuide}` : "",
 		index ? `\nDev-team skills (load with the skill tool; "(/x)" = also a user command):\n${index}` : "",
 	].join("\n");
