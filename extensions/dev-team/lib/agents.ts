@@ -260,13 +260,26 @@ export function resolveModel(
 	return { model: mapped, tier };
 }
 
+/** The tiers agent frontmatter can name; the tier table of a config may hold nothing else that reaches the prompt. */
+const KNOWN_TIERS = ["opus", "sonnet", "haiku", "fable"] as const;
+/** A provider/model-id as pi's catalog writes them: no spaces, quotes or line breaks. */
+const MODEL_ID_SHAPE = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._:@/-]{1,120}$/;
+
+/** A model id for the system prompt: as is when it has the shape of one, otherwise a placeholder (a project's config sets it). */
+function shownModelId(id: string): string {
+	return MODEL_ID_SHAPE.test(id) ? id : "(not a model id)";
+}
+
 /**
  * One guide line naming the model each tier resolves to in this session, so the orchestrator can tell
  * whether a dispatch at a stronger tier would run on a different model (see the /build port note).
  */
 export function tierModelsLine(tiers: Record<string, string>, parentModel: string | undefined): string {
-	const sessionModelLabel = parentModel ? `this session's model (${parentModel})` : "this session's model";
-	const tierModelPairs = Object.keys(tiers).map((tier) => `${tier} = ${resolveModel(tier, undefined, tiers, undefined).model ?? sessionModelLabel}`);
+	const sessionModelLabel = parentModel && MODEL_ID_SHAPE.test(parentModel) ? `this session's model (${parentModel})` : "this session's model";
+	const tierModelPairs = KNOWN_TIERS.filter((tier) => Object.hasOwn(tiers, tier)).map((tier) => {
+		const model = resolveModel(tier, undefined, tiers, undefined).model;
+		return `${tier} = ${model === undefined ? sessionModelLabel : shownModelId(model)}`;
+	});
 	return `Agent tiers (the model a dispatch with \`model: "<tier>"\` runs on): ${tierModelPairs.join(", ")}.`;
 }
 

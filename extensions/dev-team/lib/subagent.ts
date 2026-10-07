@@ -559,12 +559,12 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 	};
 }
 
-/** The model-facing result text (the TUI draws `details` instead). */
 /** "provider/id, tier sonnet", or just the model when it inherited: how a result names what it ran on. */
 function modelTierLabel(r: Pick<SubagentRunResult, "model" | "tier">): string {
 	return `${r.model}${r.tier && r.tier !== "inherit" ? `, tier ${r.tier}` : ""}`;
 }
 
+/** The model-facing result text (the TUI draws `details` instead). */
 export function formatResultText(results: SubagentRunResult[], skippedProjectAgents: string[]): string {
 	const skipped = skippedProjectAgents.length
 		? `\n\n[project agents not run (project not trusted): ${skippedProjectAgents.join(", ")}. You declined trust for this project in pi; package agents were used where they exist.]`
@@ -572,7 +572,7 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 	if (results.length === 1) {
 		const r = results[0];
 		const wt = r.worktree ? `\n\n[worktree ${describeWorktree(r.worktree)}]` : "";
-		// Same model note as a parallel section's head; /build's tier escalation compares against it.
+		// Same model note as a parallel section's head; /build's stronger-tier retry reads it.
 		const modelNote = r.model ? `\n\n[model ${modelTierLabel(r)}]` : "";
 		return `${r.ok ? outputForModel(r.output || "(no output)", r.fullOutputFile) : `Agent ${r.agent} failed: ${r.error}`}${wt}${modelNote}${skipped}`;
 	}
