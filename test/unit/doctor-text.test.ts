@@ -5,7 +5,7 @@ import { CUSTOM_MENU_LABEL, joinWithAnd, presetFromMenuLabel, presetMenuLabel, p
 
 const SESSION = "github-copilot/claude-opus-5.5";
 const advice = (overrides: Partial<PresetAdvice>): PresetAdvice => ({
-	preset: "github-copilot",
+	presetName: "github-copilot",
 	tiersOnSessionModel: ["haiku", "sonnet"],
 	action: "preset",
 	changes: [
@@ -36,15 +36,21 @@ test("presetTipLines: custom steps say why and what to set", () => {
 	const lines = presetTipLines(advice({ action: "custom", tiersOnSessionModel: ["sonnet"], changes: [{ tier: "sonnet", model: "github-copilot/s" }] }), SESSION);
 	assert.deepEqual(lines, [
 		`tip: sonnet agents run on ${SESSION}, your session model.`,
-		"     You mapped other tiers yourself, so set these with /dev-team models → custom: sonnet to github-copilot/s. Keep the current model for the other tiers.",
+		"     You mapped other tiers yourself, so set these with /dev-team models → custom: sonnet to github-copilot/s. Leave the other tiers as they are.",
 	]);
 });
 
-test("presetTipLines: when the project's own config sets tiers, the tip says to save the change for the project", () => {
-	const lines = presetTipLines(advice({}), SESSION, ["/repo/.pi/dev-team.json"]);
-	assert.equal(lines.at(-1), "     /repo/.pi/dev-team.json sets tiers for this project: save it for the project.");
-	assert.equal(presetTipLines(advice({}), SESSION).length, 2, "no scope line otherwise");
-});
+for (const [branch, shape] of [
+	["preset", {}],
+	["custom", { action: "custom" }],
+	["unusable", { unusable: [{ model: "m", status: "unknown" }] }],
+] as const) {
+	test(`presetTipLines (${branch}): a project file that sets these tiers is named as the place to change them`, () => {
+		const lines = presetTipLines(advice(shape as Partial<PresetAdvice>), SESSION, "/repo/.pi/dev-team.local.json");
+		assert.equal(lines.at(-1), "     /repo/.pi/dev-team.local.json sets these tiers for this project and wins: change them in that file.");
+		assert.equal(presetTipLines(advice(shape as Partial<PresetAdvice>), SESSION).length, 2, "no such line without one");
+	});
+}
 
 test("presetTipLines: the session model cannot drive the terminal", () => {
 	const [head] = presetTipLines(advice({}), "p/\u001b[2Jx\nFAKE");
@@ -65,9 +71,9 @@ test("the custom menu label is not read as a preset", () => {
 });
 
 test("the custom tip names the custom menu entry", () => {
-	const name = CUSTOM_MENU_LABEL.split(":")[0];
-	assert.ok(presetTipLines(advice({ action: "custom" }), SESSION)[1].includes(`/dev-team models → ${name}:`));
-	assert.ok(presetTipLines(advice({ unusable: [{ model: "m", status: "unknown" }] }), SESSION)[1].includes(`/dev-team models → ${name}.`));
+	assert.ok(CUSTOM_MENU_LABEL.startsWith("custom:"));
+	assert.match(presetTipLines(advice({ action: "custom" }), SESSION)[1], /\/dev-team models → custom: /, "custom steps");
+	assert.match(presetTipLines(advice({ unusable: [{ model: "m", status: "unknown" }] }), SESSION)[1], /\/dev-team models → custom\.$/, "unusable models");
 });
 
 const statuses: Record<string, ModelStatus> = { "p/ok": "ok", "p/noauth": "no-auth" };
@@ -82,7 +88,8 @@ for (const [title, tier, model, session, line] of [
 	["a usable model", "sonnet", "p/ok", "p/session", "  sonnet: p/ok ok"],
 	["a model without auth", "sonnet", "p/noauth", "p/session", "  sonnet: p/noauth NO AUTH (/login)"],
 	["an unknown model", "opus", "p/x", "p/session", "  opus: p/x UNKNOWN MODEL"],
-	["a value that is not text is unknown, not a crash", "opus", 5, "p/session", "  opus: 5 UNKNOWN MODEL"],
+	["a value that is not text is unknown, not a crash", "opus", 5, "p/session", "  opus: (not a model id) UNKNOWN MODEL"],
+	["an object that cannot become text is unknown, not a crash", "opus", { toString: 1 }, "p/session", "  opus: (not a model id) UNKNOWN MODEL"],
 ] as const) {
 	test(`tierLine: ${title}`, () => assert.equal(tierLine(tier, model, session, status), line));
 }

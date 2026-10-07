@@ -119,7 +119,10 @@ export const MODEL_PRESETS: Record<string, Record<string, string>> = {
 	inherit: { opus: "inherit", sonnet: "inherit", haiku: "inherit", fable: "inherit" },
 };
 
-/** The tiers agents use by default, cheapest first. No agent uses `fable` unless the user maps it. */
+/**
+ * The tiers the package's agents use, cheapest first. No agent names `fable` in its frontmatter
+ * (a test guards this), so only a per-call override can use it.
+ */
 const DEFAULT_USED_TIERS = ["haiku", "sonnet", "opus"] as const;
 
 /** Whether pi can run a provider/model-id: in its catalog and with auth configured. */
@@ -139,14 +142,15 @@ export interface TierModel {
  * writes, and `unusable` the models among them pi cannot run.
  */
 export interface PresetAdvice {
-	preset: string;
+	/** The preset's name, which is its provider's id. */
+	presetName: string;
 	tiersOnSessionModel: string[];
 	action: "preset" | "custom";
 	changes: TierModel[];
 	unusable: { model: string; status: ModelStatus }[];
 }
 
-/** A tier left to inherit the session model: unset, empty or "inherit", as resolveModel reads it. */
+/** A tier left to inherit the session model: unset, empty or "inherit". resolveModel uses this too. */
 export const inherits = (model: unknown) => !model || model === "inherit";
 
 /** The preset whose name is this provider id; the `inherit` reset option is not a provider's preset. */
@@ -166,23 +170,23 @@ export function presetAdvice(
 ): PresetAdvice | undefined {
 	if (!sessionModel) return undefined;
 	const provider = sessionModel.split("/")[0];
-	const preset = presetForProvider(provider);
-	if (!preset) return undefined;
-	const tiersOnSessionModel = DEFAULT_USED_TIERS.filter((t) => inherits(tierModels[t]) && preset[t] && preset[t] !== sessionModel);
+	const presetTiers = presetForProvider(provider);
+	if (!presetTiers) return undefined;
+	const tiersOnSessionModel = DEFAULT_USED_TIERS.filter((t) => inherits(tierModels[t]) && presetTiers[t] && presetTiers[t] !== sessionModel);
 	if (!tiersOnSessionModel.length) return undefined;
-	const hasTierMappedElsewhere = Object.keys(preset).some((t) => !inherits(tierModels[t]) && tierModels[t] !== preset[t]);
+	const hasTierMappedElsewhere = Object.keys(presetTiers).some((t) => !inherits(tierModels[t]) && tierModels[t] !== presetTiers[t]);
 	const action = hasTierMappedElsewhere ? "custom" : "preset";
 	const changes =
 		action === "preset"
-			? Object.entries(preset)
+			? Object.entries(presetTiers)
 					.filter(([tier, model]) => tierModels[tier] !== model)
 					.map(([tier, model]) => ({ tier, model }))
-			: tiersOnSessionModel.map((tier) => ({ tier, model: preset[tier] }));
+			: tiersOnSessionModel.map((tier) => ({ tier, model: presetTiers[tier] }));
 	const unusable = [...new Set(changes.map((c) => c.model))].flatMap((model) => {
 		const status = getModelStatus(model);
 		return status === "ok" ? [] : [{ model, status }];
 	});
-	return { preset: provider, tiersOnSessionModel: [...tiersOnSessionModel], action, changes, unusable };
+	return { presetName: provider, tiersOnSessionModel: [...tiersOnSessionModel], action, changes, unusable };
 }
 
 export function userConfigPath(): string {
@@ -293,7 +297,7 @@ export function loadConfig(
 	const sources: string[] = [];
 	const ignoredProjectSettings: string[] = [];
 	const userFile = opts.userConfigFile ?? userConfigPath();
-	const projectFiles = opts.includeProject ? [projectConfigPath(cwd), projectConfigPath(cwd, true)] : [];
+	const projectFiles = projectConfigFiles(cwd, opts);
 	for (const file of [userFile, ...projectFiles]) {
 		const raw = readJson(file);
 		if (!raw) continue;
@@ -306,13 +310,29 @@ export function loadConfig(
 	return { config, sources, ignoredProjectSettings };
 }
 
+/** The project's config files loadConfig reads, in the order it merges them (later wins); none when untrusted. */
+function projectConfigFiles(cwd: string, opts: { includeProject: boolean }): string[] {
+	return opts.includeProject ? [projectConfigPath(cwd), projectConfigPath(cwd, true)] : [];
+}
+
 /**
- * The project's config files (trusted projects only) that set `models`. They win over the user file,
- * so a tier change saved for the user would not apply in this project.
+ * The project config file whose setting wins for any of `tiers`, if a project file sets one: a change
+ * saved anywhere else would not apply to that tier in this project.
  */
-export function projectFilesSettingModels(cwd: string, opts: { includeProject: boolean }): string[] {
-	if (!opts.includeProject) return [];
-	return [projectConfigPath(cwd), projectConfigPath(cwd, true)].filter((file) => readJson(file)?.models !== undefined);
+export function projectFileSettingTiers(cwd: string, opts: { includeProject: boolean }, tiers: readonly string[]): string | undefined {
+	return projectConfigFiles(cwd, opts)
+		.filter((file) => {
+			const models = readJson(file)?.models;
+			return !!models && typeof models === "object" && tiers.some((t) => Object.hasOwn(models, t));
+		})
+		.at(-1);
+}
+
+/** The tier models one config file sets itself, text values only; what `/dev-team models` starts from. */
+export function fileTierModels(file: string): Record<string, string> {
+	const models = readJson(file)?.models;
+	if (!models || typeof models !== "object") return {};
+	return Object.fromEntries(Object.entries(models).filter((e): e is [string, string] => typeof e[1] === "string"));
 }
 
 /** Read-modify-write one config file (used by /dev-team models). */

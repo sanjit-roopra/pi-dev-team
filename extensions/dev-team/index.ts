@@ -21,12 +21,15 @@ import {
 	MODEL_PRESETS,
 	type ModelStatus,
 	presetAdvice,
-	projectFilesSettingModels,
+	fileTierModels,
+	inherits,
+	projectFileSettingTiers,
 	projectConfigPath,
 	updateConfigFile,
 	userConfigPath,
 } from "./lib/config.ts";
 import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine } from "./lib/doctor-text.ts";
+import { toSingleLine } from "./lib/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { aiCreditsStatus } from "./lib/ai-credits.ts";
@@ -298,7 +301,9 @@ export default function devTeam(pi: ExtensionAPI) {
 				...rows.map(([name, p]) => `${p ? "ok     " : "MISSING"} ${name}${p ? `  ${p}` : ""}`),
 				`model tiers:`,
 				...tierLines,
-				...(advice && sessionModel ? presetTipLines(advice, sessionModel, projectFilesSettingModels(ctx.cwd, projectConfigOpts(ctx))) : []),
+				...(advice && sessionModel
+					? presetTipLines(advice, sessionModel, projectFileSettingTiers(ctx.cwd, projectConfigOpts(ctx), advice.changes.map((c) => c.tier)))
+					: []),
 			].join("\n"),
 		);
 	}
@@ -322,12 +327,15 @@ export default function devTeam(pi: ExtensionAPI) {
 			models = { ...MODEL_PRESETS[preset] };
 		} else {
 			const available = ctx.modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`).sort();
-			models = { ...config.models };
+			// Start from what this file sets itself: another file's tiers (a project's, say) must not be copied into it.
+			models = { ...DEFAULT_CONFIG.models, ...fileTierModels(file) };
 			for (const tier of Object.keys(DEFAULT_CONFIG.models)) {
-				// The current model comes first, so taking the first entry keeps it.
-				const current = models[tier] || "inherit";
-				const pick = await ctx.ui.select(`Model for tier "${tier}" (current: ${current})`, [current, ...["inherit", ...available].filter((m) => m !== current)]);
-				if (pick) models[tier] = pick;
+				// The tier's own model comes first, so taking the first entry keeps it.
+				const own = inherits(models[tier]) ? "inherit" : models[tier];
+				const choices = [own, ...["inherit", ...available].filter((m) => m !== own)];
+				const shown = choices.map(toSingleLine);
+				const pick = await ctx.ui.select(`Model for tier "${tier}" (now: ${toSingleLine(own)})`, shown);
+				if (pick) models[tier] = choices[shown.indexOf(pick)] ?? own;
 			}
 		}
 		updateConfigFile(file, { models });

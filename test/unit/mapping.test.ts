@@ -80,6 +80,8 @@ test("every upstream agent parses and maps to at least one pi tool", () => {
 		if (m) assert.ok(m.tools.length > 0, `${def.name} maps to no tools`);
 		assert.ok(def.body.trim().length > 50, `${def.name} has an empty body`);
 		assert.ok(!def.model || ["opus", "sonnet", "haiku", "fable", "inherit"].includes(def.model) || def.model.includes("/"), `${def.name} model ${def.model}`);
+		// The doctor tip treats haiku, sonnet and opus as the tiers agents use (config.ts DEFAULT_USED_TIERS).
+		assert.notEqual(def.model, "fable", `${def.name} uses the fable tier`);
 	}
 	assert.equal(resolveAgentName(agents, "dev-team:security-review")?.name, "security-review");
 	assert.equal(resolveAgentName(agents, "explore")?.name, "Explore");

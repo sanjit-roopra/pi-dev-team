@@ -12,7 +12,8 @@ import {
 	MODEL_PRESETS,
 	type ModelStatus,
 	presetAdvice,
-	projectFilesSettingModels,
+	fileTierModels,
+	projectFileSettingTiers,
 } from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
@@ -190,7 +191,7 @@ const changesOf = (preset: Record<string, string>, tiers: string[]) => tiers.map
 
 test("presetAdvice: a Copilot session on its preset's opus, every tier inheriting: the preset, for haiku and sonnet", () => {
 	assert.deepEqual(presetAdvice(allInherit(), COPILOT.opus, allOk), {
-		preset: "github-copilot",
+		presetName: "github-copilot",
 		tiersOnSessionModel: ["haiku", "sonnet"],
 		action: "preset",
 		changes: changesOf(COPILOT, Object.keys(COPILOT)),
@@ -214,7 +215,7 @@ test("presetAdvice: one default tier on the session model is enough", () => {
 test("presetAdvice: with a tier mapped to another model, custom steps for the inheriting tiers instead of the preset", () => {
 	const models = { ...allInherit(), haiku: "github-copilot/gpt-5-mini" };
 	assert.deepEqual(presetAdvice(models, COPILOT.opus, allOk), {
-		preset: "github-copilot",
+		presetName: "github-copilot",
 		tiersOnSessionModel: ["sonnet"],
 		action: "custom",
 		changes: changesOf(COPILOT, ["sonnet"]),
@@ -222,7 +223,7 @@ test("presetAdvice: with a tier mapped to another model, custom steps for the in
 	});
 });
 
-for (const tier of ["opus", "sonnet", "haiku", "fable"]) {
+for (const tier of Object.keys(allInherit())) {
 	test(`presetAdvice: ${tier} mapped to another model makes it custom steps`, () => {
 		const models = { ...allInherit(), [tier]: "github-copilot/elsewhere" };
 		assert.equal(presetAdvice(models, COPILOT.opus, allOk)?.action, "custom");
@@ -287,12 +288,40 @@ test("presetAdvice: custom steps check only the models they set", () => {
 	assert.deepEqual(presetAdvice(models, COPILOT.opus, status)?.unusable, [{ model: COPILOT.sonnet, status: "unknown" }]);
 });
 
-test("projectFilesSettingModels: only a trusted project's files that set models", (t) => {
+function projectWith(t: TestContext, files: { shared?: unknown; local?: unknown }) {
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-models-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	fs.mkdirSync(path.join(cwd, ".pi"));
-	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.json"), JSON.stringify({ models: { haiku: "x/y" } }));
-	fs.writeFileSync(path.join(cwd, ".pi", "dev-team.local.json"), JSON.stringify({ autoFormat: true }));
-	assert.deepEqual(projectFilesSettingModels(cwd, { includeProject: true }), [path.join(cwd, ".pi", "dev-team.json")]);
-	assert.deepEqual(projectFilesSettingModels(cwd, { includeProject: false }), [], "an untrusted project's config is not read");
+	const shared = path.join(cwd, ".pi", "dev-team.json");
+	const local = path.join(cwd, ".pi", "dev-team.local.json");
+	if (files.shared !== undefined) fs.writeFileSync(shared, JSON.stringify(files.shared));
+	if (files.local !== undefined) fs.writeFileSync(local, JSON.stringify(files.local));
+	return { cwd, shared, local };
+}
+const trusted = { includeProject: true };
+
+test("projectFileSettingTiers: the project file that sets one of the tiers", (t) => {
+	const p = projectWith(t, { shared: { models: { sonnet: "x/y" } }, local: { autoFormat: true } });
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["haiku", "sonnet"]), p.shared);
+});
+
+test("projectFileSettingTiers: the local file wins when both set the tiers, as loadConfig merges it last", (t) => {
+	const p = projectWith(t, { shared: { models: { sonnet: "x/y" } }, local: { models: { haiku: "inherit" } } });
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["haiku", "sonnet"]), p.local);
+});
+
+test("projectFileSettingTiers: a project file that sets only other tiers does not count", (t) => {
+	const p = projectWith(t, { shared: { models: { opus: "x/y" } } });
+	assert.equal(projectFileSettingTiers(p.cwd, trusted, ["haiku", "sonnet"]), undefined);
+});
+
+test("projectFileSettingTiers: an untrusted project's config is not read", (t) => {
+	const p = projectWith(t, { shared: { models: { sonnet: "x/y" } } });
+	assert.equal(projectFileSettingTiers(p.cwd, { includeProject: false }, ["sonnet"]), undefined);
+});
+
+test("fileTierModels: the text tier values one file sets itself", (t) => {
+	const p = projectWith(t, { shared: { models: { haiku: "x/y", sonnet: 5, opus: { toString: 1 } } } });
+	assert.deepEqual(fileTierModels(p.shared), { haiku: "x/y" });
+	assert.deepEqual(fileTierModels(p.local), {}, "a missing file sets nothing");
 });

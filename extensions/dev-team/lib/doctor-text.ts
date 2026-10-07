@@ -31,30 +31,30 @@ export function joinWithAnd(words: readonly string[]): string {
 export function tierLine(tier: string, model: unknown, sessionModel: string | undefined, getStatus: (model: string) => ModelStatus): string {
 	const name = toSingleLine(tier);
 	if (inherits(model)) return `  ${name}: inherit (${sessionModel ? toSingleLine(sessionModel) : "none"})`;
-	if (typeof model !== "string") return `  ${name}: ${toSingleLine(String(model))} ${MODEL_STATUS_TEXT.unknown}`;
+	if (typeof model !== "string") return `  ${name}: (not a model id) ${MODEL_STATUS_TEXT.unknown}`;
 	return `  ${name}: ${toSingleLine(model)} ${MODEL_STATUS_TEXT[getStatus(model)]}`;
 }
 
 const tierModelText = (changes: readonly TierModel[]) => joinWithAnd(changes.map((c) => `${c.tier} to ${c.model}`));
 
 /**
- * The tip lines for doctor's advice: what runs on the session model now, then what to do. When the
- * project's own config sets tiers (`projectFiles`), a change saved for the user would not apply here,
- * so the tip says where to save it.
+ * The tip lines for doctor's advice: what runs on the session model now, then what to do. When a
+ * project config file sets one of the tiers the advice changes (`projectFile`), it wins over a change
+ * saved anywhere else, so the tip says to change that file.
  */
-export function presetTipLines(advice: PresetAdvice, sessionModel: string, projectFiles: readonly string[] = []): string[] {
+export function presetTipLines(advice: PresetAdvice, sessionModel: string, projectFile?: string): string[] {
 	const head = `tip: ${joinWithAnd(advice.tiersOnSessionModel)} agents run on ${toSingleLine(sessionModel)}, your session model.`;
-	const scope = projectFiles.length ? [`${TIP_INDENT}${projectFiles.map(toSingleLine).join(" and ")} sets tiers for this project: save it for the project.`] : [];
+	const scope = projectFile ? [`${TIP_INDENT}${toSingleLine(projectFile)} sets these tiers for this project and wins: change them in that file.`] : [];
 	if (advice.unusable.length) {
 		const models = advice.unusable.map((u) => `${u.model} ${MODEL_STATUS_TEXT[u.status]}`).join(", ");
-		return [head, `${TIP_INDENT}preset "${advice.preset}" needs models this session cannot use: ${models}. Pick a model per tier with /dev-team models → ${CUSTOM_MENU_NAME}.`, ...scope];
+		return [head, `${TIP_INDENT}preset "${advice.presetName}" needs models this session cannot use: ${models}. Pick a model per tier with /dev-team models → ${CUSTOM_MENU_NAME}.`, ...scope];
 	}
 	if (advice.action === "preset") {
-		return [head, `${TIP_INDENT}/dev-team models → ${presetMenuLabel(advice.preset)} sets ${tierModelText(advice.changes)}.`, ...scope];
+		return [head, `${TIP_INDENT}/dev-team models → ${presetMenuLabel(advice.presetName)} sets ${tierModelText(advice.changes)}.`, ...scope];
 	}
 	return [
 		head,
-		`${TIP_INDENT}You mapped other tiers yourself, so set these with /dev-team models → ${CUSTOM_MENU_NAME}: ${tierModelText(advice.changes)}. Keep the current model for the other tiers.`,
+		`${TIP_INDENT}You mapped other tiers yourself, so set these with /dev-team models → ${CUSTOM_MENU_NAME}: ${tierModelText(advice.changes)}. Leave the other tiers as they are.`,
 		...scope,
 	];
 }
