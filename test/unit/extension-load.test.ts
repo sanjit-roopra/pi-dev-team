@@ -275,3 +275,35 @@ test("nested, failed and non-text reads, other tools and readDedup off are never
 		}
 	}
 });
+
+test("/dev-team doctor: tier rows with their status, then the tip for the session's provider", async (t) => {
+	const ext = await loadExtension({ config: { models: { haiku: "github-copilot/gpt-5-mini", sonnet: "inherit", opus: "inherit", fable: "nowhere/model" } } });
+	try {
+		const printed: string[] = [];
+		t.mock.method(console, "log", (...args: unknown[]) => void printed.push(args.join(" ")));
+		const known: Record<string, boolean> = { "github-copilot/gpt-5-mini": true, "github-copilot/claude-sonnet-5.5": false };
+		const ctx = {
+			hasUI: false,
+			cwd: os.tmpdir(),
+			model: { provider: "github-copilot", id: "claude-opus-5.5" },
+			modelRegistry: {
+				find: (provider: string, id: string) => (`${provider}/${id}` in known ? { provider, id } : undefined),
+				hasConfiguredAuth: (m: { provider: string; id: string }) => known[`${m.provider}/${m.id}`],
+			},
+		};
+		await ext.commands["dev-team"].handler("doctor", ctx);
+		const lines = printed.join("\n").split("\n");
+		const from = lines.indexOf("model tiers:");
+		assert.ok(from > 0, lines.join("\n"));
+		assert.deepEqual(lines.slice(from + 1), [
+			"  opus: inherit (github-copilot/claude-opus-5.5)",
+			"  sonnet: inherit (github-copilot/claude-opus-5.5)",
+			"  haiku: github-copilot/gpt-5-mini ok",
+			"  fable: nowhere/model UNKNOWN MODEL",
+			"tip: sonnet agents run on github-copilot/claude-opus-5.5, your session model.",
+			'     preset "github-copilot" needs models this session cannot use: github-copilot/claude-sonnet-5.5 NO AUTH (/login). Pick a model per tier with /dev-team models → custom.',
+		]);
+	} finally {
+		ext.cleanup();
+	}
+});

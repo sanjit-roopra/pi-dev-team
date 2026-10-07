@@ -11,7 +11,7 @@ import {
 	loadConfig,
 	MODEL_PRESETS,
 	type ModelStatus,
-	modelPresetTip,
+	presetAdvice,
 } from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
@@ -178,39 +178,94 @@ test("loadConfig: a project may turn the autocompact ceiling off or keep it at 5
 	assert.equal(load(1, 10_000).config.autocompactMaxTokens, 10_000, "the user's own low value still applies");
 });
 
-const COPILOT_OPUS = "github-copilot/claude-opus-5.5";
-const allInherit = DEFAULT_CONFIG.models;
+const COPILOT = MODEL_PRESETS["github-copilot"];
+const ANTHROPIC = MODEL_PRESETS.anthropic;
+/** Every tier left to inherit the session model, fresh for each test. */
+const allInherit = (): Record<string, string> => ({ opus: "inherit", sonnet: "inherit", haiku: "inherit", fable: "inherit" });
 const allOk = (): ModelStatus => "ok";
+/** A status stub keyed by exact model id; any other model is usable. */
+const statusOf = (statuses: Record<string, ModelStatus>) => (model: string): ModelStatus => statuses[model] ?? "ok";
+const changesOf = (preset: Record<string, string>, tiers: string[]) => tiers.map((tier) => ({ tier, model: preset[tier] }));
 
-test("modelPresetTip: a Copilot session with every tier on inherit names the github-copilot preset", () => {
-	assert.deepEqual(modelPresetTip(allInherit, COPILOT_OPUS, allOk), [
-		`tip: haiku and sonnet agents run on ${COPILOT_OPUS}, your session model.`,
-		"     /dev-team models → preset: github-copilot maps haiku to github-copilot/claude-haiku-4.5, sonnet to github-copilot/claude-sonnet-5.5.",
+test("presetAdvice: a Copilot session on its preset's opus, every tier inheriting: the preset, for haiku and sonnet", () => {
+	assert.deepEqual(presetAdvice(allInherit(), COPILOT.opus, allOk), {
+		preset: "github-copilot",
+		tiersOnSessionModel: ["haiku", "sonnet"],
+		action: "preset",
+		changes: changesOf(COPILOT, ["opus", "sonnet", "haiku", "fable"]),
+		unusable: [],
+	});
+});
+
+test("presetAdvice: an Anthropic session on a model in no tier names all three default tiers", () => {
+	assert.deepEqual(presetAdvice(allInherit(), "anthropic/claude-sonnet-4-5", allOk)?.tiersOnSessionModel, ["haiku", "sonnet", "opus"]);
+});
+
+test("presetAdvice: a session on the preset's haiku leaves haiku out", () => {
+	assert.deepEqual(presetAdvice(allInherit(), ANTHROPIC.haiku, allOk)?.tiersOnSessionModel, ["sonnet", "opus"]);
+});
+
+test("presetAdvice: one default tier on the session model is enough", () => {
+	const models = { ...allInherit(), haiku: COPILOT.haiku };
+	assert.deepEqual(presetAdvice(models, COPILOT.opus, allOk)?.tiersOnSessionModel, ["sonnet"]);
+});
+
+test("presetAdvice: with a tier mapped to another model, custom steps for the inheriting tiers instead of the preset", () => {
+	const models = { ...allInherit(), haiku: "github-copilot/gpt-5-mini" };
+	assert.deepEqual(presetAdvice(models, COPILOT.opus, allOk), {
+		preset: "github-copilot",
+		tiersOnSessionModel: ["sonnet"],
+		action: "custom",
+		changes: changesOf(COPILOT, ["sonnet"]),
+		unusable: [],
+	});
+});
+
+test("presetAdvice: a tier already on its preset model does not count as mapped elsewhere", () => {
+	const models = { ...allInherit(), haiku: COPILOT.haiku };
+	assert.equal(presetAdvice(models, COPILOT.opus, allOk)?.action, "preset");
+});
+
+test("presetAdvice: an empty tier inherits, as resolveModel reads it", () => {
+	assert.deepEqual(presetAdvice({ ...allInherit(), haiku: "" }, COPILOT.opus, allOk)?.tiersOnSessionModel, ["haiku", "sonnet"]);
+	assert.deepEqual(presetAdvice({}, COPILOT.opus, allOk)?.tiersOnSessionModel, ["haiku", "sonnet"], "no tiers set at all");
+});
+
+test("presetAdvice: no advice once the preset is applied", () => {
+	assert.equal(presetAdvice({ ...COPILOT }, COPILOT.opus, allOk), undefined);
+});
+
+test("presetAdvice: no advice when every default tier is mapped; fable is not one of them", () => {
+	const models = { opus: "github-copilot/a", sonnet: "github-copilot/b", haiku: "github-copilot/c", fable: "inherit" };
+	assert.equal(presetAdvice(models, COPILOT.opus, allOk), undefined);
+});
+
+test("presetAdvice: no advice for a provider without a preset", () => {
+	assert.equal(presetAdvice(allInherit(), "openai/gpt-5.5", allOk), undefined);
+});
+
+test("presetAdvice: a provider named inherit does not get the inherit reset option as its preset", () => {
+	assert.equal(presetAdvice(allInherit(), "inherit/x", allOk), undefined);
+});
+
+test("presetAdvice: a provider named like an object key gets no preset", () => {
+	for (const provider of ["__proto__", "constructor", "toString"]) assert.equal(presetAdvice(allInherit(), `${provider}/x`, allOk), undefined, provider);
+});
+
+test("presetAdvice: no advice without a session model", () => {
+	assert.equal(presetAdvice(allInherit(), undefined, allOk), undefined);
+});
+
+test("presetAdvice: every model the preset writes is checked, fable included, and only unusable ones are listed", () => {
+	const status = statusOf({ [COPILOT.sonnet]: "unknown", [COPILOT.fable]: "no-auth" });
+	assert.deepEqual(presetAdvice(allInherit(), COPILOT.opus, status)?.unusable, [
+		{ model: COPILOT.sonnet, status: "unknown" },
+		{ model: COPILOT.fable, status: "no-auth" },
 	]);
 });
 
-test("modelPresetTip: an Anthropic session names the anthropic preset, for every tier when the session model is in none", () => {
-	const tip = modelPresetTip(allInherit, "anthropic/claude-sonnet-4-5", allOk);
-	assert.equal(tip?.[0], "tip: haiku, sonnet and opus agents run on anthropic/claude-sonnet-4-5, your session model.");
-	assert.match(tip?.[1] ?? "", /preset: anthropic maps haiku to anthropic\/claude-haiku-4-5, sonnet to anthropic\/claude-sonnet-5-5, opus to anthropic\/claude-opus-5-5\.$/);
-});
-
-test("modelPresetTip: no tip once the preset is applied, or when only explicitly mapped tiers differ", () => {
-	assert.equal(modelPresetTip(MODEL_PRESETS["github-copilot"], COPILOT_OPUS, allOk), undefined);
-	const custom = { ...allInherit, haiku: "github-copilot/gpt-5-mini", sonnet: "github-copilot/gpt-5.5" };
-	assert.equal(modelPresetTip(custom, COPILOT_OPUS, allOk), undefined, "the user mapped haiku and sonnet; opus already matches");
-});
-
-test("modelPresetTip: no tip for a provider without a preset, or without a session model", () => {
-	assert.equal(modelPresetTip(allInherit, "openai/gpt-5.5", allOk), undefined);
-	assert.equal(modelPresetTip(allInherit, "inherit/x", allOk), undefined);
-	assert.equal(modelPresetTip(allInherit, undefined, allOk), undefined);
-});
-
-test("modelPresetTip: names the preset models pi cannot run instead of recommending the preset", () => {
-	const status = (m: string): ModelStatus => (m.endsWith("haiku-4.5") ? "no-auth" : m.endsWith("sonnet-5.5") ? "unknown" : "ok");
-	assert.deepEqual(modelPresetTip(allInherit, COPILOT_OPUS, status), [
-		`tip: haiku and sonnet agents run on ${COPILOT_OPUS}, your session model.`,
-		'     preset "github-copilot" needs models this session cannot use: github-copilot/claude-haiku-4.5 NO AUTH (/login), github-copilot/claude-sonnet-5.5 UNKNOWN MODEL. Pick a model per tier with /dev-team models → custom.',
-	]);
+test("presetAdvice: custom steps check only the models they set", () => {
+	const status = statusOf({ [COPILOT.fable]: "no-auth", [COPILOT.sonnet]: "unknown" });
+	const models = { ...allInherit(), haiku: "github-copilot/gpt-5-mini" };
+	assert.deepEqual(presetAdvice(models, COPILOT.opus, status)?.unusable, [{ model: COPILOT.sonnet, status: "unknown" }]);
 });

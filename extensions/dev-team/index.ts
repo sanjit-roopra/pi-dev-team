@@ -19,13 +19,13 @@ import {
 	isHookEnabled,
 	loadConfig,
 	MODEL_PRESETS,
-	MODEL_STATUS_TEXT,
 	type ModelStatus,
-	modelPresetTip,
+	presetAdvice,
 	projectConfigPath,
 	updateConfigFile,
 	userConfigPath,
 } from "./lib/config.ts";
+import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine } from "./lib/doctor-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { aiCreditsStatus } from "./lib/ai-credits.ts";
@@ -262,6 +262,12 @@ export default function devTeam(pi: ExtensionAPI) {
 		report(ctx, `hooks (${packageRoot}/hooks/hooks.json):\n${lines.join("\n")}\nChange with "hooks": {"disabled": [...], "enable": [...]} in dev-team.json`);
 	}
 
+	/** A provider/model-id in pi's catalog (the id may itself contain "/"). */
+	function findModel(ctx: ExtensionContext, id: string) {
+		const [provider, ...rest] = id.split("/");
+		return ctx.modelRegistry.find(provider, rest.join("/"));
+	}
+
 	function doctor(ctx: ExtensionContext) {
 		const which = (bin: string) => {
 			for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
@@ -278,22 +284,20 @@ export default function devTeam(pi: ExtensionAPI) {
 			["semgrep (optional)", which("semgrep")],
 		] as const;
 		const sessionModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
-		const modelStatus = (m: string): ModelStatus => {
-			const [prov, ...rest] = m.split("/");
-			const found = ctx.modelRegistry.find(prov, rest.join("/"));
+		const getModelStatus = (id: string): ModelStatus => {
+			const found = findModel(ctx, id);
 			if (!found) return "unknown";
 			return ctx.modelRegistry.hasConfiguredAuth(found) ? "ok" : "no-auth";
 		};
-		const tierLines = Object.entries(config.models).map(([tier, m]) =>
-			m === "inherit" ? `  ${tier}: inherit (${sessionModel ?? "none"})` : `  ${tier}: ${m} ${MODEL_STATUS_TEXT[modelStatus(m)]}`,
-		);
+		const tierLines = Object.entries(config.models).map(([tier, m]) => tierLine(tier, m, sessionModel, getModelStatus));
+		const advice = presetAdvice(config.models, sessionModel, getModelStatus);
 		report(
 			ctx,
 			[
 				...rows.map(([name, p]) => `${p ? "ok     " : "MISSING"} ${name}${p ? `  ${p}` : ""}`),
 				`model tiers:`,
 				...tierLines,
-				...(modelPresetTip(config.models, sessionModel, modelStatus) ?? []),
+				...(advice && sessionModel ? presetTipLines(advice, sessionModel) : []),
 			].join("\n"),
 		);
 	}
@@ -307,13 +311,14 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (!scope) return;
 		const file = scope.startsWith("user") ? userConfigPath() : projectConfigPath(ctx.cwd);
 		const mode = await ctx.ui.select("Map dev-team agent tiers (opus/sonnet/haiku/fable) to models", [
-			...Object.keys(MODEL_PRESETS).map((p) => `preset: ${p}`),
-			"custom: pick a model per tier",
+			...Object.keys(MODEL_PRESETS).map(presetMenuLabel),
+			CUSTOM_MENU_LABEL,
 		]);
 		if (!mode) return;
 		let models: Record<string, string>;
-		if (mode.startsWith("preset: ")) {
-			models = MODEL_PRESETS[mode.slice(8)];
+		const preset = presetFromMenuLabel(mode);
+		if (preset) {
+			models = MODEL_PRESETS[preset];
 		} else {
 			const available = ctx.modelRegistry.getAvailable().map((m) => `${m.provider}/${m.id}`).sort();
 			models = { ...config.models };
@@ -356,8 +361,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (typeof agentName === "string" || typeof tierFlag === "string") {
 			const choice = resolveModel(frontmatterModel, typeof tierFlag === "string" ? tierFlag : undefined, config.models, parentModel);
 			if (choice.model && choice.model !== (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined)) {
-				const [prov, ...rest] = choice.model.split("/");
-				const m = ctx.modelRegistry.find(prov, rest.join("/"));
+				const m = findModel(ctx, choice.model);
 				if (m) await pi.setModel(m);
 			}
 			const thinking = resolveThinking(effort, undefined, config.thinking, undefined);

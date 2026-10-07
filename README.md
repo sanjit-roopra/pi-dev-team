@@ -71,7 +71,7 @@ By default, every tier uses the model that you selected in pi. To use a differen
 
 If you use GitHub Copilot, every agent uses AI credits for the tokens it sends and receives. A code review can start more than 20 agents, so a less expensive model for the lower tiers can reduce the cost a lot.
 
-`/dev-team doctor` shows a tip when a preset fits your provider and your tiers still use your current model. The tip names the preset and the models it gives each tier. If you cannot use one of those models, the tip names it.
+`/dev-team doctor` shows a tip when a preset fits your provider and your tiers still use your current model. The tip names the preset and the model it sets for each tier. A preset replaces every tier, so if you set a tier to another model yourself, the tip lists the tiers to set one by one with `custom` instead. If you cannot use one of the models, the tip names it.
 
 ## Safety and cost
 
