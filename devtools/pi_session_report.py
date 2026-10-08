@@ -8,9 +8,10 @@ Usage:
   python3 devtools/pi_session_report.py tools -p dstm [--large-output-tokens 3500]
   python3 devtools/pi_session_report.py skills -p dstm
   python3 devtools/pi_session_report.py steps -p dstm -s code-review [--outputs dispatch_reconcile.py]
+  python3 devtools/pi_session_report.py code -p dstm [--since 2026-10-01]
 
-Every subcommand takes --json and --sessions-dir. sessions, tools, skills and
-steps also take --since/--until (session start, ISO date or date-time prefix)
+Every subcommand takes --json and --sessions-dir. sessions, tools, skills,
+steps and code also take --since/--until (session start, ISO date or date-time prefix)
 and --all-sessions (include sessions that did not use dev-team).
 
 pi stores each session as JSONL under <agent dir>/sessions/<project dir>/. The
@@ -28,7 +29,14 @@ the child dispatched itself). Subagent cost counts both, the same rule as the
 extension's creditedRuns(). That entry is all this script can say about a child.
 
 The wire strings below are copied from extensions/dev-team; a test checks that
-they still appear there. Token counts are estimates: characters / 4.
+they still appear there. Token counts are estimates: characters / 4, except
+`code`, which sums the output tokens the model reported.
+
+`code` counts the lines committed in the session's cwd between its first and
+last entry (`git log --all --numstat`), split into test and production files by
+path. Commits GitHub made (squash merges, committer noreply@github.com) are
+skipped so merged work is not counted twice. Uncommitted work is not counted,
+and two sessions open at once in one repository both count the same commits.
 Stdlib only, read-only.
 """
 
@@ -39,6 +47,7 @@ import json
 import os
 import re
 import statistics
+import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -97,6 +106,11 @@ LARGE_OUTPUT_TOKENS = 3500
 SHORT_ID_LENGTH = 12
 TEXT_WIDTH, PROMPT_WIDTH, ARGS_WIDTH, COMMAND_WIDTH, OUTPUT_WIDTH, MAX_COLUMN_WIDTH = 100, 70, 60, 80, 200, 60
 KIND_COLUMN_WIDTH = 11
+
+# Test files by path: a test directory, a test_ prefix, a .test/.spec/_test suffix, or a *Test(s) class file.
+TEST_PATH_RE = re.compile(r"(^|/)(tests?|__tests__|specs?|features)/|(^|/)test_[^/]*$|[._-](test|spec)\.\w+$|Tests?\.(cs|java|kt)$")
+GITHUB_COMMITTER = "noreply@github.com"
+GIT_TIMEOUT_SECONDS = 30
 
 
 def estimate_tokens(text: str) -> int:
@@ -505,6 +519,52 @@ def report_sessions(sessions: Iterable[Session]) -> list[dict]:
     return rows
 
 
+def output_tokens(usage: Any) -> int:
+    return int(usage.get("output") or 0) if isinstance(usage, dict) else 0
+
+
+def session_output_tokens(s: Session) -> int:
+    """Output tokens the model reported: parent turns plus every credited subagent run."""
+    parent = sum(output_tokens(message_of(e).get("usage")) for e in s.entries if message_of(e).get("role") == ROLE_ASSISTANT)
+    return parent + sum(output_tokens(run.get("usage")) for r in dispatch_records(s) for run in credited_runs(r))
+
+
+def committed_lines(cwd: str, since: str, until: str) -> Counter | None:
+    """Commits and test/prod lines added and removed in cwd's repository in the window; None when git fails."""
+    command = ["git", "-C", cwd, "log", "--all", "--no-merges", "--no-ext-diff", "--no-textconv",
+               f"--since={since}", f"--until={until}", "--numstat", "--format=commit %ce"]
+    try:
+        out = subprocess.run(command, capture_output=True, text=True, check=True, timeout=GIT_TIMEOUT_SECONDS).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    counts: Counter = Counter(commits=0)
+    skipping = False
+    for line in out.splitlines():
+        if line.startswith("commit "):
+            skipping = line == f"commit {GITHUB_COMMITTER}"
+            counts["commits"] += not skipping
+            continue
+        parts = line.split("\t")
+        if skipping or len(parts) != 3 or not parts[0].isdigit():  # blank separator lines; "-" for binary files
+            continue
+        kind = "test" if TEST_PATH_RE.search(parts[2]) else "prod"
+        counts[f"{kind}Added"] += int(parts[0])
+        counts[f"{kind}Removed"] += int(parts[1])
+    return counts
+
+
+def report_code(sessions: Iterable[Session]) -> list[dict]:
+    rows = []
+    for s in sessions:
+        timestamps = [str(e["timestamp"]) for e in s.entries if e.get("timestamp")]
+        lines = committed_lines(str(s.header.get("cwd", "")), min(timestamps), max(timestamps)) if timestamps else None
+        row = {"session": s.short_id, "started": s.started, "firstPrompt": first_prompt(s), "outputTokens": session_output_tokens(s)}
+        for key in ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved"):
+            row[key] = None if lines is None else lines[key]
+        rows.append(row)
+    return rows
+
+
 def call_event(call: ToolCall, is_load: bool, all_tools: bool) -> list[tuple[str, str]]:
     events = []
     if call.name == SUBAGENT_TOOL:
@@ -707,6 +767,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("steps", parents=[common, selection], help="what ran inside each run of one skill")
     p.add_argument("-s", "--skill", required=True, help="skill name, for example code-review or build")
     p.add_argument("--outputs", action="append", default=[], metavar="TEXT", help="show output of bash calls whose command contains TEXT (repeatable)")
+    sub.add_parser("code", parents=[common, selection], help="output tokens and lines committed (test vs production) per session")
     p = sub.add_parser("timeline", parents=[common], help="ordered events of one session")
     p.add_argument("session", help="session file, a unique part of its id, or 'latest'")
     p.add_argument("-p", "--project", help="limit the session search to this project")
@@ -725,6 +786,7 @@ COMMANDS: dict[str, tuple[Callable[[argparse.Namespace, Path], Any], Callable[[A
     "tools": (lambda a, root: report_tools(selected(a, root), a.large_output_tokens), print_table),
     "skills": (lambda a, root: report_skills(selected(a, root)), print_table),
     "steps": (lambda a, root: report_steps(selected(a, root), a.skill, a.outputs), print_steps),
+    "code": (lambda a, root: report_code(selected(a, root)), print_table),
     "timeline": (lambda a, root: report_timeline(load_session(pick_session(root, a.session, a.project)), a.tools), print_timeline),
 }
 

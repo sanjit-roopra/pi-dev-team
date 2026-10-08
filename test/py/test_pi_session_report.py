@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -446,6 +447,62 @@ class BlockDetection(unittest.TestCase):
     def test_feedback_comes_from_the_last_header(self):
         call = self.call("bash", f"quoted {report.HOOK_FEEDBACK_HEADER} text\n\n{report.HOOK_FEEDBACK_HEADER}:\nreal")
         self.assertEqual(call.post_hook_feedback, "real")
+
+
+def git(repo, *args, date=None):
+    env = {**os.environ, "GIT_AUTHOR_DATE": date or "", "GIT_COMMITTER_DATE": date or "",
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x", *args],
+                   check=True, capture_output=True, env=env)
+
+
+def commit(repo, files, date, committer_email=None):
+    for name, line_count in files.items():
+        path = repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("x\n" * line_count)
+    git(repo, "add", "-A")
+    extra = ["-c", f"user.email={committer_email}"] if committer_email else []
+    git(repo, *extra, "commit", "-m", "c", date=date)
+
+
+class CodeReport(Base):
+    """Lines committed in the session's cwd during the session, plus the output tokens the model reported."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init", "-q")
+        commit(self.repo, {"old.py": 50}, "2026-10-07T13:00:00Z")  # before the session
+        commit(self.repo, {"app.py": 10, "tests/test_app.py": 30, "web/form.spec.ts": 5}, "2026-10-07T14:30:00Z")
+        commit(self.repo, {"merged.py": 99}, "2026-10-07T14:40:00Z", committer_email=report.GITHUB_COMMITTER)
+        commit(self.repo, {"late.py": 7}, "2026-10-07T16:00:00Z")  # after the session
+        header = {**header_entry(), "cwd": str(self.repo)}
+        last = {**assistant_entry("a2", "u1"), "timestamp": "2026-10-07T15:00:00Z"}
+        last["message"]["usage"]["output"] = 40
+        first = assistant_entry("a1", None)
+        first["message"]["usage"]["output"] = 60
+        child = usage_entry("x1", "a1", "doc-review", nested=[{"agent": "deep", "usage": {"output": 7}}])
+        child["data"]["usage"]["output"] = 3
+        write_session(self.root, "shop", [header, message_entry("u1", None, "user", "/dev-team:build x"), first, child, last])
+        self.row = self.run_cli("code", "-p", "shop", "--all-sessions")[0]
+
+    def test_counts_session_window_commits_by_kind(self):
+        self.assertEqual({k: self.row[k] for k in ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved")},
+                         {"commits": 1, "prodAdded": 10, "prodRemoved": 0, "testAdded": 35, "testRemoved": 0})
+
+    def test_output_tokens_include_subagent_and_nested_runs(self):
+        self.assertEqual(self.row["outputTokens"], 60 + 40 + 3 + 7)
+
+    def test_missing_repository_reports_none(self):
+        self.assertIsNone(report.committed_lines(str(self.root / "gone"), "2026-10-07", "2026-10-08"))
+
+    def test_test_path_classification(self):
+        tests = ["tests/a.py", "src/__tests__/b.ts", "test_c.py", "d_test.go", "e.spec.ts", "f.test.js", "FooTests.cs", "BarTest.java", "features/x.feature"]
+        prod = ["src/app.py", "latest.cs", "contest.py", "testing.py", "src/attest.ts"]
+        self.assertEqual([p for p in tests if not report.TEST_PATH_RE.search(p)], [])
+        self.assertEqual([p for p in prod if report.TEST_PATH_RE.search(p)], [])
 
 
 class Selection(Base):
