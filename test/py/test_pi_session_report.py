@@ -3,10 +3,12 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest import mock
@@ -26,6 +28,8 @@ ABANDONED_BRANCH_COST = 1.0
 CHILD_OWN_COST = 0.125
 NESTED_CHILD_COST = 0.0625  # costs are reported to 4 decimals
 CACHE_WARM_COST = 0.03
+
+AUTHOR_EMAIL = "dev@example.com"
 
 
 # ---------------------------------------------------------------- entry builders
@@ -449,60 +453,117 @@ class BlockDetection(unittest.TestCase):
         self.assertEqual(call.post_hook_feedback, "real")
 
 
-def git(repo, *args, date=None):
-    env = {**os.environ, "GIT_AUTHOR_DATE": date or "", "GIT_COMMITTER_DATE": date or "",
-           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
-    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@x", *args],
+GITHUB_EMAIL = "noreply@github.com"  # literal on purpose: the test is the oracle for the script's constant
+SESSION_START, SESSION_END = "2026-10-07T14:00:00.250Z", "2026-10-07T15:00:00.750Z"  # pi writes milliseconds
+WINDOW = (datetime.fromisoformat(SESSION_START), datetime.fromisoformat(SESSION_END))
+IN_WINDOW = "2026-10-07T14:30:00+00:00"
+
+
+def numstat_commit(author_date, files, committer=AUTHOR_EMAIL):
+    return "\n".join([f"commit {committer} {author_date}", "", *(f"{a}\t{r}\t{path}" for path, (a, r) in files.items()), ""])
+
+
+class CountCommits(unittest.TestCase):
+    """Parsing git_numstat_log's output: window, skips and the test/prod split."""
+
+    def count(self, *commits):
+        return dict(report.count_commits("\n".join(commits), "/repo", *WINDOW))
+
+    def test_splits_added_and_removed_lines_into_test_and_prod(self):
+        counts = self.count(numstat_commit(IN_WINDOW, {"app.py": (10, 4), "tests/test_app.py": (30, 2), "web/form.spec.ts": (5, 1)}))
+        self.assertEqual(counts, {"commits": 1, "prodAdded": 10, "prodRemoved": 4, "testAdded": 35, "testRemoved": 3})
+
+    def test_window_is_inclusive_author_date(self):
+        counts = self.count(
+            numstat_commit("2026-10-07T13:59:59+00:00", {"before.py": (1, 0)}),
+            numstat_commit("2026-10-07T16:00:00+02:00", {"start.py": (2, 0)}),  # 14:00:00 UTC, before the .250 start
+            numstat_commit("2026-10-07T17:00:00+02:00", {"end.py": (4, 0)}),  # 15:00:00 UTC
+            numstat_commit("2026-10-07T15:00:01+00:00", {"after.py": (8, 0)}),
+        )
+        self.assertEqual((counts["commits"], counts["prodAdded"]), (1, 4))
+
+    def test_skips_github_commits_lockfiles_and_binaries(self):
+        counts = self.count(
+            numstat_commit(IN_WINDOW, {"merged.py": (99, 0)}, committer=GITHUB_EMAIL),
+            numstat_commit(IN_WINDOW, {"package-lock.json": (500, 20), "web/uv.lock": (40, 0), "logo.png": ("-", "-"), "app.py": (3, 0)}),
+        )
+        self.assertEqual(counts, {"commits": 1, "prodAdded": 3, "prodRemoved": 0, "testAdded": 0, "testRemoved": 0})
+
+    def test_uses_the_canonical_test_file_rule(self):
+        cases = {"src/features/cart/slice.ts": "prod", "features/checkout.feature": "test", "docs/specs/plan.md": "prod",
+                 "src/__tests__/b.ts": "test", "test_c.py": "test", "c_test.py": "test", "e.spec.ts": "test"}
+        for path, kind in cases.items():
+            with self.subTest(path=path):
+                counts = self.count(numstat_commit(IN_WINDOW, {path: (1, 0)}))
+                self.assertEqual(counts[f"{kind}Added"], 1)
+
+
+def git(repo, *args, date=None, email=AUTHOR_EMAIL):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # a git hook's GIT_DIR must not leak in
+    env |= {"GIT_AUTHOR_DATE": date or "", "GIT_COMMITTER_DATE": date or "", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", f"user.email={email}", "-c", "init.defaultBranch=main", *args],
                    check=True, capture_output=True, env=env)
 
 
-def commit(repo, files, date, committer_email=None):
+def commit(repo, files, date, email=AUTHOR_EMAIL):
     for name, line_count in files.items():
         path = repo / name
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("x\n" * line_count)
     git(repo, "add", "-A")
-    extra = ["-c", f"user.email={committer_email}"] if committer_email else []
-    git(repo, *extra, "commit", "-m", "c", date=date)
+    git(repo, "commit", "-m", "c", date=date, email=email)
 
 
+def code_session(cwd):
+    first = {**assistant_entry("a1", None), "timestamp": SESSION_START}
+    first["message"]["usage"]["output"] = 60
+    child = usage_entry("x1", "a1", "doc-review", nested=[{"agent": "deep", "usage": {"output": 7}}])
+    child["data"]["usage"]["output"] = 3
+    last = {**assistant_entry("a2", "x1"), "timestamp": SESSION_END}
+    last["message"]["usage"]["output"] = 40
+    header = {**header_entry(SESSION_START), "cwd": cwd} if cwd is not None else {k: v for k, v in header_entry(SESSION_START).items() if k != "cwd"}
+    return [header, first, child, last]
+
+
+@unittest.skipUnless(shutil.which("git"), "git is required")
 class CodeReport(Base):
-    """Lines committed in the session's cwd during the session, plus the output tokens the model reported."""
+    """The `code` subcommand against a real repository: git flags, the window, and null columns when git cannot answer."""
 
     def setUp(self):
         super().setUp()
-        self.repo = self.root / "repo"
-        self.repo.mkdir()
+        self.repo_dir = tempfile.TemporaryDirectory()  # outside the sessions root, so it is not read as a project
+        self.repo = Path(self.repo_dir.name)
         git(self.repo, "init", "-q")
-        commit(self.repo, {"old.py": 50}, "2026-10-07T13:00:00Z")  # before the session
-        commit(self.repo, {"app.py": 10, "tests/test_app.py": 30, "web/form.spec.ts": 5}, "2026-10-07T14:30:00Z")
-        commit(self.repo, {"merged.py": 99}, "2026-10-07T14:40:00Z", committer_email=report.GITHUB_COMMITTER)
-        commit(self.repo, {"late.py": 7}, "2026-10-07T16:00:00Z")  # after the session
-        header = {**header_entry(), "cwd": str(self.repo)}
-        last = {**assistant_entry("a2", "u1"), "timestamp": "2026-10-07T15:00:00Z"}
-        last["message"]["usage"]["output"] = 40
-        first = assistant_entry("a1", None)
-        first["message"]["usage"]["output"] = 60
-        child = usage_entry("x1", "a1", "doc-review", nested=[{"agent": "deep", "usage": {"output": 7}}])
-        child["data"]["usage"]["output"] = 3
-        write_session(self.root, "shop", [header, message_entry("u1", None, "user", "/dev-team:build x"), first, child, last])
-        self.row = self.run_cli("code", "-p", "shop", "--all-sessions")[0]
+        commit(self.repo, {"old.py": 50}, "2026-10-07T13:00:00Z")
+        commit(self.repo, {"app.py": 10, "tests/test_app.py": 30}, "2026-10-07T14:30:00Z")
+        (self.repo / "app.py").write_text("y\n" * 5)  # uncommitted work, stashed during the session
+        git(self.repo, "stash", date="2026-10-07T14:40:00Z")
+        commit(self.repo, {"late.py": 7}, "2026-10-07T16:00:00Z")
 
-    def test_counts_session_window_commits_by_kind(self):
-        self.assertEqual({k: self.row[k] for k in ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved")},
-                         {"commits": 1, "prodAdded": 10, "prodRemoved": 0, "testAdded": 35, "testRemoved": 0})
+    def tearDown(self):
+        self.repo_dir.cleanup()
+        super().tearDown()
+
+    def row(self, cwd):
+        write_session(self.root, "shop", code_session(cwd))
+        return self.run_cli("code", "-p", "shop", "--all-sessions")[0]
+
+    def test_counts_branch_commits_in_the_window_but_not_the_stash(self):
+        row = self.row(str(self.repo))
+        self.assertEqual({k: row[k] for k in report.CODE_COLUMNS},
+                         {"commits": 1, "prodAdded": 10, "prodRemoved": 0, "testAdded": 30, "testRemoved": 0})
 
     def test_output_tokens_include_subagent_and_nested_runs(self):
-        self.assertEqual(self.row["outputTokens"], 60 + 40 + 3 + 7)
+        self.assertEqual(self.row(str(self.repo))["outputTokens"], 60 + 40 + 3 + 7)
 
-    def test_missing_repository_reports_none(self):
-        self.assertIsNone(report.committed_lines(str(self.root / "gone"), "2026-10-07", "2026-10-08"))
+    def test_missing_repository_gives_null_columns(self):
+        row = self.row(str(self.repo / "gone"))
+        self.assertEqual({k: row[k] for k in report.CODE_COLUMNS}, dict.fromkeys(report.CODE_COLUMNS))
+        self.assertEqual(row["outputTokens"], 110)
 
-    def test_test_path_classification(self):
-        tests = ["tests/a.py", "src/__tests__/b.ts", "test_c.py", "d_test.go", "e.spec.ts", "f.test.js", "FooTests.cs", "BarTest.java", "features/x.feature"]
-        prod = ["src/app.py", "latest.cs", "contest.py", "testing.py", "src/attest.ts"]
-        self.assertEqual([p for p in tests if not report.TEST_PATH_RE.search(p)], [])
-        self.assertEqual([p for p in prod if report.TEST_PATH_RE.search(p)], [])
+    def test_header_without_cwd_gives_null_columns_not_this_repository(self):
+        row = self.row(None)
+        self.assertIsNone(row["commits"])
 
 
 class Selection(Base):

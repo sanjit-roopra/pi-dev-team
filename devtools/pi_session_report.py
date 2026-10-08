@@ -32,12 +32,14 @@ The wire strings below are copied from extensions/dev-team; a test checks that
 they still appear there. Token counts are estimates: characters / 4, except
 `code`, which sums the output tokens the model reported.
 
-`code` counts the lines committed in the session's cwd between its first and
-last entry (`git log --all --numstat`), split into test and production files by
-path. Commits GitHub made (squash merges, committer noreply@github.com) are
-skipped so merged work is not counted twice. Uncommitted work is not counted,
-and two sessions open at once in one repository both count the same commits.
-Stdlib only, read-only.
+`code` also runs a read-only `git log` in each session's cwd. It counts commits
+on local branches authored between the session's first and last entry (author
+date, so a later rebase does not move a commit into another session), split
+into test and production files by hooks/lib/test_file_classify.py, the
+canonical test-file rule. Merges, lockfiles and commits GitHub made (squash
+merges, committer noreply@github.com) are skipped. Uncommitted work is not
+counted, and two sessions open at once in one repository both count the same
+commits. Stdlib only, read-only.
 """
 
 from __future__ import annotations
@@ -50,6 +52,7 @@ import statistics
 import subprocess
 import sys
 from collections import Counter
+from datetime import datetime
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -107,9 +110,17 @@ SHORT_ID_LENGTH = 12
 TEXT_WIDTH, PROMPT_WIDTH, ARGS_WIDTH, COMMAND_WIDTH, OUTPUT_WIDTH, MAX_COLUMN_WIDTH = 100, 70, 60, 80, 200, 60
 KIND_COLUMN_WIDTH = 11
 
-# Test files by path: a test directory, a test_ prefix, a .test/.spec/_test suffix, or a *Test(s) class file.
-TEST_PATH_RE = re.compile(r"(^|/)(tests?|__tests__|specs?|features)/|(^|/)test_[^/]*$|[._-](test|spec)\.\w+$|Tests?\.(cs|java|kt)$")
-GITHUB_COMMITTER = "noreply@github.com"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks" / "lib"))
+from test_file_classify import is_test_file  # noqa: E402  the canonical test-file rule (knowledge/test-file-indicators.md)
+
+# `code` columns. Lockfiles are generated, not written, so they count as neither.
+CODE_COLUMNS = ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved")
+LOCKFILES = frozenset({
+    "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "uv.lock", "poetry.lock",
+    "Pipfile.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "packages.lock.json",
+})
+COMMIT_MARKER = "commit "  # starts each commit's header line in git_numstat_log's output
+GITHUB_COMMITTER_EMAIL = "noreply@github.com"
 GIT_TIMEOUT_SECONDS = 30
 
 
@@ -519,49 +530,60 @@ def report_sessions(sessions: Iterable[Session]) -> list[dict]:
     return rows
 
 
-def output_tokens(usage: Any) -> int:
+def reported_output_tokens(usage: Any) -> int:
     return int(usage.get("output") or 0) if isinstance(usage, dict) else 0
 
 
-def session_output_tokens(s: Session) -> int:
-    """Output tokens the model reported: parent turns plus every credited subagent run."""
-    parent = sum(output_tokens(message_of(e).get("usage")) for e in s.entries if message_of(e).get("role") == ROLE_ASSISTANT)
-    return parent + sum(output_tokens(run.get("usage")) for r in dispatch_records(s) for run in credited_runs(r))
+def session_reported_output_tokens(s: Session) -> int:
+    """Output tokens the model reported: parent turns plus every credited subagent run, abandoned branches included."""
+    parent = sum(reported_output_tokens(message_of(e).get("usage")) for e in s.entries if message_of(e).get("role") == ROLE_ASSISTANT)
+    return parent + sum(reported_output_tokens(run.get("usage")) for r in dispatch_records(s) for run in credited_runs(r))
 
 
-def committed_lines(cwd: str, since: str, until: str) -> Counter | None:
-    """Commits and test/prod lines added and removed in cwd's repository in the window; None when git fails."""
-    command = ["git", "-C", cwd, "log", "--all", "--no-merges", "--no-ext-diff", "--no-textconv",
-               f"--since={since}", f"--until={until}", "--numstat", "--format=commit %ce"]
+def git_numstat_log(cwd: str, since: str) -> str | None:
+    """Non-merge commits on local branches committed since `since`, with numstat; None when git fails.
+
+    Local branches only: --all would add the stash (its index commit is not a merge) and teammates' fetched work.
+    """
+    command = ["git", "-C", cwd, "-c", "core.quotePath=false", "log", "--branches", "--no-merges", "--no-renames",
+               "--no-ext-diff", "--no-textconv", f"--since-as-filter={since}", "--numstat", f"--format={COMMIT_MARKER}%ce %aI"]
     try:
-        out = subprocess.run(command, capture_output=True, text=True, check=True, timeout=GIT_TIMEOUT_SECONDS).stdout
+        return subprocess.run(command, capture_output=True, text=True, errors="replace", check=True, timeout=GIT_TIMEOUT_SECONDS).stdout
     except (OSError, subprocess.SubprocessError):
         return None
-    counts: Counter = Counter(commits=0)
-    skipping = False
-    for line in out.splitlines():
-        if line.startswith("commit "):
-            skipping = line == f"commit {GITHUB_COMMITTER}"
-            counts["commits"] += not skipping
+
+
+def count_commits(log: str, cwd: str, first: datetime, last: datetime) -> Counter:
+    """CODE_COLUMNS for the commits in `log` authored from `first` to `last`, without GitHub's commits and lockfiles."""
+    counts: Counter = Counter(dict.fromkeys(CODE_COLUMNS, 0))
+    counting = False
+    for line in log.splitlines():
+        if line.startswith(COMMIT_MARKER):
+            committer_email, author_date = line[len(COMMIT_MARKER):].rsplit(" ", 1)
+            counting = committer_email != GITHUB_COMMITTER_EMAIL and first <= datetime.fromisoformat(author_date) <= last
+            counts["commits"] += counting
             continue
         parts = line.split("\t")
-        if skipping or len(parts) != 3 or not parts[0].isdigit():  # blank separator lines; "-" for binary files
+        if not counting or len(parts) != 3:  # blank separator lines
             continue
-        kind = "test" if TEST_PATH_RE.search(parts[2]) else "prod"
-        counts[f"{kind}Added"] += int(parts[0])
-        counts[f"{kind}Removed"] += int(parts[1])
+        added, removed, path = parts
+        if not added.isdigit() or Path(path).name in LOCKFILES:  # "-" for binary files
+            continue
+        kind = "test" if is_test_file(str(Path(cwd) / path)) else "prod"  # under cwd so C#/Java content probes find the file
+        counts[f"{kind}Added"] += int(added)
+        counts[f"{kind}Removed"] += int(removed)
     return counts
 
 
 def report_code(sessions: Iterable[Session]) -> list[dict]:
     rows = []
     for s in sessions:
+        cwd = s.header.get("cwd")
         timestamps = [str(e["timestamp"]) for e in s.entries if e.get("timestamp")]
-        lines = committed_lines(str(s.header.get("cwd", "")), min(timestamps), max(timestamps)) if timestamps else None
-        row = {"session": s.short_id, "started": s.started, "firstPrompt": first_prompt(s), "outputTokens": session_output_tokens(s)}
-        for key in ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved"):
-            row[key] = None if lines is None else lines[key]
-        rows.append(row)
+        log = git_numstat_log(cwd, min(timestamps)) if isinstance(cwd, str) and cwd and timestamps else None  # git -C "" would read this repo
+        stats = count_commits(log, cwd, datetime.fromisoformat(min(timestamps)), datetime.fromisoformat(max(timestamps))) if log is not None else None
+        row = {"session": s.short_id, "started": s.started, "firstPrompt": first_prompt(s), "outputTokens": session_reported_output_tokens(s)}
+        rows.append(row | {key: None if stats is None else stats[key] for key in CODE_COLUMNS})
     return rows
 
 
