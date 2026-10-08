@@ -1,7 +1,5 @@
 """Tests for the pi port's changes to hooks/pre_tool_guard.py (see PORTING.md). Run: python3 -m unittest discover -s test/py"""
 import hashlib
-import importlib.machinery
-import importlib.util
 import json
 import os
 import subprocess
@@ -10,22 +8,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+from _loader import ROOT, load_module
+
 HOOK = ROOT / "hooks" / "pre_tool_guard.py"
 sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 
 
-def load(name, path):
-    loader = importlib.machinery.SourceFileLoader(name, str(path))
-    spec = importlib.util.spec_from_loader(name, loader)
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
-    return mod
-
-
-guard = load("pre_tool_guard", HOOK)
+guard = load_module("pre_tool_guard", HOOK)
 guard.emit_boundary_event = lambda *a, **k: None
-sync = load("sync_upstream_for_guard", ROOT / "sync" / "sync_upstream.py")
+sync = load_module("sync_upstream_for_guard", ROOT / "sync" / "sync_upstream.py")
 
 
 class GuardTestCase(unittest.TestCase):
@@ -174,14 +165,15 @@ class MainEntryPoint(unittest.TestCase):
 
 
 class OverrideBases(unittest.TestCase):
-    def test_shipped_overrides_match_the_hooks_directory(self):
-        for rel in sync.OVERRIDE_BASES:
+    def test_shipped_hook_overrides_match_the_hooks_directory(self):
+        # Slim skills (skills/*) are checked by test_slim_skills.py.
+        for rel in (rel for rel in sync.OVERRIDE_BASES if rel.startswith("hooks/")):
             with self.subTest(rel=rel):
                 self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes())
 
     def test_every_hook_override_has_a_base_hash(self):
         shipped = {p.relative_to(ROOT / "overrides").as_posix() for p in (ROOT / "overrides" / "hooks").rglob("*") if p.is_file() and "__pycache__" not in p.parts}
-        self.assertEqual(shipped, set(sync.OVERRIDE_BASES))
+        self.assertEqual(shipped, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("hooks/")})
 
     def test_stale_override_bases_reports_changed_and_missing_files(self):
         root = Path(tempfile.mkdtemp())

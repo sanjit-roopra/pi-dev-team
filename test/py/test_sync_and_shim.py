@@ -1,6 +1,4 @@
 """Tests for sync/sync_upstream.py helpers and the bin/claude shim. Run: python3 -m unittest discover -s test/py"""
-import importlib.util
-import importlib.machinery
 import json
 import os
 import stat
@@ -10,19 +8,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+from _loader import ROOT, load_module
 
 
-def load(name, path):
-    loader = importlib.machinery.SourceFileLoader(name, str(path))
-    spec = importlib.util.spec_from_loader(name, loader)
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
-    return mod
-
-
-sync = load("sync_upstream", ROOT / "sync" / "sync_upstream.py")
-shim = load("claude_shim", ROOT / "bin" / "claude")
+sync = load_module("sync_upstream", ROOT / "sync" / "sync_upstream.py")
+shim = load_module("claude_shim", ROOT / "bin" / "claude")
 
 
 class SyncHelpers(unittest.TestCase):

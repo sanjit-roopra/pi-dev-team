@@ -8,7 +8,9 @@ What it does (idempotent, stdlib only):
   1. Replaces the managed directories (agents, skills, hooks, scripts, knowledge,
      templates, tools, docs/upstream) with fresh copies from upstream.
   2. Drops skills that only make sense inside Claude Code (DROPPED_SKILLS).
-  3. Copies pi-specific replacements from overrides/ over the result.
+  3. Copies pi-specific replacements from overrides/ over the result. A slim
+     skill's override also carries its upstream text, unchanged, split into
+     references/ by sync/split_skill_references.py.
   4. Normalises SKILL.md frontmatter for pi (description <= 1024 chars).
   5. Applies the small, explicit text patch set (PATCHES). Every patch must
      match at least once, so upstream drift is caught instead of silently
@@ -58,6 +60,8 @@ DESCRIPTION_LIMIT = 1024
 OVERRIDE_BASES: dict[str, str] = {
     "hooks/pre_tool_guard.py": "761e83e9d9bb66544ce465aaf301d0d5a52fd84b988238e6b947a0202dcdc3d5",
     "hooks/guards.json": "03916b358d3f5c5036d9517222d469f85404dc3c9cde1364dfb4d3bc7422c54b",
+    # Slim core + verbatim references (sync/split_skill_references.py); re-port when upstream changes it.
+    "skills/code-review/SKILL.md": "97d0b514bef1a8b9ee18c8e6d043419c0c43fffd1ab701aea3beaf5f9edb6303",
 }
 
 # (glob relative to package root, regex, replacement, description)
