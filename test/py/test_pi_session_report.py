@@ -234,6 +234,11 @@ class SessionsReport(Base):
         self.assertEqual(count("--until", "2026-10-07T14:00:00Z"), 1)
         self.assertEqual(count("--until", "2026-10-07T13:59:59Z"), 0)
 
+    def test_window_with_header_without_milliseconds_and_millisecond_bound(self):
+        count = lambda *bounds: len(self.run_cli("sessions", "-p", "shop", *bounds))  # header 14:00:00Z
+        self.assertEqual(count("--until", "2026-10-07T14:00:00.500Z"), 1)
+        self.assertEqual(count("--since", "2026-10-07T14:00:00.500Z"), 0)
+
     def test_window_applies_to_skills_and_steps(self):
         self.assertEqual(self.run_cli("skills", "-p", "shop", "--since", "2026-10-08"), [])
         self.assertEqual(self.run_cli("steps", "-p", "shop", "-s", "code-review", "--until", "2026-10-06")["runs"], 0)
@@ -353,16 +358,24 @@ class TimelineReport(Base):
     def test_steps_and_tables_lose_control_characters(self):
         evil = "\x1b]52;c;evil\x07\u202e"
         entries = [
-            header_entry(f"2026-10-07T14:00:00Z{evil}"),
-            message_entry("u1", None, "user", slash_skill_text("code-review")),
-            assistant_entry("a1", "u1", [tool_call_block("c1", "read", {"path": f"/x/skills/code-review/references/a{evil}.md"})]),
+            header_entry(),
+            message_entry("u1", None, "user", slash_skill_text(f"tainted{evil}")),
+            message_entry("u2", "u1", "user", slash_skill_text("code-review")),
+            assistant_entry("a1", "u2", [tool_call_block("c1", "read", {"path": f"/x/skills/code-review/references/a{evil}.md"})]),
             tool_result_entry("r1", "a1", "c1", "read", "text"),
         ]
-        write_session(self.root, "evil", entries)
-        for argv in (("steps", "-p", "evil", "-s", "code-review"), ("skills", "-p", "evil"), ("sessions", "-p", "evil"), ("projects",)):
+        write_session(self.root, f"evil{evil}", entries)
+        cases = {  # each command prints at least one tainted field
+            ("steps", "-p", "evil", "-s", "code-review"): "references/a",
+            ("skills", "-p", "evil"): "tainted",
+            ("sessions", "-p", "evil"): "tainted",
+            ("projects",): "Users-me-git-evil",
+        }
+        for argv, visible in cases.items():
             text = self.run_cli(*argv, as_json=False)
-            for char in ("\x1b", "\x07", "\u202e"):
-                with self.subTest(argv=argv, char=repr(char)):
+            with self.subTest(argv=argv):
+                self.assertIn(visible, text)
+                for char in ("\x1b", "\x07", "\u202e"):
                     self.assertNotIn(char, text)
 
     def test_secret_shapes_are_masked(self):

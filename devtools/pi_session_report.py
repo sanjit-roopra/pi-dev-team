@@ -437,8 +437,8 @@ def normalize_bound(bound: str | None) -> str | None:
 def in_window(timestamp: str, since: str | None, until: str | None) -> bool:
     """`timestamp` is the header's ISO start ('...T14:07:47.782Z'). Bounds are ISO date or date-time prefixes
     ('T' or a space, optional 'Z'), compared at the bound's own precision; both are inclusive."""
-    since, until = normalize_bound(since), normalize_bound(until)
-    return (not since or timestamp[: len(since)] >= since) and (not until or timestamp[: len(until)] <= until)
+    stamp, since, until = normalize_bound(timestamp) or "", normalize_bound(since), normalize_bound(until)
+    return (not since or stamp[: len(since)] >= since) and (not until or stamp[: len(until)] <= until)
 
 
 def project_sessions(root: Path, query: str, dev_team_only: bool = True, since: str | None = None, until: str | None = None) -> Iterator[Session]:
