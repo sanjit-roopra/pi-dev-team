@@ -64,6 +64,34 @@ class SyncHelpers(unittest.TestCase):
         self.assertIn("DEV_TEAM_INTERACTIVE", (ROOT / "skills" / "plan" / "SKILL.md").read_text())
 
 
+class LeanCode(unittest.TestCase):
+    """The lean-production-code overrides: pinned, shipped as written, and the shared rule stays one rule."""
+
+    PORT_ONLY_AGENTS = {"Explore.md", "general-purpose.md"}  # no upstream file to pin
+    LEAN_FIX_RULE = "**Lean fix rule (production code only).**"
+
+    def test_every_upstream_agent_override_is_pinned_and_shipped(self):
+        overrides = {f"agents/{p.name}" for p in (ROOT / "overrides" / "agents").glob("*.md") if p.name not in self.PORT_ONLY_AGENTS}
+        self.assertEqual(overrides, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("agents/")})
+        for rel in overrides:
+            with self.subTest(rel=rel):
+                self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes(), "run npm run sync")
+
+    def test_the_lean_fix_rule_reads_the_same_in_both_fix_loops(self):
+        def rule(rel):
+            return next(line for line in (ROOT / rel).read_text().splitlines() if line.startswith(self.LEAN_FIX_RULE))
+        self.assertEqual(rule("agents/quality-reviewer.md"), rule("skills/code-review/SKILL.md"))
+        self.assertIn("test files are exempt", rule("agents/quality-reviewer.md"))
+
+    def test_lean_rules_never_shrink_test_scope(self):
+        engineer = (ROOT / "agents" / "software-engineer.md").read_text()
+        self.assertIn("The ladder governs production code only.", engineer)
+        self.assertIn("Fewer lines, never denser lines", engineer)
+        simplify = (ROOT / "agents" / "refactor-opportunity-review.md").read_text()
+        self.assertIn("\nScope: on-demand\n", simplify)  # stays off /code-review's per-diff panel
+        self.assertIn("Only test files changed", simplify)
+
+
 class Shim(unittest.TestCase):
     def test_model_args(self):
         self.assertEqual(shim.model_args("opus"), ["--dev-team-tier", "opus"])

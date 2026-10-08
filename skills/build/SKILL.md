@@ -29,6 +29,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
 - Retry at most once per step. Never chain it (`haiku` → `sonnet` → `opus`), and never let it reset or raise an iteration cap, for example the review loop's 5 iterations.
 - Non-interactive runs (`--yes`, `DEV_TEAM_AUTO_APPROVE=1`, `/ship`, `/autoship`) do the same. The retry is automatic, not a human gate, so it runs before the escalation file is written.
 - The retry applies only to the failure-signature dead-end. Every other Escalation condition stops as written.
+
+**Lean production code.** The `software-engineer` walks its reuse ladder before writing (Simplicity First in its agent file). At the slice review checkpoint (sub-step 6), `refactor-opportunity-review` is a simplify lens: it only proposes deleting, inlining or merging production code, never adding it. In every checkpoint fix loop, apply the lean fix rule from `/code-review` step 5b: a restructuring `warning` that grows production code is report-only. Test files are exempt: test scope comes from the Gherkin scenarios and the mutation gate.
 <!-- pi-port-notes -->
 
 

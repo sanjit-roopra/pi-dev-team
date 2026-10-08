@@ -307,6 +307,8 @@ Expired rules stop suppressing and get a WARN naming the rule and owner, plus an
 
 Score with `knowledge/review-rubric.md`; security failures escalate to 🔴. **Actionable** = severity error or warning with confidence high or medium. Confidence none and every suggestion are report-only. Actionable issues drive the fix loop.
 
+**Lean fix rule (production code only).** A `warning` whose fix restructures code — extract a function, split a module, introduce a type, interface, parameter object, wrapper or layer — is actionable only when the fix removes at least as many production lines as it adds; otherwise it is report-only. Fixes that correct behavior (a bug, a missing check, a security or accessibility gap) and every change to test files are exempt.
+
 #### 5b-i. Record round 1 (#1624)
 
 The initial panel is round 1. Record it now, before any fix:

@@ -62,6 +62,12 @@ OVERRIDE_BASES: dict[str, str] = {
     "hooks/guards.json": "03916b358d3f5c5036d9517222d469f85404dc3c9cde1364dfb4d3bc7422c54b",
     # Slim core + verbatim references (sync/split_skill_references.py); re-port when upstream changes it.
     "skills/code-review/SKILL.md": "97d0b514bef1a8b9ee18c8e6d043419c0c43fffd1ab701aea3beaf5f9edb6303",
+    # Lean production code: reuse ladder, simplify lens, rule of three, lean fix rule (PORTING.md section 3).
+    "agents/plan-review-strategic.md": "4b93d06735d5da51568a8efac8b5d9cb1e6f2677a20939b6fa0aacaef0990b83",
+    "agents/quality-reviewer.md": "25c4f144c4b8c074ae5056bbf4dfdb8d70ad86b3040762d42f4c9ab3beb40310",
+    "agents/refactor-opportunity-review.md": "e25b0d4ffe63dd4afd6a4dde59961145b2eb89d02e7523fadcd98e5b2d376f35",
+    "agents/software-engineer.md": "c90d86b63183f8a6257288e1b293b16c30a999e15556227592d11446caf86f97",
+    "agents/structure-review.md": "537783f00a249dbf57cabe683f84293c7ed10bc6c50a8f4493a5a95f76bb1c49",
 }
 
 # (glob relative to package root, regex, replacement, description)
