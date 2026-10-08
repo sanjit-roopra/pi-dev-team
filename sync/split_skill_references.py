@@ -18,7 +18,7 @@ file byte for byte (test/py/test_slim_skills.py checks this against the hash in
 OVERRIDE_BASES). The references do not store the frontmatter, so the core's
 frontmatter must stay identical to upstream's.
 
-The script checks the rebuild before it touches any file, then prints the
+The script checks every marker before it touches any file, then prints the
 upstream sha256. After running it: review the upstream diff, update the core
 SKILL.md (frontmatter included) to match, set the printed hash in
 OVERRIDE_BASES (sync/sync_upstream.py), and run the sync.
@@ -71,7 +71,7 @@ def split_frontmatter(text: str) -> tuple[str, str]:
     """(frontmatter including both --- lines, body)."""
     if not text.startswith(FRONTMATTER_OPEN):
         raise ValueError("SKILL.md has no frontmatter")
-    close = text.find(FRONTMATTER_CLOSE, len(FRONTMATTER_OPEN))
+    close = text.find(FRONTMATTER_CLOSE, len(FRONTMATTER_OPEN) - 1)  # - 1: an empty frontmatter closes at once
     if close < 0:
         raise ValueError("SKILL.md frontmatter is not closed")
     end = close + len(FRONTMATTER_CLOSE)
@@ -81,8 +81,8 @@ def split_frontmatter(text: str) -> tuple[str, str]:
 def plan_chunks(plan: list[tuple[str, str, str | None]], body: str) -> list[tuple[str, str, str]]:
     """(file name, title, verbatim text) per reference file, in plan order."""
     names = [name for name, _title, _marker in plan]
-    if names != sorted(names):
-        raise ValueError("reference file names do not sort in plan order; rename them in SPLITS")
+    if names != sorted(set(names)):
+        raise ValueError("reference file names must be unique and sort in plan order; rename them in SPLITS")
     if plan[0][2] is not None:
         raise ValueError(f"{plan[0][0]}: the first chunk starts at the body and takes no marker")
     starts = [0]
@@ -113,10 +113,8 @@ def rebuild(frontmatter: str, references: dict[str, str]) -> str:
 
 
 def write_references(skill: str, text: str, out: Path) -> dict[str, str]:
-    """Write the reference files for `text` to `out`, after checking they rebuild it; remove stale ones."""
+    """Write the reference files for `text` to `out` and remove stale ones; raises before writing on a bad split."""
     files = reference_files(skill, text)
-    if rebuild(split_frontmatter(text)[0], files) != text:
-        raise ValueError("the reference files do not rebuild the upstream file; check SPLITS")
     out.mkdir(parents=True, exist_ok=True)
     for stale in out.glob("*.md"):
         if stale.name not in files:
@@ -133,11 +131,11 @@ def main() -> int:
     args = ap.parse_args()
 
     source = Path(args.upstream).resolve() / PLUGIN_SUBDIR / base_key(args.skill)
-    text = source.read_text(encoding="utf-8")
     out = PKG / "overrides" / "skills" / args.skill / "references"
     try:
+        text = source.read_text(encoding="utf-8")
         files = write_references(args.skill, text, out)
-    except ValueError as err:
+    except (OSError, ValueError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
     print(f"wrote {len(files)} reference files to {out.relative_to(PKG)}")

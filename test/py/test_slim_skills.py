@@ -2,11 +2,15 @@
 
 Run: python3 -m unittest discover -s test/py
 """
+import contextlib
 import hashlib
+import io
 import re
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from _loader import ROOT, load_module
 
@@ -32,7 +36,19 @@ def text_between(text, start_marker, end_marker):
 
 
 def strip_indent(text):
-    return "\n".join(line.strip() for line in text.splitlines())
+    return "\n".join(line.strip() for line in text.splitlines()).strip()
+
+
+def bash_blocks(text):
+    return [strip_indent(block) for block in re.findall(r"```bash\n(.*?)```", text, re.S)]
+
+
+def paragraph_with(text, phrase):
+    """The paragraph or list item of `text` that contains `phrase` (case-insensitive)."""
+    for part in re.split(r"\n(?:\n|(?=\s*- ))", text):
+        if phrase.lower() in part.lower():
+            return part
+    raise AssertionError(f"not found: {phrase!r}")
 
 
 class SlimSkillsLoseNothing(unittest.TestCase):
@@ -104,6 +120,7 @@ class SplitterBehavior(unittest.TestCase):
 
     def test_frontmatter_must_open_and_close(self):
         self.assertEqual(splitter.split_frontmatter("---\na: 1\n---\nbody\n"), ("---\na: 1\n---\n", "body\n"))
+        self.assertEqual(splitter.split_frontmatter("---\n---\nbody\n"), ("---\n---\n", "body\n"))
         for text in ("no frontmatter\n", "---\na: 1\nbody\n"):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 splitter.split_frontmatter(text)
@@ -116,16 +133,46 @@ class SplitterBehavior(unittest.TestCase):
             (out / "stale.md").write_text("old", encoding="utf-8")
             (out / "keep.txt").write_text("not a reference", encoding="utf-8")
             splitter.write_references("code-review", upstream, out)
-            self.assertEqual(sorted(p.name for p in out.glob("*.md")), sorted(references))
+            self.assertEqual({p.name: p.read_text(encoding="utf-8") for p in out.glob("*.md")}, references)
             self.assertTrue((out / "keep.txt").exists())
 
+            (out / "stale.md").write_text("old", encoding="utf-8")
             before = {p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}
             with self.assertRaises(ValueError):
                 splitter.write_references("code-review", upstream.replace("### 2. Pre-flight gates\n", "### 2. Gates\n"), out)
             self.assertEqual({p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}, before)
 
+    def run_main(self, upstream_text):
+        with tempfile.TemporaryDirectory() as tmp:
+            upstream = Path(tmp) / "upstream"
+            source = upstream / splitter.PLUGIN_SUBDIR / splitter.base_key("code-review")
+            source.parent.mkdir(parents=True)
+            source.write_text(upstream_text, encoding="utf-8")
+            stdout, stderr = io.StringIO(), io.StringIO()
+            argv = ["split_skill_references.py", "code-review", "--upstream", str(upstream)]
+            with mock.patch.object(splitter, "PKG", Path(tmp)), mock.patch.object(sys, "argv", argv), \
+                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = splitter.main()
+            written = sorted(p.name for p in (Path(tmp) / "overrides" / "skills" / "code-review" / "references").glob("*.md"))
+            return code, stdout.getvalue(), stderr.getvalue(), written
+
+    def test_main_writes_the_references_and_prints_the_pin(self):
+        core, references = load_skill("code-review")
+        upstream = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
+        code, stdout, _stderr, written = self.run_main(upstream)
+        self.assertEqual(code, 0)
+        self.assertEqual(written, sorted(references))
+        self.assertIn(f'OVERRIDE_BASES["skills/code-review/SKILL.md"] = "{sync.OVERRIDE_BASES["skills/code-review/SKILL.md"]}"', stdout)
+
+    def test_main_reports_a_bad_split_and_writes_nothing(self):
+        code, _stdout, stderr, written = self.run_main("---\nname: x\n---\nno markers here\n")
+        self.assertEqual(code, 1)
+        self.assertIn("error:", stderr)
+        self.assertEqual(written, [])
+
 
 CORE, REFERENCES = load_skill("code-review")
+STEPS = CORE.split("## Steps", 1)[1]  # the core without its read-trigger table
 INVOKED_SCRIPT_RE = re.compile(r'(?:python3|py\.sh")\s+"\$\{?CLAUDE_PLUGIN_ROOT\}?/[\w./-]*?([\w-]+\.py)"')
 # Scripts only a branch runs, and the reference that has their command; the core sends the model there.
 REFERENCE_FOR_BRANCH_SCRIPT = {
@@ -162,7 +209,24 @@ class CodeReviewCoreRouting(unittest.TestCase):
                 self.assertIsNotNone(row, f"no trigger row for {name}")
                 self.assertIn("**always**", row.group(1))
                 self.assertIn(trigger, row.group(1))
-                self.assertIn(trigger.lower(), CORE.split("## Steps", 1)[1].lower(), f"the step that reads {name} lost its trigger")
+                step = paragraph_with(STEPS, trigger)
+                self.assertIn(f"references/{name}", step, f"the step with the {name} trigger no longer points to it")
+                self.assertIn("read", step.lower(), f"the step with the {name} trigger no longer says to read it")
+
+    def test_json_step_9_exception_still_matches_upstream(self):
+        # The core's one exception to "follow the reference"; drop it from the core once upstream fixes these lines.
+        stale = {"05-aggregate.md": "**skipped entirely under `--json`**", "06-findings-and-fix-loop.md": "where step 9 never runs at all",
+                 "07-report.md": "never runs under `--json`"}
+        for name, phrase in stale.items():
+            with self.subTest(reference=name):
+                self.assertIn(phrase, REFERENCES[name])
+        intro = text_between(CORE, "**This file is the pi core of the upstream skill.**", "| Reference |")
+        for name in stale:
+            self.assertIn(f"references/{name}", intro)
+        self.assertIn("step 9 does run under `--json`", intro)
+
+    def test_reads_are_bounded_by_the_table(self):
+        self.assertIn("Read a reference only when its row below says so; do not read references otherwise.", CORE)
 
     def test_no_unconditional_reference_lines(self):
         self.assertNotRegex(CORE, r"(?m)^References?: ", "a bare Reference: line makes the model load that file on every run")
@@ -177,17 +241,22 @@ class CodeReviewCoreRouting(unittest.TestCase):
         for script in invoked:
             with self.subTest(script=script):
                 if script in REFERENCE_FOR_BRANCH_SCRIPT:
-                    self.assertIn(f"references/{REFERENCE_FOR_BRANCH_SCRIPT[script]}", CORE)
+                    self.assertIn(f"references/{REFERENCE_FOR_BRANCH_SCRIPT[script]}", STEPS)
+                    self.assertNotIn(script, in_core, "the core runs a branch script itself; drop it from the branch map")
                 else:
                     self.assertIn(script, in_core, "the core names the script but no longer runs it")
 
-    def test_core_commands_are_upstream_commands(self):
-        upstream = strip_indent("".join(REFERENCES.values()))
-        blocks = re.findall(r"```bash\n(.*?)```", CORE, re.S)
+    def test_core_commands_are_whole_upstream_commands(self):
+        upstream = {block for text in REFERENCES.values() for block in bash_blocks(text)}
+        blocks = bash_blocks(CORE)
         self.assertTrue(blocks)
         for block in blocks:
             with self.subTest(block=block.splitlines()[0]):
-                self.assertIn(strip_indent(block).strip(), upstream)
+                self.assertIn(block, upstream)
+
+    def test_step_3_keeps_the_added_from_rule(self):
+        step = text_between(CORE, "### 3. Determine enabled agents", "### 4. Run each enabled agent")
+        self.assertIn("Always pass `--added-from` on a diff-scoped run, even when `added` is `[]`", step)
 
     def test_hard_rules_are_verbatim(self):
         overview = REFERENCES["00-overview.md"]
@@ -244,7 +313,7 @@ class CodeReviewUpstreamContentGuards(unittest.TestCase):
         self.assertIn("3 lines per finding", step)
 
     def test_verification_mode_contract(self):
-        self.assertIn("verification-mode.md", CORE)
+        self.assertIn("verification-mode.md", text_between(CORE, "### 6a. Review-fix loop", "### 7. Generate report"))
 
     def test_step_7_json_branch_is_stdout_only(self):
         json_branch = text_between(CORE, "### 7. Generate report", "Otherwise (no `--json`):")

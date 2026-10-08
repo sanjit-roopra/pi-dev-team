@@ -30,22 +30,22 @@ Role: orchestrator. Route work to review agents; do not review code yourself. Pa
 
 Output templates and JSON schemas: [`output-format.md`](output-format.md). Example report: [`examples/sample-report.md`](examples/sample-report.md).
 
-**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when the table says so, or when this core leaves open a case you actually face; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with one exception: `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`).
+**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with one exception: `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`).
 
 | Reference | Read it when |
 | --- | --- |
-| `references/00-overview.md` | a flag's behavior is unclear from the table below |
+| `references/00-overview.md` | `$ARGUMENTS` holds a flag the Parse Arguments table does not list |
 | `references/01-target-files.md` | **always** when the documentation-only short-circuit fires (step 1) |
-| `references/02-gates-and-static-analysis.md` | a gate fails or a pre-pass result needs interpreting |
-| `references/03-enabled-agents.md` | `select_lenses.py` or a step 3 gate prints something step 3 does not cover |
-| `references/04a-dispatch-waves.md` | `dispatch_waves.py` output is unclear |
+| `references/02-gates-and-static-analysis.md` | a step 2 gate or a step 2b script exits with an error step 2 does not describe |
+| `references/03-enabled-agents.md` | a step 3 script exits non-zero, or `select_lenses.py` prints a warning code step 3 does not name |
+| `references/04a-dispatch-waves.md` | `dispatch_waves.py` exits non-zero or prints no `waves` |
 | `references/04b-context-pack.md` | **always** when `DEV_TEAM_REVIEW_CONTEXT_PACK=on` |
-| `references/04c-dispatch-payload-and-ledger.md` | `verdict_scope.py` skips any file, or an agent's payload is unclear |
+| `references/04c-dispatch-payload-and-ledger.md` | `verdict_scope.py` skips any file (how to report the skips) |
 | `references/04d-contract-validation-and-retry.md` | **always** when `dispatch_reconcile.py`'s `missing` is non-empty |
-| `references/05-aggregate.md` | ACCEPTED-RISKS rules or health scoring need detail |
+| `references/05-aggregate.md` | `ACCEPTED-RISKS.md` exists at the repo root |
 | `references/06-findings-and-fix-loop.md` | **always** before the first fix iteration (step 6a) |
-| `references/07-report.md` | a report case step 7 does not cover |
-| `references/08-09-corrections-and-gate.md` | the step 8 or step 9 decision is unclear |
+| `references/07-report.md` | `render_tiered_findings.py` or the report write fails |
+| `references/08-09-corrections-and-gate.md` | the user asks why the gate file was or was not written |
 
 ## Orchestrator constraints
 
@@ -259,7 +259,7 @@ Dispatch **exactly the waves it printed, in that order**, as parallel subagents 
 **For each agent:**
 
 - **File scope**: pass only files matching the agent's declared scope. Skip the agent if no files match.
-- **Ledger-scoped dispatch (#2167).** Before building any prompt, narrow each agent's File scope with the per-lens verdict ledger:
+- **Ledger-scoped dispatch (#2167).** Once per run, for all agents together, before building any prompt: narrow each agent's File scope with the per-lens verdict ledger:
   ```bash
   python3 "$CLAUDE_PLUGIN_ROOT/scripts/verdict_scope.py" --root . --lens-files '<JSON: {"<agent>": [<its File-scope files from the bullet above>], ...} for every agent surviving step 3''s gates>'
   ```
@@ -286,7 +286,7 @@ Exit 0 → the agent goes in `--returned`. Exit 1 → it does not (the script al
 sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names, in the order dispatch_waves.py listed them>" --returned "<this wave's contract-valid agent names>"
 ```
 
-`--dispatched` lists only the agents of this wave that actually received a prompt; leave out agents skipped for no matching files or by the ledger. Pass `--returned ""` when no agent in the wave returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before the next wave; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
+`--dispatched` lists only the agents of this wave that actually received a prompt; leave out agents skipped for no matching files or by the ledger (their wave slot stays unused, `references/04c-dispatch-payload-and-ledger.md`). Pass `--returned ""` when no agent in the wave returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before the next wave; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
 
 ### 5. Aggregate results
 
@@ -333,7 +333,7 @@ Non-interactive: with `--json` (or `--yes`), **default to report only** and neve
 **Read `references/06-findings-and-fix-loop.md` before the first fix iteration** and follow it. It holds the loop, the deterministic-first triage, verification-mode re-dispatch, the round ledger (`finding_signature.py`), per-round records (`review_round_log.py`), the closing pass (`closing_pass.py`) and the exit conditions. In short:
 
 - Up to 5 iterations: apply fixes, run the tests (revert a fix that breaks them and mark it `[auto-fix failed — human review required]`), capture the iteration's fix diff, then re-stage with `git add` when auto-scoped.
-- Deterministic-first triage: close a fix without re-dispatch only when **all three** hold — it is a pure mechanical edit, step 2b's lint/type tools and the test suite ran clean, and a targeted grep/diff can check the claim. If any fails, re-dispatch.
+- Deterministic-first triage: close a fix without re-dispatch only when **all three** hold — it is a pure mechanical edit, step 2b's lint/type tools and the test suite ran clean, and a targeted grep/diff can check the claim. If any fails, or the check cannot fully close the question (for example, whether prose is accurate needs semantic reading), re-dispatch.
 - Re-run only the agents with open actionable issues, in verification mode (contract: [`knowledge/verification-mode.md`](../../knowledge/verification-mode.md), with the mandatory `insufficient-context` escape); carry forward the statuses of agents that passed.
 - Every round goes through the round ledger, which decides `converged` or `round-cap` (a hard cap at round 4). Honor it.
 - Closing pass (auto-scope only, like re-staging): after any fix iteration, run `closing_pass.py` and dispatch exactly its agents. They keep full authority: an actionable finding re-enters the loop like any iteration.
