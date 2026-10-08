@@ -34,8 +34,8 @@ expression) is not a finding.
 
 Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
-Status: pass=nothing to remove, warn=only judgment-call removals, fail=at least one mechanical removal (so `/build`'s checkpoint fix loop applies it)
-Severity: error=mechanical, behavior-preserving removal (unused, unreachable, a duplicate of a named function or a built-in); warning=removal that needs a judgment call (is this option really unused? is the layer really pass-through?); suggestion=needs domain knowledge
+Status: pass=nothing to remove, warn=only report-only suggestions, fail=at least one mechanical removal (so `/build`'s checkpoint fix loop applies it)
+Severity: error=mechanical, behavior-preserving removal (unused, unreachable, a duplicate of a named function or a built-in); suggestion=a removal that needs a judgment call or domain knowledge (is this option really unused? is the layer really pass-through?). Never `warning`: a fix loop auto-applies warnings, and a judgment call is for a human
 Confidence: high=mechanical; medium=judgment; none=needs domain knowledge
 Category: not-needed | single-use-abstraction | already-exists | dead-code | redundant-code
 
@@ -63,7 +63,7 @@ lines to delete and, when something replaces them, the existing thing that does.
 
 - **Not needed.** Code nothing asked for and no scenario exercises: an option,
   parameter, flag or branch no caller uses; configurability with one value;
-  error handling for a case the types or the caller already rule out;
+  error handling for a case the caller already rules out at runtime (static types alone never qualify);
   an export nobody imports.
 - **Single-use abstraction.** An interface with one implementation, a wrapper,
   factory or helper called once, a class that only holds one function, a layer
@@ -76,7 +76,7 @@ lines to delete and, when something replaces them, the existing thing that does.
 - **Dead code.** Unreachable branches, unused variables, commented-out code the
   slice introduced. Pre-existing dead code is out of scope: mention it in
   `summary`, do not flag it.
-- **Redundant code.** A re-check of what the line above guarantees, a comment
+- **Redundant code.** A re-check of what the line above guarantees (unless an await, lock, I/O or callback separates the two), a comment
   that narrates obvious code, a temporary that is used once and adds no name
   the reader needs.
 
@@ -86,12 +86,17 @@ lines to delete and, when something replaces them, the existing thing that does.
   a type, parameter object, interface or named predicate. That is
   `structure-review`'s call, made under the lean fix rule.
 - Shorter-but-denser rewrites (see the charter).
-- Input validation, error handling at a real boundary (I/O, network, user
-  input), security or accessibility code.
+- Input validation, runtime type or shape guards, fail-closed defaults,
+  error handling at a real boundary (I/O, network, user input), authorization
+  re-checks, security or accessibility code.
+- Synchronization, locks, atomics, idempotency, retries, transactions, cleanup
+  (finally, dispose), and any branch reachable only by interleaving.
+- A seam the blocker table in `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md`
+  allows (B1–B3), even with one implementation.
 - Test files, fixtures and test helpers.
 - Code outside the slice's changed files.
 
-`get_dead_code` and `get_health` are available to confirm unused and duplicated
+`get_dead_code` and `get_health` are available to confirm unused
 code against verified analysis before flagging it.
 
 ## Self-Challenge
@@ -101,6 +106,7 @@ After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROO
 - For every finding: does the fix remove more production lines than it adds? If not, drop it.
 - Does the fix preserve behavior exactly — outputs, errors, side effects — so the existing tests stay green unchanged?
 - Is the result at least as readable as before? A shorter but harder-to-read result is a dropped finding.
+- For shared, concurrent or retried code: does the removal keep its guarantee, not only the single-threaded tests?
 - For "not needed": did you grep for every caller before calling an option or branch unused?
 - For "already exists": did you name the existing function, or confirm the built-in exists in the project's language *and version* (Go <1.21 has no `min`/`max`)?
 - Did you stay out of test files and out of code the slice did not touch?

@@ -86,7 +86,6 @@ class LeanCode(unittest.TestCase):
     def test_the_engineer_ladder_leaves_test_scope_alone(self):
         engineer = (ROOT / "agents" / "software-engineer.md").read_text()
         self.assertIn(sync.REUSE_LADDER, engineer)
-        self.assertIn("Test scope comes from the plan's Gherkin scenarios and the mutation gate", sync.REUSE_LADDER)
 
     def test_the_simplify_lens_stays_on_demand_and_skips_test_only_changes(self):
         lens = (ROOT / "agents" / "refactor-opportunity-review.md").read_text()

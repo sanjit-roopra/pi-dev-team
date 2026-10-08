@@ -9,7 +9,7 @@ The package is a compatibility runtime, not a rewrite. A compatibility runtime g
 - `sync/sync_upstream.py` copies the agents, skills, hooks, scripts, and knowledge from upstream.
 - The Python code and the knowledge files stay byte-identical to upstream.
 - The sync then copies pi-specific files from `overrides/` over the upstream files. For a slim skill (see below), `overrides/` also holds the upstream text of that skill, unchanged, split into reference files.
-- Last, it applies a short list of text patches. The list is `PATCHES` in `sync/sync_upstream.py`.
+- Last, it applies a short list of text patches. The lists are `PATCHES` and `LEAN_PATCHES` (lean production code) in `sync/sync_upstream.py`.
 - The TypeScript extension in `extensions/dev-team/` gives that content the Claude Code functions that it expects.
 
 [PORTING.md](PORTING.md) has the full analysis: the concept mapping, what is not ported and why, and the known differences.
@@ -31,7 +31,7 @@ The package is a compatibility runtime, not a rewrite. A compatibility runtime g
 
 3. Run all tests (see below).
 
-If a patch no longer matches the upstream text, the sync stops with an error. Update that entry in `PATCHES`, then run the sync again.
+If a patch no longer matches the upstream text, the sync stops with an error. Update that entry in `PATCHES` or `LEAN_PATCHES`, whichever holds it, then run the sync again.
 
 If upstream changed a file that this package overrides, the sync also stops and names the file. For an agent or hook override (`overrides/agents/`, `overrides/hooks/`):
 

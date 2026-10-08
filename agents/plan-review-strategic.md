@@ -77,7 +77,7 @@ Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: sh
     "recommended_scope": "<small | medium | large>",
     "could_split": true,
     "minimum_viable_subset": "<which criteria/steps form the smallest useful increment>",
-    "proposed_cut": "<at least one step, criterion, option or abstraction the plan can drop or defer, and why that is safe; none only after you looked for one>"
+    "proposed_cut": "<at least one step, criterion, option or abstraction the plan can drop or defer, and why that is safe; never a security, validation or test step; none only after you looked for one>"
   },
   "summary": "<2-3 sentences: overall strategic assessment and top concern>"
 }

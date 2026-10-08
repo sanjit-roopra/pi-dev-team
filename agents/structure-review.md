@@ -115,15 +115,15 @@ Design smells:
 - For SRP violations and coupling issues, map to the smell → pattern table in `${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md#design-smells-pattern-mapping`. Every finding should name the smell, quote the code, and include a refactor sketch.
 - For method-level issues (nesting, long methods, flag arguments), check Object Calisthenics rules 1-2 and 7 in `${CLAUDE_PLUGIN_ROOT}/knowledge/object-calisthenics.md`. Whole-file load: the nine-rule catalog is short enough that the agent reads the whole file rather than picking specific rule anchors.
 
-**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads it, report it, never auto-apply it, and keep it out of the fix loop, overriding the actionability table in `knowledge/three-phase-workflow.md` § Review Loop. `error` findings are unaffected. Exempt: fixes that correct behavior (a bug, a missing check, a security or accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers.
+**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads it, report it, never auto-apply it, and keep it out of the fix loop, overriding any actionability table that says otherwise (`/code-review` step 5b and `references/05-aggregate.md`, `knowledge/three-phase-workflow.md` § Review Loop). `error` findings are unaffected. Exempt: every finding from `security-review`, `concurrency-review` or `correctness-review`; fixes that correct behavior (a bug, a race, a missing check or cleanup, a security or accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers.
 
-Emit such findings as `suggestion` with confidence `none` yourself. Never propose an abstraction for a single use (one implementation, one caller, one value), except a seam the blocker table allows.
+Emit such findings as `suggestion` with confidence `none` yourself, and never rate a restructure that grows production code `error` unless it corrects behavior. Never propose an abstraction for a single use (one implementation, one caller, one value), except a seam the blocker table allows.
 
 ## Authoring checklist
 
 Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` surfaces these per diff.
 
-- One responsibility per module; inside a function, prefer early returns to new helpers. Extract a helper when it gets a second caller or separates I/O from logic.
+- One responsibility per module; inside a function, prefer early returns to new helpers.
 - Inject only what the blocker table (B1–B3 in `knowledge/internal-collaborator-doubling.md`) allows doubling: out-of-process handles, ambient state (clock, RNG, env, locale), prohibitive cost. Construct other first-party collaborators directly.
 - Max ~2 nesting levels; early-return over else-chains.
 - Two copies are fine; extract at the third, or at the second when both encode the same business rule.
@@ -134,7 +134,7 @@ After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROO
 
 - Did you check every module/class for SRP violations, including small ones?
 - Did you trace dependency direction? Does business logic depend on infrastructure (not just vice versa)?
-- Are there hidden static singletons or global state wrapping a B1–B3 collaborator that aren't injected?
+- Are there hidden static singletons or global state that aren't injected?
 - For a two-copy duplication finding, did you apply the semantic test? For three or more copies, did you confirm they are really the same block?
 - Did you check constructor parameter counts? >5 parameters usually signals SRP violation.
 - Are there God objects/Megaclasses you walked past because they're "just how the code is"?

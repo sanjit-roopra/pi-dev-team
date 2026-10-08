@@ -12,7 +12,7 @@ What it does (idempotent, stdlib only):
      skill's override also carries its upstream text, unchanged, split into
      references/ by sync/split_skill_references.py.
   4. Normalises SKILL.md frontmatter for pi (description <= 1024 chars).
-  5. Applies the small, explicit text patch set (PATCHES). Every patch must
+  5. Applies the small, explicit text patch sets (PATCHES, and LEAN_PATCHES for lean production code). Every patch must
      match at least once, so upstream drift is caught instead of silently
      skipped.
   6. Writes UPSTREAM.json (commit, version, what was dropped/overridden/patched).
@@ -72,21 +72,22 @@ LEAN_FIX_RULE = (
     "**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a "
     "module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it "
     "removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads "
-    "it, report it, never auto-apply it, and keep it out of the fix loop, overriding the actionability table in "
-    "`knowledge/three-phase-workflow.md` § Review Loop. `error` findings are unaffected. Exempt: fixes that correct "
-    "behavior (a bug, a missing check, a security or accessibility gap); a seam for a collaborator the blocker table in "
-    "`knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files "
-    "(`knowledge/test-file-indicators.md`), fixtures and test helpers."
+    "it, report it, never auto-apply it, and keep it out of the fix loop, overriding any actionability table that says "
+    "otherwise (`/code-review` step 5b and `references/05-aggregate.md`, `knowledge/three-phase-workflow.md` § Review "
+    "Loop). `error` findings are unaffected. Exempt: every finding from `security-review`, `concurrency-review` or "
+    "`correctness-review`; fixes that correct behavior (a bug, a race, a missing check or cleanup, a security or "
+    "accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` "
+    "lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers."
 )
 REUSE_LADDER = """- **Simplicity First (pre-write reuse ladder).** Read the code the change touches and trace the real flow first: be lazy about the solution, never about understanding the problem. Then walk this ladder and stop at the first rung that holds:
   1. Does it need to exist? Nothing asked for it and no scenario demands it → do not write it.
   2. Does the codebase already have it? Call it.
   3. Does the standard library do it?
   4. Does the platform or framework do it natively?
-  5. Does an already-installed dependency do it? Never add a dependency to save a few lines.
-  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards), no configurability nobody asked for.
+  5. Does an already-installed dependency do it? Never add a dependency to save a few lines, with one exception: security primitives (cryptography, password hashing, token validation, sanitizing or escaping, parsers for untrusted input) always come from the standard library or a vetted library, never hand-rolled.
+  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3), no configurability nobody asked for.
 
-  Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security or accessibility to save lines.
+  Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security, accessibility, synchronization, idempotency, transactions, retries or cleanup on error paths to save lines: they are requirements the design implies, even when no scenario names them.
 
   The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this rule: write every test they call for.
 
@@ -124,8 +125,9 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
     (
         "agents/structure-review.md",
         re.escape("## Authoring checklist\n"),
-        LEAN_FIX_RULE + "\n\nEmit such findings as `suggestion` with confidence `none` yourself. Never propose an abstraction "
-        "for a single use (one implementation, one caller, one value), except a seam the blocker table allows.\n\n"
+        LEAN_FIX_RULE + "\n\nEmit such findings as `suggestion` with confidence `none` yourself, and never rate a restructure "
+        "that grows production code `error` unless it corrects behavior. Never propose an abstraction for a single use (one "
+        "implementation, one caller, one value), except a seam the blocker table allows.\n\n"
         "## Authoring checklist\n",
         "lean production code: structure-review demotes growing restructures at the source",
     ),
@@ -133,8 +135,7 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         "agents/structure-review.md",
         re.escape('- One responsibility per function/module; split when you need "and" to describe it.\n'
                   "- Inject dependencies; don't construct collaborators inline.\n"),
-        "- One responsibility per module; inside a function, prefer early returns to new helpers. Extract a helper when it gets "
-        "a second caller or separates I/O from logic.\n- Inject only what the blocker table (B1–B3 in "
+        "- One responsibility per module; inside a function, prefer early returns to new helpers.\n- Inject only what the blocker table (B1–B3 in "
         "`knowledge/internal-collaborator-doubling.md`) allows doubling: out-of-process handles, ambient state (clock, RNG, "
         "env, locale), prohibitive cost. Construct other first-party collaborators directly.\n",
         "lean production code: authoring checklist without single-use helpers",
@@ -150,7 +151,7 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         re.escape("- Are there hidden static singletons or global state that aren't injected?\n"
                   '- For every "duplicate code" finding, did you verify it\'s semantic duplication and not just structural '
                   "similarity?\n"),
-        "- Are there hidden static singletons or global state wrapping a B1–B3 collaborator that aren't injected?\n"
+        "- Are there hidden static singletons or global state that aren't injected?\n"
         "- For a two-copy duplication finding, did you apply the semantic test? For three or more copies, did you confirm "
         "they are really the same block?\n",
         "lean production code: self-challenge matches the rule of three",
@@ -182,7 +183,7 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         re.escape('    "minimum_viable_subset": "<which criteria/steps form the smallest useful increment>"\n  },'),
         '    "minimum_viable_subset": "<which criteria/steps form the smallest useful increment>",\n'
         '    "proposed_cut": "<at least one step, criterion, option or abstraction the plan can drop or defer, and why that '
-        'is safe; none only after you looked for one>"\n  },',
+        'is safe; never a security, validation or test step; none only after you looked for one>"\n  },',
         "lean production code: the strategic critic proposes a cut",
     ),
     (
