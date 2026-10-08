@@ -521,8 +521,9 @@ def commit(repo, files, date):
 
 PARENT_OUTPUT, CHILD_OUTPUT, NESTED_OUTPUT = (60, 40), 3, 7
 OUTPUT_TOKENS = sum(PARENT_OUTPUT) + CHILD_OUTPUT + NESTED_OUTPUT
-XUNIT_TEST = "public class FooTests {\n  [Fact]\n  public void Works() {}\n}\n"  # 4 lines; a test by content, not by name
+XUNIT_TEST = "public class FooTests {\n  [Fact]\n  public void Works() {}\n}\n"  # a test by content, not by name
 PLAIN_CS = "public class Program {}\n"
+OLD_LINES, APP_LINES, APP_TEST_LINES = 50, 10, 30
 
 
 def code_session(cwd):
@@ -547,12 +548,13 @@ class CodeReport(Base):
         self.addCleanup(env.stop)
         for key in [k for k in os.environ if k.startswith("GIT_")]:
             del os.environ[key]
+        os.environ["GIT_CEILING_DIRECTORIES"] = str(self.root.parent)  # a temp dir inside a checkout is still "not a repository"
         repo_dir = tempfile.TemporaryDirectory()  # outside the sessions root, so it is not read as a project
         self.addCleanup(repo_dir.cleanup)
         self.repo = Path(repo_dir.name)
         git(self.repo, "init", "-q")
-        commit(self.repo, {"old.py": 50}, "2026-10-07T13:00:00Z")
-        commit(self.repo, {"app.py": 10, "tests/test_app.py": 30, "src/FooTests.cs": XUNIT_TEST, "sub/Program.cs": PLAIN_CS}, "2026-10-07T14:30:00Z")
+        commit(self.repo, {"old.py": OLD_LINES}, "2026-10-07T13:00:00Z")
+        commit(self.repo, {"app.py": APP_LINES, "tests/test_app.py": APP_TEST_LINES, "src/FooTests.cs": XUNIT_TEST, "sub/Program.cs": PLAIN_CS}, "2026-10-07T14:30:00Z")
         git(self.repo, "checkout", "-q", "-b", "move")
         git(self.repo, "mv", "old.py", "tests/test_old.py")
         git(self.repo, "commit", "-m", "move", date="2026-10-07T14:35:00Z")  # without --no-renames this is one "a => b" line
@@ -572,7 +574,8 @@ class CodeReport(Base):
 
     def test_counts_the_session_commits_but_not_merges_or_the_stash(self):
         self.assertEqual(self.columns(str(self.repo)),
-                         {"commits": 2, "prodAdded": 10 + 1, "prodRemoved": 50, "testAdded": 30 + 4 + 50, "testRemoved": 0})
+                         {"commits": 2, "prodAdded": APP_LINES + PLAIN_CS.count("\n"), "prodRemoved": OLD_LINES,
+                          "testAdded": APP_TEST_LINES + XUNIT_TEST.count("\n") + OLD_LINES, "testRemoved": 0})
 
     def test_a_session_in_a_subdirectory_counts_the_whole_repository(self):
         self.assertEqual(self.columns(str(self.repo / "sub")), self.columns(str(self.repo)))
