@@ -181,7 +181,7 @@ class OverrideBases(unittest.TestCase):
 
     def test_every_hook_override_has_a_base_hash(self):
         shipped = {p.relative_to(ROOT / "overrides").as_posix() for p in (ROOT / "overrides" / "hooks").rglob("*") if p.is_file() and "__pycache__" not in p.parts}
-        self.assertEqual(shipped, set(sync.OVERRIDE_BASES))
+        self.assertEqual(shipped, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("hooks/")})
 
     def test_stale_override_bases_reports_changed_and_missing_files(self):
         root = Path(tempfile.mkdtemp())

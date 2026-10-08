@@ -33,6 +33,13 @@ The package is a compatibility runtime, not a rewrite. A compatibility runtime g
 
 If a patch no longer matches the upstream text, the sync stops with an error. Update that entry in `PATCHES`, then run the sync again.
 
+If upstream changed a file that this package overrides, the sync also stops and names the file. For `skills/code-review/SKILL.md`, the slim core:
+
+1. Regenerate the reference files from the new upstream text: `python3 sync/split_skill_references.py code-review --upstream ../agentic-dev-team`. If upstream renamed a heading the split starts at, the script stops; update `SPLITS` in that script.
+2. Read the upstream diff of that file and carry every change in a command, a rule or a pinned phrase into `overrides/skills/code-review/SKILL.md`.
+3. Put the new file's sha256 (`shasum -a 256 ../agentic-dev-team/plugins/dev-team/skills/code-review/SKILL.md`) in `OVERRIDE_BASES` in `sync/sync_upstream.py`.
+4. Run the sync again, then the tests. `test/py/test_slim_skills.py` fails when a reference is missing or changed, when the core drops a command or a reference, or when it loses a phrase that upstream's content tests pin.
+
 ## Run the tests
 
 Do step 1 one time only. It links the pi packages that you installed globally, so the unit tests can import them.
