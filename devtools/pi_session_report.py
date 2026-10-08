@@ -42,6 +42,7 @@ import statistics
 import sys
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
@@ -50,9 +51,15 @@ USAGE_ENTRY = "dev-team-subagent-usage"  # custom entry (pi.appendEntry), one pe
 SESSION_START_MESSAGE = "dev-team-session-start"  # custom message, not an entry
 SUBAGENT_TOOL = "dev_team_subagent"
 SKILL_TOOL = "skill"
-HOOK_FEEDBACK_HEADER = "dev-team hook feedback (must address)"  # PostToolUse block, appended to the result
-# A PreToolUse block (guard, careful, github style) becomes an error result "[<hook>] <reason>".
-GUARD_BLOCK_RE = re.compile(r"^\[[\w.-]+\] ")
+HOOK_FEEDBACK_HEADER = "dev-team hook feedback (must address)"  # PostToolUse block, appended to an error result
+# PreToolUse blocks. A hook from hooks/hooks.json blocks with an error result "[<hook>] <reason>" (hooks.ts);
+# the GitHub style gate blocks with its own feedback text; a hook on an agent dispatch blocks inside the
+# dev_team_subagent result (subagent.ts), which writes no usage entry.
+HOOK_BLOCK_RE = re.compile(r"^\[([\w.-]+)\] ")
+GITHUB_STYLE_BLOCK_PREFIX = "dev-team GitHub style:"
+DISPATCH_BLOCK_MARKER = "Dispatch blocked by hook:"
+HOOKS_JSON = Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
+HOOK_SCRIPT_RE = re.compile(r"hooks/([\w-]+)\.py")
 DEV_TEAM_SIGNATURES = (USAGE_ENTRY, SESSION_START_MESSAGE, "pi-dev-team/skills/")
 
 BASH_TOOL = "bash"
@@ -69,7 +76,7 @@ WORKFLOW_SKILLS = {
 SLASH_SKILL_TAG_RE = re.compile(r'^\s*<skill name="([^"]+)"')
 SLASH_INVOCATION_RE = re.compile(r"The user invoked `/\S+(?: ([^`]*))?`")
 # dev-team scripts live under scripts/, skills/<name>/scripts/ and hooks/(lib/).
-DEV_TEAM_SCRIPT_RE = re.compile(r"(?:scripts|hooks|hooks/lib)/([\w-]+\.py)\b")
+DEV_TEAM_SCRIPT_RE = re.compile(r"(?<![\w-])(?:scripts|hooks)/(?:lib/)?([\w-]+\.py)\b")
 
 LOAD_VIA_SLASH, LOAD_VIA_TOOL = "slash", "tool"
 EVENT_SKILL, EVENT_USER, EVENT_DISPATCH, EVENT_AGENT_DONE = "skill", "user", "dispatch", "agent-done"
@@ -86,7 +93,8 @@ SECRET_RE = re.compile(
 CHARS_PER_TOKEN = 4
 LARGE_OUTPUT_TOKENS = 3500
 SHORT_ID_LENGTH = 12
-TEXT_WIDTH, PROMPT_WIDTH, ARGS_WIDTH, OUTPUT_WIDTH, MAX_COLUMN_WIDTH = 100, 70, 60, 200, 60
+TEXT_WIDTH, PROMPT_WIDTH, ARGS_WIDTH, COMMAND_WIDTH, OUTPUT_WIDTH, MAX_COLUMN_WIDTH = 100, 70, 60, 80, 200, 60
+KIND_COLUMN_WIDTH = 11
 
 
 def estimate_tokens(text: str) -> int:
@@ -108,6 +116,24 @@ def text_of(content: Any) -> str:
     if isinstance(content, list):
         return "\n".join(c.get("text", "") for c in content if isinstance(c, dict) and c.get("type", "text") == "text")
     return ""
+
+
+def safe(text: Any) -> str:
+    """Untrusted text with terminal control characters and bidi overrides replaced (no folding or truncation)."""
+    return CONTROL_CHARS_RE.sub("\ufffd", str(text))
+
+
+def mentions_dev_team(line: str) -> bool:
+    return any(s in line for s in DEV_TEAM_SIGNATURES)
+
+
+@lru_cache(maxsize=1)
+def known_hook_names() -> frozenset[str]:
+    """Hook names as hooks.ts derives them (hooks/<name>.py). Empty when hooks.json cannot be read."""
+    try:
+        return frozenset(HOOK_SCRIPT_RE.findall(HOOKS_JSON.read_text(encoding="utf-8")))
+    except OSError:
+        return frozenset()
 
 
 def mask_secret(match: re.Match) -> str:
@@ -152,13 +178,22 @@ class ToolCall:
 
     @property
     def post_hook_feedback(self) -> str | None:
-        if HOOK_FEEDBACK_HEADER not in self.result:
+        """The PostToolUse feedback the extension appended last to an error result, else None."""
+        if not self.is_error or HOOK_FEEDBACK_HEADER not in self.result:
             return None
-        return self.result.split(HOOK_FEEDBACK_HEADER, 1)[1].lstrip(":").strip()
+        return self.result.rsplit(HOOK_FEEDBACK_HEADER, 1)[1].lstrip(":").strip()
 
     @property
     def guard_blocked(self) -> bool:
-        return self.is_error and bool(GUARD_BLOCK_RE.match(self.result))
+        """Stopped before it ran by a PreToolUse hook, the GitHub style gate, or a hook on an agent dispatch."""
+        if self.name == SUBAGENT_TOOL and DISPATCH_BLOCK_MARKER in self.result:
+            return True
+        if not self.is_error:
+            return False
+        if self.result.startswith(GITHUB_STYLE_BLOCK_PREFIX):
+            return True
+        hook = HOOK_BLOCK_RE.match(self.result)
+        return bool(hook) and (hook.group(1) in known_hook_names() or not known_hook_names())
 
     @property
     def blocked(self) -> bool:
@@ -207,7 +242,7 @@ def read_entries(path: Path) -> tuple[list[dict], bool]:
     entries, uses_dev_team = [], False
     with path.open(encoding="utf-8", errors="replace") as f:
         for line in f:
-            uses_dev_team = uses_dev_team or any(s in line for s in DEV_TEAM_SIGNATURES)
+            uses_dev_team = uses_dev_team or mentions_dev_team(line)
             try:
                 entry = json.loads(line)
             except json.JSONDecodeError:
@@ -281,7 +316,7 @@ def skill_name(call: ToolCall) -> str:
 
 def skill_loads(active: list[dict], calls: list[ToolCall]) -> list[SkillLoad]:
     call_at = {c.entry_index: c for c in calls}
-    position_by_id = {e.get("id"): i for i, e in enumerate(active)}
+    position_by_id = positions(active)
     loads = []
     for index, entry in enumerate(active):
         slash = slash_skill(message_of(entry))
@@ -297,9 +332,12 @@ def skill_loads(active: list[dict], calls: list[ToolCall]) -> list[SkillLoad]:
     return loads
 
 
-def turns_in_context(active: list[dict], index: int, position_by_id: dict | None = None) -> int:
+def positions(active: list[dict]) -> dict:
+    return {e.get("id"): i for i, e in enumerate(active)}
+
+
+def turns_in_context(active: list[dict], index: int, position_by_id: dict) -> int:
     """Assistant turns after `index` until a compaction drops it (a compaction keeps entries from firstKeptEntryId on)."""
-    position_by_id = position_by_id if position_by_id is not None else {e.get("id"): i for i, e in enumerate(active)}
     turns = 0
     for i in range(index + 1, len(active)):
         entry = active[i]
@@ -310,8 +348,12 @@ def turns_in_context(active: list[dict], index: int, position_by_id: dict | None
     return turns
 
 
+def is_usage_entry(entry: dict) -> bool:
+    return entry.get("type") == "custom" and entry.get("customType") == USAGE_ENTRY
+
+
 def dispatch_records(s: Session) -> list[dict]:
-    return [e.get("data") or {} for e in s.entries if e.get("type") == "custom" and e.get("customType") == USAGE_ENTRY]
+    return [e.get("data") or {} for e in s.entries if is_usage_entry(e)]
 
 
 def parent_cost(s: Session) -> float:
@@ -378,17 +420,18 @@ def pick_session(root: Path, query: str, project: str | None) -> Path:
     raise SystemExit(f"{len(hits)} sessions match {query!r}; give more of the id, or -p PROJECT with 'latest'")
 
 
-def in_window(started: str, since: str | None, until: str | None) -> bool:
-    """`started` is 'YYYY-MM-DD HH:MM'; bounds are ISO date or date-time prefixes, `until` inclusive of its prefix."""
-    stamp = started.replace(" ", "T")
-    return (not since or stamp >= since) and (not until or stamp[: len(until)] <= until)
+def in_window(timestamp: str, since: str | None, until: str | None) -> bool:
+    """`timestamp` is the header's ISO start; bounds are ISO date or date-time prefixes ('T' or a space), `until` inclusive."""
+    since = since.replace(" ", "T") if since else since
+    until = until.replace(" ", "T") if until else until
+    return (not since or timestamp >= since) and (not until or timestamp[: len(until)] <= until)
 
 
 def project_sessions(root: Path, query: str, dev_team_only: bool = True, since: str | None = None, until: str | None = None) -> Iterator[Session]:
     for path in session_files(pick_project(root, query)):
-        s = load_session(path)
-        if (not dev_team_only or s.uses_dev_team) and in_window(s.started, since, until):
-            yield s
+        header, uses_dev_team = scan_header(path)
+        if (not dev_team_only or uses_dev_team) and in_window(str(header.get("timestamp", "")), since, until):
+            yield load_session(path)
 
 
 # ---------------------------------------------------------------- reports
@@ -420,7 +463,7 @@ def scan_header(path: Path) -> tuple[dict, bool]:
                     header = parsed if isinstance(parsed, dict) else {}
                 except json.JSONDecodeError:
                     pass
-            if any(s in line for s in DEV_TEAM_SIGNATURES):
+            if mentions_dev_team(line):
                 uses_dev_team = True
                 break
     return header, uses_dev_team
@@ -461,7 +504,7 @@ def call_event(call: ToolCall, is_load: bool, all_tools: bool) -> list[tuple[str
         events.append((EVENT_ERROR, f"{call.name}: {one_line(call.result)}"))
     elif all_tools and not is_load and call.name != SUBAGENT_TOOL:
         target = call.args.get("command") or call.args.get("path") or call.args.get("pattern") or ""
-        events.append((call.name, f"{one_line(str(target), 80)} -> ~{estimate_tokens(call.result)} tok"))
+        events.append((call.name, f"{one_line(str(target), COMMAND_WIDTH)} -> ~{estimate_tokens(call.result)} tok"))
     return events
 
 
@@ -471,7 +514,7 @@ def entry_event(entry: dict) -> tuple[str, str] | None:
         return EVENT_COMPACTION, f"tokensBefore {entry.get('tokensBefore')}"
     if entry_type == "model_change":
         return EVENT_MODEL, f"{entry.get('provider')}/{entry.get('modelId')}"
-    if entry_type == "custom" and entry.get("customType") == USAGE_ENTRY:
+    if is_usage_entry(entry):
         record = entry.get("data") or {}
         nested = len(record.get("nested") or [])
         seconds = int(record.get("durationMs") or 0) // 1000
@@ -584,7 +627,7 @@ def report_steps(sessions: Iterable[Session], skill: str, outputs: list[str]) ->
             run: dict = {"session": s.short_id, "started": s.started, "args": one_line(load.args_text), "activity": dict(found)}
             if outputs:
                 run["outputs"] = [
-                    {"command": one_line(str(c.args.get("command")), 80), "output": one_line(c.result, OUTPUT_WIDTH)}
+                    {"command": one_line(str(c.args.get("command")), COMMAND_WIDTH), "output": one_line(c.result, OUTPUT_WIDTH)}
                     for c in calls
                     if c.name == BASH_TOOL and any(o in str(c.args.get("command", "")) for o in outputs)
                 ]
@@ -605,26 +648,29 @@ def print_table(rows: list[dict]) -> None:
         print("(nothing)")
         return
     cols = list(rows[0])
-    cells = [[", ".join(map(str, v)) if isinstance(v, list) else str(v) for v in (r[c] for c in cols)] for r in rows]
+    cells = [[safe(", ".join(map(str, v)) if isinstance(v, list) else v) for v in (r[c] for c in cols)] for r in rows]
     widths = [min(MAX_COLUMN_WIDTH, max(len(c), *(len(row[i]) for row in cells))) for i, c in enumerate(cols)]
-    print("  ".join(c.ljust(w) for c, w in zip(cols, widths)))
+    print("  ".join(c.ljust(w) for c, w in zip(cols, widths)))  # column names are ours
     for row in cells:
         print("  ".join(one_line(v, w).ljust(w) for v, w in zip(row, widths)))
 
 
+# Every field printed below comes from the session file, so it passes through safe() here.
+
+
 def print_steps(data: dict) -> None:
-    print(f"{data['skill']}: {data['runs']} runs")
+    print(f"{safe(data['skill'])}: {data['runs']} runs")
     for a in data["activity"]:
-        print(f"  {a['runs']:3d}/{data['runs']} runs  total {a['total']:4d}  {a['activity']}")
+        print(f"  {a['runs']:3d}/{data['runs']} runs  total {a['total']:4d}  {safe(a['activity'])}")
     for run in data["perRun"]:
-        print(f"- {run['started']} {run['session']}  {run['args']}")
+        print(f"- {safe(run['started'])} {safe(run['session'])}  {safe(run['args'])}")
         for o in run.get("outputs", []):
-            print(f"    $ {o['command']}\n      {o['output']}")
+            print(f"    $ {safe(o['command'])}\n      {safe(o['output'])}")
 
 
 def print_timeline(events: list[dict]) -> None:
     for ev in events:
-        print(f"{ev['time']}  {ev['kind']:<11} {ev['text']}")
+        print(f"{safe(ev['time'])}  {safe(ev['kind']):<{KIND_COLUMN_WIDTH}} {safe(ev['text'])}")
 
 
 def build_parser() -> argparse.ArgumentParser:

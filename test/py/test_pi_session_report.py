@@ -23,7 +23,7 @@ loader.exec_module(report)
 SESSION_ID = "01a116b1-1a46-74a8-b1ec-ad520b3c6ee8"
 SESSION_FILE = f"2026-10-07T14-00-00-000Z_{SESSION_ID}.jsonl"
 SKILL_TEXT = "x" * 4000
-SKILL_TOKENS = len(SKILL_TEXT) // report.CHARS_PER_TOKEN
+SKILL_TOKENS = 1000  # 4000 characters at the documented 4 characters per token
 
 # Costs in the main fixture.
 ACTIVE_TURN_COSTS = [0.5, 0.25, 0.125]
@@ -160,7 +160,7 @@ class SessionModel(Base):
     def test_compaction_keeps_entries_from_first_kept(self):
         active = [message_entry("l", None, "user", "load"), assistant_entry("a", "l"),
                   {"type": "compaction", "id": "k", "parentId": "a", "firstKeptEntryId": "l"}, assistant_entry("b", "k")]
-        self.assertEqual(report.turns_in_context(active, 0), 2)
+        self.assertEqual(report.turns_in_context(active, 0, report.positions(active)), 2)
 
     def test_skill_name_prefers_resolved_name_then_strips_prefixes(self):
         resolved = report.ToolCall(0, "skill", {"name": "cr"}, "", False, {"skill": "code-review"})
@@ -180,7 +180,12 @@ class SessionsReport(Base):
         self.row = self.run_cli("sessions", "-p", "shop")[0]
 
     def test_short_id_is_the_id_tail(self):
-        self.assertEqual(self.row["session"], SESSION_ID[-report.SHORT_ID_LENGTH:])
+        self.assertEqual(self.row["session"], "ad520b3c6ee8")
+
+    def test_start_first_prompt_and_active_turns(self):
+        self.assertEqual(self.row["started"], "2026-10-07 14:00")
+        self.assertEqual(self.row["firstPrompt"], "/build plans/x.md")
+        self.assertEqual(self.row["turns"], 5)  # a1-a5; the abandoned b1 is not on the active path
 
     def test_parent_cost_includes_abandoned_branch(self):
         self.assertAlmostEqual(self.row["parentCostUsd"], sum(ACTIVE_TURN_COSTS) + ABANDONED_BRANCH_COST)
@@ -209,14 +214,26 @@ class SessionsReport(Base):
         self.assertEqual(len(self.run_cli("sessions", "-p", "shop", "--all-sessions")), 2)
 
     def test_since_and_until_filter_on_session_start(self):
-        self.assertEqual(len(self.run_cli("sessions", "-p", "shop", "--since", "2026-10-08")), 0)
-        self.assertEqual(len(self.run_cli("sessions", "-p", "shop", "--until", "2026-10-07")), 1)
-        self.assertEqual(len(self.run_cli("sessions", "-p", "shop", "--until", "2026-10-06")), 0)
+        count = lambda *bounds: len(self.run_cli("sessions", "-p", "shop", *bounds))
+        self.assertEqual(count("--since", "2026-10-08"), 0)
+        self.assertEqual(count("--until", "2026-10-07"), 1)
+        self.assertEqual(count("--until", "2026-10-06"), 0)
+
+    def test_window_bounds_use_seconds_and_accept_a_space(self):
+        count = lambda *bounds: len(self.run_cli("sessions", "-p", "shop", *bounds))
+        self.assertEqual(count("--since", "2026-10-07T14:00:00"), 1)  # session starts 14:00:00Z
+        self.assertEqual(count("--since", "2026-10-07T14:00:30"), 0)
+        self.assertEqual(count("--since", "2026-10-07 14:00"), 1)
+        self.assertEqual(count("--until", "2026-10-07 13:59"), 0)
+
+    def test_window_applies_to_skills_and_steps(self):
+        self.assertEqual(self.run_cli("skills", "-p", "shop", "--since", "2026-10-08"), [])
+        self.assertEqual(self.run_cli("steps", "-p", "shop", "-s", "code-review", "--until", "2026-10-06")["runs"], 0)
 
     def test_text_output_has_header_and_row(self):
         lines = self.run_cli("sessions", "-p", "shop", as_json=False).splitlines()
         self.assertTrue(lines[0].startswith("session"))
-        self.assertIn(SESSION_ID[-report.SHORT_ID_LENGTH:], lines[1])
+        self.assertIn("ad520b3c6ee8", lines[1])
 
 
 class StepsReport(Base):
@@ -247,6 +264,11 @@ class StepsReport(Base):
 
     def test_outputs_capture(self):
         self.assertEqual(self.data["perRun"][0]["outputs"][0]["output"], "build-jobs: requested=(unset) max=1 wave_width=1 -> effective=1")
+
+    def test_text_output(self):
+        text = self.run_cli("steps", "-p", "shop", "-s", "code-review", "--outputs", "dispatch_waves", as_json=False)
+        self.assertIn("code-review: 1 runs", text)
+        self.assertIn("    $ python3 $R/skills/code-review/scripts/dispatch_waves.py", text)
 
     def test_build_run_ends_where_code_review_loads(self):
         data = self.run_cli("steps", "-p", "shop", "-s", "build")
@@ -293,14 +315,27 @@ class TimelineReport(Base):
         events = self.run_cli("timeline", "latest", "-p", "shop", "--tools")
         self.assertIn("app.py -> ~0 tok", [e["text"] for e in events if e["kind"] == "edit"])
 
-    def test_untrusted_text_loses_control_characters_and_secrets(self):
-        entries = [header_entry(), message_entry("u", None, "user", "hi \x1b]52;c;evil\x07 token=abc123 ‮")]
+    def test_untrusted_text_loses_control_characters(self):
+        entries = [header_entry(), message_entry("u", None, "user", "hi \x1b]52;c;evil\x07 \u202e"),
+                   {"type": "model_change", "id": "m", "parentId": "u", "provider": "x\x1b[2J", "modelId": "y"}]
         write_session(self.root, "esc", entries)
         text = self.run_cli("timeline", "latest", "-p", "esc", as_json=False)
-        self.assertNotIn("\x1b", text)
-        self.assertNotIn("\x07", text)
-        self.assertNotIn("‮", text)
-        self.assertIn("token=***", text)
+        for char in ("\x1b", "\x07", "\u202e"):
+            self.assertNotIn(char, text)
+
+    def test_secret_shapes_are_masked(self):
+        cases = {
+            "Authorization: Bearer abc.def.ghi": ("abc.def.ghi", "Bearer ***"),
+            "push with ghp_ABCDEFGHIJKLMNOPQRST": ("ABCDEFGHIJKLMNOPQRST", "ghp_***"),
+            "key sk-proj1234567890abcd": ("proj1234567890abcd", "sk-***"),
+            "token=abc123 and password: hunter2": ("abc123", "token=***"),
+        }
+        for text, (secret, masked) in cases.items():
+            with self.subTest(text=text):
+                line = report.one_line(text)
+                self.assertNotIn(secret, line)
+                self.assertIn(masked, line)
+        self.assertNotIn("hunter2", report.one_line("password: hunter2"))
 
 
 class AggregateReports(Base):
@@ -324,6 +359,32 @@ class AggregateReports(Base):
         rows = {r["project"]: r for r in self.run_cli("projects")}
         self.assertEqual((rows["Users-me-git-shop"]["devTeamSessions"], rows["Users-me-git-plain"]["devTeamSessions"]), (1, 0))
         self.assertEqual(rows["Users-me-git-plain"]["firstStarted"], "2026-09-01 10:00")
+
+
+class BlockDetection(unittest.TestCase):
+    def call(self, name, result, is_error=True):
+        return report.ToolCall(0, name, {}, result, is_error, {})
+
+    def test_known_hook_block(self):
+        self.assertTrue(self.call("bash", "[pre_pr_review] BLOCKED: review first").blocked)
+
+    def test_bracketed_tool_output_is_not_a_block(self):
+        self.assertFalse(self.call("bash", "[ERROR] build failed").blocked)
+
+    def test_github_style_block(self):
+        self.assertTrue(self.call("bash", f"{report.GITHUB_STYLE_BLOCK_PREFIX} rewrite the text").blocked)
+
+    def test_blocked_dispatch_without_error_flag(self):
+        self.assertTrue(self.call("dev_team_subagent", f"doc-review: {report.DISPATCH_BLOCK_MARKER}\n[x] no", is_error=False).blocked)
+
+    def test_feedback_header_in_successful_output_is_not_a_block(self):
+        read = self.call("read", f"docs mention {report.HOOK_FEEDBACK_HEADER} here", is_error=False)
+        self.assertIsNone(read.post_hook_feedback)
+        self.assertFalse(read.blocked)
+
+    def test_feedback_comes_from_the_last_header(self):
+        call = self.call("bash", f"quoted {report.HOOK_FEEDBACK_HEADER} text\n\n{report.HOOK_FEEDBACK_HEADER}:\nreal")
+        self.assertEqual(call.post_hook_feedback, "real")
 
 
 class Selection(Base):
@@ -367,6 +428,9 @@ class ExtensionContract(unittest.TestCase):
         self.assertIn(f'DEV_TEAM_SUBAGENT_TOOL = "{report.SUBAGENT_TOOL}"', agents)
         self.assertIn(f'customType: "{report.SESSION_START_MESSAGE}"', index)
         self.assertIn(report.HOOK_FEEDBACK_HEADER, index)
+        self.assertIn(report.GITHUB_STYLE_BLOCK_PREFIX, (ROOT / "extensions/dev-team/lib/github-style.ts").read_text())
+        self.assertIn(report.DISPATCH_BLOCK_MARKER, (ROOT / "extensions/dev-team/lib/subagent.ts").read_text())
+        self.assertIn("pre_pr_review", report.known_hook_names())
         self.assertIn(f'name: "{report.SKILL_TOOL}"', index)
         self.assertIn("The user invoked", skills)
         for field in ("ok: boolean", "tier?: string", "durationMs: number", "usage: UsageTotals", "nested?: NestedUsage[]"):
