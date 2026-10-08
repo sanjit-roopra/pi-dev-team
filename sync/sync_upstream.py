@@ -73,19 +73,19 @@ LEAN_FIX_RULE = (
     "module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it "
     "removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads "
     "it, report it, never auto-apply it, and keep it out of the fix loop, overriding any actionability table that says "
-    "otherwise (`/code-review` step 5b and `references/05-aggregate.md`, `knowledge/three-phase-workflow.md` § Review "
-    "Loop). `error` findings are unaffected. Exempt: every finding from `security-review`, `concurrency-review` or "
+    "otherwise (`/code-review` step 5b and `skills/code-review/references/05-aggregate.md`, "
+    "`knowledge/three-phase-workflow.md` § Review Loop). `error` findings are unaffected. Exempt: every finding from `security-review`, `concurrency-review` or "
     "`correctness-review`; fixes that correct behavior (a bug, a race, a missing check or cleanup, a security or "
     "accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` "
     "lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers."
 )
 REUSE_LADDER = """- **Simplicity First (pre-write reuse ladder).** Read the code the change touches and trace the real flow first: be lazy about the solution, never about understanding the problem. Then walk this ladder and stop at the first rung that holds:
-  1. Does it need to exist? Nothing asked for it and no scenario demands it → do not write it.
+  1. Does it need to exist? Nothing asked for it, no scenario demands it and the design does not imply it → do not write it. The design implies synchronization, idempotency, transactions, retries and cleanup on error paths wherever state is shared, work is retried or resources are held.
   2. Does the codebase already have it? Call it.
   3. Does the standard library do it?
   4. Does the platform or framework do it natively?
   5. Does an already-installed dependency do it? Never add a dependency to save a few lines, with one exception: security primitives (cryptography, password hashing, token validation, sanitizing or escaping, parsers for untrusted input) always come from the standard library or a vetted library, never hand-rolled.
-  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3), no configurability nobody asked for.
+  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3) or a helper that holds a lock, transaction, retry or cleanup, no configurability nobody asked for.
 
   Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security, accessibility, synchronization, idempotency, transactions, retries or cleanup on error paths to save lines: they are requirements the design implies, even when no scenario names them.
 
@@ -119,7 +119,9 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         re.escape("- Hardcoded dependencies (not injected)\n"),
         "- A hardcoded collaborator that the blocker table in `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md` "
         "lets a test double (B1 out-of-process handle, B2 ambient state, B3 prohibitive cost), so a test cannot replace it. "
-        "Other first-party collaborators constructed inline are not a finding\n",
+        "Other first-party collaborators constructed inline are not a finding\n- Module-level or static mutable state (a cache, "
+        "registry or counter) shared across calls or requests: a shared-state finding. Propose scoping it or passing it "
+        "explicitly; propose injection only for a B1–B3 collaborator\n",
         "lean production code: inject only what the blocker table allows doubling",
     ),
     (
@@ -151,7 +153,8 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         re.escape("- Are there hidden static singletons or global state that aren't injected?\n"
                   '- For every "duplicate code" finding, did you verify it\'s semantic duplication and not just structural '
                   "similarity?\n"),
-        "- Are there hidden static singletons or global state that aren't injected?\n"
+        "- Are there hidden static singletons or module-level mutable state shared across calls or requests? Report shared "
+        "mutable state; propose injection only for a B1–B3 collaborator.\n"
         "- For a two-copy duplication finding, did you apply the semantic test? For three or more copies, did you confirm "
         "they are really the same block?\n",
         "lean production code: self-challenge matches the rule of three",

@@ -46,12 +46,12 @@ Three reflexes that fire at the moment code is written — not just at review ti
 - **Surgical Changes.** Touch only what the task requires. Do not improve or refactor adjacent code inside an unrelated change. Remove only the orphans *your* change created — never pre-existing dead code (mention it instead, don't delete it). This is distinct from the mandatory REFACTOR phase in the build cadence (see Test-Driven Development skill below): REFACTOR is a **deliberate, separately-announced** cleanup of the code the current step just touched, run on every green — it is not license to smuggle unrelated improvements into a scoped fix. Name which mode you're in.
   Test: "Every changed line should trace directly to the user's request."
 - **Simplicity First (pre-write reuse ladder).** Read the code the change touches and trace the real flow first: be lazy about the solution, never about understanding the problem. Then walk this ladder and stop at the first rung that holds:
-  1. Does it need to exist? Nothing asked for it and no scenario demands it → do not write it.
+  1. Does it need to exist? Nothing asked for it, no scenario demands it and the design does not imply it → do not write it. The design implies synchronization, idempotency, transactions, retries and cleanup on error paths wherever state is shared, work is retried or resources are held.
   2. Does the codebase already have it? Call it.
   3. Does the standard library do it?
   4. Does the platform or framework do it natively?
   5. Does an already-installed dependency do it? Never add a dependency to save a few lines, with one exception: security primitives (cryptography, password hashing, token validation, sanitizing or escaping, parsers for untrusted input) always come from the standard library or a vetted library, never hand-rolled.
-  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3), no configurability nobody asked for.
+  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3) or a helper that holds a lock, transaction, retry or cleanup, no configurability nobody asked for.
 
   Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security, accessibility, synchronization, idempotency, transactions, retries or cleanup on error paths to save lines: they are requirements the design implies, even when no scenario names them.
 
