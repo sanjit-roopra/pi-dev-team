@@ -1,4 +1,4 @@
-<!-- step 4 (file scope, verdict ledger, scope marker, context payload, model, static-analysis context, output contract). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Everything below the marker is verbatim. -->
+<!-- step 4 (file scope, verdict ledger, scope marker, context payload, model, static-analysis context, output contract). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
 <!-- verbatim-below -->
 - **File scope**: pass only files matching each agent's declared scope. Skip the agent if no files match.
 - **Ledger-scoped dispatch (#2167).** Once every agent's File scope above is known, consult the per-lens verdict ledger before building any dispatch prompt — a repeat review must not pay to re-derive an outcome an exact `(lens, file, content)` match already recorded:

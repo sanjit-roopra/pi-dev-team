@@ -1,4 +1,4 @@
-<!-- step 2 (pre-flight gates) and 2b (static analysis pre-pass). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Everything below the marker is verbatim. -->
+<!-- step 2 (pre-flight gates) and 2b (static analysis pre-pass). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
 <!-- verbatim-below -->
 ### 2. Pre-flight gates
 

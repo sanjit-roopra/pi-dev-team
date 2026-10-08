@@ -30,7 +30,22 @@ Role: orchestrator. Route work to review agents; do not review code yourself. Pa
 
 Output templates and JSON schemas: [`output-format.md`](output-format.md). Example report: [`examples/sample-report.md`](examples/sample-report.md).
 
-**This file is the pi summary of the upstream skill.** Each step names a reference file in `references/` that holds that step's full upstream text, word for word, with the reasons, incidents and edge cases. Read a step's reference when this summary does not settle a case, and always where a step below says **read**. The summary never overrides the reference; if they seem to disagree, follow the reference.
+**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when the table says so, or when this core leaves open a case you actually face; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with one exception: `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`).
+
+| Reference | Read it when |
+| --- | --- |
+| `references/00-overview.md` | a flag's behavior is unclear from the table below |
+| `references/01-target-files.md` | **always** when the documentation-only short-circuit fires (step 1) |
+| `references/02-gates-and-static-analysis.md` | a gate fails or a pre-pass result needs interpreting |
+| `references/03-enabled-agents.md` | `select_lenses.py` or a step 3 gate prints something step 3 does not cover |
+| `references/04a-dispatch-waves.md` | `dispatch_waves.py` output is unclear |
+| `references/04b-context-pack.md` | **always** when `DEV_TEAM_REVIEW_CONTEXT_PACK=on` |
+| `references/04c-dispatch-payload-and-ledger.md` | `verdict_scope.py` skips any file, or an agent's payload is unclear |
+| `references/04d-contract-validation-and-retry.md` | **always** when `dispatch_reconcile.py`'s `missing` is non-empty |
+| `references/05-aggregate.md` | ACCEPTED-RISKS rules or health scoring need detail |
+| `references/06-findings-and-fix-loop.md` | **always** before the first fix iteration (step 6a) |
+| `references/07-report.md` | a report case step 7 does not cover |
+| `references/08-09-corrections-and-gate.md` | the step 8 or step 9 decision is unclear |
 
 ## Orchestrator constraints
 
@@ -47,8 +62,6 @@ Output templates and JSON schemas: [`output-format.md`](output-format.md). Examp
 
 Arguments: $ARGUMENTS
 
-Full flag descriptions: `references/00-overview.md`.
-
 | Flag | Behavior |
 | --- | --- |
 | `--agent <name>` | Run only the named agent (delegates to `/review-agent`) |
@@ -64,7 +77,7 @@ Full flag descriptions: `references/00-overview.md`.
 | `--force` | Skip pre-flight gates **and the documentation-only short-circuit**. **Requires `--reason "<text>"`** — logged to `.claude/metrics/override-audit.jsonl` |
 | `--reason "<text>"` | Override justification (required with `--force`) |
 | `--static-analysis` / `--no-static-analysis` | Force on/off the static analysis pre-pass. Auto-enabled when tools are detected |
-| `--background` | Drift review: only doc-review, arch-review, naming-review, structure-review; skips pre-flight gates |
+| `--background` | Drift review of the default branch (documentation, naming and structural drift): only doc-review, arch-review, naming-review, structure-review; skips pre-flight gates |
 | (no flags) | **Auto-scope**: review uncommitted changes if any exist, otherwise full repository |
 
 ## Progress tracking
@@ -88,8 +101,6 @@ Full flag descriptions: `references/00-overview.md`.
 
 ### 1. Determine target files
 
-Reference: `references/01-target-files.md`.
-
 Priority order:
 
 1. `--path <dir>` — files in that directory (exclude node_modules, .git, dist, build, coverage)
@@ -109,8 +120,6 @@ Priority order:
 
 ### 2. Pre-flight gates
 
-Reference: `references/02-gates-and-static-analysis.md`.
-
 Skip entirely with `--background`. `--force` without `--reason` halts with:
 
 ```
@@ -123,13 +132,11 @@ Otherwise run in sequence, stop on the first failure, and skip a gate silently w
 
 1. **Lint**: `npx eslint` (or the project lint command) on target files.
 2. **Type check**: `npx tsc --noEmit` if `tsconfig.json` exists.
-3. **Secret scan**: with `gitleaks` installed, run the canonical invocation from [`skills/static-analysis-integration/references/tool-configs.md`](../static-analysis-integration/references/tool-configs.md) § gitleaks; any finding on a target file fails the gate; report rule id and `file:line` only, **never echo the matched secret value**; do not run gitleaks again in 2b. Without gitleaks, grep with the pattern in [`knowledge/owasp-detection.md`](../../knowledge/owasp-detection.md) § Hardcoded-key pattern (the fenced block) and say in the report that the fallback ran.
+3. **Secret scan**: with `gitleaks` installed, run the canonical invocation from [`skills/static-analysis-integration/references/tool-configs.md`](../static-analysis-integration/references/tool-configs.md) § gitleaks; any finding on a target file fails the gate; report rule id and `file:line` only, **never echo the matched secret value**; record that gitleaks ran and do not run it again in 2b. Without gitleaks, grep with the pattern in [`knowledge/owasp-detection.md`](../../knowledge/owasp-detection.md) § Hardcoded-key pattern (the fenced block, not the table row: table cells escape `|` as `\|`, a literal pipe rather than alternation) and say in the report that the fallback ran.
 4. **Semgrep SAST**: `semgrep scan --config auto --quiet --json` on target files if installed. ERROR → fail. WARNING → continue, include in report, save for security-review.
 5. **Pipeline-red check**: `gh run list --branch $(git branch --show-current) --limit 1 --json conclusion -q '.[0].conclusion'`. If the last run failed, warn: "Pipeline is red. Fix CI before adding new code. Use `--force` to override."
 
 ### 2b. Static analysis pre-pass
-
-Reference: `references/02-gates-and-static-analysis.md`.
 
 Skip with `--no-static-analysis` or `--background`. Follow [`skills/static-analysis-integration/SKILL.md`](../static-analysis-integration/SKILL.md). It collects context for step 4; it does not gate. Reuse semgrep findings from step 2; do not run semgrep twice.
 
@@ -145,6 +152,9 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/test-design/scripts/internal_double_detector
 
 Both `findings` arrays merge into step 4's static-analysis context ("detected by static analysis — do not re-report, focus on semantic concerns"). Never pass `--all` to `repo_invariants.py` here.
 
+- **Growing this registry is a rule, not a discretion (#1981).** When a review agent reports the same mechanically-checkable finding class for the second time, and a deterministic script can check it, add it as a `CHECKS` entry in `scripts/repo_invariants.py` in the same PR that fixes the finding.
+- **Authoring-time ordering (#1629).** When writing fixtures or agent files, run the same `repo_invariants.py` command at edit time, before the first panel dispatches.
+
 **Test-review mechanical pre-phase (#2169).** Only when `test-review` is in this round's lens set, run once per test file in `<target files>`:
 
 ```bash
@@ -155,7 +165,7 @@ Keep each result keyed by its file and give it to `test-review` as that file's P
 
 ### 3. Determine enabled agents
 
-Reference: `references/03-enabled-agents.md`. The scripts below decide; apply what they print, in this order, and never re-add an agent an earlier gate removed.
+The scripts below decide; apply what they print, in this order, and never re-add an agent an earlier gate removed. `--force` and `--agent <name>` bypass the change-shape, change-size and diff-signal gates.
 
 - `--background`: run only `doc-review`, `arch-review`, `naming-review`, `structure-review`; skip the rest of this step.
 - The roster is the **Review Agents** section of `knowledge/agent-registry.md`. Never `Read` the bare `agents/` directory; use `Glob("agents/*.md")`.
@@ -193,9 +203,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_lenses.py" \
   --added-from <(printf '%s\n' "$ADDED_LIST")
 ```
 
+- Feed only `$FILES_LIST`/`$ADDED_LIST`, derived from the quoted `$CHANGED_JSON`; never re-interpolate individual paths as shell words (that is what closes the injection surface).
 - Always pass `--added-from` on a diff-scoped run, even when `added` is `[]`. For `--path`/`--all`/full-repository, pass `--files <target files>` instead of both.
 - Take its `lenses` array as the roster. **Surface every entry of its `warnings`** in the report. `unreadable-registry:<file>`, `unreadable-files-from:<path>` and `unreadable-added-from:<path>` count as a `fail` for this run; `skipped-non-executable:<name>` is informational.
-- **Framework reactivity** (from the dependency manifest): `react`/`react-dom` → `react-reactivity-review`; `vue` → `vue-reactivity-review`; `@angular/core` → `angular-reactivity-review`, each scoped to its framework's files.
+- **Framework reactivity** (from the dependency manifest): `react`/`react-dom` → `react-reactivity-review`, scoped to `.jsx`/`.tsx` and React-importing `.js`/`.ts` files; `vue` → `vue-reactivity-review`, scoped to `.vue` and Vue-importing `.js`/`.ts` files; `@angular/core` → `angular-reactivity-review`, scoped to `*.component.ts`, `*.component.html`, `*.service.ts`, and general `.ts` files.
 
 **Change-shape gate.**
 
@@ -231,13 +242,9 @@ git -c diff.relative=false diff --no-color <ref>...HEAD \
 
 Drop every agent in `skipLenses` and note it (gated by diff signal). Only `arch-review` and `concurrency-review` can be gated here.
 
-The change-shape, change-size and diff-signal gates are bypassed by `--force` and by `--agent <name>`.
-
 ### 4. Run each enabled agent
 
 **Dispatch-capability gate (re-confirm here, not just at the top of this file — issue #1461).** Before spawning anything below, re-verify the `Agent`/`Task` tool is present in this toolset. If it is not, STOP per the Orchestrator constraints above — do not fall back to reviewing the files yourself, inline, as a stand-in for the panel; report the missing capability and halt the run before any agent is spawned.
-
-References: `references/04a-dispatch-waves.md`, `references/04c-dispatch-payload-and-ledger.md`, `references/04d-contract-validation-and-retry.md`.
 
 **Waves.** Compute the split; do not guess a batch size:
 
@@ -261,7 +268,7 @@ Dispatch **exactly the waves it printed, in that order**, as parallel subagents 
   - **Fail closed.** The script skips a file only on an exact `(lens, file_path, current content hash)` match whose latest row is `outcome: "pass"`; everything else dispatches.
   - The PR gate needs no change: `hooks/pre_pr_review.py` corroborates on the branch diff's `subject_hash`, independent of this per-file ledger.
 - **Scope marker (#2166)**: append one structured, single-line marker to every dispatch prompt, listing the exact files passed under File scope above (as narrowed by Ledger-scoped dispatch), comma-separated: `Files in scope for this review: <path>, <path>, ...`. `hooks/review_verdict_recorder.py` parses it back out of the transcript.
-- **Context payload** (the agent's `Context needs`): `diff-only` → the diff (auto-scope or `--since` only); `full-file` → complete files; `project-structure` → full files + directory tree + step 3's changed-file list (path + change type) for diff-scoped runs, never the list for `--path`/`--all`/full repository. `project-structure` agents have no Bash and must never run `git` themselves. A full-repository review always passes full files.
+- **Context payload** (the agent's `Context needs`): `diff-only` → the diff (auto-scope or `--since` only); `full-file` → complete files; `project-structure` → full files + directory tree + step 3's changed-file list (path + change type) for diff-scoped runs, never the list for `--path`/`--all`/full repository. `project-structure` agents have no Bash and must never run `git` themselves. A full-repository review (clean auto-scope, `--all`, or `--path`) always passes full files.
 - **Model**: pass the agent's declared `model:`/`effort:` frontmatter.
 - **Static analysis context**: if step 2b found anything, add to every prompt: "These issues were detected by static analysis. Do not re-report them. Focus on semantic concerns."
 - **Per-agent output**: the contract in [`knowledge/review-agent-output-contract.md`](../../knowledge/review-agent-output-contract.md), wrapped with `agentName`/`modelTier` (shape in `output-format.md`).
@@ -279,11 +286,9 @@ Exit 0 → the agent goes in `--returned`. Exit 1 → it does not (the script al
 sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names, in the order dispatch_waves.py listed them>" --returned "<this wave's contract-valid agent names>"
 ```
 
-Pass `--returned ""` when no agent in the wave returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own; on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
+`--dispatched` lists only the agents of this wave that actually received a prompt; leave out agents skipped for no matching files or by the ledger. Pass `--returned ""` when no agent in the wave returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before the next wave; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
 
 ### 5. Aggregate results
-
-Reference: `references/05-aggregate.md`.
 
 - **Dispatch failures first.** Carry every step 4 `dispatchFailures` entry into the report and the `--json` object unchanged. **A non-empty `dispatchFailures` forces `overall: "fail"`, unconditionally**, applied after health scoring so it always wins.
 - **Ledger skips.** Carry step 4's `verdict_scope.py` `skipped` map through as `ledgerSkipped`, never dropped. A ledger skip does **not** force `overall` toward `fail`/`warn`: score `overall` from the agents that dispatched this round. An all-skipped roster reports `overall: "pass"` with zero `agents[]` and a non-empty `ledgerSkipped`, and the report says so.
@@ -319,8 +324,6 @@ When several agents flag the same `file:line`, emit one `topFindings` entry: `se
 
 ### 6. Present findings and ask for direction
 
-Reference: `references/06-findings-and-fix-loop.md`.
-
 Zero actionable issues → step 7. Otherwise present the Review Findings prompt ([`output-format.md`](output-format.md#review-findings-prompt-interactive--step-6)) and ask: **"Fix these issues automatically, or save as report only?"** "Fix" / "apply" / "yes" → 6a; "Report" / "no" / "don't fix" → step 7, no code modified.
 
 Non-interactive: with `--json` (or `--yes`), **default to report only** and never modify code. Inside `/build`, `/pr` or `/test-improve`, go to the fix loop; the caller owns the human gate.
@@ -329,14 +332,14 @@ Non-interactive: with `--json` (or `--yes`), **default to report only** and neve
 
 **Read `references/06-findings-and-fix-loop.md` before the first fix iteration** and follow it. It holds the loop, the deterministic-first triage, verification-mode re-dispatch, the round ledger (`finding_signature.py`), per-round records (`review_round_log.py`), the closing pass (`closing_pass.py`) and the exit conditions. In short:
 
-- Up to 5 iterations: apply fixes, run the tests (revert a fix that breaks them and mark it `[auto-fix failed — human review required]`), re-stage with `git add` when auto-scoped, close mechanical fixes with a deterministic check where possible, re-run only the affected agents in verification mode (contract: [`knowledge/verification-mode.md`](../../knowledge/verification-mode.md), with the mandatory `insufficient-context` escape).
+- Up to 5 iterations: apply fixes, run the tests (revert a fix that breaks them and mark it `[auto-fix failed — human review required]`), capture the iteration's fix diff, then re-stage with `git add` when auto-scoped.
+- Deterministic-first triage: close a fix without re-dispatch only when **all three** hold — it is a pure mechanical edit, step 2b's lint/type tools and the test suite ran clean, and a targeted grep/diff can check the claim. If any fails, re-dispatch.
+- Re-run only the agents with open actionable issues, in verification mode (contract: [`knowledge/verification-mode.md`](../../knowledge/verification-mode.md), with the mandatory `insufficient-context` escape); carry forward the statuses of agents that passed.
 - Every round goes through the round ledger, which decides `converged` or `round-cap` (a hard cap at round 4). Honor it.
-- After any fix iteration, run the closing pass; its agents keep full authority.
+- Closing pass (auto-scope only, like re-staging): after any fix iteration, run `closing_pass.py` and dispatch exactly its agents. They keep full authority: an actionable finding re-enters the loop like any iteration.
 - **Escalation** (round cap, iteration limit, same issues persisting) is carried to step 7 (`--json` → `overall: "fail"`) and step 9 (no gate write). A `converged` exit is not an escalation.
 
 ### 7. Generate report
-
-Reference: `references/07-report.md`.
 
 **Output paths.** All file artifacts (`./corrections/*.json`, `.claude/memory/.pr-review-passed`) are repo-relative to the target repository's working directory. Never prepend a scratchpad, sandbox, or session root, and never join two absolute paths. Read `knowledge/review-template.md` for the structure.
 
@@ -358,17 +361,21 @@ Pass `--expand` through exactly as the caller supplied it (omit the flag entirel
 
 **Write the durable report (skip when `--internal`).** Write the identical prose summary to `.dev-team-reports/code-review.md` (create the directory if absent, overwrite an existing file), also when the review found nothing, and print `Report written: .dev-team-reports/code-review.md` (add ` (replaced previous run)` when a file existed). A failed write is non-fatal: report `Cannot write .dev-team-reports/code-review.md: <error>` and continue.
 
-**`--pdf`**: only when a report file was written this run, **read** the `--pdf` paragraph in `references/07-report.md` and render with its command; otherwise say `--pdf: no report file was written this run, nothing to render.` (to stderr under `--json`). It never changes the review's output or exit status.
+**`--pdf`**: only when a report file was written this run, render it per `knowledge/report-pdf-integration.md` and surface the module's `Rendering PDF via <engine>…` and result lines:
+
+```bash
+sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/code-review.md
+```
+
+Otherwise say `--pdf: no report file was written this run, nothing to render.` (to stderr under `--json`). It never changes the review's output or exit status; a missing engine or render error is non-fatal.
 
 ### 8. Save correction prompts for remaining issues
-
-Reference: `references/08-09-corrections-and-gate.md`.
 
 **Skip this entire step if `--json` was set.** For issues not auto-fixed (confidence none, failed auto-fix, suggestions), write one correction prompt per issue (schema: [`output-format.md`](output-format.md#correction-prompt-json)) to `./corrections/` in the target repository's working directory. They can be applied manually or with `/apply-fixes`.
 
 ### 9. Write pre-commit gate file
 
-Reference: `references/08-09-corrections-and-gate.md`. **Not skipped by `--json`.**
+**Not skipped by `--json`.**
 
 Write the gate only when **all** of these hold:
 

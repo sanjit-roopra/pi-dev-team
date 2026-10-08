@@ -1,7 +1,5 @@
 """Tests for devtools/pi_session_report.py. Run: python3 -m unittest discover -s test/py"""
 import contextlib
-import importlib.machinery
-import importlib.util
 import io
 import json
 import os
@@ -12,13 +10,9 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-ROOT = Path(__file__).resolve().parents[2]
-loader = importlib.machinery.SourceFileLoader("pi_session_report", str(ROOT / "devtools" / "pi_session_report.py"))
-spec = importlib.util.spec_from_loader("pi_session_report", loader)
-assert spec is not None
-report = importlib.util.module_from_spec(spec)
-sys.modules["pi_session_report"] = report  # dataclasses look their module up here
-loader.exec_module(report)
+from _loader import ROOT, load_module
+
+report = load_module("pi_session_report", ROOT / "devtools" / "pi_session_report.py")
 
 SESSION_ID = "01a116b1-1a46-74a8-b1ec-ad520b3c6ee8"
 SESSION_FILE = f"2026-10-07T14-00-00-000Z_{SESSION_ID}.jsonl"

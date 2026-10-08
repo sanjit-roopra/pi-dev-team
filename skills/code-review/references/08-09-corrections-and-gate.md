@@ -1,4 +1,4 @@
-<!-- step 8 (correction prompts) and 9 (pre-commit gate file). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Everything below the marker is verbatim. -->
+<!-- step 8 (correction prompts) and 9 (pre-commit gate file). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
 <!-- verbatim-below -->
 ### 8. Save correction prompts for remaining issues
 

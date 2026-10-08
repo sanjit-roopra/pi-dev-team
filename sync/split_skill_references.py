@@ -15,27 +15,35 @@ Every chunk starts at a fixed marker line of the upstream file. When upstream
 renames or removes a marker, the script stops; update SPLITS. The reference
 files joined in name order, after the core's frontmatter, rebuild the upstream
 file byte for byte (test/py/test_slim_skills.py checks this against the hash in
-OVERRIDE_BASES).
+OVERRIDE_BASES). The references do not store the frontmatter, so the core's
+frontmatter must stay identical to upstream's.
 
-After running it: review the upstream diff, update the core SKILL.md to match,
-set the new hash in OVERRIDE_BASES (sync/sync_upstream.py), and run the sync.
+The script checks the rebuild before it touches any file, then prints the
+upstream sha256. After running it: review the upstream diff, update the core
+SKILL.md (frontmatter included) to match, set the printed hash in
+OVERRIDE_BASES (sync/sync_upstream.py), and run the sync.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sys
 from pathlib import Path
 
 PKG = Path(__file__).resolve().parent.parent
 PLUGIN_SUBDIR = Path("plugins/dev-team")
+FRONTMATTER_OPEN = "---\n"
+FRONTMATTER_CLOSE = "\n---\n"
 VERBATIM_MARKER = "<!-- verbatim-below -->\n"
 HEADER = (
     "<!-- {title}. Upstream text of skills/{skill}/SKILL.md, unchanged; the pi core SKILL.md "
-    "summarizes it. Everything below the marker is verbatim. -->\n" + VERBATIM_MARKER
+    "summarizes it. Relative links below resolve from skills/{skill}/, not from references/. "
+    "Everything below the marker is verbatim. -->\n" + VERBATIM_MARKER
 )
 
-# skill -> [(reference file, title, first line of the chunk in the upstream body)]; the first chunk starts at the body.
+# skill -> [(reference file, title, first line of the chunk in the upstream body)]; the first chunk starts at the
+# body and has no marker. File names must sort in plan order, since rebuild() joins them in name order.
 SPLITS: dict[str, list[tuple[str, str, str | None]]] = {
     "code-review": [
         ("00-overview.md", "overview, orchestrator constraints, arguments, progress tracking", None),
@@ -54,22 +62,36 @@ SPLITS: dict[str, list[tuple[str, str, str | None]]] = {
 }
 
 
-def split_body(text: str) -> tuple[str, str]:
+def base_key(skill: str) -> str:
+    """The OVERRIDE_BASES key that pins a slim skill's upstream text."""
+    return f"skills/{skill}/SKILL.md"
+
+
+def split_frontmatter(text: str) -> tuple[str, str]:
     """(frontmatter including both --- lines, body)."""
-    if not text.startswith("---\n"):
+    if not text.startswith(FRONTMATTER_OPEN):
         raise ValueError("SKILL.md has no frontmatter")
-    end = text.index("\n---\n", 4) + len("\n---\n")
+    close = text.find(FRONTMATTER_CLOSE, len(FRONTMATTER_OPEN))
+    if close < 0:
+        raise ValueError("SKILL.md frontmatter is not closed")
+    end = close + len(FRONTMATTER_CLOSE)
     return text[:end], text[end:]
 
 
-def chunks(skill: str, body: str) -> list[tuple[str, str, str]]:
-    """(file name, title, verbatim text) per reference file, in order."""
-    plan = SPLITS[skill]
+def plan_chunks(plan: list[tuple[str, str, str | None]], body: str) -> list[tuple[str, str, str]]:
+    """(file name, title, verbatim text) per reference file, in plan order."""
+    names = [name for name, _title, _marker in plan]
+    if names != sorted(names):
+        raise ValueError("reference file names do not sort in plan order; rename them in SPLITS")
+    if plan[0][2] is not None:
+        raise ValueError(f"{plan[0][0]}: the first chunk starts at the body and takes no marker")
     starts = [0]
     for name, _title, marker in plan[1:]:
-        assert marker is not None
-        if body.count(marker) != 1:
-            raise ValueError(f"{name}: marker {marker!r} found {body.count(marker)} times in the upstream text")
+        if marker is None:
+            raise ValueError(f"{name}: only the first chunk may omit its marker")
+        found = body.count(marker)
+        if found != 1:
+            raise ValueError(f"{name}: marker {marker!r} found {found} times in the upstream text")
         index = body.index(marker)
         if index and body[index - 1] != "\n":
             raise ValueError(f"{name}: marker {marker!r} does not start a line")
@@ -77,17 +99,31 @@ def chunks(skill: str, body: str) -> list[tuple[str, str, str]]:
     if starts != sorted(starts):
         raise ValueError("markers are out of order; update SPLITS")
     ends = starts[1:] + [len(body)]
-    return [(name, title, body[a:b]) for (name, title, _), a, b in zip(plan, starts, ends)]
+    return [(name, title, body[start:end]) for (name, title, _marker), start, end in zip(plan, starts, ends)]
 
 
 def reference_files(skill: str, upstream_skill_md: str) -> dict[str, str]:
-    _frontmatter, body = split_body(upstream_skill_md)
-    return {name: HEADER.format(title=title, skill=skill) + text for name, title, text in chunks(skill, body)}
+    _frontmatter, body = split_frontmatter(upstream_skill_md)
+    return {name: HEADER.format(title=title, skill=skill) + text for name, title, text in plan_chunks(SPLITS[skill], body)}
 
 
 def rebuild(frontmatter: str, references: dict[str, str]) -> str:
     """The upstream file, from a frontmatter and the reference files (joined in name order)."""
     return frontmatter + "".join(references[name].split(VERBATIM_MARKER, 1)[1] for name in sorted(references))
+
+
+def write_references(skill: str, text: str, out: Path) -> dict[str, str]:
+    """Write the reference files for `text` to `out`, after checking they rebuild it; remove stale ones."""
+    files = reference_files(skill, text)
+    if rebuild(split_frontmatter(text)[0], files) != text:
+        raise ValueError("the reference files do not rebuild the upstream file; check SPLITS")
+    out.mkdir(parents=True, exist_ok=True)
+    for stale in out.glob("*.md"):
+        if stale.name not in files:
+            stale.unlink()
+    for name, content in files.items():
+        (out / name).write_text(content, encoding="utf-8")
+    return files
 
 
 def main() -> int:
@@ -96,22 +132,16 @@ def main() -> int:
     ap.add_argument("--upstream", required=True, help="checkout of bdfinst/agentic-dev-team")
     args = ap.parse_args()
 
-    source = Path(args.upstream).resolve() / PLUGIN_SUBDIR / "skills" / args.skill / "SKILL.md"
+    source = Path(args.upstream).resolve() / PLUGIN_SUBDIR / base_key(args.skill)
     text = source.read_text(encoding="utf-8")
+    out = PKG / "overrides" / "skills" / args.skill / "references"
     try:
-        files = reference_files(args.skill, text)
+        files = write_references(args.skill, text, out)
     except ValueError as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
-    out = PKG / "overrides" / "skills" / args.skill / "references"
-    out.mkdir(parents=True, exist_ok=True)
-    for stale in out.glob("*.md"):
-        if stale.name not in files:
-            stale.unlink()
-    for name, content in files.items():
-        (out / name).write_text(content, encoding="utf-8")
-    assert rebuild(split_body(text)[0], files) == text
     print(f"wrote {len(files)} reference files to {out.relative_to(PKG)}")
+    print(f'OVERRIDE_BASES["{base_key(args.skill)}"] = "{hashlib.sha256(text.encode("utf-8")).hexdigest()}"')
     return 0
 
 

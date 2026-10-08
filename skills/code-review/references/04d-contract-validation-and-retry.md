@@ -1,4 +1,4 @@
-<!-- step 4 (contract validation, dispatch reconcile, retry and dispatch failures). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Everything below the marker is verbatim. -->
+<!-- step 4 (contract validation, dispatch reconcile, retry and dispatch failures). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
 <!-- verbatim-below -->
 **Dispatch failure handling — retry once, never drop silently (issue #1752).** After **each wave** returns, check every agent dispatched **in that wave** (not the full eligible roster — a later wave hasn't dispatched yet) for a valid per-agent result matching [`review-agent-output-contract.md`](../../knowledge/review-agent-output-contract.md).
 

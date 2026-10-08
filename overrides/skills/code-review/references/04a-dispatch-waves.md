@@ -1,4 +1,4 @@
-<!-- step 4 (dispatch-capability gate and dispatch waves). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Everything below the marker is verbatim. -->
+<!-- step 4 (dispatch-capability gate and dispatch waves). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
 <!-- verbatim-below -->
 ### 4. Run each enabled agent
 

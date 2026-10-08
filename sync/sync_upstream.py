@@ -8,7 +8,9 @@ What it does (idempotent, stdlib only):
   1. Replaces the managed directories (agents, skills, hooks, scripts, knowledge,
      templates, tools, docs/upstream) with fresh copies from upstream.
   2. Drops skills that only make sense inside Claude Code (DROPPED_SKILLS).
-  3. Copies pi-specific replacements from overrides/ over the result.
+  3. Copies pi-specific replacements from overrides/ over the result. A slim
+     skill's override also carries its upstream text, unchanged, split into
+     references/ by sync/split_skill_references.py.
   4. Normalises SKILL.md frontmatter for pi (description <= 1024 chars).
   5. Applies the small, explicit text patch set (PATCHES). Every patch must
      match at least once, so upstream drift is caught instead of silently

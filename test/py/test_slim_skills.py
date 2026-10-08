@@ -1,145 +1,260 @@
-"""Tests for the slim code-review override: nothing lost, synced, and the core keeps what upstream pins.
+"""Tests for slim skill overrides: nothing lost, synced, and the code-review core keeps what upstream pins.
 
 Run: python3 -m unittest discover -s test/py
 """
 import hashlib
-import importlib.machinery
-import importlib.util
 import re
-import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+from _loader import ROOT, load_module
+
+sync = load_module("sync_upstream_for_slim_skills", ROOT / "sync" / "sync_upstream.py")
+splitter = load_module("split_skill_references", ROOT / "sync" / "split_skill_references.py")
 
 
-def load(name, path):
-    loader = importlib.machinery.SourceFileLoader(name, str(path))
-    spec = importlib.util.spec_from_loader(name, loader)
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    loader.exec_module(module)
-    return module
+def load_skill(skill):
+    """(core SKILL.md text, {reference file name: text}) of a slim override."""
+    override_dir = ROOT / "overrides" / "skills" / skill
+    core = (override_dir / "SKILL.md").read_text(encoding="utf-8")
+    references = {p.name: p.read_text(encoding="utf-8") for p in sorted((override_dir / "references").glob("*.md"))}
+    return core, references
 
 
-sync = load("sync_upstream", ROOT / "sync" / "sync_upstream.py")
-split = load("split_skill_references", ROOT / "sync" / "split_skill_references.py")
+def text_between(text, start_marker, end_marker):
+    if start_marker not in text:
+        raise AssertionError(f"not found: {start_marker!r}")
+    after = text.split(start_marker, 1)[1]
+    if end_marker not in after:
+        raise AssertionError(f"not found after {start_marker!r}: {end_marker!r}")
+    return after.split(end_marker, 1)[0]
 
-OVERRIDE = ROOT / "overrides" / "skills" / "code-review"
-CORE = (OVERRIDE / "SKILL.md").read_text(encoding="utf-8")
-REFERENCES = {p.name: p.read_text(encoding="utf-8") for p in sorted((OVERRIDE / "references").glob("*.md"))}
-INVOKED_SCRIPT_RE = re.compile(r'(?:python3|py\.sh") "\$\{?CLAUDE_PLUGIN_ROOT\}?/[\w./-]*?([\w-]+\.py)"')
-# Scripts only a branch runs; the core sends the model to the reference that has the command.
-BRANCH_SCRIPTS = {
-    "review_context_pack.py": "references/04b-context-pack.md",
-    "report_pdf.py": "references/07-report.md",
-    "verify_tier.py": "references/06-findings-and-fix-loop.md",
+
+def strip_indent(text):
+    return "\n".join(line.strip() for line in text.splitlines())
+
+
+class SlimSkillsLoseNothing(unittest.TestCase):
+    """Every skill in SPLITS: the references rebuild the pinned upstream file and the synced copy matches."""
+
+    def test_every_slim_skill_is_pinned(self):
+        for skill in splitter.SPLITS:
+            with self.subTest(skill=skill):
+                self.assertIn(splitter.base_key(skill), sync.OVERRIDE_BASES)
+
+    def test_references_rebuild_the_pinned_upstream_file(self):
+        for skill in splitter.SPLITS:
+            with self.subTest(skill=skill):
+                core, references = load_skill(skill)
+                self.assertTrue(references, f"overrides/skills/{skill}/references/ is empty")
+                rebuilt = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
+                digest = hashlib.sha256(rebuilt.encode("utf-8")).hexdigest()
+                self.assertEqual(digest, sync.OVERRIDE_BASES[splitter.base_key(skill)],
+                                 "references plus the core's frontmatter no longer rebuild upstream; the core's frontmatter must stay upstream's")
+
+    def test_references_match_the_splitter(self):
+        for skill in splitter.SPLITS:
+            with self.subTest(skill=skill):
+                core, references = load_skill(skill)
+                rebuilt = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
+                self.assertEqual(splitter.reference_files(skill, rebuilt), references)
+
+    def test_synced_copy_matches_the_override(self):
+        for skill in splitter.SPLITS:
+            with self.subTest(skill=skill):
+                core, references = load_skill(skill)
+                synced = ROOT / "skills" / skill
+                hint = "run npm run sync"
+                self.assertEqual((synced / "SKILL.md").read_text(encoding="utf-8"), core, hint)
+                for name, text in references.items():
+                    self.assertEqual((synced / "references" / name).read_text(encoding="utf-8"), text, f"{name}: {hint}")
+                self.assertEqual(sorted(p.name for p in (synced / "references").glob("*.md")), sorted(references), hint)
+
+
+TOY_BODY = "intro\n## One\nfirst\n## Two\nsecond\n"
+TOY_PLAN = [("0-intro.md", "intro", None), ("1-one.md", "one", "## One\n"), ("2-two.md", "two", "## Two\n")]
+
+
+class SplitterBehavior(unittest.TestCase):
+    def test_chunks_start_at_their_markers(self):
+        self.assertEqual(splitter.plan_chunks(TOY_PLAN, TOY_BODY),
+                         [("0-intro.md", "intro", "intro\n"), ("1-one.md", "one", "## One\nfirst\n"), ("2-two.md", "two", "## Two\nsecond\n")])
+
+    def test_marker_must_appear_exactly_once_at_a_line_start(self):
+        cases = {
+            "missing": "intro\n## Two\nsecond\n",
+            "duplicated": TOY_BODY + "## One\n",
+            "mid-line": "intro x## One\nfirst\n## Two\nsecond\n",
+            "out of order": "intro\n## Two\nsecond\n## One\nfirst\n",
+        }
+        for case, body in cases.items():
+            with self.subTest(case=case), self.assertRaises(ValueError):
+                splitter.plan_chunks(TOY_PLAN, body)
+
+    def test_plan_must_be_well_formed(self):
+        cases = {
+            "names not in plan order": [TOY_PLAN[0], ("9-one.md", "one", "## One\n"), TOY_PLAN[2]],
+            "first chunk has a marker": [("0-intro.md", "intro", "intro\n")] + TOY_PLAN[1:],
+            "later chunk has no marker": [TOY_PLAN[0], ("1-one.md", "one", None), TOY_PLAN[2]],
+        }
+        for case, plan in cases.items():
+            with self.subTest(case=case), self.assertRaises(ValueError):
+                splitter.plan_chunks(plan, TOY_BODY)
+
+    def test_frontmatter_must_open_and_close(self):
+        self.assertEqual(splitter.split_frontmatter("---\na: 1\n---\nbody\n"), ("---\na: 1\n---\n", "body\n"))
+        for text in ("no frontmatter\n", "---\na: 1\nbody\n"):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                splitter.split_frontmatter(text)
+
+    def test_write_references_replaces_stale_files_and_writes_nothing_on_error(self):
+        core, references = load_skill("code-review")
+        upstream = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "stale.md").write_text("old", encoding="utf-8")
+            (out / "keep.txt").write_text("not a reference", encoding="utf-8")
+            splitter.write_references("code-review", upstream, out)
+            self.assertEqual(sorted(p.name for p in out.glob("*.md")), sorted(references))
+            self.assertTrue((out / "keep.txt").exists())
+
+            before = {p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}
+            with self.assertRaises(ValueError):
+                splitter.write_references("code-review", upstream.replace("### 2. Pre-flight gates\n", "### 2. Gates\n"), out)
+            self.assertEqual({p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}, before)
+
+
+CORE, REFERENCES = load_skill("code-review")
+INVOKED_SCRIPT_RE = re.compile(r'(?:python3|py\.sh")\s+"\$\{?CLAUDE_PLUGIN_ROOT\}?/[\w./-]*?([\w-]+\.py)"')
+# Scripts only a branch runs, and the reference that has their command; the core sends the model there.
+REFERENCE_FOR_BRANCH_SCRIPT = {
+    "review_context_pack.py": "04b-context-pack.md",
+    "closing_pass.py": "06-findings-and-fix-loop.md",
+    "finding_signature.py": "06-findings-and-fix-loop.md",
+    "verify_tier.py": "06-findings-and-fix-loop.md",
+}
+# The core is meant to load at about a third of upstream's size; a regrowth past this means text moved back in.
+CORE_SIZE_BUDGET_BYTES = 40_000
+# Reference -> words its "Read it when" row must contain, for the references a step must read.
+REQUIRED_READ_TRIGGERS = {
+    "01-target-files.md": "documentation-only short-circuit",
+    "04b-context-pack.md": "DEV_TEAM_REVIEW_CONTEXT_PACK=on",
+    "04d-contract-validation-and-retry.md": "`missing` is non-empty",
+    "06-findings-and-fix-loop.md": "before the first fix iteration",
 }
 
 
-def section(text, start, end):
-    assert start in text, f"not found: {start!r}"
-    after = text.split(start, 1)[1]
-    assert end in after, f"not found after {start!r}: {end!r}"
-    return after.split(end, 1)[0]
-
-
-class NothingLost(unittest.TestCase):
-    def test_references_rebuild_the_pinned_upstream_file(self):
-        frontmatter, _ = split.split_body(CORE)
-        rebuilt = split.rebuild(frontmatter, REFERENCES)
-        digest = hashlib.sha256(rebuilt.encode("utf-8")).hexdigest()
-        self.assertEqual(digest, sync.OVERRIDE_BASES["skills/code-review/SKILL.md"])
-
-    def test_references_match_the_splitter(self):
-        frontmatter, _ = split.split_body(CORE)
-        rebuilt = split.rebuild(frontmatter, REFERENCES)
-        self.assertEqual(split.reference_files("code-review", rebuilt), REFERENCES)
-
-    def test_synced_copy_matches_the_override(self):
-        synced = ROOT / "skills" / "code-review"
-        self.assertEqual((synced / "SKILL.md").read_text(encoding="utf-8"), CORE)
-        for name, text in REFERENCES.items():
-            self.assertEqual((synced / "references" / name).read_text(encoding="utf-8"), text, name)
-        self.assertEqual(sorted(p.name for p in (synced / "references").glob("*.md")), sorted(REFERENCES))
-
-
-class CoreRouting(unittest.TestCase):
+class CodeReviewCoreRouting(unittest.TestCase):
     def test_core_names_every_reference_and_only_existing_ones(self):
         named = set(re.findall(r"(?<![\w./-])references/([\w.-]+\.md)", CORE))  # not other skills' references/
         self.assertEqual(named, set(REFERENCES))
 
+    def test_every_reference_has_a_read_trigger_row(self):
+        for name in REFERENCES:
+            with self.subTest(reference=name):
+                self.assertRegex(CORE, rf"\n\| `references/{re.escape(name)}` \| .+ \|\n")
+
+    def test_required_reads_have_their_trigger(self):
+        for name, trigger in REQUIRED_READ_TRIGGERS.items():
+            with self.subTest(reference=name):
+                row = re.search(rf"\n\| `references/{re.escape(name)}` \| (.+) \|\n", CORE)
+                self.assertIsNotNone(row, f"no trigger row for {name}")
+                self.assertIn("**always**", row.group(1))
+                self.assertIn(trigger, row.group(1))
+                self.assertIn(trigger.lower(), CORE.split("## Steps", 1)[1].lower(), f"the step that reads {name} lost its trigger")
+
+    def test_no_unconditional_reference_lines(self):
+        self.assertNotRegex(CORE, r"(?m)^References?: ", "a bare Reference: line makes the model load that file on every run")
+
+    def test_core_stays_within_its_size_budget(self):
+        self.assertLess(len(CORE.encode("utf-8")), CORE_SIZE_BUDGET_BYTES)
+
     def test_every_invoked_script_is_in_the_core_or_its_branch_reference_is(self):
-        for name, text in REFERENCES.items():
-            for script in set(INVOKED_SCRIPT_RE.findall(text)):
-                with self.subTest(reference=name, script=script):
-                    if script in BRANCH_SCRIPTS:
-                        self.assertIn(BRANCH_SCRIPTS[script], CORE)
-                    else:
-                        self.assertIn(script, CORE)
+        invoked = {script for text in REFERENCES.values() for script in INVOKED_SCRIPT_RE.findall(text)}
+        self.assertTrue(set(REFERENCE_FOR_BRANCH_SCRIPT) <= invoked, "a branch script is no longer invoked by any reference")
+        in_core = set(INVOKED_SCRIPT_RE.findall(CORE))
+        for script in invoked:
+            with self.subTest(script=script):
+                if script in REFERENCE_FOR_BRANCH_SCRIPT:
+                    self.assertIn(f"references/{REFERENCE_FOR_BRANCH_SCRIPT[script]}", CORE)
+                else:
+                    self.assertIn(script, in_core, "the core names the script but no longer runs it")
+
+    def test_core_commands_are_upstream_commands(self):
+        upstream = strip_indent("".join(REFERENCES.values()))
+        blocks = re.findall(r"```bash\n(.*?)```", CORE, re.S)
+        self.assertTrue(blocks)
+        for block in blocks:
+            with self.subTest(block=block.splitlines()[0]):
+                self.assertIn(strip_indent(block).strip(), upstream)
 
     def test_hard_rules_are_verbatim(self):
         overview = REFERENCES["00-overview.md"]
-        must = re.search(r"\*\*MUST — confirm agent-dispatch capability.*", overview)
-        gate = re.search(r"\*\*Dispatch-capability gate \(re-confirm here.*", REFERENCES["04a-dispatch-waves.md"])
-        assert must and gate
-        self.assertIn(must.group(0), CORE)
-        self.assertIn(gate.group(0), CORE)
+        must_confirm_dispatch_rule = re.search(r"\*\*MUST — confirm agent-dispatch capability.*", overview)
+        dispatch_gate_rule = re.search(r"\*\*Dispatch-capability gate \(re-confirm here.*", REFERENCES["04a-dispatch-waves.md"])
+        self.assertIsNotNone(must_confirm_dispatch_rule, "MUST dispatch-capability rule missing from 00-overview.md")
+        self.assertIsNotNone(dispatch_gate_rule, "dispatch-capability gate missing from 04a-dispatch-waves.md")
+        self.assertIn(must_confirm_dispatch_rule.group(0), CORE)
+        self.assertIn(dispatch_gate_rule.group(0), CORE)
         self.assertIn(overview.split("## Progress tracking", 1)[1], CORE)
 
 
-class UpstreamContentGuards(unittest.TestCase):
+class CodeReviewUpstreamContentGuards(unittest.TestCase):
     """The strings upstream's own tests pin in this SKILL.md (tests/skills/test_code_review_*.py and others)."""
 
     def test_parse_arguments_documents_expand(self):
-        args = section(CORE, "## Parse Arguments", "## Progress tracking")
+        args = text_between(CORE, "## Parse Arguments", "## Progress tracking")
         for phrase in ("`--expand <finding-id>|all`", "Tier-2", "no-op under `--json`"):
             self.assertIn(phrase, args)
-        self.assertIn("--expand", CORE.split("---", 2)[1])
+        self.assertIn("--expand", splitter.split_frontmatter(CORE)[0])
 
     def test_sliced_mode_rules(self):
+        step = text_between(CORE, "### 1. Determine target files", "### 2. Pre-flight gates")
         for phrase in ("Auto-engage sliced mode", "sliced-mode.md", "--no-slice", "legacy single-pass", "Exactly at 500 files does not auto-engage"):
-            self.assertIn(phrase, CORE)
-        self.assertIn("never", CORE.split("Non-full-repo scope", 1)[1][:400].lower())
+            self.assertIn(phrase, step)
+        self.assertIn("**Non-full-repo scope** (`--path`, `--since`, auto-scoped uncommitted changes) never auto-engages", step)
 
     def test_tool_probe_names(self):
+        probe = text_between(CORE, "**1c.**", "### 2. Pre-flight gates")
         for phrase in ("mcp__codegraph__codegraph_explore", ".codegraph/", "get_context", "get_symbol", "search_codebase", "get_risk"):
-            self.assertIn(phrase, CORE)
+            self.assertIn(phrase, probe)
 
     def test_static_analysis_pre_pass(self):
-        step = section(CORE, "### 2b. Static analysis pre-pass", "### 3. Determine enabled agents")
+        step = text_between(CORE, "### 2b. Static analysis pre-pass", "### 3. Determine enabled agents")
         for phrase in ("repo_invariants.py", "internal_double_detector.py", "test_review_mechanics.py", "**Test-review mechanical pre-phase (#2169).**"):
             self.assertIn(phrase, step)
         self.assertIn("detected by static analysis", " ".join(step.split("Test-review mechanical pre-phase", 1)[1].split()))
 
     def test_step_4_dispatch_marker_and_ledger(self):
-        step = section(CORE, "### 4. Run each enabled agent", "\n### 5. Aggregate results")
+        step = text_between(CORE, "### 4. Run each enabled agent", "\n### 5. Aggregate results")
         for phrase in ("Files in scope for this review: <path>, <path>, ...", "verdict_scope.py", "--lens-files", "fullySkippedLenses",
                        "Fail closed", 'outcome: "pass"', "dispatched this run", "subject_hash", "pre_pr_review.py"):
             self.assertIn(phrase, step)
         self.assertIn("report loudly", step.lower())
 
     def test_step_5_ledger_skips(self):
-        step = section(CORE, "### 5. Aggregate results", "#### 5a. Apply ACCEPTED-RISKS.md")
+        step = text_between(CORE, "### 5. Aggregate results", "#### 5a. Apply ACCEPTED-RISKS.md")
         self.assertIn("ledgerSkipped", step)
         self.assertIn("does **not** force `overall`", step)
 
     def test_step_5c_condensation(self):
-        step = CORE.split("#### 5c. Consolidate cross-agent findings", 1)[1]
+        step = text_between(CORE, "#### 5c. Consolidate cross-agent findings", "### 6. Present findings")
         self.assertIn("dedup", step.lower())
         self.assertIn("3 lines per finding", step)
 
     def test_verification_mode_contract(self):
         self.assertIn("verification-mode.md", CORE)
 
-    def test_step_7_branches(self):
-        step = section(CORE, "### 7. Generate report", "### 8. Save correction prompts for remaining issues")
-        json_branch, prose = step.split("Otherwise (no `--json`):", 1)
+    def test_step_7_json_branch_is_stdout_only(self):
+        json_branch = text_between(CORE, "### 7. Generate report", "Otherwise (no `--json`):")
         for phrase in ("the JSON object is the ONLY thing printed to stdout", "non-negotiable"):
             self.assertIn(phrase, json_branch)
         self.assertNotIn("render_tiered_findings", json_branch)
         self.assertNotIn("--expand", json_branch)
+
+    def test_step_7_prose_branch_wires_tiered_rendering(self):
+        prose = text_between(CORE, "Otherwise (no `--json`):", "### 8. Save correction prompts for remaining issues")
         for phrase in ("render_tiered_findings.py", "Pass `--expand` through exactly as the caller supplied it", "finding-id not found",
                        "Scope of this wiring: the prose-mode path only.", "already read and write the full finding objects independently",
                        "neither branch calls `render_tiered_findings.py`", "**`--expand` is a no-op under `--json`**",
@@ -147,7 +262,7 @@ class UpstreamContentGuards(unittest.TestCase):
             self.assertIn(phrase, prose)
 
     def test_step_8_untouched_by_tiered_rendering(self):
-        step = section(CORE, "### 8. Save correction prompts for remaining issues", "### 9. Write pre-commit gate file")
+        step = text_between(CORE, "### 8. Save correction prompts for remaining issues", "### 9. Write pre-commit gate file")
         self.assertIn("Skip this entire step if `--json` was set.", step)
         self.assertNotIn("render_tiered_findings", step)
         self.assertNotIn("--expand", step)

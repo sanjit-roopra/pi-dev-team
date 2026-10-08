@@ -1,4 +1,4 @@
-<!-- step 6 (findings prompt) and 6a (review-fix loop, round ledger, closing pass, exit conditions). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Everything below the marker is verbatim. -->
+<!-- step 6 (findings prompt) and 6a (review-fix loop, round ledger, closing pass, exit conditions). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
 <!-- verbatim-below -->
 ### 6. Present findings and ask for direction
 
