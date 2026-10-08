@@ -70,9 +70,9 @@ Arguments: $ARGUMENTS
 | `--all` | Force full-repository review even when uncommitted changes exist |
 | `--slice <N>` / `--resume` / `--no-slice` | Sliced large-repo review: force it with at most N files per slice (module-aligned; `N` a positive integer), resume it (skip slices whose section artifact exists), or never engage it. See [`sliced-mode.md`](sliced-mode.md) |
 | `--json` | Output aggregated JSON to **stdout** instead of prose. Contractually non-interactive (for CI): never prompts; defaults to report-only (no code modified). |
-| `--expand <finding-id>|all` | Prose-mode only (step 7): render Tier-2 (full message + suggested fix) for the named finding-id, or for every finding with `all`, after the Tier-1 report. A no-op under `--json`. Only meaningful in the same run that computed the ids; it never triggers a second panel dispatch. A cold, separate `/code-review --expand <id>` run is a full re-dispatch (steps 1-6 run in full), and ids are not guaranteed to exist or mean the same finding across runs |
+| `--expand <finding-id>|all` | Prose-mode only (step 7): render Tier-2 (full message + suggested fix) for the named finding-id, or for every finding with `all`, after the Tier-1 report. A no-op under `--json`. Only meaningful in the same run that computed the ids: re-invoked in the same conversation with the same scope plus `--expand <id>`, it re-dispatches only what that scope dispatches anyway, and it never triggers a second panel dispatch. A cold, separate `/code-review --expand <id>` run is a full re-dispatch (steps 1-6 run in full), and ids are not guaranteed to exist or mean the same finding across runs |
 | `--pdf` | After the durable report is written, also render it to a sibling PDF (step 7). No-op with a message when no report file is written |
-| `--internal` | Orchestrator-internal dispatch; only `/build` and `/test-improve` pass it (`/ship` writes the report by default, see `knowledge/report-output-location.md`): skip the `.dev-team-reports/code-review.md` write in step 7; the prose and fix-loop path still runs |
+| `--internal` | Orchestrator-internal dispatch; only `/build` and `/test-improve` pass it (`/ship` writes the report by default, see `knowledge/report-output-location.md`): skip the `.dev-team-reports/code-review.md` write in step 7. Orthogonal to `--json`: alone, the prose and fix-loop path still runs |
 | `--init-risks` | Scaffold `ACCEPTED-RISKS.md` from `templates/ACCEPTED-RISKS.md.tmpl` if absent. Exits non-zero without overwriting if present. Schema: `knowledge/accepted-risks-schema.md` |
 | `--force` | Skip pre-flight gates **and the documentation-only short-circuit**. **Requires `--reason "<text>"`** — logged to `.claude/metrics/override-audit.jsonl` |
 | `--reason "<text>"` | Override justification (required with `--force`) |
@@ -132,7 +132,7 @@ Otherwise run in sequence, stop on the first failure, and skip a gate silently w
 
 1. **Lint**: `npx eslint` (or the project lint command) on target files.
 2. **Type check**: `npx tsc --noEmit` if `tsconfig.json` exists.
-3. **Secret scan**: with `gitleaks` installed, run the canonical invocation from [`skills/static-analysis-integration/references/tool-configs.md`](../static-analysis-integration/references/tool-configs.md) § gitleaks; any finding on a target file fails the gate; report rule id and `file:line` only, **never echo the matched secret value**; record that gitleaks ran and do not run it again in 2b. Without gitleaks, grep with the pattern in [`knowledge/owasp-detection.md`](../../knowledge/owasp-detection.md) § Hardcoded-key pattern (the fenced block, not the table row: table cells escape `|` as `\|`, a literal pipe rather than alternation) and say in the report that the fallback ran.
+3. **Secret scan**: with `gitleaks` installed, run the canonical invocation (one documented command, not a variant of it) from [`skills/static-analysis-integration/references/tool-configs.md`](../static-analysis-integration/references/tool-configs.md) § gitleaks; any finding on a target file fails the gate; report rule id and `file:line` only, **never echo the matched secret value**; record that gitleaks ran and do not run it again in 2b. Without gitleaks, grep with the pattern in [`knowledge/owasp-detection.md`](../../knowledge/owasp-detection.md) § Hardcoded-key pattern (the fenced block, not the table row: table cells escape `|` as `\|`, a literal pipe rather than alternation) and say in the report that the fallback ran.
 4. **Semgrep SAST**: `semgrep scan --config auto --quiet --json` on target files if installed. ERROR → fail. WARNING → continue, include in report, save for security-review.
 5. **Pipeline-red check**: `gh run list --branch $(git branch --show-current) --limit 1 --json conclusion -q '.[0].conclusion'`. If the last run failed, warn: "Pipeline is red. Fix CI before adding new code. Use `--force` to override."
 
@@ -301,7 +301,7 @@ If `ACCEPTED-RISKS.md` exists, apply its `rules:` per `knowledge/accepted-risks-
 SUPPRESSED: <file>:<line> [<rule_id>] by ACCEPTED-RISKS rule <rule.id>
 ```
 
-Expired rules stop suppressing and get a WARN plus an Expiry Report entry; `broad: true` rules get a notice; a schema-invalid rule fails the run. Suppressed findings leave scoring and the fix loop and are listed under "Suppressed by ACCEPTED-RISKS".
+Expired rules stop suppressing and get a WARN naming the rule and owner, plus an Expiry Report entry; `broad: true` rules get a notice; a schema-invalid rule fails the run. Suppressed findings leave scoring and the fix loop and are listed under "Suppressed by ACCEPTED-RISKS", grouped by rule id.
 
 #### 5b. Health scoring
 
@@ -317,6 +317,8 @@ python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/review_round_log.py" \
   --findings <path-to-this-round's-findings.json> \
   --purpose discovery --outcome "<fixed|no-op|escalated>"
 ```
+
+Round 1 never passes `--fix-diff`: it has no preceding fix.
 
 #### 5c. Consolidate cross-agent findings
 

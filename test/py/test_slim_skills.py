@@ -332,6 +332,10 @@ class CodeReviewUpstreamContentGuards(unittest.TestCase):
         self.assertIn("continue to step 9", text_between(CORE, "### 7. Generate report", "Otherwise (no `--json`):"))
         self.assertIn("**Not skipped by `--json`.**", text_between(CORE, "### 9. Write pre-commit gate file", "```bash"))
 
+    def test_dispatch_failures_are_not_scored_and_the_report_follows_its_convention(self):
+        self.assertIn("They are not agent results", text_between(CORE, "### 5. Aggregate results", "#### 5a."))
+        self.assertIn("Following `knowledge/report-output-location.md`", text_between(CORE, "### 7. Generate report", "### 8."))
+
     def test_deterministic_triage_keeps_its_escape(self):
         step = text_between(CORE, "### 6a. Review-fix loop", "### 7. Generate report")
         for phrase in ("**all three** hold", "the check cannot fully close the question"):
