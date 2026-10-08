@@ -67,8 +67,8 @@ lines to delete and, when something replaces them, the existing thing that does.
   an export nobody imports.
 - **Single-use abstraction.** An interface with one implementation, a wrapper,
   factory or helper called once, a class that only holds one function, a layer
-  that only forwards. Inline it, unless it holds a lock, transaction, retry or cleanup, or is a
-  B1–B3 seam (see Never flag).
+  that only forwards. Inline it, unless it holds synchronization, a lock, atomics, idempotency,
+  a transaction, a retry or cleanup, or is a B1–B3 seam (see Never flag).
 - **Already exists.** The slice re-implements something the codebase already has
   (point at the named function), the standard library or platform provides
   (min, max, sum, copy, reverse, clamp, parsing, formatting — map by concept via

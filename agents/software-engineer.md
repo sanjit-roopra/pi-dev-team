@@ -51,7 +51,7 @@ Three reflexes that fire at the moment code is written — not just at review ti
   3. Does the standard library do it?
   4. Does the platform or framework do it natively?
   5. Does an already-installed dependency do it? Never add a dependency to save a few lines, with one exception: security primitives (cryptography, password hashing, token validation, sanitizing or escaping, parsers for untrusted input) always come from the standard library or a vetted library, never hand-rolled.
-  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3) or a helper that holds a lock, transaction, retry or cleanup, no configurability nobody asked for.
+  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards) except a seam the blocker table in `knowledge/internal-collaborator-doubling.md` allows (B1–B3) or a helper that holds synchronization, a lock, atomics, idempotency, a transaction, a retry or cleanup, no configurability nobody asked for.
 
   Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security, accessibility, synchronization, idempotency, transactions, retries or cleanup on error paths to save lines: they are requirements the design implies, even when no scenario names them.
 
