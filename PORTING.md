@@ -83,6 +83,8 @@ The dispatch tool is named `dev_team_subagent` so this package can coexist with 
 |---|---|
 | Skills `agent-audit`, `agent-eval`, `harness-e2e-check`, `long-eval`, `orchestration-benchmark`, `claude-setup-review` | Test or audit Claude Code's own harness and plugin layout. The agent files `claude-setup-review` and `session-analysis` still ship (agents stay byte-identical) but nothing in the port dispatches them |
 | Skill `session-review` | Mines `~/.claude/projects` transcripts. A pi session backend for `session_log` is future work |
+
+`devtools/pi_session_report.py` is a separate, maintainer-only reader for pi session logs (debugging a run, measuring which skill steps ran). It is not a `session_log` backend and does not feed `session-review`. It lives outside the managed directories, so the sync never touches it, and it is not in the npm package. The `debug-pi-session` skill in `.agents/skills/` (linked into `.claude/skills/`) is likewise port-owned and dev-only.
 | Hook `mcp_json_repowise_nudge` | About Claude's `.mcp.json` |
 | Hooks `code_intelligence_nudge`, `code_intelligence_turn_mark`, `phase_marker` | Need Claude transcript turn structure; nudges only. Off by default, can be re-enabled |
 | Monorepo-only hooks (`contract_version_guard`, `pre_commit_knowledge_index`, `knowledge_index`, `skills_index`, both banned-script scanners, `eval_compliance_check`) | Only act inside the upstream repo itself. Shipped but disabled by default |

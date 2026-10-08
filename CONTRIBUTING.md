@@ -57,15 +57,15 @@ You can also run the upstream Python test suite against the files of this packag
 
 ## Debug a recorded session
 
-`devtools/session_report.py` reads the session logs that pi writes to `~/.pi/agent/sessions/` and reports what dev-team did in them: each session's cost and failed dispatches, the timeline of one session, which skills filled the context and for how long, and which steps of a skill actually ran. It only reads the logs.
+`devtools/pi_session_report.py` reads the session logs that pi writes and reports what dev-team did in them: each session's cost, failed dispatches and blocks, the timeline of one session, which skills filled the context and for how long, and which steps of a skill actually ran. It only reads the logs. It looks in `--sessions-dir`, else `$PI_CODING_AGENT_DIR/sessions`, else `~/.pi/agent/sessions`.
 
 ```bash
-python3 devtools/session_report.py projects
-python3 devtools/session_report.py timeline latest -p <project>
-python3 devtools/session_report.py branches -p <project> -s build --outputs build_jobs.py
+python3 devtools/pi_session_report.py projects
+python3 devtools/pi_session_report.py timeline latest -p <project>
+python3 devtools/pi_session_report.py steps -p <project> -s build --outputs build_jobs.py
 ```
 
-The `debug-pi-session` skill (`.agents/skills/`, linked into `.claude/skills/` for Claude Code) tells an agent how to use it and how to read the numbers. The script lives in `devtools/` because the sync replaces `scripts/`, and it is not part of the npm package.
+The `debug-pi-session` skill (`.agents/skills/`, linked into `.claude/skills/` for Claude Code) tells an agent how to use it and how to read the numbers. The script lives in `devtools/` because the sync replaces `scripts/` (which also has an unrelated upstream `session_report.py`), and it is not part of the npm package.
 
 ## Release a new version
 
