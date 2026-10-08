@@ -55,6 +55,18 @@ You can also run the upstream Python test suite against the files of this packag
      --with jsonschema --with pyyaml python -m pytest -n 8 plugins/dev-team/tests/{hooks,scripts,lib}
    ```
 
+## Debug a recorded session
+
+`devtools/pi_session_report.py` reads the session logs that pi writes and reports what dev-team did in them: each session's cost, failed dispatches and blocks, the timeline of one session, which skills filled the context and for how long, and which steps of a skill actually ran. It only reads the logs. It looks in `--sessions-dir`, else `$PI_CODING_AGENT_DIR/sessions`, else `~/.pi/agent/sessions`.
+
+```bash
+python3 devtools/pi_session_report.py projects
+python3 devtools/pi_session_report.py timeline latest -p <project>
+python3 devtools/pi_session_report.py steps -p <project> -s build --outputs build_jobs.py
+```
+
+The `debug-pi-session` skill (`.agents/skills/`, linked into `.claude/skills/` for Claude Code) tells an agent how to use it and how to read the numbers. The script lives in `devtools/` because the sync replaces `scripts/` (which also has an unrelated upstream `session_report.py`), and it is not part of the npm package.
+
 ## Release a new version
 
 A GitHub Actions workflow (`.github/workflows/publish.yml`) stages the package on npm when you push a `v*` tag. The workflow uses npm trusted publishing, so the repository has no npm token. A staged version is not live until a maintainer approves it with 2FA. So a stolen GitHub login or a bad workflow change cannot put a version live by itself.
