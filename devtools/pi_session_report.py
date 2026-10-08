@@ -55,11 +55,13 @@ HOOK_FEEDBACK_HEADER = "dev-team hook feedback (must address)"  # PostToolUse bl
 # PreToolUse blocks. A hook from hooks/hooks.json blocks with an error result "[<hook>] <reason>" (hooks.ts);
 # the GitHub style gate blocks with its own feedback text; a hook on an agent dispatch blocks inside the
 # dev_team_subagent result (subagent.ts), which writes no usage entry.
-HOOK_BLOCK_RE = re.compile(r"^\[([\w.-]+)\] ")
+HOOK_BLOCK_RE = re.compile(r"^\[([\w.-]+)\] ")  # stored as the bare reason; seen in real sessions
 GITHUB_STYLE_BLOCK_PREFIX = "dev-team GitHub style:"
 DISPATCH_BLOCK_MARKER = "Dispatch blocked by hook:"
+# Where subagent.ts formats a failed task's error: one task, or a section of a parallel call.
+DISPATCH_BLOCK_TEXT_RE = re.compile(r"(?m)(?:^Agent \S+ failed: |^Error: )" + re.escape(DISPATCH_BLOCK_MARKER))
 HOOKS_JSON = Path(__file__).resolve().parent.parent / "hooks" / "hooks.json"
-HOOK_SCRIPT_RE = re.compile(r"hooks/([\w-]+)\.py")
+HOOK_SCRIPT_RE = re.compile(r"hooks/([\w.-]+)\.py")
 DEV_TEAM_SIGNATURES = (USAGE_ENTRY, SESSION_START_MESSAGE, "pi-dev-team/skills/")
 
 BASH_TOOL = "bash"
@@ -186,14 +188,22 @@ class ToolCall:
     @property
     def guard_blocked(self) -> bool:
         """Stopped before it ran by a PreToolUse hook, the GitHub style gate, or a hook on an agent dispatch."""
-        if self.name == SUBAGENT_TOOL and DISPATCH_BLOCK_MARKER in self.result:
-            return True
+        if self.name == SUBAGENT_TOOL:
+            return self.dispatch_blocked
         if not self.is_error:
             return False
         if self.result.startswith(GITHUB_STYLE_BLOCK_PREFIX):
             return True
         hook = HOOK_BLOCK_RE.match(self.result)
         return bool(hook) and (hook.group(1) in known_hook_names() or not known_hook_names())
+
+    @property
+    def dispatch_blocked(self) -> bool:
+        """A hook stopped at least one task of this dispatch; never the agent's own output quoting the marker."""
+        results = self.details.get("results")
+        if isinstance(results, list) and results:
+            return any(isinstance(r, dict) and str(r.get("error") or "").startswith(DISPATCH_BLOCK_MARKER) for r in results)
+        return bool(DISPATCH_BLOCK_TEXT_RE.search(self.result))
 
     @property
     def blocked(self) -> bool:
@@ -316,7 +326,7 @@ def skill_name(call: ToolCall) -> str:
 
 def skill_loads(active: list[dict], calls: list[ToolCall]) -> list[SkillLoad]:
     call_at = {c.entry_index: c for c in calls}
-    position_by_id = positions(active)
+    position_by_id = index_by_entry_id(active)
     loads = []
     for index, entry in enumerate(active):
         slash = slash_skill(message_of(entry))
@@ -332,7 +342,7 @@ def skill_loads(active: list[dict], calls: list[ToolCall]) -> list[SkillLoad]:
     return loads
 
 
-def positions(active: list[dict]) -> dict:
+def index_by_entry_id(active: list[dict]) -> dict[str, int]:
     return {e.get("id"): i for i, e in enumerate(active)}
 
 
@@ -420,11 +430,15 @@ def pick_session(root: Path, query: str, project: str | None) -> Path:
     raise SystemExit(f"{len(hits)} sessions match {query!r}; give more of the id, or -p PROJECT with 'latest'")
 
 
+def normalize_bound(bound: str | None) -> str | None:
+    return bound.replace(" ", "T").removesuffix("Z") if bound else None
+
+
 def in_window(timestamp: str, since: str | None, until: str | None) -> bool:
-    """`timestamp` is the header's ISO start; bounds are ISO date or date-time prefixes ('T' or a space), `until` inclusive."""
-    since = since.replace(" ", "T") if since else since
-    until = until.replace(" ", "T") if until else until
-    return (not since or timestamp >= since) and (not until or timestamp[: len(until)] <= until)
+    """`timestamp` is the header's ISO start ('...T14:07:47.782Z'). Bounds are ISO date or date-time prefixes
+    ('T' or a space, optional 'Z'), compared at the bound's own precision; both are inclusive."""
+    since, until = normalize_bound(since), normalize_bound(until)
+    return (not since or timestamp[: len(since)] >= since) and (not until or timestamp[: len(until)] <= until)
 
 
 def project_sessions(root: Path, query: str, dev_team_only: bool = True, since: str | None = None, until: str | None = None) -> Iterator[Session]:

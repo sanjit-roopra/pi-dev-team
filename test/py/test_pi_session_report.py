@@ -160,7 +160,7 @@ class SessionModel(Base):
     def test_compaction_keeps_entries_from_first_kept(self):
         active = [message_entry("l", None, "user", "load"), assistant_entry("a", "l"),
                   {"type": "compaction", "id": "k", "parentId": "a", "firstKeptEntryId": "l"}, assistant_entry("b", "k")]
-        self.assertEqual(report.turns_in_context(active, 0, report.positions(active)), 2)
+        self.assertEqual(report.turns_in_context(active, 0, report.index_by_entry_id(active)), 2)
 
     def test_skill_name_prefers_resolved_name_then_strips_prefixes(self):
         resolved = report.ToolCall(0, "skill", {"name": "cr"}, "", False, {"skill": "code-review"})
@@ -225,6 +225,14 @@ class SessionsReport(Base):
         self.assertEqual(count("--since", "2026-10-07T14:00:30"), 0)
         self.assertEqual(count("--since", "2026-10-07 14:00"), 1)
         self.assertEqual(count("--until", "2026-10-07 13:59"), 0)
+
+    def test_window_with_millisecond_header_and_z_bounds(self):
+        entries = [header_entry("2026-10-07T14:00:00.500Z"), *main_session()[1:]]
+        write_session(self.root, "ms", entries)
+        count = lambda *bounds: len(self.run_cli("sessions", "-p", "ms", *bounds))
+        self.assertEqual(count("--since", "2026-10-07T14:00:00Z"), 1)
+        self.assertEqual(count("--until", "2026-10-07T14:00:00Z"), 1)
+        self.assertEqual(count("--until", "2026-10-07T13:59:59Z"), 0)
 
     def test_window_applies_to_skills_and_steps(self):
         self.assertEqual(self.run_cli("skills", "-p", "shop", "--since", "2026-10-08"), [])
@@ -315,6 +323,25 @@ class TimelineReport(Base):
         events = self.run_cli("timeline", "latest", "-p", "shop", "--tools")
         self.assertIn("app.py -> ~0 tok", [e["text"] for e in events if e["kind"] == "edit"])
 
+    def test_single_dispatch_forms(self):
+        entries = [
+            header_entry(),
+            message_entry("u1", None, "user", slash_skill_text("code-review")),
+            assistant_entry("a1", "u1", [
+                tool_call_block("c1", "dev_team_subagent", {"agent": "security-review", "task": "scan"}),
+                tool_call_block("c2", "dev_team_subagent", {"subagent_type": "doc-review", "prompt": "read"}),
+                tool_call_block("c3", "dev_team_subagent", {"task": "who"}),
+            ]),
+            tool_result_entry("r1", "a1", "c1", "dev_team_subagent", "ok"),
+            tool_result_entry("r2", "r1", "c2", "dev_team_subagent", "ok"),
+            tool_result_entry("r3", "r2", "c3", "dev_team_subagent", "ok"),
+        ]
+        write_session(self.root, "single", entries)
+        texts = [e["text"] for e in self.run_cli("timeline", "latest", "-p", "single") if e["kind"] == report.EVENT_DISPATCH]
+        self.assertEqual(texts, ["security-review: scan", "doc-review: read", "?: who"])
+        activity = {a["activity"]: a["runs"] for a in self.run_cli("steps", "-p", "single", "-s", "code-review")["activity"]}
+        self.assertEqual((activity["dispatch security-review"], activity["dispatch doc-review"], activity["dispatch ?"]), (1, 1, 1))
+
     def test_untrusted_text_loses_control_characters(self):
         entries = [header_entry(), message_entry("u", None, "user", "hi \x1b]52;c;evil\x07 \u202e"),
                    {"type": "model_change", "id": "m", "parentId": "u", "provider": "x\x1b[2J", "modelId": "y"}]
@@ -322,6 +349,21 @@ class TimelineReport(Base):
         text = self.run_cli("timeline", "latest", "-p", "esc", as_json=False)
         for char in ("\x1b", "\x07", "\u202e"):
             self.assertNotIn(char, text)
+
+    def test_steps_and_tables_lose_control_characters(self):
+        evil = "\x1b]52;c;evil\x07\u202e"
+        entries = [
+            header_entry(f"2026-10-07T14:00:00Z{evil}"),
+            message_entry("u1", None, "user", slash_skill_text("code-review")),
+            assistant_entry("a1", "u1", [tool_call_block("c1", "read", {"path": f"/x/skills/code-review/references/a{evil}.md"})]),
+            tool_result_entry("r1", "a1", "c1", "read", "text"),
+        ]
+        write_session(self.root, "evil", entries)
+        for argv in (("steps", "-p", "evil", "-s", "code-review"), ("skills", "-p", "evil"), ("sessions", "-p", "evil"), ("projects",)):
+            text = self.run_cli(*argv, as_json=False)
+            for char in ("\x1b", "\x07", "\u202e"):
+                with self.subTest(argv=argv, char=repr(char)):
+                    self.assertNotIn(char, text)
 
     def test_secret_shapes_are_masked(self):
         cases = {
@@ -374,8 +416,20 @@ class BlockDetection(unittest.TestCase):
     def test_github_style_block(self):
         self.assertTrue(self.call("bash", f"{report.GITHUB_STYLE_BLOCK_PREFIX} rewrite the text").blocked)
 
-    def test_blocked_dispatch_without_error_flag(self):
-        self.assertTrue(self.call("dev_team_subagent", f"doc-review: {report.DISPATCH_BLOCK_MARKER}\n[x] no", is_error=False).blocked)
+    def test_blocked_dispatch_from_details(self):
+        details = {"results": [{"agent": "a", "ok": True}, {"agent": "b", "ok": False, "error": f"{report.DISPATCH_BLOCK_MARKER}\n[x] no"}]}
+        call = report.ToolCall(0, "dev_team_subagent", {}, "### b — failed", False, details)
+        self.assertTrue(call.blocked)
+
+    def test_blocked_dispatch_from_text_without_details(self):
+        self.assertTrue(self.call("dev_team_subagent", f"Agent b failed: {report.DISPATCH_BLOCK_MARKER}\n[x] no").blocked)
+        self.assertTrue(self.call("dev_team_subagent", f"### b — failed\n\nError: {report.DISPATCH_BLOCK_MARKER}\n[x] no", is_error=False).blocked)
+
+    def test_dispatch_output_quoting_the_marker_is_not_a_block(self):
+        quoted = f"The tool checks for `{report.DISPATCH_BLOCK_MARKER}` in results."
+        self.assertFalse(self.call("dev_team_subagent", quoted, is_error=False).blocked)
+        details = {"results": [{"agent": "a", "ok": True, "output": quoted}]}
+        self.assertFalse(report.ToolCall(0, "dev_team_subagent", {}, quoted, False, details).blocked)
 
     def test_feedback_header_in_successful_output_is_not_a_block(self):
         read = self.call("read", f"docs mention {report.HOOK_FEEDBACK_HEADER} here", is_error=False)
