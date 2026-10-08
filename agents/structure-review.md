@@ -75,7 +75,7 @@ DRY violations (rule of three):
 
 Coupling issues:
 
-- Hardcoded dependencies on a process boundary (network, clock, filesystem, randomness, external service) that a test cannot replace. A first-party collaborator constructed inline is not a finding
+- A hardcoded collaborator that the blocker table in `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md` lets a test double (B1 out-of-process handle, B2 ambient state, B3 prohibitive cost), so a test cannot replace it. Other first-party collaborators constructed inline are not a finding
 - Circular dependencies
 - Change propagation across modules
 
@@ -115,18 +115,16 @@ Design smells:
 - For SRP violations and coupling issues, map to the smell → pattern table in `${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md#design-smells-pattern-mapping`. Every finding should name the smell, quote the code, and include a refactor sketch.
 - For method-level issues (nesting, long methods, flag arguments), check Object Calisthenics rules 1-2 and 7 in `${CLAUDE_PLUGIN_ROOT}/knowledge/object-calisthenics.md`. Whole-file load: the nine-rule catalog is short enough that the agent reads the whole file rather than picking specific rule anchors.
 
-Lean fix rule (production code only):
+**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads it, report it, never auto-apply it, and keep it out of the fix loop, overriding the actionability table in `knowledge/three-phase-workflow.md` § Review Loop. `error` findings are unaffected. Exempt: fixes that correct behavior (a bug, a missing check, a security or accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers.
 
-- A fix that restructures code (extract a function, split a module, introduce a type, interface, parameter object, wrapper or layer) must remove at least as many production lines as it adds, or it is a `suggestion`, never a `warning` or `error`.
-- Never propose an abstraction for a single use: one implementation, one caller, one value.
-- Test files are out of scope for this rule.
+Emit such findings as `suggestion` with confidence `none` yourself. Never propose an abstraction for a single use (one implementation, one caller, one value), except a seam the blocker table allows.
 
 ## Authoring checklist
 
 Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` surfaces these per diff.
 
-- One responsibility per function/module; split when you need "and" to describe it.
-- Inject only what crosses a process boundary (network, clock, filesystem, randomness); construct first-party collaborators directly.
+- One responsibility per module; inside a function, prefer early returns to new helpers. Extract a helper when it gets a second caller or separates I/O from logic.
+- Inject only what the blocker table (B1–B3 in `knowledge/internal-collaborator-doubling.md`) allows doubling: out-of-process handles, ambient state (clock, RNG, env, locale), prohibitive cost. Construct other first-party collaborators directly.
 - Max ~2 nesting levels; early-return over else-chains.
 - Two copies are fine; extract at the third, or at the second when both encode the same business rule.
 
@@ -136,8 +134,8 @@ After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROO
 
 - Did you check every module/class for SRP violations, including small ones?
 - Did you trace dependency direction? Does business logic depend on infrastructure (not just vice versa)?
-- Are there hidden static singletons or global state that aren't injected?
-- For every "duplicate code" finding, did you verify it's semantic duplication and not just structural similarity?
+- Are there hidden static singletons or global state wrapping a B1–B3 collaborator that aren't injected?
+- For a two-copy duplication finding, did you apply the semantic test? For three or more copies, did you confirm they are really the same block?
 - Did you check constructor parameter counts? >5 parameters usually signals SRP violation.
 - Are there God objects/Megaclasses you walked past because they're "just how the code is"?
 - For each nesting-depth finding, did you count the actual levels (>3) rather than estimating by appearance?

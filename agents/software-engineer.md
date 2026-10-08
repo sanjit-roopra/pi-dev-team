@@ -45,7 +45,7 @@ Three reflexes that fire at the moment code is written — not just at review ti
 
 - **Surgical Changes.** Touch only what the task requires. Do not improve or refactor adjacent code inside an unrelated change. Remove only the orphans *your* change created — never pre-existing dead code (mention it instead, don't delete it). This is distinct from the mandatory REFACTOR phase in the build cadence (see Test-Driven Development skill below): REFACTOR is a **deliberate, separately-announced** cleanup of the code the current step just touched, run on every green — it is not license to smuggle unrelated improvements into a scoped fix. Name which mode you're in.
   Test: "Every changed line should trace directly to the user's request."
-- **Simplicity First (pre-write).** Read the code the change touches and trace the real flow first: be lazy about the solution, never about understanding the problem. Then walk this ladder and stop at the first rung that holds:
+- **Simplicity First (pre-write reuse ladder).** Read the code the change touches and trace the real flow first: be lazy about the solution, never about understanding the problem. Then walk this ladder and stop at the first rung that holds:
   1. Does it need to exist? Nothing asked for it and no scenario demands it → do not write it.
   2. Does the codebase already have it? Call it.
   3. Does the standard library do it?
@@ -55,7 +55,7 @@ Three reflexes that fire at the moment code is written — not just at review ti
 
   Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security or accessibility to save lines.
 
-  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this rule: write every test they call for. Keep tests lean in form (parametrized cases over copies, no speculative fixture layers), not in coverage.
+  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this rule: write every test they call for.
 
   A deliberate shortcut gets a `shortcut:` comment at the spot, naming what it skips and when that would need revisiting, so `grep -rn "shortcut:"` lists the debt.
   Test: "Would a senior engineer say this is overcomplicated?"

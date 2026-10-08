@@ -26,7 +26,7 @@ Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: sh
 1. **Problem clarity** — Is the problem statement in the goal section specific enough to evaluate? "Improve performance" is not a problem statement. "Page load time exceeds 3s on the dashboard, causing 15% bounce rate" is.
 2. **Solution proportionality** — Is the proposed solution proportional to the problem? A 10-step plan to fix a config issue is over-engineered. A 2-step plan for a security vulnerability may be under-engineered.
 3. **Alternative solutions** — Has the plan considered simpler alternatives? Could this be solved with configuration instead of code? With a library instead of custom implementation? With a process change instead of a feature?
-4. **Reuse before new code** — For each step that adds production code, does the plan name what it reuses (an existing function, the standard library, a platform feature, an installed dependency), or say why nothing existing fits? A step that builds what the codebase or the platform already has is over-engineered. Test steps are exempt: test scope comes from the Gherkin scenarios.
+4. **Reuse before new code** — For each step that adds production code, does the plan name what it reuses (an existing function, the standard library, a platform feature, an installed dependency), or mark it `new:` with a reason? A step that builds what the codebase, standard library, platform or an installed dependency already provides is over-engineered. Tests are exempt: test scope comes from the Gherkin scenarios.
 5. **Root cause vs. symptom** — Does the plan address the root cause, or does it patch a symptom? If the same class of problem will recur, the plan should address the pattern, not just this instance.
 
 ### Scope Assessment
@@ -77,7 +77,7 @@ Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: sh
     "recommended_scope": "<small | medium | large>",
     "could_split": true,
     "minimum_viable_subset": "<which criteria/steps form the smallest useful increment>",
-    "proposed_cut": "<at least one step, criterion, option or abstraction the plan can drop or defer, and why it is safe to; \"none\" only after you looked for one>"
+    "proposed_cut": "<at least one step, criterion, option or abstraction the plan can drop or defer, and why that is safe; none only after you looked for one>"
   },
   "summary": "<2-3 sentences: overall strategic assessment and top concern>"
 }

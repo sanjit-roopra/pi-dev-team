@@ -8,7 +8,7 @@ effort: high
 color: green
 ---
 
-# Refactor Opportunity Review (simplify)
+# Refactor Opportunity Review: the simplify lens
 
 Scope: on-demand
 Cites:
@@ -34,9 +34,10 @@ expression) is not a finding.
 
 Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
-Status: pass=nothing to remove, warn=removable code found, fail=never (this lens does not block)
-Severity: warning=removable with a clear, behavior-preserving fix; suggestion=removal needs a judgment call (is this option really unused? is the layer really pass-through?)
-Confidence: high=mechanical (unused, unreachable, duplicate of a named function); medium=judgment; none=needs domain knowledge
+Status: pass=nothing to remove, warn=only judgment-call removals, fail=at least one mechanical removal (so `/build`'s checkpoint fix loop applies it)
+Severity: error=mechanical, behavior-preserving removal (unused, unreachable, a duplicate of a named function or a built-in); warning=removal that needs a judgment call (is this option really unused? is the layer really pass-through?); suggestion=needs domain knowledge
+Confidence: high=mechanical; medium=judgment; none=needs domain knowledge
+Category: not-needed | single-use-abstraction | already-exists | dead-code | redundant-code
 
 Context needs: full-file
 
@@ -72,9 +73,6 @@ lines to delete and, when something replaces them, the existing thing that does.
   (min, max, sum, copy, reverse, clamp, parsing, formatting — map by concept via
   the cheat-sheet, never by one language's syntax), or an installed dependency
   provides. Never propose adding a dependency.
-- **Semantic duplication.** The same business rule written twice in the slice.
-  Merge only when "if the rule changes, both copies must change" holds and the
-  merge removes lines; structural look-alikes stay.
 - **Dead code.** Unreachable branches, unused variables, commented-out code the
   slice introduced. Pre-existing dead code is out of scope: mention it in
   `summary`, do not flag it.
@@ -105,11 +103,10 @@ After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROO
 - Is the result at least as readable as before? A shorter but harder-to-read result is a dropped finding.
 - For "not needed": did you grep for every caller before calling an option or branch unused?
 - For "already exists": did you name the existing function, or confirm the built-in exists in the project's language *and version* (Go <1.21 has no `min`/`max`)?
-- For duplication: did you apply the semantic test, not just visual similarity?
 - Did you stay out of test files and out of code the slice did not touch?
 
 Append confidence level (High/Medium/Low) to the `summary` field.
 
 ## Ignore
 
-Naming (naming-review), test quality (test-review), architecture (arch-review), security (security-review), additive restructuring (structure-review). This agent only removes production code.
+Naming (naming-review), test quality (test-review), architecture (arch-review), security (security-review), duplication and additive restructuring (structure-review). Extraction or code-structure work that other lenses or knowledge files hand to `refactor-opportunity-review` goes to structure-review, under the lean fix rule. This lens only removes production code.

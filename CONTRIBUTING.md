@@ -33,10 +33,18 @@ The package is a compatibility runtime, not a rewrite. A compatibility runtime g
 
 If a patch no longer matches the upstream text, the sync stops with an error. Update that entry in `PATCHES`, then run the sync again.
 
-If upstream changed a file that this package overrides, the sync also stops and names the file. For `skills/code-review/SKILL.md`, the slim core:
+If upstream changed a file that this package overrides, the sync also stops and names the file. For an agent or hook override (`overrides/agents/`, `overrides/hooks/`):
+
+1. Read the upstream change: `git -C ../agentic-dev-team diff <commit in UPSTREAM.json> HEAD -- plugins/dev-team/<file>`.
+2. Carry it into the override.
+3. Put the new upstream sha256 (`shasum -a 256 ../agentic-dev-team/plugins/dev-team/<file>`) in `OVERRIDE_BASES`, then run the sync and the tests.
+
+A new override of an upstream agent needs an `OVERRIDE_BASES` entry too; `test_every_upstream_agent_override_is_pinned_and_shipped` fails without it. Prefer a `PATCHES` or `LEAN_PATCHES` entry when the change is a few anchored lines: upstream changes elsewhere in the file then still flow through.
+
+For `skills/code-review/SKILL.md`, the slim core:
 
 1. Regenerate the reference files from the new upstream text: `python3 sync/split_skill_references.py code-review --upstream ../agentic-dev-team`. If upstream renamed a heading the split starts at, the script stops before it writes anything; update `SPLITS` in that script. On success it prints the `OVERRIDE_BASES` line with the new sha256.
-2. Read the upstream diff of that file and carry every change in a command, a rule or a pinned phrase into `overrides/skills/code-review/SKILL.md`. Copy the upstream frontmatter into the core unchanged: the references do not store it, so the byte-for-byte check rebuilds upstream from the core's frontmatter. Recheck the core's named exceptions to upstream text (today: step 9 under `--json`) and drop any that upstream fixed; `test_json_step_9_exception_still_matches_upstream` fails when that text changes.
+2. Read the upstream diff of that file and carry every change in a command, a rule or a pinned phrase into `overrides/skills/code-review/SKILL.md`. Copy the upstream frontmatter into the core unchanged: the references do not store it, so the byte-for-byte check rebuilds upstream from the core's frontmatter. Recheck the core's named exceptions to upstream text (today: step 9 under `--json`, and the lean fix rule) and drop any that upstream fixed; `test_json_step_9_exception_still_matches_upstream` fails when that text changes.
 3. Put the printed sha256 in `OVERRIDE_BASES` in `sync/sync_upstream.py`.
 4. Run the sync again, then the tests. `test/py/test_slim_skills.py` fails when a reference is missing or changed, when a core command differs from upstream's, when the core drops a command, a reference or a read trigger, or when it loses a phrase that upstream's content tests pin.
 

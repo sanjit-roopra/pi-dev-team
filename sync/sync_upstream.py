@@ -62,13 +62,137 @@ OVERRIDE_BASES: dict[str, str] = {
     "hooks/guards.json": "03916b358d3f5c5036d9517222d469f85404dc3c9cde1364dfb4d3bc7422c54b",
     # Slim core + verbatim references (sync/split_skill_references.py); re-port when upstream changes it.
     "skills/code-review/SKILL.md": "97d0b514bef1a8b9ee18c8e6d043419c0c43fffd1ab701aea3beaf5f9edb6303",
-    # Lean production code: reuse ladder, simplify lens, rule of three, lean fix rule (PORTING.md section 3).
-    "agents/plan-review-strategic.md": "4b93d06735d5da51568a8efac8b5d9cb1e6f2677a20939b6fa0aacaef0990b83",
-    "agents/quality-reviewer.md": "25c4f144c4b8c074ae5056bbf4dfdb8d70ad86b3040762d42f4c9ab3beb40310",
+    # The simplify lens (PORTING.md section 5); the other lean-code agent edits are LEAN_PATCHES.
     "agents/refactor-opportunity-review.md": "e25b0d4ffe63dd4afd6a4dde59961145b2eb89d02e7523fadcd98e5b2d376f35",
-    "agents/software-engineer.md": "c90d86b63183f8a6257288e1b293b16c30a999e15556227592d11446caf86f97",
-    "agents/structure-review.md": "537783f00a249dbf57cabe683f84293c7ed10bc6c50a8f4493a5a95f76bb1c49",
 }
+
+# Lean production code (PORTING.md section 5): the lean fix rule, word for word as in the code-review core, and
+# the agent edits that carry it. Production code only; test scope stays with the Gherkin scenarios and the mutation gate.
+LEAN_FIX_RULE = (
+    "**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a "
+    "module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it "
+    "removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads "
+    "it, report it, never auto-apply it, and keep it out of the fix loop, overriding the actionability table in "
+    "`knowledge/three-phase-workflow.md` § Review Loop. `error` findings are unaffected. Exempt: fixes that correct "
+    "behavior (a bug, a missing check, a security or accessibility gap); a seam for a collaborator the blocker table in "
+    "`knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files "
+    "(`knowledge/test-file-indicators.md`), fixtures and test helpers."
+)
+REUSE_LADDER = """- **Simplicity First (pre-write reuse ladder).** Read the code the change touches and trace the real flow first: be lazy about the solution, never about understanding the problem. Then walk this ladder and stop at the first rung that holds:
+  1. Does it need to exist? Nothing asked for it and no scenario demands it → do not write it.
+  2. Does the codebase already have it? Call it.
+  3. Does the standard library do it?
+  4. Does the platform or framework do it natively?
+  5. Does an already-installed dependency do it? Never add a dependency to save a few lines.
+  6. Otherwise write the minimum that works: no speculative options, no single-use abstraction (an interface with one implementation, a wrapper or factory used once, a layer that only forwards), no configurability nobody asked for.
+
+  Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security or accessibility to save lines.
+
+  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this rule: write every test they call for.
+
+  A deliberate shortcut gets a `shortcut:` comment at the spot, naming what it skips and when that would need revisiting, so `grep -rn "shortcut:"` lists the debt."""
+LEAN_PATCHES: list[tuple[str, str, str, str]] = [
+    (
+        "agents/software-engineer.md",
+        re.escape("- End-of-turn: one sentence on what was implemented and what tests confirm it.\n"),
+        "- End-of-turn: one sentence on what was implemented and what tests confirm it, then one `Skipped:` line naming "
+        "what you deliberately left out or did not check, and the risk (`Skipped: none` when nothing was).\n",
+        "lean production code: the engineer names what it skipped",
+    ),
+    (
+        "agents/software-engineer.md",
+        re.escape("- **Simplicity First (pre-write).** Before writing, choose the minimum code that solves the stated problem. "
+                  "No speculative features, no single-use abstractions, no configurability nobody asked for."),
+        REUSE_LADDER,
+        "lean production code: the reuse ladder",
+    ),
+    (
+        "agents/structure-review.md",
+        re.escape("DRY violations:\n\n- Duplicated code blocks\n- Copy-paste patterns\n"),
+        "DRY violations (rule of three):\n\n- The same block three or more times, or twice when both copies encode the same "
+        "business rule (\"if the rule changes, must both change?\")\n- Two structurally similar blocks are not a finding\n",
+        "lean production code: rule of three",
+    ),
+    (
+        "agents/structure-review.md",
+        re.escape("- Hardcoded dependencies (not injected)\n"),
+        "- A hardcoded collaborator that the blocker table in `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md` "
+        "lets a test double (B1 out-of-process handle, B2 ambient state, B3 prohibitive cost), so a test cannot replace it. "
+        "Other first-party collaborators constructed inline are not a finding\n",
+        "lean production code: inject only what the blocker table allows doubling",
+    ),
+    (
+        "agents/structure-review.md",
+        re.escape("## Authoring checklist\n"),
+        LEAN_FIX_RULE + "\n\nEmit such findings as `suggestion` with confidence `none` yourself. Never propose an abstraction "
+        "for a single use (one implementation, one caller, one value), except a seam the blocker table allows.\n\n"
+        "## Authoring checklist\n",
+        "lean production code: structure-review demotes growing restructures at the source",
+    ),
+    (
+        "agents/structure-review.md",
+        re.escape('- One responsibility per function/module; split when you need "and" to describe it.\n'
+                  "- Inject dependencies; don't construct collaborators inline.\n"),
+        "- One responsibility per module; inside a function, prefer early returns to new helpers. Extract a helper when it gets "
+        "a second caller or separates I/O from logic.\n- Inject only what the blocker table (B1–B3 in "
+        "`knowledge/internal-collaborator-doubling.md`) allows doubling: out-of-process handles, ambient state (clock, RNG, "
+        "env, locale), prohibitive cost. Construct other first-party collaborators directly.\n",
+        "lean production code: authoring checklist without single-use helpers",
+    ),
+    (
+        "agents/structure-review.md",
+        re.escape("- Before copying a block, extract it; third repeat is a defect.\n"),
+        "- Two copies are fine; extract at the third, or at the second when both encode the same business rule.\n",
+        "lean production code: rule of three at write time",
+    ),
+    (
+        "agents/structure-review.md",
+        re.escape("- Are there hidden static singletons or global state that aren't injected?\n"
+                  '- For every "duplicate code" finding, did you verify it\'s semantic duplication and not just structural '
+                  "similarity?\n"),
+        "- Are there hidden static singletons or global state wrapping a B1–B3 collaborator that aren't injected?\n"
+        "- For a two-copy duplication finding, did you apply the semantic test? For three or more copies, did you confirm "
+        "they are really the same block?\n",
+        "lean production code: self-challenge matches the rule of three",
+    ),
+    (
+        "agents/quality-reviewer.md",
+        re.escape("| error or warning | high or medium | **Yes** — auto-apply |"),
+        "| error or warning | high or medium | **Yes** — auto-apply, unless the lean fix rule below makes it a suggestion |",
+        "lean production code: the fix-loop table defers to the lean fix rule",
+    ),
+    (
+        "agents/quality-reviewer.md",
+        re.escape("| suggestion | any | No — report only |\n"),
+        "| suggestion | any | No — report only |\n\n" + LEAN_FIX_RULE + "\n",
+        "lean production code: restructuring that grows production code is report-only",
+    ),
+    (
+        "agents/plan-review-strategic.md",
+        re.escape("4. **Root cause vs. symptom**"),
+        "4. **Reuse before new code** — For each step that adds production code, does the plan name what it reuses (an "
+        "existing function, the standard library, a platform feature, an installed dependency), or mark it `new:` with a "
+        "reason? A step that builds what the codebase, standard library, platform or an installed dependency already "
+        "provides is over-engineered. Tests are exempt: test scope comes from the Gherkin scenarios.\n"
+        "5. **Root cause vs. symptom**",
+        "lean production code: plans name their reuse",
+    ),
+    (
+        "agents/plan-review-strategic.md",
+        re.escape('    "minimum_viable_subset": "<which criteria/steps form the smallest useful increment>"\n  },'),
+        '    "minimum_viable_subset": "<which criteria/steps form the smallest useful increment>",\n'
+        '    "proposed_cut": "<at least one step, criterion, option or abstraction the plan can drop or defer, and why that '
+        'is safe; none only after you looked for one>"\n  },',
+        "lean production code: the strategic critic proposes a cut",
+    ),
+    (
+        "agents/plan-review-strategic.md",
+        re.escape("- Simpler alternative not considered → `warning`\n"),
+        "- Simpler alternative not considered → `warning`\n- A production step builds what the codebase, standard library, "
+        "platform or an installed dependency already provides → `warning`\n",
+        "lean production code: reinventing is a warning",
+    ),
+]
 
 # (glob relative to package root, regex, replacement, description)
 PATCHES: list[tuple[str, str, str, str]] = [
@@ -282,7 +406,7 @@ def main() -> int:
     ]
 
     patched: list[dict[str, object]] = []
-    for pattern, regex, repl, why in PATCHES:
+    for pattern, regex, repl, why in PATCHES + LEAN_PATCHES:
         files = sorted(PKG.glob(pattern))
         hits = 0
         for f in files:

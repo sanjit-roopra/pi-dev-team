@@ -47,11 +47,11 @@ When all agents return, classify each finding:
 
 | Severity | Confidence | Actionable? |
 |---|---|---|
-| error or warning | high or medium | **Yes** — auto-apply |
+| error or warning | high or medium | **Yes** — auto-apply, unless the lean fix rule below makes it a suggestion |
 | error or warning | none | No — escalate (requires human judgment) |
 | suggestion | any | No — report only |
 
-**Lean fix rule (production code only).** A `warning` whose fix restructures code — extract a function, split a module, introduce a type, interface, parameter object, wrapper or layer — is actionable only when the fix removes at least as many production lines as it adds; otherwise it is report-only. Fixes that correct behavior (a bug, a missing check, a security or accessibility gap) and every change to test files are exempt.
+**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads it, report it, never auto-apply it, and keep it out of the fix loop, overriding the actionability table in `knowledge/three-phase-workflow.md` § Review Loop. `error` findings are unaffected. Exempt: fixes that correct behavior (a bug, a missing check, a security or accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers.
 
 ### 5. Review-fix loop
 

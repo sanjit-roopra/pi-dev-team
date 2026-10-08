@@ -65,31 +65,34 @@ class SyncHelpers(unittest.TestCase):
 
 
 class LeanCode(unittest.TestCase):
-    """The lean-production-code overrides: pinned, shipped as written, and the shared rule stays one rule."""
+    """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
 
-    PORT_ONLY_AGENTS = {"Explore.md", "general-purpose.md"}  # no upstream file to pin
-    LEAN_FIX_RULE = "**Lean fix rule (production code only).**"
+    PORT_ONLY_AGENT_FILES = {"Explore.md", "general-purpose.md"}  # port-added agents: no upstream file to pin
 
     def test_every_upstream_agent_override_is_pinned_and_shipped(self):
-        overrides = {f"agents/{p.name}" for p in (ROOT / "overrides" / "agents").glob("*.md") if p.name not in self.PORT_ONLY_AGENTS}
-        self.assertEqual(overrides, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("agents/")})
-        for rel in overrides:
+        override_rels = {f"agents/{p.name}" for p in (ROOT / "overrides" / "agents").glob("*.md") if p.name not in self.PORT_ONLY_AGENT_FILES}
+        self.assertEqual(override_rels, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("agents/")},
+                         "pin each upstream agent override in OVERRIDE_BASES, or list a port-added agent in PORT_ONLY_AGENT_FILES")
+        for rel in override_rels:
             with self.subTest(rel=rel):
                 self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes(), "run npm run sync")
 
-    def test_the_lean_fix_rule_reads_the_same_in_both_fix_loops(self):
-        def rule(rel):
-            return next(line for line in (ROOT / rel).read_text().splitlines() if line.startswith(self.LEAN_FIX_RULE))
-        self.assertEqual(rule("agents/quality-reviewer.md"), rule("skills/code-review/SKILL.md"))
-        self.assertIn("test files are exempt", rule("agents/quality-reviewer.md"))
+    def test_the_lean_fix_rule_is_one_rule_everywhere_it_applies(self):
+        for rel in ("agents/quality-reviewer.md", "agents/structure-review.md", "skills/code-review/SKILL.md"):
+            with self.subTest(rel=rel):
+                lines = [line for line in (ROOT / rel).read_text().splitlines() if line.startswith("**Lean fix rule")]
+                self.assertEqual(lines, [sync.LEAN_FIX_RULE], f"{rel} must state sync.LEAN_FIX_RULE exactly once")
 
-    def test_lean_rules_never_shrink_test_scope(self):
+    def test_the_engineer_ladder_leaves_test_scope_alone(self):
         engineer = (ROOT / "agents" / "software-engineer.md").read_text()
-        self.assertIn("The ladder governs production code only.", engineer)
-        self.assertIn("Fewer lines, never denser lines", engineer)
-        simplify = (ROOT / "agents" / "refactor-opportunity-review.md").read_text()
-        self.assertIn("\nScope: on-demand\n", simplify)  # stays off /code-review's per-diff panel
-        self.assertIn("Only test files changed", simplify)
+        self.assertIn(sync.REUSE_LADDER, engineer)
+        self.assertIn("Test scope comes from the plan's Gherkin scenarios and the mutation gate", sync.REUSE_LADDER)
+
+    def test_the_simplify_lens_stays_on_demand_and_skips_test_only_changes(self):
+        lens = (ROOT / "agents" / "refactor-opportunity-review.md").read_text()
+        self.assertIn("\nScope: on-demand\n", lens, "keeps it off /code-review's per-diff panel")
+        skip = lens.split("## Skip", 1)[1].split("## Detect", 1)[0]
+        self.assertIn("Only test files changed", skip)
 
 
 class Shim(unittest.TestCase):
