@@ -540,27 +540,38 @@ def session_reported_output_tokens(s: Session) -> int:
     return parent + sum(reported_output_tokens(run.get("usage")) for r in dispatch_records(s) for run in credited_runs(r))
 
 
-def git_numstat_log(cwd: str, since: str) -> str | None:
-    """Non-merge commits on local branches committed since `since`, with numstat; None when git fails.
+def parse_timestamp(text: str) -> datetime:
+    """An ISO timestamp; pi writes a trailing Z, which datetime.fromisoformat accepts only from Python 3.11."""
+    return datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+
+
+def run_git(cwd: str, *args: str) -> str:
+    # Repository config must not run programs: no diff drivers, signature checks or fsmonitor.
+    command = ["git", "-C", cwd, "-c", "core.quotePath=false", "-c", "log.showSignature=false", "-c", "core.fsmonitor=false", *args]
+    return subprocess.run(command, capture_output=True, text=True, errors="replace", check=True, timeout=GIT_TIMEOUT_SECONDS).stdout
+
+
+def git_numstat_log(cwd: str, since: str) -> tuple[str, str] | None:
+    """(repository root, numstat log of non-merge commits on local branches committed since `since`); None when git fails.
 
     Local branches only: --all would add the stash (its index commit is not a merge) and teammates' fetched work.
     """
-    command = ["git", "-C", cwd, "-c", "core.quotePath=false", "log", "--branches", "--no-merges", "--no-renames",
-               "--no-ext-diff", "--no-textconv", f"--since-as-filter={since}", "--numstat", f"--format={COMMIT_MARKER}%ce %aI"]
     try:
-        return subprocess.run(command, capture_output=True, text=True, errors="replace", check=True, timeout=GIT_TIMEOUT_SECONDS).stdout
+        root = run_git(cwd, "rev-parse", "--show-toplevel").strip()
+        return root, run_git(cwd, "log", "--branches", "--no-merges", "--no-renames", "--no-ext-diff", "--no-textconv",
+                             f"--since-as-filter={since}", "--numstat", f"--format={COMMIT_MARKER}%ce %aI")
     except (OSError, subprocess.SubprocessError):
         return None
 
 
-def count_commits(log: str, cwd: str, first: datetime, last: datetime) -> Counter:
+def count_commits(log: str, root: str, first: datetime, last: datetime) -> Counter:
     """CODE_COLUMNS for the commits in `log` authored from `first` to `last`, without GitHub's commits and lockfiles."""
     counts: Counter = Counter(dict.fromkeys(CODE_COLUMNS, 0))
     counting = False
     for line in log.splitlines():
         if line.startswith(COMMIT_MARKER):
             committer_email, author_date = line[len(COMMIT_MARKER):].rsplit(" ", 1)
-            counting = committer_email != GITHUB_COMMITTER_EMAIL and first <= datetime.fromisoformat(author_date) <= last
+            counting = committer_email != GITHUB_COMMITTER_EMAIL and first <= parse_timestamp(author_date) <= last
             counts["commits"] += counting
             continue
         parts = line.split("\t")
@@ -569,7 +580,8 @@ def count_commits(log: str, cwd: str, first: datetime, last: datetime) -> Counte
         added, removed, path = parts
         if not added.isdigit() or Path(path).name in LOCKFILES:  # "-" for binary files
             continue
-        kind = "test" if is_test_file(str(Path(cwd) / path)) else "prod"  # under cwd so C#/Java content probes find the file
+        # Under the root, so the C#/Java content probe reads the file as it is in the current checkout.
+        kind = "test" if is_test_file(str(Path(root) / path)) else "prod"
         counts[f"{kind}Added"] += int(added)
         counts[f"{kind}Removed"] += int(removed)
     return counts
@@ -580,8 +592,8 @@ def report_code(sessions: Iterable[Session]) -> list[dict]:
     for s in sessions:
         cwd = s.header.get("cwd")
         timestamps = [str(e["timestamp"]) for e in s.entries if e.get("timestamp")]
-        log = git_numstat_log(cwd, min(timestamps)) if isinstance(cwd, str) and cwd and timestamps else None  # git -C "" would read this repo
-        stats = count_commits(log, cwd, datetime.fromisoformat(min(timestamps)), datetime.fromisoformat(max(timestamps))) if log is not None else None
+        found = git_numstat_log(cwd, min(timestamps)) if isinstance(cwd, str) and cwd and timestamps else None  # git -C "" would read this repo
+        stats = count_commits(found[1], found[0], parse_timestamp(min(timestamps)), parse_timestamp(max(timestamps))) if found else None
         row = {"session": s.short_id, "started": s.started, "firstPrompt": first_prompt(s), "outputTokens": session_reported_output_tokens(s)}
         rows.append(row | {key: None if stats is None else stats[key] for key in CODE_COLUMNS})
     return rows
