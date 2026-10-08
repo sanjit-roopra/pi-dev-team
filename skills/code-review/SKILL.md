@@ -36,8 +36,8 @@ Output templates and JSON schemas: [`output-format.md`](output-format.md). Examp
 | --- | --- |
 | `references/00-overview.md` | `$ARGUMENTS` holds a flag the Parse Arguments table does not list |
 | `references/01-target-files.md` | **always** when the documentation-only short-circuit fires (step 1) |
-| `references/02-gates-and-static-analysis.md` | a step 2 gate or a step 2b script exits with an error step 2 does not describe |
-| `references/03-enabled-agents.md` | a step 3 script exits non-zero, or `select_lenses.py` prints a warning code step 3 does not name |
+| `references/02-gates-and-static-analysis.md` | a step 2b script exits non-zero |
+| `references/03-enabled-agents.md` | a step 3 script exits non-zero, or `select_lenses.py` prints a warning code not listed in step 3 |
 | `references/04a-dispatch-waves.md` | `dispatch_waves.py` exits non-zero or prints no `waves` |
 | `references/04b-context-pack.md` | **always** when `DEV_TEAM_REVIEW_CONTEXT_PACK=on` |
 | `references/04c-dispatch-payload-and-ledger.md` | `verdict_scope.py` skips any file (how to report the skips) |
@@ -68,12 +68,12 @@ Arguments: $ARGUMENTS
 | `--since <ref>` | Review files changed since the ref (step 1 command; keep its `-c` overrides) |
 | `--path <dir>` | Review only files in this directory |
 | `--all` | Force full-repository review even when uncommitted changes exist |
-| `--slice <N>` / `--resume` / `--no-slice` | Sliced large-repo review: force it with N files per slice, resume it, or never engage it. See [`sliced-mode.md`](sliced-mode.md) |
+| `--slice <N>` / `--resume` / `--no-slice` | Sliced large-repo review: force it with at most N files per slice (module-aligned; `N` a positive integer), resume it (skip slices whose section artifact exists), or never engage it. See [`sliced-mode.md`](sliced-mode.md) |
 | `--json` | Output aggregated JSON to **stdout** instead of prose. Contractually non-interactive (for CI): never prompts; defaults to report-only (no code modified). |
-| `--expand <finding-id>|all` | Prose-mode only (step 7): render Tier-2 (full message + suggested fix) for the named finding-id, or for every finding with `all`, after the Tier-1 report. A no-op under `--json`. Only meaningful in the same run that computed the ids; it never triggers a second panel dispatch |
+| `--expand <finding-id>|all` | Prose-mode only (step 7): render Tier-2 (full message + suggested fix) for the named finding-id, or for every finding with `all`, after the Tier-1 report. A no-op under `--json`. Only meaningful in the same run that computed the ids; it never triggers a second panel dispatch. A cold, separate `/code-review --expand <id>` run is a full re-dispatch (steps 1-6 run in full), and ids are not guaranteed to exist or mean the same finding across runs |
 | `--pdf` | After the durable report is written, also render it to a sibling PDF (step 7). No-op with a message when no report file is written |
-| `--internal` | Orchestrator-internal dispatch (`/build`, `/test-improve`): skip the `.dev-team-reports/code-review.md` write in step 7; the prose and fix-loop path still runs |
-| `--init-risks` | Scaffold `ACCEPTED-RISKS.md` from `templates/ACCEPTED-RISKS.md.tmpl` if absent. Exits non-zero without overwriting if present |
+| `--internal` | Orchestrator-internal dispatch; only `/build` and `/test-improve` pass it (`/ship` writes the report by default, see `knowledge/report-output-location.md`): skip the `.dev-team-reports/code-review.md` write in step 7; the prose and fix-loop path still runs |
+| `--init-risks` | Scaffold `ACCEPTED-RISKS.md` from `templates/ACCEPTED-RISKS.md.tmpl` if absent. Exits non-zero without overwriting if present. Schema: `knowledge/accepted-risks-schema.md` |
 | `--force` | Skip pre-flight gates **and the documentation-only short-circuit**. **Requires `--reason "<text>"`** — logged to `.claude/metrics/override-audit.jsonl` |
 | `--reason "<text>"` | Override justification (required with `--force`) |
 | `--static-analysis` / `--no-static-analysis` | Force on/off the static analysis pre-pass. Auto-enabled when tools are detected |
@@ -205,7 +205,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_lenses.py" \
 
 - Feed only `$FILES_LIST`/`$ADDED_LIST`, derived from the quoted `$CHANGED_JSON`; never re-interpolate individual paths as shell words (that is what closes the injection surface).
 - Always pass `--added-from` on a diff-scoped run, even when `added` is `[]`. For `--path`/`--all`/full-repository, pass `--files <target files>` instead of both.
-- Take its `lenses` array as the roster. **Surface every entry of its `warnings`** in the report. `unreadable-registry:<file>`, `unreadable-files-from:<path>` and `unreadable-added-from:<path>` count as a `fail` for this run; `skipped-non-executable:<name>` is informational.
+- Take its `lenses` array as the roster. **Surface every entry of its `warnings`** in the report. `unreadable-registry:<file>`, `unreadable-files-from:<path>` and `unreadable-added-from:<path>` count as a `fail` for this run; `skipped-non-executable:<name>` is informational. A bare agent name means that agent has no `Scope:` declaration and was included anyway; `unnarrowed-added-only:<name>` means an added-only lens was kept un-narrowed because this run passed no `--added-from` (normal for `--path`/`--all`/full repository).
 - **Framework reactivity** (from the dependency manifest): `react`/`react-dom` → `react-reactivity-review`, scoped to `.jsx`/`.tsx` and React-importing `.js`/`.ts` files; `vue` → `vue-reactivity-review`, scoped to `.vue` and Vue-importing `.js`/`.ts` files; `@angular/core` → `angular-reactivity-review`, scoped to `*.component.ts`, `*.component.html`, `*.service.ts`, and general `.ts` files.
 
 **Change-shape gate.**
@@ -290,7 +290,7 @@ sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scr
 
 ### 5. Aggregate results
 
-- **Dispatch failures first.** Carry every step 4 `dispatchFailures` entry into the report and the `--json` object unchanged. **A non-empty `dispatchFailures` forces `overall: "fail"`, unconditionally**, applied after health scoring so it always wins.
+- **Dispatch failures first.** Carry every step 4 `dispatchFailures` entry into the report and the `--json` object unchanged. They are not agent results: no `issues[]`, no ACCEPTED-RISKS suppression, no health scoring. **A non-empty `dispatchFailures` forces `overall: "fail"`, unconditionally**, applied after health scoring so it always wins.
 - **Ledger skips.** Carry step 4's `verdict_scope.py` `skipped` map through as `ledgerSkipped`, never dropped. A ledger skip does **not** force `overall` toward `fail`/`warn`: score `overall` from the agents that dispatched this round. An all-skipped roster reports `overall: "pass"` with zero `agents[]` and a non-empty `ledgerSkipped`, and the report says so.
 
 #### 5a. Apply ACCEPTED-RISKS.md
@@ -359,7 +359,7 @@ Pass `--expand` through exactly as the caller supplied it (omit the flag entirel
 
 **Scope of this wiring: the prose-mode path only.** `--json` (this step's branch above) and `./corrections/*.json` (step 8) already read and write the full finding objects independently of this rendering path — neither branch calls `render_tiered_findings.py`, and this change does not touch either of them. In particular, **`--expand` is a no-op under `--json`**: the `--json` branch above is unconditional ("the JSON object is the ONLY thing printed to stdout... non-negotiable") and must never call `render_tiered_findings.py`, so under `--json` there is nothing for `--expand` to act on. This is enforced structurally — by the `--json` branch never reaching the tiered-rendering code path described here — not by a check inside `render_tiered_findings.py` or inside the `--json` branch itself.
 
-**Write the durable report (skip when `--internal`).** Write the identical prose summary to `.dev-team-reports/code-review.md` (create the directory if absent, overwrite an existing file), also when the review found nothing, and print `Report written: .dev-team-reports/code-review.md` (add ` (replaced previous run)` when a file existed). A failed write is non-fatal: report `Cannot write .dev-team-reports/code-review.md: <error>` and continue.
+**Write the durable report (skip when `--internal`).** Following `knowledge/report-output-location.md`, write the identical prose summary to `.dev-team-reports/code-review.md` (create the directory if absent, overwrite an existing file), also when the review found nothing, and print `Report written: .dev-team-reports/code-review.md` (add ` (replaced previous run)` when a file existed). A failed write is non-fatal: report `Cannot write .dev-team-reports/code-review.md: <error>` and continue.
 
 **`--pdf`**: only when a report file was written this run, render it per `knowledge/report-pdf-integration.md` and surface the module's `Rendering PDF via <engine>…` and result lines:
 

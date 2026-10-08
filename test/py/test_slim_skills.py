@@ -111,6 +111,7 @@ class SplitterBehavior(unittest.TestCase):
     def test_plan_must_be_well_formed(self):
         cases = {
             "names not in plan order": [TOY_PLAN[0], ("9-one.md", "one", "## One\n"), TOY_PLAN[2]],
+            "duplicate name": [TOY_PLAN[0], ("1-one.md", "one", "## One\n"), ("1-one.md", "two", "## Two\n")],
             "first chunk has a marker": [("0-intro.md", "intro", "intro\n")] + TOY_PLAN[1:],
             "later chunk has no marker": [TOY_PLAN[0], ("1-one.md", "one", None), TOY_PLAN[2]],
         }
@@ -143,11 +144,13 @@ class SplitterBehavior(unittest.TestCase):
             self.assertEqual({p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}, before)
 
     def run_main(self, upstream_text):
+        """Run the script on an upstream checkout holding `upstream_text` (None: no SKILL.md there)."""
         with tempfile.TemporaryDirectory() as tmp:
             upstream = Path(tmp) / "upstream"
             source = upstream / splitter.PLUGIN_SUBDIR / splitter.base_key("code-review")
             source.parent.mkdir(parents=True)
-            source.write_text(upstream_text, encoding="utf-8")
+            if upstream_text is not None:
+                source.write_text(upstream_text, encoding="utf-8")
             stdout, stderr = io.StringIO(), io.StringIO()
             argv = ["split_skill_references.py", "code-review", "--upstream", str(upstream)]
             with mock.patch.object(splitter, "PKG", Path(tmp)), mock.patch.object(sys, "argv", argv), \
@@ -164,11 +167,13 @@ class SplitterBehavior(unittest.TestCase):
         self.assertEqual(written, sorted(references))
         self.assertIn(f'OVERRIDE_BASES["skills/code-review/SKILL.md"] = "{sync.OVERRIDE_BASES["skills/code-review/SKILL.md"]}"', stdout)
 
-    def test_main_reports_a_bad_split_and_writes_nothing(self):
-        code, _stdout, stderr, written = self.run_main("---\nname: x\n---\nno markers here\n")
-        self.assertEqual(code, 1)
-        self.assertIn("error:", stderr)
-        self.assertEqual(written, [])
+    def test_main_reports_a_bad_split_or_a_missing_upstream_and_writes_nothing(self):
+        for case, text in (("bad split", "---\nname: x\n---\nno markers here\n"), ("no upstream file", None)):
+            with self.subTest(case=case):
+                code, _stdout, stderr, written = self.run_main(text)
+                self.assertEqual(code, 1)
+                self.assertIn("error:", stderr)
+                self.assertEqual(written, [])
 
 
 CORE, REFERENCES = load_skill("code-review")
@@ -211,7 +216,7 @@ class CodeReviewCoreRouting(unittest.TestCase):
                 self.assertIn(trigger, row.group(1))
                 step = paragraph_with(STEPS, trigger)
                 self.assertIn(f"references/{name}", step, f"the step with the {name} trigger no longer points to it")
-                self.assertIn("read", step.lower(), f"the step with the {name} trigger no longer says to read it")
+                self.assertRegex(step, r"(?i)\bread\b", f"the step with the {name} trigger no longer says to read it")
 
     def test_json_step_9_exception_still_matches_upstream(self):
         # The core's one exception to "follow the reference"; drop it from the core once upstream fixes these lines.
@@ -227,6 +232,17 @@ class CodeReviewCoreRouting(unittest.TestCase):
 
     def test_reads_are_bounded_by_the_table(self):
         self.assertIn("Read a reference only when its row below says so; do not read references otherwise.", CORE)
+        rows = re.findall(r"\n\| `references/[\w.-]+` \| (.+) \|", CORE)
+        self.assertEqual(len(rows), len(REFERENCES))
+        for row in rows:
+            for judgement in ("does not describe", "does not cover", "unclear", "need", "leaves open", "if needed", "or when"):
+                with self.subTest(row=row, judgement=judgement):
+                    self.assertNotIn(judgement, row, "a read trigger must be an event, not the model's judgement")
+
+    def test_step_3_names_the_warning_codes(self):
+        step = text_between(CORE, "### 3. Determine enabled agents", "### 4. Run each enabled agent")
+        for code in ("unreadable-registry:", "unreadable-files-from:", "unreadable-added-from:", "skipped-non-executable:", "unnarrowed-added-only:", "bare agent name"):
+            self.assertIn(code, step)
 
     def test_no_unconditional_reference_lines(self):
         self.assertNotRegex(CORE, r"(?m)^References?: ", "a bare Reference: line makes the model load that file on every run")
@@ -311,6 +327,15 @@ class CodeReviewUpstreamContentGuards(unittest.TestCase):
         step = text_between(CORE, "#### 5c. Consolidate cross-agent findings", "### 6. Present findings")
         self.assertIn("dedup", step.lower())
         self.assertIn("3 lines per finding", step)
+
+    def test_json_runs_step_9(self):
+        self.assertIn("continue to step 9", text_between(CORE, "### 7. Generate report", "Otherwise (no `--json`):"))
+        self.assertIn("**Not skipped by `--json`.**", text_between(CORE, "### 9. Write pre-commit gate file", "```bash"))
+
+    def test_deterministic_triage_keeps_its_escape(self):
+        step = text_between(CORE, "### 6a. Review-fix loop", "### 7. Generate report")
+        for phrase in ("**all three** hold", "the check cannot fully close the question"):
+            self.assertIn(phrase, step)
 
     def test_verification_mode_contract(self):
         self.assertIn("verification-mode.md", text_between(CORE, "### 6a. Review-fix loop", "### 7. Generate report"))
