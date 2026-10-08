@@ -116,4 +116,4 @@ Append confidence level (High/Medium/Low) to the `summary` field.
 
 ## Ignore
 
-Naming (naming-review), test quality (test-review), architecture (arch-review), security (security-review), duplication and additive restructuring (structure-review). Extraction or code-structure work that other lenses or knowledge files hand to `refactor-opportunity-review` goes to structure-review, under the lean fix rule. This lens only removes production code.
+Naming (naming-review), test quality (test-review), architecture (arch-review), security (security-review), block-to-block duplication and additive restructuring (structure-review). Replacing a re-implementation with a call to an existing function or built-in stays here (Already exists). Extraction or code-structure work that other lenses or knowledge files hand to `refactor-opportunity-review` goes to structure-review, under the lean fix rule. This lens only removes production code.
