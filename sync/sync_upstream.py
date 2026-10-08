@@ -121,8 +121,8 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         "lets a test double (B1 out-of-process handle, B2 ambient state, B3 prohibitive cost), so a test cannot replace it. "
         "Other first-party collaborators constructed inline are not a finding\n- Module-level or static mutable state (a cache, "
         "registry or counter) shared across calls or requests: a shared-state finding. Propose scoping it or passing it "
-        "explicitly; propose injection only for a B1–B3 collaborator. Shared across requests or async callers, it is a race: "
-        "a `warning` whose fix corrects behavior, so the lean fix rule does not demote it\n",
+        "explicitly; propose injection only for a B1–B3 collaborator. It is a race only when two accesses can interleave "
+        "(concurrent entry, or an await between read and write); leave races to `concurrency-review`\n",
         "lean production code: inject only what the blocker table allows doubling",
     ),
     (
