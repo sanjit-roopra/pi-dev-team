@@ -91,7 +91,7 @@ The dispatch tool is named `dev_team_subagent` so this package can coexist with 
 | Hooks `code_intelligence_nudge`, `code_intelligence_turn_mark`, `phase_marker` | Need Claude transcript turn structure; nudges only. Off by default, can be re-enabled |
 | Monorepo-only hooks (`contract_version_guard`, `pre_commit_knowledge_index`, `knowledge_index`, `skills_index`, both banned-script scanners, `eval_compliance_check`) | Only act inside the upstream repo itself. Shipped but disabled by default |
 
-`devtools/pi_session_report.py` is a separate, maintainer-only reader for pi session logs (debugging a run, measuring which skill steps ran). It is not a `session_log` backend and does not feed `session-review`. It lives outside the managed directories, so the sync never touches it, and it is not in the npm package. The `debug-pi-session` skill in `.agents/skills/` (linked into `.claude/skills/`) is likewise port-owned and dev-only.
+`devtools/pi_session_report.py` is a separate, maintainer-only reader for pi session logs (debugging a run, measuring which skill steps ran). Its `code` subcommand also runs a read-only `git log` in each session's recorded cwd. It is not a `session_log` backend and does not feed `session-review`. It lives outside the managed directories, so the sync never touches it, and it is not in the npm package. The `debug-pi-session` skill in `.agents/skills/` (linked into `.claude/skills/`) is likewise port-owned and dev-only.
 
 ## 5. Known differences
 

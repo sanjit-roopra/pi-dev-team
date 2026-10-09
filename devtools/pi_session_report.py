@@ -8,9 +8,10 @@ Usage:
   python3 devtools/pi_session_report.py tools -p dstm [--large-output-tokens 3500]
   python3 devtools/pi_session_report.py skills -p dstm
   python3 devtools/pi_session_report.py steps -p dstm -s code-review [--outputs dispatch_reconcile.py]
+  python3 devtools/pi_session_report.py code -p dstm [--since 2026-10-01]
 
-Every subcommand takes --json and --sessions-dir. sessions, tools, skills and
-steps also take --since/--until (session start, ISO date or date-time prefix)
+Every subcommand takes --json and --sessions-dir. sessions, tools, skills,
+steps and code also take --since/--until (session start, ISO date or date-time prefix)
 and --all-sessions (include sessions that did not use dev-team).
 
 pi stores each session as JSONL under <agent dir>/sessions/<project dir>/. The
@@ -28,8 +29,17 @@ the child dispatched itself). Subagent cost counts both, the same rule as the
 extension's creditedRuns(). That entry is all this script can say about a child.
 
 The wire strings below are copied from extensions/dev-team; a test checks that
-they still appear there. Token counts are estimates: characters / 4.
-Stdlib only, read-only.
+they still appear there. Token counts are estimates: characters / 4, except
+`code`, which sums the output tokens the model reported.
+
+`code` also runs a read-only `git log` in each session's cwd. It counts commits
+on local branches authored between the session's first and last entry (author
+date, so a later rebase does not move a commit into another session), split
+into test and production files by hooks/lib/test_file_classify.py, the
+canonical test-file rule. Merges, lockfiles and commits GitHub made (squash
+merges, committer noreply@github.com) are skipped. Uncommitted work is not
+counted, and two sessions open at once in one repository both count the same
+commits. Stdlib only, read-only.
 """
 
 from __future__ import annotations
@@ -39,8 +49,10 @@ import json
 import os
 import re
 import statistics
+import subprocess
 import sys
 from collections import Counter
+from datetime import datetime
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -97,6 +109,19 @@ LARGE_OUTPUT_TOKENS = 3500
 SHORT_ID_LENGTH = 12
 TEXT_WIDTH, PROMPT_WIDTH, ARGS_WIDTH, COMMAND_WIDTH, OUTPUT_WIDTH, MAX_COLUMN_WIDTH = 100, 70, 60, 80, 200, 60
 KIND_COLUMN_WIDTH = 11
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks" / "lib"))
+from test_file_classify import is_test_file  # noqa: E402  the canonical test-file rule (knowledge/test-file-indicators.md)
+
+# `code` columns. Lockfiles are generated, not written, so they count as neither.
+CODE_COLUMNS = ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved")
+LOCKFILES = frozenset({
+    "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "uv.lock", "poetry.lock",
+    "Pipfile.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "packages.lock.json",
+})
+COMMIT_MARKER = "commit "  # starts each commit's header line in git_numstat_log's output
+GITHUB_COMMITTER_EMAIL = "noreply@github.com"
+GIT_TIMEOUT_SECONDS = 30
 
 
 def estimate_tokens(text: str) -> int:
@@ -505,6 +530,75 @@ def report_sessions(sessions: Iterable[Session]) -> list[dict]:
     return rows
 
 
+def reported_output_tokens(usage: Any) -> int:
+    return int(usage.get("output") or 0) if isinstance(usage, dict) else 0
+
+
+def session_reported_output_tokens(s: Session) -> int:
+    """Output tokens the model reported: parent turns plus every credited subagent run, abandoned branches included."""
+    parent = sum(reported_output_tokens(message_of(e).get("usage")) for e in s.entries if message_of(e).get("role") == ROLE_ASSISTANT)
+    return parent + sum(reported_output_tokens(run.get("usage")) for r in dispatch_records(s) for run in credited_runs(r))
+
+
+def parse_timestamp(text: str) -> datetime:
+    """An ISO timestamp; pi writes a trailing Z, which datetime.fromisoformat accepts only from Python 3.11."""
+    return datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+
+
+def run_git(cwd: str, *args: str) -> str:
+    # Repository config must not run programs: no diff drivers, signature checks or fsmonitor.
+    command = ["git", "-C", cwd, "-c", "core.quotePath=false", "-c", "log.showSignature=false", "-c", "core.fsmonitor=false", *args]
+    return subprocess.run(command, capture_output=True, text=True, errors="replace", check=True, timeout=GIT_TIMEOUT_SECONDS).stdout
+
+
+def git_numstat_log(cwd: str, since: str) -> tuple[str, str] | None:
+    """(repository root, numstat log of non-merge commits on local branches committed since `since`); None when git fails.
+
+    Local branches only: --all would add the stash (its index commit is not a merge) and teammates' fetched work.
+    """
+    try:
+        root = run_git(cwd, "rev-parse", "--show-toplevel").strip()
+        return root, run_git(cwd, "log", "--branches", "--no-merges", "--no-renames", "--no-ext-diff", "--no-textconv",
+                             f"--since-as-filter={since}", "--numstat", f"--format={COMMIT_MARKER}%ce %aI")
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def count_commits(log: str, root: str, first: datetime, last: datetime) -> Counter:
+    """CODE_COLUMNS for the commits in `log` authored from `first` to `last`, without GitHub's commits and lockfiles."""
+    counts: Counter = Counter(dict.fromkeys(CODE_COLUMNS, 0))
+    counting = False
+    for line in log.splitlines():
+        if line.startswith(COMMIT_MARKER):
+            committer_email, author_date = line[len(COMMIT_MARKER):].rsplit(" ", 1)
+            counting = committer_email != GITHUB_COMMITTER_EMAIL and first <= parse_timestamp(author_date) <= last
+            counts["commits"] += counting
+            continue
+        parts = line.split("\t")
+        if not counting or len(parts) != 3:  # blank separator lines
+            continue
+        added, removed, path = parts
+        if not added.isdigit() or Path(path).name in LOCKFILES:  # "-" for binary files
+            continue
+        # Under the root, so the C#/Java content probe reads the file as it is in the current checkout.
+        kind = "test" if is_test_file(str(Path(root) / path)) else "prod"
+        counts[f"{kind}Added"] += int(added)
+        counts[f"{kind}Removed"] += int(removed)
+    return counts
+
+
+def report_code(sessions: Iterable[Session]) -> list[dict]:
+    rows = []
+    for s in sessions:
+        cwd = s.header.get("cwd")
+        timestamps = [str(e["timestamp"]) for e in s.entries if e.get("timestamp")]
+        found = git_numstat_log(cwd, min(timestamps)) if isinstance(cwd, str) and cwd and timestamps else None  # git -C "" would read this repo
+        stats = count_commits(found[1], found[0], parse_timestamp(min(timestamps)), parse_timestamp(max(timestamps))) if found else None
+        row = {"session": s.short_id, "started": s.started, "firstPrompt": first_prompt(s), "outputTokens": session_reported_output_tokens(s)}
+        rows.append(row | {key: None if stats is None else stats[key] for key in CODE_COLUMNS})
+    return rows
+
+
 def call_event(call: ToolCall, is_load: bool, all_tools: bool) -> list[tuple[str, str]]:
     events = []
     if call.name == SUBAGENT_TOOL:
@@ -707,6 +801,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("steps", parents=[common, selection], help="what ran inside each run of one skill")
     p.add_argument("-s", "--skill", required=True, help="skill name, for example code-review or build")
     p.add_argument("--outputs", action="append", default=[], metavar="TEXT", help="show output of bash calls whose command contains TEXT (repeatable)")
+    sub.add_parser("code", parents=[common, selection], help="output tokens and lines committed (test vs production) per session")
     p = sub.add_parser("timeline", parents=[common], help="ordered events of one session")
     p.add_argument("session", help="session file, a unique part of its id, or 'latest'")
     p.add_argument("-p", "--project", help="limit the session search to this project")
@@ -725,6 +820,7 @@ COMMANDS: dict[str, tuple[Callable[[argparse.Namespace, Path], Any], Callable[[A
     "tools": (lambda a, root: report_tools(selected(a, root), a.large_output_tokens), print_table),
     "skills": (lambda a, root: report_skills(selected(a, root)), print_table),
     "steps": (lambda a, root: report_steps(selected(a, root), a.skill, a.outputs), print_steps),
+    "code": (lambda a, root: report_code(selected(a, root)), print_table),
     "timeline": (lambda a, root: report_timeline(load_session(pick_session(root, a.session, a.project)), a.tools), print_timeline),
 }
 
