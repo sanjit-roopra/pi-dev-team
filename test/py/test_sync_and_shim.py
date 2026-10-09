@@ -64,6 +64,36 @@ class SyncHelpers(unittest.TestCase):
         self.assertIn("DEV_TEAM_INTERACTIVE", (ROOT / "skills" / "plan" / "SKILL.md").read_text())
 
 
+class LeanCode(unittest.TestCase):
+    """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
+
+    PORT_ONLY_AGENT_FILES = {"Explore.md", "general-purpose.md"}  # port-added agents: no upstream file to pin
+
+    def test_every_upstream_agent_override_is_pinned_and_shipped(self):
+        override_rels = {f"agents/{p.name}" for p in (ROOT / "overrides" / "agents").glob("*.md") if p.name not in self.PORT_ONLY_AGENT_FILES}
+        self.assertEqual(override_rels, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("agents/")},
+                         "pin each upstream agent override in OVERRIDE_BASES, or list a port-added agent in PORT_ONLY_AGENT_FILES")
+        for rel in override_rels:
+            with self.subTest(rel=rel):
+                self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes(), "run npm run sync")
+
+    def test_the_lean_fix_rule_is_one_rule_everywhere_it_applies(self):
+        for rel in ("agents/quality-reviewer.md", "agents/structure-review.md", "skills/code-review/SKILL.md"):
+            with self.subTest(rel=rel):
+                lines = [line for line in (ROOT / rel).read_text().splitlines() if line.startswith("**Lean fix rule")]
+                self.assertEqual(lines, [sync.LEAN_FIX_RULE], f"{rel} must state sync.LEAN_FIX_RULE exactly once")
+
+    def test_the_engineer_ladder_leaves_test_scope_alone(self):
+        engineer = (ROOT / "agents" / "software-engineer.md").read_text()
+        self.assertIn(sync.REUSE_LADDER, engineer)
+
+    def test_the_simplify_lens_stays_on_demand_and_skips_test_only_changes(self):
+        lens = (ROOT / "agents" / "refactor-opportunity-review.md").read_text()
+        self.assertIn("\nScope: on-demand\n", lens, "keeps it off /code-review's per-diff panel")
+        skip = lens.split("## Skip", 1)[1].split("## Detect", 1)[0]
+        self.assertIn("Only test files changed", skip)
+
+
 class Shim(unittest.TestCase):
     def test_model_args(self):
         self.assertEqual(shim.model_args("opus"), ["--dev-team-tier", "opus"])

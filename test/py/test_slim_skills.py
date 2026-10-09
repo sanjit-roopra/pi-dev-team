@@ -219,7 +219,7 @@ class CodeReviewCoreRouting(unittest.TestCase):
                 self.assertRegex(step, r"(?i)\bread\b", f"the step with the {name} trigger no longer says to read it")
 
     def test_json_step_9_exception_still_matches_upstream(self):
-        # The core's one exception to "follow the reference"; drop it from the core once upstream fixes these lines.
+        # The core's first exception to "follow the reference"; drop it from the core once upstream fixes these lines.
         stale = {"05-aggregate.md": "**skipped entirely under `--json`**", "06-findings-and-fix-loop.md": "where step 9 never runs at all",
                  "07-report.md": "never runs under `--json`"}
         for name, phrase in stale.items():
@@ -229,6 +229,11 @@ class CodeReviewCoreRouting(unittest.TestCase):
         for name in stale:
             self.assertIn(f"references/{name}", intro)
         self.assertIn("step 9 does run under `--json`", intro)
+
+    def test_the_lean_fix_rule_is_the_second_exception(self):
+        intro = text_between(CORE, "**This file is the pi core of the upstream skill.**", "| Reference |")
+        self.assertIn("Second, the lean fix rule in step 5b", intro)
+        self.assertIn("| error or warning | high or medium | **Yes** — auto-apply |", REFERENCES["05-aggregate.md"])  # what it narrows
 
     def test_reads_are_bounded_by_the_table(self):
         self.assertIn("Read a reference only when its row below says so; do not read references otherwise.", CORE)

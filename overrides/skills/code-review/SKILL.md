@@ -30,7 +30,7 @@ Role: orchestrator. Route work to review agents; do not review code yourself. Pa
 
 Output templates and JSON schemas: [`output-format.md`](output-format.md). Example report: [`examples/sample-report.md`](examples/sample-report.md).
 
-**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with one exception: `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`).
+**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with two exceptions. First, `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`). Second, the lean fix rule in step 5b is a pi change that narrows the actionability table in `references/05-aggregate.md` and the fix loop in `references/06-findings-and-fix-loop.md`: the rule wins.
 
 | Reference | Read it when |
 | --- | --- |
@@ -306,6 +306,8 @@ Expired rules stop suppressing and get a WARN naming the rule and owner, plus an
 #### 5b. Health scoring
 
 Score with `knowledge/review-rubric.md`; security failures escalate to 🔴. **Actionable** = severity error or warning with confidence high or medium. Confidence none and every suggestion are report-only. Actionable issues drive the fix loop.
+
+**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads it, report it, never auto-apply it, and keep it out of the fix loop, overriding any actionability table that says otherwise (`/code-review` step 5b and `skills/code-review/references/05-aggregate.md`, `knowledge/three-phase-workflow.md` § Review Loop). `error` findings are unaffected. Exempt: every finding from `security-review`, `concurrency-review` or `correctness-review`; fixes that correct behavior (a bug, a race, a missing check or cleanup, a security or accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers.
 
 #### 5b-i. Record round 1 (#1624)
 

@@ -16,6 +16,7 @@
   "overridden": [
     "agents/Explore.md",
     "agents/general-purpose.md",
+    "agents/refactor-opportunity-review.md",
     "hooks/guards.json",
     "hooks/pre_tool_guard.py",
     "skills/code-review/SKILL.md",
@@ -42,6 +43,7 @@
     "issues-from-plan",
     "mutation-night-watch",
     "mutation-testing",
+    "plan",
     "pr",
     "project-init",
     "setup",
@@ -74,6 +76,71 @@
     {
       "file": "skills/triage/SKILL.md",
       "reason": "Claude's built-in Explore agent is provided by the port",
+      "hits": 1
+    },
+    {
+      "file": "agents/software-engineer.md",
+      "reason": "lean production code: the engineer names what it skipped",
+      "hits": 1
+    },
+    {
+      "file": "agents/software-engineer.md",
+      "reason": "lean production code: the reuse ladder",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "lean production code: rule of three",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "lean production code: inject only what the blocker table allows doubling",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "lean production code: structure-review demotes growing restructures at the source",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "lean production code: authoring checklist without single-use helpers",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "lean production code: rule of three at write time",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "lean production code: self-challenge matches the rule of three",
+      "hits": 1
+    },
+    {
+      "file": "agents/quality-reviewer.md",
+      "reason": "lean production code: the fix-loop table defers to the lean fix rule",
+      "hits": 1
+    },
+    {
+      "file": "agents/quality-reviewer.md",
+      "reason": "lean production code: restructuring that grows production code is report-only",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-strategic.md",
+      "reason": "lean production code: plans name their reuse",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-strategic.md",
+      "reason": "lean production code: the strategic critic proposes a cut",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-strategic.md",
+      "reason": "lean production code: reinventing is a warning",
       "hits": 1
     }
   ]
