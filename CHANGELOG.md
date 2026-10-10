@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this package. Each entry is a pull request title, written by `devtools/changelog.py` when the version is bumped.
+All notable changes to this package. Each entry is the subject of a commit on the main line, written by `devtools/changelog.py` when the version is bumped. A pull request shows as its title with a link.
 
 ## [0.4.0] - 2026-10-10
 
