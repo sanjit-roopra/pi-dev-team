@@ -64,12 +64,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # No token here: this step runs repo code.
+      # This step runs repo code, so it gets no token. (It shares the runner with the next step, so this limits
+      # what the code can reach; it is not a hard boundary.)
       - run: python3 devtools/changelog.py --section "${GITHUB_REF_NAME#v}" > release-notes.md
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         # View first, so re-running the workflow after a partial failure does not fail on an existing release.
         run: |
+          flags=()
+          # A version with a hyphen (1.0.0-rc.1) is a pre-release: it must not become the "Latest" release.
+          [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
-            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md "${flags[@]}"

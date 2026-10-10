@@ -3,7 +3,7 @@
 
   changelog.py                  put the section for the version in package.json on top (the `npm version` hook)
   changelog.py --section 0.4.0  print that section (the text of the GitHub Release)
-  changelog.py --rebuild        write the whole file again from the v* tags; hand edits are lost
+  changelog.py --rebuild        write the whole file again from the release tags v<version>; hand edits are lost
 
 An entry is the subject of a commit on the main line since the last tag. A pull request merge gives the
 pull request title. The version bump commits ("0.4.0") are left out.
@@ -23,9 +23,9 @@ HEADER = (
     "All notable changes to this package. Each entry is the subject of a commit on the main line, written by "
     "`devtools/changelog.py` when the version is bumped. A pull request shows as its title with a link.\n"
 )
-VERSION = r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?"  # 0.4.0, 1.0.0-rc.1
-BUMP_COMMIT = re.compile(VERSION)
-SECTION_START = re.compile(rf"^## \[({VERSION})\]", re.MULTILINE)
+VERSION_PATTERN = r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?"  # 0.4.0, 1.0.0-rc.1
+BUMP_COMMIT = re.compile(VERSION_PATTERN)
+SECTION_START = re.compile(rf"^## \[({VERSION_PATTERN})\]", re.MULTILINE)
 MERGE_COMMIT = re.compile(r"Merge pull request #(\d+) from \S+")
 RELEASE_TAG = re.compile(r"v(\d+)\.(\d+)\.(\d+)(-.*)?")
 FIELD, RECORD = "\x1f", "\x1e"  # between a commit's subject and body, and between commits
@@ -36,18 +36,18 @@ def git(*args):
     return subprocess.run(["git", *args], cwd=ROOT, check=True, capture_output=True, text=True).stdout.rstrip("\n")
 
 
-def package():
+def read_package():
     return json.loads((ROOT / "package.json").read_text())
 
 
 def repo_url():
-    return re.sub(r"^git\+|\.git$", "", package()["repository"]["url"])
+    return re.sub(r"^git\+|\.git$", "", read_package()["repository"]["url"])
 
 
 def last_tag(excluding):
-    """The newest v* tag reachable from HEAD, other than `excluding`; None when there is none."""
+    """The newest release tag (v<version>) reachable from HEAD, other than `excluding`; None when there is none."""
     try:
-        return git("describe", "--tags", "--abbrev=0", "--match", "v*", "--exclude", excluding, "HEAD")
+        return git("describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--exclude", excluding, "HEAD")
     except subprocess.CalledProcessError:
         return None
 
@@ -77,12 +77,14 @@ def render_section(version, release_date, subjects, url):
     return f"## [{version}] - {release_date}\n\n" + "\n".join(lines or ["- No notable changes."]) + "\n"
 
 
-def split_sections(text):
-    """The text before the first section, then each section as a (version, text) pair."""
-    starts = list(SECTION_START.finditer(text))
-    head = text[: starts[0].start()] if starts else text
-    ends = [match.start() for match in starts[1:]] + [len(text)]
-    return head, [(m.group(1), text[m.start() : end].rstrip() + "\n") for m, end in zip(starts, ends)]
+def split_sections(changelog_text):
+    """The text before the first section, then each section as a (version, section text) pair."""
+    starts = list(SECTION_START.finditer(changelog_text))
+    head = changelog_text[: starts[0].start()] if starts else changelog_text
+    ends = [match.start() for match in starts[1:]] + [len(changelog_text)]
+    return head, [
+        (match.group(1), changelog_text[match.start() : end].rstrip() + "\n") for match, end in zip(starts, ends)
+    ]
 
 
 def upsert_section(version, release_date):
@@ -90,7 +92,7 @@ def upsert_section(version, release_date):
     head, existing = split_sections(CHANGELOG.read_text() if CHANGELOG.exists() else HEADER)
     subjects = commit_subjects(last_tag(excluding=f"v{version}"), "HEAD")
     new_section = render_section(version, release_date, subjects, repo_url())
-    older = [text for found, text in existing if found != version]
+    older = [section_text for section_version, section_text in existing if section_version != version]
     CHANGELOG.write_text("\n".join([head.rstrip() + "\n", new_section, *older]))
 
 
@@ -98,9 +100,10 @@ def release_tags():
     """The v* tags that are versions, oldest first. Other v* tags are not releases and are skipped."""
     parsed = {tag: RELEASE_TAG.fullmatch(tag) for tag in git("tag", "--list", "v*").split()}
 
-    def order(tag):  # a pre-release sorts before its release: 1.0.0-rc.1 < 1.0.0
+    def order(tag):  # semver: 1.0.0-rc.2 < 1.0.0-rc.10 < 1.0.0
         major, minor, patch, suffix = parsed[tag].groups()
-        return int(major), int(minor), int(patch), suffix is None, suffix or ""
+        parts = (suffix or "")[1:].split(".")
+        return int(major), int(minor), int(patch), suffix is None, [(0, int(p), "") if p.isdigit() else (1, 0, p) for p in parts]
 
     return sorted((tag for tag, match in parsed.items() if match), key=order)
 
@@ -116,9 +119,9 @@ def rebuild():
 
 def print_section(version):
     _, existing = split_sections(CHANGELOG.read_text())
-    for found, text in existing:
-        if found == version:
-            print(text.partition("\n")[2].strip())  # without the "## [x.y.z]" heading line
+    for section_version, section_text in existing:
+        if section_version == version:
+            print(section_text.partition("\n")[2].strip())  # without the "## [x.y.z]" heading line
             return
     sys.exit(f"CHANGELOG.md has no section for {version}")
 
@@ -133,7 +136,7 @@ def main():
     elif args.rebuild:
         rebuild()
     else:
-        upsert_section(package()["version"], date.today().isoformat())
+        upsert_section(read_package()["version"], date.today().isoformat())
 
 
 if __name__ == "__main__":
