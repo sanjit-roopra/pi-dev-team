@@ -38,7 +38,8 @@
   "scripts": {
     "sync": "python3 sync/sync_upstream.py --upstream ../agentic-dev-team",
     "test": "node --test test/unit/*.test.ts && python3 -m unittest discover -s test/py -p 'test_*.py'",
-    "e2e": "node test/e2e/run.mjs"
+    "e2e": "node test/e2e/run.mjs",
+    "version": "python3 devtools/changelog.py && git add CHANGELOG.md"
   },
   "files": [
     "extensions",
@@ -56,6 +57,7 @@
     "UPSTREAM.json",
     "PORTING.md",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ]
 }

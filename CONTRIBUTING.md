@@ -87,11 +87,11 @@ The `debug-pi-session` skill (`.agents/skills/`, linked into `.claude/skills/` f
 
 A GitHub Actions workflow (`.github/workflows/publish.yml`) stages the package on npm when you push a `v*` tag. The workflow uses npm trusted publishing, so the repository has no npm token. A staged version is not live until a maintainer approves it with 2FA. So a stolen GitHub login or a bad workflow change cannot put a version live by itself.
 
-1. Bump the version. This changes `package.json`, makes a commit and makes a tag: `npm version patch` (or `minor`, `major`).
+1. Bump the version. This changes `package.json`, adds the new section to `CHANGELOG.md`, makes a commit and makes a tag: `npm version patch` (or `minor`, `major`). The section lists the titles of the pull requests merged since the last tag (`devtools/changelog.py`, run by the `version` script). Read `CHANGELOG.md` before you push. To change the text, edit it and run `git commit --amend`, then move the tag with `git tag -f v<version>`.
 2. Push the commit and the tag: `git push --follow-tags`
-3. Wait for the Publish workflow to pass on GitHub.
+3. Wait for the Publish workflow to pass on GitHub. Its `release` job makes the GitHub Release from the `CHANGELOG.md` section of that version.
 4. Approve the staged version. On npmjs.com, open the package and approve the staged version. Or run `npm stage list pi-dev-team`, then `npm stage approve <stage-id>`.
 
-The workflow stops if the tag is not the same as the version in `package.json`. It also stops if `npm test` fails.
+The workflow stops if the tag is not the same as the version in `package.json`. It also stops if `npm test` fails. The `release` job fails if `CHANGELOG.md` has no section for the version. `python3 devtools/changelog.py --rebuild` writes the whole file again from the tags.
 
 To set up trusted publishing one time, go to the package settings on npmjs.com. Add a trusted publisher for GitHub Actions with the repository `sanjit-roopra/pi-dev-team` and the workflow `publish.yml`. Leave "Allow npm publish" unchecked, so the workflow can only stage.

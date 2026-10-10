@@ -50,3 +50,18 @@ jobs:
       - run: npm install -g npm@12.2.0
       # Stage only. The package goes live when a maintainer approves it with 2FA.
       - run: npm stage publish
+
+  # Publishes the changelog section of this version as the GitHub Release. Needs no npm access.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 devtools/changelog.py --section "${GITHUB_REF_NAME#v}" > release-notes.md
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file release-notes.md
