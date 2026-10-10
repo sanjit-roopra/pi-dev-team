@@ -11,6 +11,7 @@ The package is a compatibility runtime, not a rewrite. A compatibility runtime g
 - The sync then copies pi-specific files from `overrides/` over the upstream files. For a slim skill (see below), `overrides/` also holds the upstream text of that skill, unchanged, split into reference files.
 - Last, it applies a short list of text patches. The lists are `PATCHES` and `LEAN_PATCHES` (lean production code) in `sync/sync_upstream.py`.
 - The TypeScript extension in `extensions/dev-team/` gives that content the Claude Code functions that it expects.
+- `devtools/` holds maintainer scripts. The sync does not touch them and the npm package does not ship them. The release depends on one of them, `devtools/changelog.py`.
 
 [PORTING.md](PORTING.md) has the full analysis: the concept mapping, what is not ported and why, and the known differences.
 
@@ -87,11 +88,11 @@ The `debug-pi-session` skill (`.agents/skills/`, linked into `.claude/skills/` f
 
 A GitHub Actions workflow (`.github/workflows/publish.yml`) stages the package on npm when you push a `v*` tag. The workflow uses npm trusted publishing, so the repository has no npm token. A staged version is not live until a maintainer approves it with 2FA. So a stolen GitHub login or a bad workflow change cannot put a version live by itself.
 
-1. Bump the version. This changes `package.json`, makes a commit and makes a tag: `npm version patch` (or `minor`, `major`).
+1. Bump the version. This changes `package.json`, adds the new section to `CHANGELOG.md`, makes a commit and makes a tag: `npm version patch` (or `minor`, `major`). The section lists the commits on the main line since the last tag. A merged pull request shows as its title with a link. A script (`devtools/changelog.py`, run by the `version` script in `package.json`) writes it. Read `CHANGELOG.md` before you push. To change the text, edit it, run `git commit --amend`, then move the tag with `git tag -f v<version>`. Do not run the script again after that: it writes the section again and drops your edit.
 2. Push the commit and the tag: `git push --follow-tags`
-3. Wait for the Publish workflow to pass on GitHub.
+3. Wait for the Publish workflow to pass on GitHub. Its `release` job makes the GitHub Release from the `CHANGELOG.md` section of that version. The release appears when the version is staged, before you approve it on npm. If you decide not to approve, delete the release too: `gh release delete v<version> --cleanup-tag`.
 4. Approve the staged version. On npmjs.com, open the package and approve the staged version. Or run `npm stage list pi-dev-team`, then `npm stage approve <stage-id>`.
 
-The workflow stops if the tag is not the same as the version in `package.json`. It also stops if `npm test` fails.
+The workflow stops, before anything is staged, if the tag is not the same as the version in `package.json`, if `CHANGELOG.md` has no section for the version, or if `npm test` fails. To run the workflow again after a failure, use "Re-run failed jobs" on GitHub; a release that already exists is kept. Re-run only the `release` job when `publish` already staged the version: staging the same version twice fails. `python3 devtools/changelog.py --rebuild` writes the whole `CHANGELOG.md` again from the release tags (`v<version>`). It drops every hand edit.
 
 To set up trusted publishing one time, go to the package settings on npmjs.com. Add a trusted publisher for GitHub Actions with the repository `sanjit-roopra/pi-dev-team` and the workflow `publish.yml`. Leave "Allow npm publish" unchecked, so the workflow can only stage.

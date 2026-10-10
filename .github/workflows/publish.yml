@@ -27,6 +27,9 @@ jobs:
             echo "Tag $GITHUB_REF_NAME does not match package.json $expected_tag" >&2
             exit 1
           fi
+      # Fail before anything is staged, not after: the release job needs this section.
+      - name: Check CHANGELOG.md has a section for this version
+        run: python3 devtools/changelog.py --section "${GITHUB_REF_NAME#v}" > /dev/null
       - name: Link pi packages for the unit tests
         run: |
           npm install -g @earendil-works/pi-coding-agent
@@ -50,3 +53,28 @@ jobs:
       - run: npm install -g npm@12.2.0
       # Stage only. The package goes live when a maintainer approves it with 2FA.
       - run: npm stage publish
+
+  # Creates the GitHub Release from this version's changelog section. Needs no npm access.
+  release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # This step runs repo code, so it gets no token. (It shares the runner with the next step, so this limits
+      # what the code can reach; it is not a hard boundary.)
+      - run: python3 devtools/changelog.py --section "${GITHUB_REF_NAME#v}" > release-notes.md
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # View first, so re-running the workflow after a partial failure does not fail on an existing release.
+        run: |
+          flags=()
+          # A version with a hyphen (1.0.0-rc.1) is a pre-release: it must not become the "Latest" release.
+          [[ "$GITHUB_REF_NAME" == *-* ]] && flags+=(--prerelease)
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+              --notes-file release-notes.md "${flags[@]}"
