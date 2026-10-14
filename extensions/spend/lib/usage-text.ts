@@ -17,7 +17,7 @@ import {
 	type UsageRow,
 } from "./usage-breakdown.ts";
 import type { BarChartOptions, ChartFormat } from "./usage-chart.ts";
-import { toSpacedSingleLine, toSingleLine } from "./terminal-text.ts";
+import { toSpacedSingleLine, toSingleLine } from "../../shared/terminal-text.ts";
 import type { Scope, View } from "./usage-state.ts";
 
 export const SEPARATOR = " · ";

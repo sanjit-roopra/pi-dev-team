@@ -13,7 +13,8 @@ import { DEV_TEAM_SUBAGENT_TOOL } from "./lib/subagent-usage.ts";
 import { runUsage } from "./lib/usage-command.ts";
 import { loadSpendHistory } from "./lib/usage-history.ts";
 
-const AI_CREDITS_STATUS = "spend-ai-credits";
+// The key dev-team used before spend was split out, so the line keeps its place in the footer.
+const AI_CREDITS_STATUS = "dev-team-ai-credits";
 
 export default function spend(pi: ExtensionAPI) {
 	// A dev-team agent runs as a child pi process with the same packages; its parent shows the spend.

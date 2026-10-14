@@ -6,7 +6,7 @@
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatShare, formatUsd, hasUsage, type MonthSnapshot, type UsageBreakdown, type UsageRow } from "./usage-breakdown.ts";
-import { cutToWidth } from "./terminal-text.ts";
+import { cutToWidth } from "../../shared/terminal-text.ts";
 import { barChartLines, type ChartStyle } from "./usage-chart.ts";
 import { type SplitBarOptions, type SplitStyle, splitBarLines } from "./usage-split-bar.ts";
 import type { UsageState } from "./usage-state.ts";

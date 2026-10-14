@@ -7,7 +7,7 @@
  * theme code that feeds it.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { cutToWidth, toSingleLine } from "./terminal-text.ts";
+import { cutToWidth, toSingleLine } from "../../shared/terminal-text.ts";
 
 export interface ChartRow {
 	label: string;

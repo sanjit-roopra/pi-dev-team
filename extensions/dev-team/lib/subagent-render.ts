@@ -25,7 +25,7 @@ import {
 	type UsageTotals,
 } from "./subagent-types.ts";
 import { syncClock } from "./live-clock.ts";
-import { sanitizeTerminalText, toSingleLine } from "../../spend/lib/terminal-text.ts";
+import { sanitizeTerminalText, toSingleLine } from "../../shared/terminal-text.ts";
 
 const COLLAPSED_TOOLS = 3;
 const COLLAPSED_OUTPUT_LINES = 3;

@@ -4,7 +4,7 @@
  * can set, so they are drawn on one line with escape sequences removed.
  */
 import { inherits, type ModelStatus, type PresetAdvice, type TierChange } from "./config.ts";
-import { toSingleLine } from "../../spend/lib/terminal-text.ts";
+import { toSingleLine } from "../../shared/terminal-text.ts";
 
 /** How doctor shows a ModelStatus. */
 export const MODEL_STATUS_TEXT: Record<ModelStatus, string> = { ok: "ok", "no-auth": "NO AUTH (/login)", unknown: "UNKNOWN MODEL" };

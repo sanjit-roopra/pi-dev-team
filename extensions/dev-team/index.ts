@@ -29,7 +29,7 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
-import { toSingleLine } from "../spend/lib/terminal-text.ts";
+import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";

@@ -227,9 +227,18 @@ test("/dev-team usage still runs /spend, as its earlier name", async (t) => {
 test("the dev-team extension leaves the AI credits status line to the spend extension", async () => {
 	const { handlers } = await loaded;
 	const statuses: string[] = [];
-	const ctx = { cwd: os.tmpdir(), hasUI: true, ui: { setStatus: (key: string) => void statuses.push(key), notify: () => {} }, sessionManager: { getEntries: () => [] } };
+	const ctx = {
+		cwd: os.tmpdir(),
+		hasUI: true,
+		mode: "print",
+		isProjectTrusted: () => false,
+		ui: { setStatus: (key: string) => void statuses.push(key), notify: () => {} },
+		sessionManager: { getEntries: () => [], getSessionId: () => "s", getSessionFile: () => undefined },
+	};
+	for (const h of handlers.session_start) await h({ reason: "startup" }, ctx);
 	for (const h of handlers.turn_end) await h({}, ctx);
-	assert.deepEqual(statuses, []);
+	for (const h of handlers.tool_result) await h({ toolName: "dev_team_subagent", toolCallId: "x", input: {}, content: [], isError: false }, ctx);
+	assert.ok(!statuses.includes("dev-team-ai-credits"), statuses.join(", "));
 });
 
 test("a dispatched agent's own prompt goes after the shared guide, not in pi's appended prompt", async () => {

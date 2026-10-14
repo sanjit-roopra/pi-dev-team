@@ -18,6 +18,7 @@ import { readSmallFile } from "./safe-read.ts";
 import { DEV_TEAM_SUBAGENT_TOOL } from "../../spend/lib/subagent-usage.ts";
 import type { AgentSource } from "./subagent-types.ts";
 
+// Defined in spend, which must know the tool without loading dev-team: spend refreshes the credits line on its results.
 export { DEV_TEAM_SUBAGENT_TOOL };
 
 export interface AgentDef {

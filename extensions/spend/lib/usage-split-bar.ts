@@ -10,7 +10,7 @@
  * styled.
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { cutToWidth, toSingleLine } from "./terminal-text.ts";
+import { cutToWidth, toSingleLine } from "../../shared/terminal-text.ts";
 import { FULL_BLOCK } from "./usage-chart.ts";
 
 /** One input to the split bar: an amount, which becomes (part of) a segment. */

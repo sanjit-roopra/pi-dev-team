@@ -79,7 +79,7 @@ test("the AI credits status line is set at session start and turn end", async ()
 	for (const event of ["session_start", "turn_end"]) {
 		const { ctx, statuses } = uiCtx([copilotTurn(0.5)]);
 		await fire(event, {}, ctx);
-		assert.deepEqual(statuses, [["spend-ai-credits", "GitHub Copilot: 50.0 AI credits"]], event);
+		assert.deepEqual(statuses, [["dev-team-ai-credits", "GitHub Copilot: 50.0 AI credits"]], event);
 	}
 });
 
@@ -88,7 +88,7 @@ test("a dev-team dispatch result refreshes the status line with the agents' spen
 	const agent = { type: "custom", customType: SUBAGENT_USAGE_ENTRY, data: { agent: "Explore", model: "github-copilot/m", ok: true, durationMs: 1, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost: 0.25, turns: 1 } } };
 	const { ctx, statuses } = uiCtx([copilotTurn(0.5), agent]);
 	await fire("tool_result", { toolName: "dev_team_subagent" }, ctx);
-	assert.deepEqual(statuses, [["spend-ai-credits", "GitHub Copilot: 75.0 AI credits"]]);
+	assert.deepEqual(statuses, [["dev-team-ai-credits", "GitHub Copilot: 75.0 AI credits"]]);
 });
 
 test("other tool results leave the status line alone", async () => {
@@ -113,10 +113,13 @@ test("without a UI the status line is not touched", async () => {
 	assert.equal(touched, false);
 });
 
-// A project can switch the dev-team extension off; spend must still load then.
-test("no spend module imports from the dev-team extension", () => {
-	const root = path.join(import.meta.dirname, "../../extensions/spend");
-	const files = fs.readdirSync(root, { recursive: true, encoding: "utf-8" }).filter((f) => f.endsWith(".ts"));
+// A project can switch the dev-team extension off; spend must still load then. Any quoted module path
+// counts (static or dynamic import, either quote), in spend and in the shared helpers it uses.
+test("no spend or shared module imports from the dev-team extension", () => {
+	const root = path.join(import.meta.dirname, "../../extensions");
+	const files = ["spend", "shared"].flatMap((dir) =>
+		fs.readdirSync(path.join(root, dir), { recursive: true, encoding: "utf-8" }).filter((f) => f.endsWith(".ts")).map((f) => path.join(dir, f)),
+	);
 	assert.ok(files.length > 10);
-	for (const file of files) assert.doesNotMatch(fs.readFileSync(path.join(root, file), "utf-8"), /from "[^"]*dev-team\//, file);
+	for (const file of files) assert.doesNotMatch(fs.readFileSync(path.join(root, file), "utf-8"), /["'`][^"'`\n]*dev-team\/[^"'`\n]*\.ts["'`]/, file);
 });
