@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openUsage, reduce, type UsageAction, type UsageKey, type UsageState, usageKeyFor } from "../../extensions/dev-team/lib/usage-state.ts";
+import { openUsage, reduce, type UsageAction, type UsageKey, type UsageState, usageKeyFor } from "../../extensions/spend/lib/usage-state.ts";
 
 const key = (k: UsageKey): UsageAction => ({ type: "key", key: k });
 const sessionIdle: UsageState = { scope: "session", view: "model", load: { kind: "idle" } };

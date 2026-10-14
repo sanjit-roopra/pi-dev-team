@@ -1,5 +1,5 @@
 /**
- * `/dev-team usage [session|month]`: opens the usage overlay, or prints the plain-text summary
+ * `/spend [session|month]`: opens the usage overlay, or prints the plain-text summary
  * when no overlay can be shown. The overlay is out of reach without a UI (print mode) and in RPC mode,
  * where `ui.custom()` is a stub that resolves without ever calling the factory, so "the factory never
  * ran" is the signal to fall back to text. A `ui.custom()` that rejects falls back to text too.
@@ -21,7 +21,7 @@ export interface UsageDeps {
 	emit(text: string): void;
 }
 
-export const USAGE_SYNTAX = "Usage: /dev-team usage [session|month]";
+export const USAGE_SYNTAX = "Usage: /spend [session|month]";
 
 const SCOPE_ARGS: ReadonlyMap<string, Scope> = new Map([
 	["", "session"],
@@ -29,7 +29,7 @@ const SCOPE_ARGS: ReadonlyMap<string, Scope> = new Map([
 	["month", "month"],
 ]);
 
-/** The scope `/dev-team usage <args>` asks for (this session when none is given), or the usage message for an argument it does not know. */
+/** The scope `/spend <args>` asks for (this session when none is given), or the usage message for an argument it does not know. */
 export function parseUsageArgs(args: string): { scope: Scope } | { error: string } {
 	const scope = SCOPE_ARGS.get(args.trim().toLowerCase());
 	return scope ? { scope } : { error: USAGE_SYNTAX };

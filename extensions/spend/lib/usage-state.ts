@@ -1,5 +1,5 @@
 /**
- * The state machine behind the /dev-team usage overlay: which scope and view are shown and how the
+ * The state machine behind the /spend overlay: which scope and view are shown and how the
  * this-month load is going. Pure: `reduce` maps a state and an action (a key, or news from the load)
  * to the next state plus the effects the view must carry out (start or cancel the load, close), so
  * every rule is testable without pi or a terminal. Mapping raw terminal input to a UsageKey lives

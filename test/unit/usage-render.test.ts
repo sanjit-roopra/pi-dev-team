@@ -2,9 +2,9 @@ process.env.TZ = "UTC"; // the header's "as of" is local time; pin it so the exp
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { type UsageBreakdown, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
-import { renderUsage, type UsageStyle, type UsageViewModel } from "../../extensions/dev-team/lib/usage-render.ts";
-import type { UsageState } from "../../extensions/dev-team/lib/usage-state.ts";
+import { type UsageBreakdown, usageBreakdown } from "../../extensions/spend/lib/usage-breakdown.ts";
+import { renderUsage, type UsageStyle, type UsageViewModel } from "../../extensions/spend/lib/usage-render.ts";
+import type { UsageState } from "../../extensions/spend/lib/usage-state.ts";
 import { mixed, multiProvider, NOW, providerRun, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;

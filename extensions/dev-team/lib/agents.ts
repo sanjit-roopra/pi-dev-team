@@ -15,9 +15,10 @@ import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_CONFIG, inherits } from "./config.ts";
 import { readSmallFile } from "./safe-read.ts";
+import { DEV_TEAM_SUBAGENT_TOOL } from "../../spend/lib/subagent-usage.ts";
 import type { AgentSource } from "./subagent-types.ts";
 
-export const DEV_TEAM_SUBAGENT_TOOL = "dev_team_subagent";
+export { DEV_TEAM_SUBAGENT_TOOL };
 
 export interface AgentDef {
 	name: string;

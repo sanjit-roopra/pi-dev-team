@@ -1,5 +1,5 @@
 /**
- * The plain-text usage summary for /dev-team usage when no overlay can be shown (print mode, RPC),
+ * The plain-text usage summary for /spend when no overlay can be shown (print mode, RPC),
  * and the wording both it and the overlay (usage-render.ts) use: scope names, view titles, header
  * pieces, empty-state, failure and footnote sentences. Keeping the sentences here is what keeps the
  * two presentations saying the same thing.

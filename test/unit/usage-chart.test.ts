@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { barChartLines, type BarChartOptions, type ChartRow } from "../../extensions/dev-team/lib/usage-chart.ts";
-import { splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/dev-team/lib/usage-split-bar.ts";
+import { barChartLines, type BarChartOptions, type ChartRow } from "../../extensions/spend/lib/usage-chart.ts";
+import { splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/spend/lib/usage-split-bar.ts";
 
 const identity = (text: string) => text;
 const style = { bar: identity, muted: identity };

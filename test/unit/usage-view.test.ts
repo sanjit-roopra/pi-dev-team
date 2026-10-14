@@ -2,11 +2,11 @@ process.env.TZ = "UTC"; // the header's "as of" is local time; pin it so the exp
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import type { SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
-import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.ts";
-import type { UsageStyle } from "../../extensions/dev-team/lib/usage-render.ts";
-import { openUsage } from "../../extensions/dev-team/lib/usage-state.ts";
-import { OVERLAY_HEIGHT_PERCENT, UsageView, type UsageViewDeps } from "../../extensions/dev-team/lib/usage-view.ts";
+import type { SpendRun } from "../../extensions/spend/lib/session-spend.ts";
+import type { SpendHistory } from "../../extensions/spend/lib/usage-history.ts";
+import type { UsageStyle } from "../../extensions/spend/lib/usage-render.ts";
+import { openUsage } from "../../extensions/spend/lib/usage-state.ts";
+import { OVERLAY_HEIGHT_PERCENT, UsageView, type UsageViewDeps } from "../../extensions/spend/lib/usage-view.ts";
 import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;

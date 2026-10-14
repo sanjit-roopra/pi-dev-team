@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aiCreditsStatus, copilotBillingPeriodStart, creditsFor, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/dev-team/lib/ai-credits.ts";
-import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
+import { aiCreditsStatus, copilotBillingPeriodStart, creditsFor, formatAiCredits, formatCredits, isCopilotModel, runAiCredits, runsAiCredits, sessionAiCredits } from "../../extensions/spend/lib/ai-credits.ts";
+import { SUBAGENT_USAGE_ENTRY, type NestedUsage, type UsageTotals } from "../../extensions/spend/lib/subagent-usage.ts";
 
 // GitHub bills 1 AI credit per $0.01 of token cost (docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing).
 const CREDITS_PER_USD = 100;

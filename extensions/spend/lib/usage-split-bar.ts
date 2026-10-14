@@ -1,5 +1,5 @@
 /**
- * A stacked split for the /dev-team usage overlay (splitBarLines): one bar cut into segments by
+ * A stacked split for the /spend overlay (splitBarLines): one bar cut into segments by
  * amount, then a legend. The overlay draws two: threads (main, subagents, overhead) and providers.
  * Segments keep the order the caller gives, and each input position has its own glyph (█ ▓ ▒ ░) and
  * colour, so the split reads without colour. A part with no amount draws nothing but keeps its

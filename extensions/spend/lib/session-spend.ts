@@ -5,7 +5,7 @@
  * out "overhead" runs (cache warming, compaction, branch summaries), the AI credits count them.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-types.ts";
+import { creditedRuns, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./subagent-usage.ts";
 
 /** The model of a run whose entry does not name one. */
 export const UNKNOWN_MODEL = "unknown";

@@ -1,5 +1,5 @@
 /**
- * Renders the /dev-team usage overlay. renderUsage() turns the view's state plus the usage breakdown
+ * Renders the /spend overlay. renderUsage() turns the view's state plus the usage breakdown
  * into the lines of the panel (header, split bars, ranked chart, footer), fitted to the terminal's width
  * and height; it is pure (colour comes from the injected style), so tests drive it without pi. The
  * component that holds the state and reacts to keys is UsageView (usage-view.ts).

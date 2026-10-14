@@ -4,21 +4,12 @@
  * import the tool; the tool imports the renderers to register them and for the progress text.
  */
 import type { Usage } from "@earendil-works/pi-ai";
+import type { NestedUsage, UsageTotals } from "../../spend/lib/subagent-usage.ts";
 
-export const SUBAGENT_USAGE_ENTRY = "dev-team-subagent-usage";
+export { creditedRuns, type NestedUsage, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry, type UsageTotals } from "../../spend/lib/subagent-usage.ts";
 
 /** Where an agent definition came from: the project (.pi/agents, .claude/agents) or this package. */
 export type AgentSource = "project" | "package";
-
-/** One child's usage as the cost meter and the renderers read it (cost is the total in USD). */
-export interface UsageTotals {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	turns: number;
-}
 
 /**
  * A child's tool call as kept for the progress view: the tool and the few arguments the view shows
@@ -29,26 +20,6 @@ export interface ToolCallSummary {
 	args?: Record<string, string>;
 	/** Set only while the call executes: when it started (epoch ms). */
 	runningSince?: number;
-}
-
-/** Spend of an agent dispatched by a child (or deeper), credited to that agent and its model. */
-export interface NestedUsage {
-	agent: string;
-	model?: string;
-	usage: UsageTotals;
-}
-
-/** Payload of the SUBAGENT_USAGE_ENTRY session entry the cost meter reads. */
-export interface SubagentUsageEntry {
-	agent: string;
-	model?: string;
-	tier?: string;
-	ok: boolean;
-	durationMs: number;
-	/** The child's own turns only. */
-	usage: UsageTotals;
-	/** Agents the child dispatched itself, at any depth. */
-	nested?: NestedUsage[];
 }
 
 export interface WorktreeInfo {
@@ -174,14 +145,6 @@ export function dispatchTask(args: DispatchArgs): string {
 export function describeWorktree(wt: WorktreeInfo): string {
 	if (!wt.kept) return "removed: no changes";
 	return `kept: ${wt.path} on branch ${wt.branch}, ${wt.commits} commit(s)${wt.dirty ? ", uncommitted changes" : ""}`;
-}
-
-/**
- * The spend one dispatched agent accounts for: its own run (when it reported usage), then every run it
- * dispatched itself. The single rule the cost meter, the parent's crediting and the TUI total share.
- */
-export function creditedRuns(run: { agent: string; model?: string; usage?: UsageTotals; nested?: NestedUsage[] }): NestedUsage[] {
-	return [...(run.usage ? [{ agent: run.agent, model: run.model, usage: run.usage }] : []), ...(run.nested ?? [])];
 }
 
 export function emptyPiUsage(): Usage {

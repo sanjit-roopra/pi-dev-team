@@ -3,7 +3,8 @@
  *
  * This extension provides the Claude Code runtime contract the upstream content relies on:
  *   env (CLAUDE_PLUGIN_ROOT, ...), /commands for skills, the `skill` and `dev_team_subagent` tools,
- *   `ask_user`, `web_fetch`, the Python hook bridge, native cost meter and autocompact.
+ *   `ask_user`, `web_fetch`, the Python hook bridge and autocompact. The cost meter, /spend and the
+ *   AI credits status line are the separate spend extension (extensions/spend), which also runs alone.
  * See PORTING.md for the full mapping.
  */
 import * as fs from "node:fs";
@@ -28,20 +29,18 @@ import {
 	userConfigPath,
 } from "./lib/config.ts";
 import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
-import { toSingleLine } from "./lib/terminal-text.ts";
+import { toSingleLine } from "../spend/lib/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
-import { aiCreditsStatus } from "./lib/ai-credits.ts";
 import { recordCost } from "./lib/metrics.ts";
-import { sessionEntries } from "./lib/session-spend.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { childTrustOf, shimTrustEnv } from "./lib/trust.ts";
-import { runUsage } from "./lib/usage-command.ts";
-import { loadSpendHistory } from "./lib/usage-history.ts";
+import { runUsage } from "../spend/lib/usage-command.ts";
+import { loadSpendHistory } from "../spend/lib/usage-history.ts";
 
 function packageRootDir(): string {
 	// extensions/dev-team/index.ts -> package root
@@ -208,11 +207,12 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("dev-team", {
-		description: "pi-dev-team: status | models | hooks | doctor | usage",
+		description: "pi-dev-team: status | models | hooks | doctor",
 		getArgumentCompletions: (prefix) =>
-			["status", "models", "hooks", "doctor", "usage"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
+			["status", "models", "hooks", "doctor"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
 		handler: async (args, ctx) => {
 			const [sub = "status", ...rest] = (args ?? "").trim().split(/\s+/).filter(Boolean);
+			// Earlier name of /spend, kept for one release.
 			if (sub === "usage") return runUsage(ctx, rest.join(" "), { now: () => new Date(), loadHistory: loadSpendHistory, emit: (text) => report(ctx, text) });
 			if (sub === "models") return configureModels(ctx);
 			if (sub === "hooks") return showHooks(ctx);
@@ -384,15 +384,6 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 	let agentPrompt: string | undefined;
 
-	/**
-	 * Refresh the session's GitHub Copilot AI credits status line under pi's footer (hidden at 0). Runs
-	 * at turn end and dispatch end, so spend pi records while idle (cache warming) shows from the next turn.
-	 */
-	function refreshAiCreditsStatus(ctx: ExtensionContext): void {
-		if (isSubagent || !ctx.hasUI) return;
-		ctx.ui.setStatus("dev-team-ai-credits", aiCreditsStatus(sessionEntries(ctx)));
-	}
-
 	// ---------------------------------------------------------------- lifecycle
 
 	pi.on("session_start", async (event, ctx) => {
@@ -401,7 +392,6 @@ export default function devTeam(pi: ExtensionAPI) {
 		await applyAgentFlag(ctx);
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
-		refreshAiCreditsStatus(ctx);
 		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
 		sessionContext = out.context;
 	});
@@ -478,7 +468,6 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			running = Math.max(0, running - 1);
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", running ? `dev-team: ${running} agent call(s) running` : undefined);
-			refreshAiCreditsStatus(ctx);
 		}
 		const claudeTool = claudeToolName(event.toolName);
 		const input = event.input as Record<string, unknown>;
@@ -531,9 +520,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		};
 	});
 
-	pi.on("turn_end", async (_event, ctx) => {
+	pi.on("turn_end", async () => {
 		readTracker.endTurn();
-		refreshAiCreditsStatus(ctx);
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {

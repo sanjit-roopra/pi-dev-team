@@ -1,5 +1,5 @@
 /**
- * The /dev-team usage overlay component. It holds the state machine's state (usage-state.ts), turns
+ * The /spend overlay component. It holds the state machine's state (usage-state.ts), turns
  * keys into transitions, runs this month's load and hands the model to renderUsage (usage-render.ts).
  */
 import type { Component } from "@earendil-works/pi-tui";

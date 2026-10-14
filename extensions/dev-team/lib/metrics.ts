@@ -12,7 +12,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { costUsd, type PiUsage, sessionEntries, sessionSpend } from "./session-spend.ts";
+import { costUsd, type PiUsage, sessionEntries, sessionSpend } from "../../spend/lib/session-spend.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });

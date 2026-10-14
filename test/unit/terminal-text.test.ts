@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cutToWidth, sanitizeTerminalText, toSingleLine, toSpacedSingleLine } from "../../extensions/dev-team/lib/terminal-text.ts";
+import { cutToWidth, sanitizeTerminalText, toSingleLine, toSpacedSingleLine } from "../../extensions/spend/lib/terminal-text.ts";
 
 // SGR, OSC 52 (clipboard), erase screen, OSC 8 hyperlink, 8-bit CSI, CR and NUL.
 const HOSTILE = "x\x1b[31m\x1b]52;c;ZXZpbA==\x07\x1b[2J\x1b]8;;https://x\x1b\\y\x1b]8;;\x1b\\\x9b31m\rFAKE\x00";

@@ -1,5 +1,5 @@
 /**
- * Block-character ranked bar chart for the /dev-team usage overlay (barChartLines); the stacked
+ * Block-character ranked bar chart for the /spend overlay (barChartLines); the stacked
  * splits are usage-split-bar.ts. Pure string rendering: every line is built from plain
  * text, measured with pi-tui's visibleWidth, cut where needed and only then styled, so a line never
  * exceeds the width it was asked for and colour comes from the injected style alone. Formatting

@@ -1,6 +1,6 @@
-import { COPILOT_PROVIDER, CREDITS_PER_USD } from "../../extensions/dev-team/lib/ai-credits.ts";
-import type { SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
-import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
+import { COPILOT_PROVIDER, CREDITS_PER_USD } from "../../extensions/spend/lib/ai-credits.ts";
+import type { SpendRun } from "../../extensions/spend/lib/session-spend.ts";
+import { usageBreakdown } from "../../extensions/spend/lib/usage-breakdown.ts";
 
 /** A Copilot run costing `credits` AI credits (1 credit = $0.01); for other providers, or a cost in USD, use providerRun. */
 export const copilotRun = (model: string, credits: number, thread: SpendRun["thread"] = "main", agent = "main"): SpendRun => ({

@@ -4,8 +4,8 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { SUBAGENT_USAGE_ENTRY } from "../../extensions/dev-team/lib/subagent-types.ts";
-import { loadSpendHistory, sessionRoot } from "../../extensions/dev-team/lib/usage-history.ts";
+import { SUBAGENT_USAGE_ENTRY } from "../../extensions/spend/lib/subagent-usage.ts";
+import { loadSpendHistory, sessionRoot } from "../../extensions/spend/lib/usage-history.ts";
 
 const SINCE = new Date("2026-10-01T00:00:00Z");
 /** Every file written by withRoot is last modified here, after SINCE, so it is read unless a test says otherwise. */
