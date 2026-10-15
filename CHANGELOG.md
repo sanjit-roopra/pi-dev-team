@@ -2,6 +2,11 @@
 
 All notable changes to this package. Each entry is the subject of a commit on the main line, written by `devtools/changelog.py` when the version is bumped. A pull request shows as its title with a link.
 
+## [0.5.0] - 2026-10-15
+
+- Split /spend into its own extension so it runs without dev-team ([#24](https://github.com/sanjit-roopra/pi-dev-team/pull/24))
+- Generate CHANGELOG.md on version bump and publish it as the GitHub Release ([#23](https://github.com/sanjit-roopra/pi-dev-team/pull/23))
+
 ## [0.4.0] - 2026-10-10
 
 - Write less production code: reuse ladder, simplify lens, lean fix rule ([#22](https://github.com/sanjit-roopra/pi-dev-team/pull/22))
