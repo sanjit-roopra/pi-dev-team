@@ -1,257 +1,178 @@
 # pi-dev-team
 
-pi-dev-team gives the [pi coding agent](https://pi.dev) a team of AI agents. The team writes a specification, makes a plan, builds the change with tests, reviews the code, and opens a pull request. You approve each important step.
+pi-dev-team gives the [pi coding agent](https://pi.dev) a team of AI agents. The team writes a spec, plans, builds with tests, reviews the code, and opens a pull request. You approve each important step.
 
-The package is a port of the dev-team plugin by Bryan Finster ([bdfinst/agentic-dev-team](https://github.com/bdfinst/agentic-dev-team)), which was written for Claude Code. It works with every model provider that pi supports, for example GitHub Copilot, Anthropic, and OpenAI.
+It is a port of Bryan Finster's dev-team plugin for Claude Code ([bdfinst/agentic-dev-team](https://github.com/bdfinst/agentic-dev-team)). It works with every provider pi supports, for example GitHub Copilot, Anthropic and OpenAI.
 
 ## Quick start
 
-The installation takes about 5 minutes if Node.js and Python are already on your computer.
-
-1. Install pi, if you do not have it: `npm install -g @earendil-works/pi-coding-agent`
+1. Install pi: `npm install -g @earendil-works/pi-coding-agent`
 2. Install this package: `pi install git:github.com/sanjit-roopra/pi-dev-team`
-3. Go to a Git repository and start pi: `cd my-project && pi`
-4. In pi, log in to a model provider: `/login`
-5. Check the installation: `/dev-team doctor`
-6. Prepare the repository for the team: `/setup`
-7. Give the team its first task: `/specs add rate limiting to the public API`
-
-After step 5, each line of the report starts with `ok` or `MISSING`. If a line shows `MISSING`, install that tool (see [Requirements](#requirements)).
+3. Start pi in a Git repository: `cd my-project && pi`
+4. Log in to a provider: `/login`
+5. Check the install: `/dev-team doctor`. Install any tool marked `MISSING` (see [Requirements](#requirements)).
+6. Prepare the repository: `/setup`
+7. Give the team a task: `/specs add rate limiting to the public API`
 
 ## Requirements
 
-| Tool | Version | The team uses it to | If it is missing |
-|---|---|---|---|
-| [Node.js](https://nodejs.org) | 22.19 or later | Run pi | pi does not start. |
-| [pi](https://pi.dev) | 1.0 or later | Run the agents | The package does not load. |
-| Git | Any recent version | Track changes, make worktrees | Most commands do not work. |
-| Python | 3.10 or later | Run the guard hooks and scripts | The guards are off. pi shows a warning. |
-| [GitHub CLI](https://cli.github.com) (`gh`) | Any recent version | Open pull requests and read issues | `/pr` and `/ship` cannot open a pull request. |
-| `jq` | Any version | Run some quality gates | Those gates do not run. |
+| Tool | Version | If it is missing |
+|---|---|---|
+| [Node.js](https://nodejs.org) | 22.19+ | pi does not start. |
+| [pi](https://pi.dev) | 1.0+ | The package does not load. |
+| Git | recent | Most commands do not work. |
+| Python | 3.10+ | The guard hooks are off. pi shows a warning. |
+| [GitHub CLI](https://cli.github.com) (`gh`) | recent | `/pr` and `/ship` cannot open a pull request. |
+| `jq` | any | Some quality gates do not run. |
 
-A guard hook is a small script that runs before or after a tool call. It can stop an unsafe action, for example a pull request without a code review.
+A guard hook is a small script that runs around a tool call. It can stop an unsafe action, for example a pull request without a code review.
 
 ## How the team works
 
-A normal change goes through four commands. Each command stops and asks you before it continues.
-
-| Command | What it does | What it leaves behind |
+| Command | What it does | Result |
 |---|---|---|
-| `/specs <task>` | Asks you questions until the task is clear. Then it writes the intent, the architecture notes, and the acceptance criteria. | A spec file or a GitHub issue |
-| `/plan` | Splits the work into small steps. Each step has its own tests. | `plans/<task>.md` |
-| `/build` | Does the plan one step at a time. It writes a test, makes the test pass, and then cleans up the code. | Commits on your branch |
-| `/pr` | Runs the tests, the linter, and the code review. Then it opens a pull request. | A pull request |
+| `/specs <task>` | Asks questions until the task is clear, then writes intent, architecture notes and acceptance criteria. | Spec file or GitHub issue |
+| `/plan` | Splits the work into small steps, each with its own tests. | `plans/<task>.md` |
+| `/build` | Builds one step at a time: test, make it pass, clean up. | Commits on your branch |
+| `/pr` | Runs tests, linter and code review, then opens a pull request. | Pull request |
 
-To do all four steps with one command, use `/ship <task>`. It stops at the same approval points.
+Each command stops and asks you before it continues. `/ship <task>` runs all four, with the same stops.
 
-### Other commands
+Other commands:
 
-- `/code-review`: About 25 review agents read your change at the same time. Each agent checks one topic, for example security, tests, or naming. Then the team can fix what they find.
-- `/triage <bug>`: Finds the root cause of a bug and writes a fix plan.
-- `/fix <bug>`: Does `/triage`, proves the bug, fixes it with tests, and opens a pull request.
-- `/continue`: Continues the work from your last session.
-- `/help`: Shows the main commands. `/help --all` shows all commands.
+- `/code-review`: about 25 agents review your change, one topic each (security, tests, naming, ...).
+- `/triage <bug>`: finds the root cause and writes a fix plan.
+- `/fix <bug>`: triage, prove the bug, fix it with tests, open a pull request.
+- `/continue`: continues your last session's work.
+- `/help`: the main commands. `/help --all`: all commands.
 
 ## Choose the models
 
-Each agent has a tier. The tier tells the agent how strong a model it needs:
+Each agent has a tier: `opus` (deep reviews, hard design), `sonnet` (most work), `haiku` (small checks), `fable` (strongest; unused by default).
 
-| Tier | Used for |
-|---|---|
-| `opus` | Deep reviews and difficult design work |
-| `sonnet` | Most work |
-| `haiku` | Small, cheap checks |
-| `fable` | The strongest model. No agent uses this tier by default. |
+By default every tier uses your session model. To map tiers to models, run `/dev-team models` and pick a preset:
 
-By default, every tier uses your session model (the model that you selected in pi). To use a different model for each tier, run `/dev-team models` and select a preset:
+- `github-copilot`: the Claude models of GitHub Copilot
+- `anthropic`: the Claude models of the Anthropic API
+- `inherit`: your session model (default)
+- `custom`: set each tier yourself
 
-- `github-copilot`: Uses the Claude models that GitHub Copilot gives you.
-- `anthropic`: Uses the Claude models from the Anthropic API.
-- `inherit`: Every agent uses your session model. This is the default.
+A code review can start more than 20 agents, so cheaper models for the lower tiers save a lot. `/dev-team doctor` suggests a preset when one fits your provider.
 
-If you use GitHub Copilot, every agent uses AI credits for the tokens it sends and receives. A code review can start more than 20 agents, so a less expensive model for the lower tiers can reduce the cost a lot.
-
-`/dev-team doctor` shows a tip when a preset fits your provider and some agent tiers still run on your session model. The tip names the preset and the model it sets for each tier. A preset replaces every tier, so if you set a tier to another model yourself, the tip lists the tiers to set one by one with `custom` instead. In `custom`, each tier offers first what the file you save to sets for it, so you can keep it; a tier that file does not set stays unset unless you pick a model, so a project file never overrides your own mapping by accident. If you cannot use one of the models, the tip names it. If a file of this project (`.pi/dev-team.json` or `.pi/dev-team.local.json`) sets those tiers, that file wins, so the tip tells you to change them there. `/dev-team models` does not write `.pi/dev-team.local.json`; edit it by hand.
-
-If a `/build` step fails in the same way twice, the team tries that step one more time with the next stronger tier, for example `opus` instead of `sonnet`. Only if that also fails does the build stop and ask you. This retry happens only when the stronger tier uses a different model, so it does not happen with the default `inherit` setting.
+If a `/build` step fails the same way twice, the team retries it once on the next stronger tier, then asks you. With `inherit` there is no stronger model, so no retry.
 
 ## Safety and cost
 
-The agents can do the same things that you can do in a terminal.
+The agents can do what you can do in a terminal: change files, run commands, and make many model calls (up to 6 agents at once).
 
-- They can read and change files in your repository.
-- They can run shell commands, for example your tests.
-- They can make many model calls. Up to 6 agents run at the same time by default.
+- The guard hooks reduce the risk. For example, they block `gh pr create` until a code review passes. They need Python.
+- pi shows each running agent: its time, cost, current command and its place in the queue.
+- pi's footer shows the session cost in USD, agents included. With GitHub Copilot, the status line also shows the session's AI credits.
 
-While agents run, pi shows each agent on its own lines. The view updates every second:
-
-- How long each agent has run, and the total time and cost so far
-- The command or tool that an agent runs now, and for how long (`▶ $ npm test running 38s`)
-- `thinking… 14s` when the model works on its next step
-- `waiting for a free agent slot (2nd in line)` when all slots are in use
-
-The guard hooks reduce the risk. For example, they stop `gh pr create` until a code review passes, and they keep the tests fixed while the team cleans up code. The guards need Python.
-
-To limit the work, set these values in `~/.pi/agent/dev-team.json`:
+To limit the work, set these in `~/.pi/agent/dev-team.json`:
 
 ```json
-{
-  "maxParallelAgents": 2,
-  "subagentTimeoutSec": 900
-}
+{ "maxParallelAgents": 2, "subagentTimeoutSec": 900 }
 ```
-
-To see what the team spends, run `/spend` (see [See where the spend went](#see-where-the-spend-went)). To keep a per-run cost log and check each run against earlier ones for a cost regression, run `/telemetry on`, then `/cost-report` after a run. `/telemetry on` also records, on your machine only, which commands and skills you use. Both use pi's own prices, so they are correct for every provider.
-
-pi's footer shows the cost of the whole session in USD, including the agents. If you use GitHub Copilot models, the status line also shows `GitHub Copilot: N AI credits` for the session, and the agent view shows the AI credits of each agent next to its USD cost. GitHub bills 1 AI credit for each $0.01 of token cost ([models and pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)). The number is gross usage: it does not subtract your plan's monthly allowance. It includes the usage of context compaction and branch summaries, counted at the model in effect when they ran, since pi does not record which provider ran them.
 
 ### See where the spend went
 
-Run `/spend` to open a chart of what your sessions spent. It counts every provider, for example GitHub Copilot, OpenAI and Anthropic, and also local models that cost nothing.
+Run `/spend` for a chart of what your sessions cost, for every provider (local models count as $0).
 
-- The header shows the total in USD. If GitHub Copilot served part of it, the header also shows the AI credits of that part.
-- **By model** ranks the models by USD, largest first, with the share of the total. Each model shows its provider, for example `openai/gpt-5.5`.
-- **By provider** ranks the providers by USD.
-- **By agent** ranks the dev-team agents that ran as subagents. An agent that ran on two providers has one row for each, for example `software-engineer · github-copilot`. The share is of the subagent total.
-- Each row shows USD, the AI credits (`cr`) when Copilot served it, and the share. If a row cost $0, for example a local model, the rows also show their tokens (`tok`). A $0 row has a share of 0%.
-- Above the chart, split bars show how the USD divides. The first bar shows the providers, when more than one has a cost. The second bar shows the threads: main `█`, subagents `▓` and overhead `▒`. A thread always has the same glyph, so the bars read without colour.
+- Views: **By model**, **By provider**, **By agent** (`Tab` to switch).
+- Scope: this session, or this month across all projects (`s` to switch). Or run `/spend session` / `/spend month`.
+- Split bars show providers, and main `█` / subagents `▓` / overhead `▒` (cache warm-ups, compaction, summaries).
+- Without a terminal UI (`pi -p`, RPC), `/spend` prints a text summary.
+- `Esc` or `q` closes it.
 
 | Term | Meaning |
 |---|---|
-| USD | pi's price for the tokens, from its model catalog. Every provider has it. |
-| AI credits | What GitHub Copilot counts for its share: 1 AI credit for each $0.01 of Copilot's USD. It is gross use, before your plan's monthly allowance. |
-| Tokens | The input, output and cache tokens of a run |
-| Main | The USD of your own conversation with pi |
-| Subagents | The USD of the dev-team agents that the team started, including the agents they started |
-| Overhead | The USD that pi spends outside a turn: cache warm-ups, context compaction, and branch summaries |
+| USD | pi's catalog price for the tokens. For a ChatGPT or Claude plan, not what the plan bills. |
+| AI credits | GitHub Copilot's unit: 1 credit per $0.01 of Copilot's USD, before your plan's allowance ([pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)). |
 
-For a ChatGPT or Claude plan, USD is pi's catalog price, not what the plan bills you.
+The month starts on the 1st at 00:00 UTC, like GitHub's billing period. `/dev-team usage` is the old name of `/spend` and still works.
 
-The chart shows **this session** (all branches) at first. Press `s` to see **this month** instead: every saved pi session of all your projects, from the 1st of the month at 00:00 UTC. That is also when GitHub's monthly period starts, so the month's AI credits match GitHub's period. pi reads the files when you press `s` and shows the progress. The header shows the time of that reading ("as of"). To refresh, close the chart and open it again. A session that was forked or cloned counts once.
+For a per-run cost log with a regression check, run `/telemetry on`, then `/cost-report` after a run. `/telemetry on` also records, on your machine only, which commands and skills you use.
 
-| Key | Action |
-|---|---|
-| `Tab`, `Shift+Tab` | Switch between By model, By provider and By agent |
-| `s` | Switch between this session and this month. While the month loads, `s` cancels the loading. |
-| `Esc`, `q`, `Ctrl+C` | Close |
+### Use `/spend` without the team
 
-Letter keys work in either case: `S` and `Q` do the same as `s` and `q`.
-
-To start on a scope, run `/spend session` or `/spend month`. `/dev-team usage` is the earlier name of `/spend` and still works in this release. Without a terminal UI (`pi -p`, or an RPC client), the command prints a plain-text summary instead: the total, the same splits as the chart, and the models, providers and agents ranked with their USD, AI credits and share. The same argument selects the scope.
-
-The month counts the session files that pi keeps in `~/.pi/agent/sessions/<project>/`. It does not count the transcripts in nested `run-N/session.jsonl` files that other extensions keep in the same folder. If a file cannot be read, the chart shows how many files it could not read.
-
-### Use the spend view without the team
-
-The `/spend` chart and the AI credits status line come from a second extension in this package, `extensions/spend/index.ts`. It needs nothing from the team, so you can keep it on in a project where you do not want the team's agents, skills and guards.
-
-To switch the team off for one project, add this file as `.pi/settings.json` in that project:
-
-```json
-{
-  "packages": [
-    {
-      "source": "git:github.com/sanjit-roopra/pi-dev-team",
-      "autoload": false,
-      "extensions": ["-extensions/dev-team/index.ts"]
-    }
-  ]
-}
-```
-
-- `source` must be the same source as your own install (see `pi list`).
-- `autoload: false` makes this entry change your own install instead of replacing it. Only the team's extension goes off; `/spend` stays.
-- pi reads `.pi/settings.json` only when you trust the project. If you decline trust, the team stays on.
-- You can also run `pi config --local` in the project and switch off `extensions/dev-team/index.ts`.
-
-To use only the spend view everywhere, switch off `extensions/dev-team/index.ts` with `pi config` (your own settings). Then switch it on again for the projects where you want the team.
+`/spend` is its own extension (`extensions/spend/index.ts`) and needs nothing from the team. To switch the team off in one project, run `pi config --local` there and switch off `extensions/dev-team/index.ts`. To switch it off everywhere, do the same with `pi config`. pi reads a project's settings only when you trust the project.
 
 ## Pull request and issue text
 
-The team writes pull requests, issues and comments for a reader who skims. The rules come from [SimpleEnglish](https://github.com/AminBlg/SimpleEnglish) (plain English after ASD-STE100) and [i-have-adhd](https://github.com/ayghri/i-have-adhd) (the point first, short lists, one next step):
+The team writes for a reader who skims ([SimpleEnglish](https://github.com/AminBlg/SimpleEnglish), [i-have-adhd](https://github.com/ayghri/i-have-adhd)):
 
-- The title has 69 characters or fewer.
-- The first sentence of the body says what changes and why.
-- The visible body has 250 words or fewer (a comment has 150). Sentences have 25 words or fewer. Lists have 5 items or fewer.
-- The text has no em-dashes, bold, hedges (should, may, might) or filler (robust, seamlessly, leverage).
-- Long required content, for example the evidence bundle of `/pr`, goes at the end in one collapsed `<details>` block. Code, URLs, HTML comments, tables, headings and `<details>` blocks do not count toward the word limit.
-- Headings and markers that a skill needs, for example the sections of a `/specs` issue, stay as they are.
+- Title: 69 characters or fewer. First sentence: what changes and why.
+- Body: 250 words or fewer (comment: 150). Sentences: 25 words. Lists: 5 items.
+- No em-dashes, bold, hedges (should, might) or filler (robust, leverage). Long evidence goes in one `<details>` block at the end.
 
-Before a `gh pr` or `gh issue` command creates, edits or comments, the extension checks the title and the body. If the text breaks a rule, the extension blocks the command one time and tells the agent what to fix. If the agent sends the same command again, it runs. To only show the problems, set `"githubStyle": "warn"`. To turn off the check and the rules, set `"githubStyle": "off"`.
-
-The check reads text in quotes, in `$(cat <<EOF ...)` and in a `--body-file`. It does not check text that the shell makes when the command runs, for example `--body "$BODY"`, or a `gh` command that runs inside another program, for example `bash -c` or `xargs`.
+Before a `gh pr` or `gh issue` command writes text, the extension checks it. It blocks a rule break once and tells the agent what to fix; the same command a second time runs. Set `"githubStyle": "warn"` to only warn, or `"off"` to turn it off. Text the shell builds at run time (`--body "$BODY"`) is not checked.
 
 ## Configuration
 
-The package reads three configuration files. A later file overrides an earlier file.
+Later files override earlier ones:
 
-1. `~/.pi/agent/dev-team.json`: Your settings for all projects
-2. `<project>/.pi/dev-team.json`: The settings for one project, shared in Git
-3. `<project>/.pi/dev-team.local.json`: Your own settings for one project, not in Git
+1. `~/.pi/agent/dev-team.json`: yours, all projects
+2. `<project>/.pi/dev-team.json`: the project's, in Git
+3. `<project>/.pi/dev-team.local.json`: yours, one project, not in Git
 
-All settings, with the default values:
+All settings, with defaults:
 
 ```jsonc
 {
   "models": { "opus": "inherit", "sonnet": "inherit", "haiku": "inherit", "fable": "inherit" },
   "thinking": { "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" }, // agent effort -> pi thinking level
-  "maxParallelAgents": 6,      // agents that run at the same time (a project file: 1 to 16)
-  "maxSubagentDepth": 2,       // agents can start other agents, 2 levels deep
+  "maxParallelAgents": 6,      // agents at the same time (project file: 1 to 16)
+  "maxSubagentDepth": 2,       // how deep agents can start agents
   "subagentTimeoutSec": 3600,  // stop an agent after this time
   "autoFormat": false,         // format files after each edit (/setup turns this on)
-  "githubStyle": "block",      // block, warn, or off: the rules and the check for pull request and issue text
-  "skillIndex": "compact",     // compact, full, or off: the command list in the system prompt (agents get a short compact list of their own skills; off removes it too)
-  "skillIndexChars": 220,      // the maximum length of each description in the compact list
-  "autocompactMaxTokens": 200000, // compact your session between tasks at this many context tokens; 0 = off (a project file: 0 or 50000 and more)
-  "readDedup": true,           // a repeated read of an unchanged file returns a short note, since the text is already in the context
+  "githubStyle": "block",      // block, warn or off: pull request and issue text rules
+  "skillIndex": "compact",     // compact, full or off: the command list in the system prompt
+  "skillIndexChars": 220,      // max description length in the compact list
+  "autocompactMaxTokens": 200000, // compact between tasks at this many tokens; 0 = off (project file: 0 or 50000+)
+  "readDedup": true,           // a repeated read of an unchanged file returns a short note
   "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
 }
 ```
 
-Some hooks are off by default. A project file cannot change the `hooks` setting. Only your own file in `~/.pi/agent/` can change it. In a project file, `env` accepts only `DEV_TEAM_*` tuning settings. These rules stop a cloned repository from turning off your guards or from changing your `PATH`.
-
-To see which guard hooks are on, run `/dev-team hooks`.
+A project file cannot change `hooks`, and its `env` accepts only `DEV_TEAM_*` settings. So a cloned repository cannot turn off your guards. `/dev-team hooks` shows which guards are on.
 
 ### Sensitive-file guard
 
-The `pre_tool_guard` hook blocks an agent from writing files whose name looks like a secret: `.env`, `*.key`, `*.pem`, or a name that contains `secret` or `credential`. The full list is in `hooks/guards.json`. The name patterns check the file name, not the folders above it, and files inside a `secret/`, `secrets/` or `credentials/` folder (also with a leading dot) are also blocked. A symlink to a blocked file is blocked too. The guard does not block Markdown files, so a report named `secret-triage.md` can be written.
+Agents cannot write files that look like secrets: `.env`, `*.key`, `*.pem`, names with `secret` or `credential`, or files in a `secrets/` or `credentials/` folder (full list: `hooks/guards.json`). Markdown files are allowed. Approving in chat does not lift the block.
 
-The guard blocks every time; telling the agent in chat that the write is approved does not lift it. To allow a file that holds no secrets, add a pattern to `DEV_TEAM_GUARD_ALLOWED_PATHS` in your own `~/.pi/agent/dev-team.json`. Separate patterns with commas. A pattern with a `/` matches the end of the path:
+To allow a file, add a pattern in your own `~/.pi/agent/dev-team.json` (a project file cannot):
 
 ```json
 { "env": { "DEV_TEAM_GUARD_ALLOWED_PATHS": "test/fixtures/*,*.example" } }
 ```
 
-A project file cannot set this setting, and the guard stops the agent's Write and Edit tools from changing `~/.pi/agent/dev-team.json` (or `$PI_CODING_AGENT_DIR/dev-team.json`), also through a symlink or at the real path of a symlinked config folder. The guard does not check bash commands.
-
 ## Update
-
-To get the newest version, run:
 
 ```bash
 pi update git:github.com/sanjit-roopra/pi-dev-team
 ```
 
-To install the package for one project only, run `pi install -l git:github.com/sanjit-roopra/pi-dev-team` in that project. pi writes the package to `.pi/settings.json`.
+For one project only: `pi install -l git:github.com/sanjit-roopra/pi-dev-team`.
 
 ## Troubleshooting
 
-| What you see | Cause | What to do |
-|---|---|---|
-| `dev-team: python >= 3.10 not found — hook guards are disabled.` | pi cannot find Python 3.10 or later. | Install Python 3.10 or later. Then restart pi. |
-| `/dev-team doctor` shows `NO AUTH (/login)` | You are not logged in to the provider of that tier. | Run `/login`, or set that tier to `inherit`. |
-| `/dev-team doctor` shows `UNKNOWN MODEL` | pi does not know the model name of that tier. | Run `/dev-team models` and select a preset again. |
-| `gh pr create` is blocked | The review gate needs a passed code review first. | Run `/code-review`, or use `/pr`, which runs the review for you. |
-| An agent stops after one hour | The agent reached `subagentTimeoutSec`. | Make the task smaller, or increase the value. |
+| What you see | What to do |
+|---|---|
+| `dev-team: python >= 3.10 not found — hook guards are disabled.` | Install Python 3.10+, restart pi. |
+| `/dev-team doctor` shows `NO AUTH (/login)` | Run `/login`, or set that tier to `inherit`. |
+| `/dev-team doctor` shows `UNKNOWN MODEL` | Run `/dev-team models` and pick a preset again. |
+| `gh pr create` is blocked | Run `/code-review` first, or use `/pr`. |
+| An agent stops after one hour | Make the task smaller, or raise `subagentTimeoutSec`. |
 
 ## More information
 
-- [PORTING.md](PORTING.md): How the port works, what is different from the Claude Code plugin, and what is not ported
-- [CONTRIBUTING.md](CONTRIBUTING.md): How to run the tests and update to a new upstream version
-- `UPSTREAM.json`: The upstream version of this package (now dev-team v14.0.0)
+- [PORTING.md](PORTING.md): how the port works and what differs from the Claude Code plugin
+- [CONTRIBUTING.md](CONTRIBUTING.md): tests and upstream updates
+- `UPSTREAM.json`: the upstream version (dev-team v14.0.0)
 
 ## License
 
-MIT. The upstream content is copyright Bryan Finster (see [LICENSE](LICENSE)). This package is an unofficial port. It is not part of Anthropic or the pi project.
+MIT. Upstream content is copyright Bryan Finster (see [LICENSE](LICENSE)). This is an unofficial port, not part of Anthropic or the pi project.
