@@ -28,7 +28,7 @@ model, tier, ok, duration, the child's own usage, and `nested` for the agents
 the child dispatched itself). Subagent cost counts both, the same rule as the
 extension's creditedRuns(). That entry is all this script can say about a child.
 
-The wire strings below are copied from extensions/dev-team; a test checks that
+The wire strings below are copied from extensions/dev-team and extensions/spend; a test checks that
 they still appear there. Token counts are estimates: characters / 4, except
 `code`, which sums the output tokens the model reported.
 
@@ -58,7 +58,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
-# Wire strings owned by extensions/dev-team (checked by test_pi_session_report.py).
+# Wire strings owned by extensions/dev-team and extensions/spend (checked by test_pi_session_report.py).
 USAGE_ENTRY = "dev-team-subagent-usage"  # custom entry (pi.appendEntry), one per dispatch
 SESSION_START_MESSAGE = "dev-team-session-start"  # custom message, not an entry
 SUBAGENT_TOOL = "dev_team_subagent"

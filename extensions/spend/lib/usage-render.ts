@@ -1,12 +1,12 @@
 /**
- * Renders the /dev-team usage overlay. renderUsage() turns the view's state plus the usage breakdown
+ * Renders the /spend overlay. renderUsage() turns the view's state plus the usage breakdown
  * into the lines of the panel (header, split bars, ranked chart, footer), fitted to the terminal's width
  * and height; it is pure (colour comes from the injected style), so tests drive it without pi. The
  * component that holds the state and reacts to keys is UsageView (usage-view.ts).
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatShare, formatUsd, hasUsage, type MonthSnapshot, type UsageBreakdown, type UsageRow } from "./usage-breakdown.ts";
-import { cutToWidth } from "./terminal-text.ts";
+import { cutToWidth } from "../../shared/terminal-text.ts";
 import { barChartLines, type ChartStyle } from "./usage-chart.ts";
 import { type SplitBarOptions, type SplitStyle, splitBarLines } from "./usage-split-bar.ts";
 import type { UsageState } from "./usage-state.ts";

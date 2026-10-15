@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCostRow } from "../../extensions/dev-team/lib/metrics.ts";
-import { sessionSpend, sessionSpendByEntry, UNKNOWN_AGENT, UNKNOWN_MODEL } from "../../extensions/dev-team/lib/session-spend.ts";
-import { SUBAGENT_USAGE_ENTRY } from "../../extensions/dev-team/lib/subagent-types.ts";
+import { sessionSpend, sessionSpendByEntry, UNKNOWN_AGENT, UNKNOWN_MODEL } from "../../extensions/spend/lib/session-spend.ts";
+import { SUBAGENT_USAGE_ENTRY } from "../../extensions/spend/lib/subagent-usage.ts";
 
 const spend = (entries: Record<string, unknown>[]) => [...sessionSpend(entries)];
 

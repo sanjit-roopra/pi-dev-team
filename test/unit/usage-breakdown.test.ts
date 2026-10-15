@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type PiUsage, providerOf, type SpendRun } from "../../extensions/dev-team/lib/session-spend.ts";
-import { formatShare, formatTokens, formatUsd, hasUsage, monthSnapshot, runTokens, THREAD_ORDER, type UsageRow, usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
+import { type PiUsage, providerOf, type SpendRun } from "../../extensions/spend/lib/session-spend.ts";
+import { formatShare, formatTokens, formatUsd, hasUsage, monthSnapshot, runTokens, THREAD_ORDER, type UsageRow, usageBreakdown } from "../../extensions/spend/lib/usage-breakdown.ts";
 
 const usdRun = (model: string, usd: number, thread: SpendRun["thread"] = "main", agent = "main", usage: PiUsage = {}): SpendRun => ({
 	thread,

@@ -44,7 +44,7 @@ import {
 import { saveFullOutput } from "./session-files.ts";
 import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
-import { toSpacedSingleLine } from "./terminal-text.ts";
+import { toSpacedSingleLine } from "../../shared/terminal-text.ts";
 import { type ChildTrust, childTrusted, childTrustOf, trustArgs } from "./trust.ts";
 
 export interface SubagentRunResult {

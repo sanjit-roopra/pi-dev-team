@@ -31,7 +31,7 @@ export function runAiCredits(run: { model?: string; usage: PiUsage }): number {
 }
 
 /**
- * Where "this month" starts for /dev-team usage, for every provider: the 1st at 00:00 UTC, the
+ * Where "this month" starts for /spend, for every provider: the 1st at 00:00 UTC, the
  * calendar month in UTC. It is the same instant GitHub starts a Copilot billing period, so the
  * month's AI credits line up with GitHub's.
  */

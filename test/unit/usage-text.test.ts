@@ -1,8 +1,8 @@
 process.env.TZ = "UTC"; // "as of" is local time; pin it so the expected strings hold everywhere
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { usageBreakdown } from "../../extensions/dev-team/lib/usage-breakdown.ts";
-import { errorReason, loadFailedMessage, splitSections, totalHeaderParts, usageSummary, viewRows, wantedColumns } from "../../extensions/dev-team/lib/usage-text.ts";
+import { usageBreakdown } from "../../extensions/spend/lib/usage-breakdown.ts";
+import { errorReason, loadFailedMessage, splitSections, totalHeaderParts, usageSummary, viewRows, wantedColumns } from "../../extensions/spend/lib/usage-text.ts";
 import { mixed, multiProvider, NOW, providerRun, copilotRun } from "../helpers/usage-fixtures.ts";
 
 test("this session, Copilot only: USD and credits, the thread split (one provider draws no provider split), then models, providers and agents", () => {

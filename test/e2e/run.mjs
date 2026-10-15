@@ -161,13 +161,13 @@ const scenarios = {
 
 	// A fresh HOME with --no-session and no model turn before the command: no spend in this session or this month.
 	// pi sends an extension's console.log to stderr in print mode, so these read both streams.
-	"/dev-team usage prints the session summary in print mode"(env) {
-		const r = pi(env, "/dev-team usage");
+	"/spend prints the session summary in print mode"(env) {
+		const r = pi(env, "/spend");
 		const said = `${r.out}${r.err}`;
 		assert(r.code === 0 && said.includes("No usage in this session"), `unexpected output: ${JSON.stringify(said.slice(0, 300))} code=${r.code}`);
 	},
 
-	"/dev-team usage month prints the month summary in print mode"(env) {
+	"/dev-team usage, the earlier name of /spend, prints the month summary in print mode"(env) {
 		const r = pi(env, "/dev-team usage month");
 		const said = `${r.out}${r.err}`;
 		assert(r.code === 0 && said.includes("No usage this month"), `unexpected month output: ${JSON.stringify(said.slice(0, 300))} code=${r.code}`);
@@ -475,6 +475,23 @@ const scenarios = {
 		const child = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "collision-probe", task: script([{ tool: "subagent", args: { task: "depth-probe" } }]) } }]), { ...options, json: true });
 		const dispatch = toolResults(child.out).find((x) => x.tool === "dev_team_subagent");
 		assert(child.code === 0 && dispatch && !dispatch.isError && dispatch.text.includes("EXTERNAL_SUBAGENT:depth-probe"), `external tool was blocked at dev-team's depth limit: ${JSON.stringify(dispatch)} ${child.err}`);
+	},
+
+	// The README's spend-only recipe: the package installed for the user, dev-team switched off for one project.
+	"a trusted project can switch dev-team off and keep /spend"(env) {
+		const inst = spawnSync("pi", ["install", PKG], { env: isolatedEnv(env), encoding: "utf-8", cwd: env.repo });
+		assert(inst.status === 0, `pi install failed: ${inst.stderr}`);
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		const project = { packages: [{ source: PKG, autoload: false, extensions: ["-extensions/dev-team/index.ts"] }] };
+		fs.writeFileSync(path.join(env.repo, ".pi", "settings.json"), JSON.stringify(project));
+		const trusted = { usePackageFlag: false, extra: ["--approve"] };
+		const spend = pi(env, "/spend", trusted);
+		assert(spend.code === 0 && `${spend.out}${spend.err}`.includes("No usage in this session"), `/spend missing: ${spend.out.slice(0, 300)} ${spend.err}`);
+		// Without the extension, /dev-team is no command: the scripted model echoes it back.
+		const devTeam = pi(env, "/dev-team status", trusted);
+		assert(devTeam.out.includes("ECHO:/dev-team status"), `dev-team still loaded: ${devTeam.out.slice(0, 300)}`);
+		const declined = pi(env, "/dev-team status", { usePackageFlag: false, extra: ["--no-approve"] });
+		assert(`${declined.out}${declined.err}`.includes("pi-dev-team (upstream"), `an untrusted project's filter applied: ${declined.out.slice(0, 300)} ${declined.err.slice(0, 300)}`);
 	},
 
 	"installed package (no -e) subagent collision keeps child hooks"(env) {

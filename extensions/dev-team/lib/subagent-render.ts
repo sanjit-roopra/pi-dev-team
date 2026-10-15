@@ -9,7 +9,7 @@
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getMarkdownTheme, type Theme, type ToolRenderContext, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
-import { formatAiCredits, runsAiCredits } from "./ai-credits.ts";
+import { formatAiCredits, runsAiCredits } from "../../spend/lib/ai-credits.ts";
 import {
 	creditedRuns,
 	type DispatchArgs,
@@ -25,7 +25,7 @@ import {
 	type UsageTotals,
 } from "./subagent-types.ts";
 import { syncClock } from "./live-clock.ts";
-import { sanitizeTerminalText, toSingleLine } from "./terminal-text.ts";
+import { sanitizeTerminalText, toSingleLine } from "../../shared/terminal-text.ts";
 
 const COLLAPSED_TOOLS = 3;
 const COLLAPSED_OUTPUT_LINES = 3;

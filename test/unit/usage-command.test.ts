@@ -1,9 +1,9 @@
 process.env.TZ = "UTC";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/dev-team/lib/usage-command.ts";
-import type { SpendHistory } from "../../extensions/dev-team/lib/usage-history.ts";
-import { OVERLAY_HEIGHT_PERCENT } from "../../extensions/dev-team/lib/usage-view.ts";
+import { parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/spend/lib/usage-command.ts";
+import type { SpendHistory } from "../../extensions/spend/lib/usage-history.ts";
+import { OVERLAY_HEIGHT_PERCENT } from "../../extensions/spend/lib/usage-view.ts";
 import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const SESSION_DIR = "/home/u/.pi/agent/sessions/--proj--";
@@ -120,7 +120,7 @@ test("the overlay component renders this session, themed, within the terminal he
 	assert.equal(closed, 1);
 });
 
-test("/dev-team usage month opens the overlay on this month and reads history from the session root", async () => {
+test("/spend month opens the overlay on this month and reads history from the session root", async () => {
 	const { deps, loads } = fakeDeps();
 	const custom: Custom = async (factory) => {
 		factory(fakeTui(), fakeTheme, undefined, () => {});
@@ -158,7 +158,7 @@ test("a history load that fails in text mode prints the reason and does not thro
 test("an unknown argument reports the usage and opens nothing", async () => {
 	const { deps, emitted, loads } = fakeDeps();
 	await runUsage(fakeCtx({ hasUI: true }), "histroy", deps);
-	assert.deepEqual(emitted, ["Usage: /dev-team usage [session|month]"]);
+	assert.deepEqual(emitted, ["Usage: /spend [session|month]"]);
 	assert.equal(loads.length, 0);
 });
 
@@ -172,7 +172,7 @@ test("arguments select the scope, defaulting to this session", () => {
 
 test("an unknown or extra argument is a usage error", () => {
 	for (const args of ["histroy", "month now", "week"]) {
-		assert.deepEqual(parseUsageArgs(args), { error: "Usage: /dev-team usage [session|month]" }, args);
+		assert.deepEqual(parseUsageArgs(args), { error: "Usage: /spend [session|month]" }, args);
 	}
 });
 

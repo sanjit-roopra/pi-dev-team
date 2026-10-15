@@ -624,12 +624,11 @@ class ExtensionContract(unittest.TestCase):
     """The script copies these wire strings from the extension; fail when the extension renames one."""
 
     def test_wire_strings_still_in_extension(self):
-        types = (ROOT / "extensions/dev-team/lib/subagent-types.ts").read_text()
-        agents = (ROOT / "extensions/dev-team/lib/agents.ts").read_text()
+        types = (ROOT / "extensions/spend/lib/subagent-usage.ts").read_text()
         index = (ROOT / "extensions/dev-team/index.ts").read_text()
         skills = (ROOT / "extensions/dev-team/lib/skills.ts").read_text()
         self.assertIn(f'SUBAGENT_USAGE_ENTRY = "{report.USAGE_ENTRY}"', types)
-        self.assertIn(f'DEV_TEAM_SUBAGENT_TOOL = "{report.SUBAGENT_TOOL}"', agents)
+        self.assertIn(f'DEV_TEAM_SUBAGENT_TOOL = "{report.SUBAGENT_TOOL}"', types)
         self.assertIn(f'customType: "{report.SESSION_START_MESSAGE}"', index)
         self.assertIn(report.HOOK_FEEDBACK_HEADER, index)
         self.assertIn(report.GITHUB_STYLE_BLOCK_PREFIX, (ROOT / "extensions/dev-team/lib/github-style.ts").read_text())

@@ -107,7 +107,7 @@ pi's footer shows the cost of the whole session in USD, including the agents. If
 
 ### See where the spend went
 
-Run `/dev-team usage` to open a chart of what your sessions spent. It counts every provider, for example GitHub Copilot, OpenAI and Anthropic, and also local models that cost nothing.
+Run `/spend` to open a chart of what your sessions spent. It counts every provider, for example GitHub Copilot, OpenAI and Anthropic, and also local models that cost nothing.
 
 - The header shows the total in USD. If GitHub Copilot served part of it, the header also shows the AI credits of that part.
 - **By model** ranks the models by USD, largest first, with the share of the total. Each model shows its provider, for example `openai/gpt-5.5`.
@@ -137,9 +137,34 @@ The chart shows **this session** (all branches) at first. Press `s` to see **thi
 
 Letter keys work in either case: `S` and `Q` do the same as `s` and `q`.
 
-To start on a scope, run `/dev-team usage session` or `/dev-team usage month`. Without a terminal UI (`pi -p`, or an RPC client), the command prints a plain-text summary instead: the total, the same splits as the chart, and the models, providers and agents ranked with their USD, AI credits and share. The same argument selects the scope.
+To start on a scope, run `/spend session` or `/spend month`. `/dev-team usage` is the earlier name of `/spend` and still works in this release. Without a terminal UI (`pi -p`, or an RPC client), the command prints a plain-text summary instead: the total, the same splits as the chart, and the models, providers and agents ranked with their USD, AI credits and share. The same argument selects the scope.
 
 The month counts the session files that pi keeps in `~/.pi/agent/sessions/<project>/`. It does not count the transcripts in nested `run-N/session.jsonl` files that other extensions keep in the same folder. If a file cannot be read, the chart shows how many files it could not read.
+
+### Use the spend view without the team
+
+The `/spend` chart and the AI credits status line come from a second extension in this package, `extensions/spend/index.ts`. It needs nothing from the team, so you can keep it on in a project where you do not want the team's agents, skills and guards.
+
+To switch the team off for one project, add this file as `.pi/settings.json` in that project:
+
+```json
+{
+  "packages": [
+    {
+      "source": "git:github.com/sanjit-roopra/pi-dev-team",
+      "autoload": false,
+      "extensions": ["-extensions/dev-team/index.ts"]
+    }
+  ]
+}
+```
+
+- `source` must be the same source as your own install (see `pi list`).
+- `autoload: false` makes this entry change your own install instead of replacing it. Only the team's extension goes off; `/spend` stays.
+- pi reads `.pi/settings.json` only when you trust the project. If you decline trust, the team stays on.
+- You can also run `pi config --local` in the project and switch off `extensions/dev-team/index.ts`.
+
+To use only the spend view everywhere, switch off `extensions/dev-team/index.ts` with `pi config` (your own settings). Then switch it on again for the projects where you want the team.
 
 ## Pull request and issue text
 
