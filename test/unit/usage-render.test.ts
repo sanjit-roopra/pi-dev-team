@@ -8,7 +8,7 @@ import type { UsageState } from "../../extensions/spend/lib/usage-state.ts";
 import { mixed, multiProvider, NOW, providerRun, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_slot, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: (_row, text) => text, muted: identity, segment: (_slot, text) => text };
 
 const breakdown = (...runs: ReturnType<typeof copilotRun>[]): UsageBreakdown => usageBreakdown(runs);
 const state = (scope: UsageState["scope"], view: UsageState["view"], load: UsageState["load"] = { kind: scope === "month" ? "ready" : "idle" }): UsageState => ({ scope, view, load });
@@ -16,7 +16,7 @@ const sessionModel = state("session", "model");
 const viewModel = (s: UsageState, extra: Partial<UsageViewModel> = {}): UsageViewModel => ({
 	state: s,
 	session: mixed,
-	month: { breakdown: mixed, unreadable: 0, loadedAt: NOW },
+	month: { breakdown: mixed, daily: [], unreadable: 0, loadedAt: NOW },
 	now: NOW,
 	...extra,
 });
@@ -76,11 +76,44 @@ test("By provider ranks the providers; a free provider shows its tokens and a 0%
 	assert.ok(!/\d cr\b/.test(chart[0]), chart[0]);
 });
 
-test("By agent ranks each agent per provider and keeps the split bars", () => {
-	const lines = render(viewModel(state("session", "agent"), { session: multiProvider }));
-	const chart = lines.filter((l) => / · (openai|github-copilot|ollama) /.test(l));
-	assert.deepEqual(chart.map((l) => l.split("  ")[0]), ["software-engineer · github-copilot", "arch-review · openai", "Explore · ollama"]);
+test("By agent ranks each agent per model and keeps the split bars", () => {
+	const lines = render(viewModel(state("session", "agent"), { session: multiProvider }), 100);
+	const chart = lines.filter((l) => / · (gpt|claude|qwen)/.test(l));
+	assert.deepEqual(chart.map((l) => l.split("  ")[0]), ["software-engineer · claude-sonnet-5.5 (github-copilot)", "arch-review · gpt-5.5 (openai)", "Explore · qwen3 (ollama)"]);
 	assert.ok(lines.some((l) => l.includes("█ main $0.80")));
+	assert.ok(render(viewModel(state("session", "agent"), { session: multiProvider })).some((l) => l.startsWith("software-engineer · claude-sonnet-5.5 …")), "a cut label keeps the model");
+});
+
+test("each chart row's bar gets its own colour slot, by rank", () => {
+	const rows: number[] = [];
+	const tagging: UsageStyle = { ...style, bar: (row, text) => (rows.push(row), text) };
+	renderUsage(viewModel(state("session", "provider"), { session: multiProvider }), { width: 80, height: 40, style: tagging });
+	assert.deepEqual(rows, [0, 1, 2]);
+});
+
+const DAILY = [0.5, 0, 2, 1];
+const withDaily = (s: UsageState) => viewModel(s, { month: { breakdown: mixed, daily: DAILY, unreadable: 0, loadedAt: NOW } });
+
+test("this month shows a daily sparkline with today, the average and the peak, above the split bars", () => {
+	const lines = render(withDaily(state("month", "model")));
+	assert.equal(lines[2], "Daily ▂ █▄  today $1.00 · avg $0.88/day · peak $2.00 Oct 3");
+	assert.ok(/^█+▓+▒+$/.test(lines[3]), lines[3]);
+});
+
+test("the trend's figures drop from the end to fit, then the sparkline is cut", () => {
+	const at = (width: number) => render(withDaily(state("month", "model")), width)[2];
+	assert.equal(at(40), "Daily ▂ █▄  today $1.00 · avg $0.88/day");
+	assert.equal(at(25), "Daily ▂ █▄  today $1.00");
+	assert.equal(at(12), "Daily ▂ █▄");
+	assert.equal(at(8), "Daily ▂…");
+});
+
+test("the trend gives way before the split legends when height is short, and this session has none", () => {
+	assert.ok(!render(withDaily(state("month", "model")), 80, 6).some((l) => l.startsWith("Daily")));
+	assert.ok(render(withDaily(state("month", "model")), 80, 7).some((l) => l.startsWith("Daily")));
+	assert.ok(!render(withDaily(state("session", "model"))).some((l) => l.startsWith("Daily")));
+	const zeroDays = viewModel(state("month", "model"), { month: { breakdown: mixed, daily: [0, 0], unreadable: 0, loadedAt: NOW } });
+	assert.ok(!render(zeroDays).some((l) => l.startsWith("Daily")));
 });
 
 test("this month's header names the dates and the snapshot time, and the footer offers this session", () => {
@@ -104,7 +137,7 @@ test("an empty session says so, points at this month and shows no split bar", ()
 });
 
 test("an empty month says so", () => {
-	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, unreadable: 0, loadedAt: NOW } }));
+	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, daily: [], unreadable: 0, loadedAt: NOW } }));
 	assert.ok(lines.includes("No usage this month"), lines.join("\n"));
 	assert.ok(!lines.join("\n").includes("press s"));
 	assert.ok(!lines.some((l) => /[█▓▒░]/.test(l)));
@@ -118,7 +151,7 @@ test("a cost under a cent is usage: it shows as <$0.01 with its row", () => {
 });
 
 test("an empty month still notes the files that could not be read", () => {
-	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, unreadable: 3, loadedAt: NOW } }));
+	const lines = render(viewModel(state("month", "model"), { month: { breakdown: empty, daily: [], unreadable: 3, loadedAt: NOW } }));
 	assert.ok(lines.includes("No usage this month"), lines.join("\n"));
 	assert.ok(lines.includes("3 session files could not be read"), lines.join("\n"));
 });
@@ -127,7 +160,7 @@ test("By agent with main-only spend says there is no subagent usage and keeps th
 	const lines = render(viewModel(state("session", "agent"), { session: mainOnly }));
 	assert.ok(lines.includes("No subagent usage in this session"), lines.join("\n"));
 	assert.ok(lines.some((l) => l.includes("█ main $0.20 · ▒ overhead $0.10")), "overhead keeps its own glyph when subagents spent nothing");
-	const month = render(viewModel(state("month", "agent"), { month: { breakdown: mainOnly, unreadable: 0, loadedAt: NOW } }));
+	const month = render(viewModel(state("month", "agent"), { month: { breakdown: mainOnly, daily: [], unreadable: 0, loadedAt: NOW } }));
 	assert.ok(month.includes("No subagent usage this month"), month.join("\n"));
 });
 
@@ -169,7 +202,7 @@ test("unreadable files get a footnote under this month's chart, and none under t
 	assert.equal(lines.at(-3), "2 session files could not be read");
 	assert.ok(unreadable(1).includes("1 session file could not be read"));
 	assert.ok(!unreadable(0).join("\n").includes("could not be read"));
-	assert.ok(!render(viewModel(sessionModel, { month: { breakdown: mixed, unreadable: 2, loadedAt: NOW } })).join("\n").includes("could not be read"));
+	assert.ok(!render(viewModel(sessionModel, { month: { breakdown: mixed, daily: [], unreadable: 2, loadedAt: NOW } })).join("\n").includes("could not be read"));
 });
 
 test("a narrow header drops the snapshot time, then the dates, then the credits, before the scope, view and USD", () => {

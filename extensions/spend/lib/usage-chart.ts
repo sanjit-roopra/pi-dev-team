@@ -21,8 +21,8 @@ export interface ChartRow {
 }
 
 export interface ChartStyle {
-	/** Colours a bar. */
-	bar(text: string): string;
+	/** Colours the bar of the row at rank `row` (0 for the top row), so neighbouring rows tell apart. */
+	bar(row: number, text: string): string;
 	/** De-emphasises the secondary columns (credits, tokens, share). */
 	muted(text: string): string;
 }
@@ -142,7 +142,7 @@ export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, fo
 		if (columns.label) cells.push(padEnd(cutToWidth(row.label, columns.label), columns.label));
 		if (columns.bar) {
 			const bar = barGlyphs(barEighths(row.usd, max, columns.bar));
-			cells.push(style.bar(bar) + " ".repeat(columns.bar - visibleWidth(bar)));
+			cells.push(style.bar(i, bar) + " ".repeat(columns.bar - visibleWidth(bar)));
 		}
 		cells.push(padStart(cutToWidth(usdCells[i], columns.usd), columns.usd));
 		for (const column of OPTIONAL_COLUMNS) {
@@ -150,4 +150,13 @@ export function barChartLines(allRows: readonly ChartRow[], { width, maxRows, fo
 		}
 		return cells.join(COLUMN_GAP);
 	});
+}
+
+/** `▁` to `█`: one to eight eighths of a cell high. */
+const SPARK_BLOCKS = "▁▂▃▄▅▆▇█";
+
+/** One glyph per value, its height scaled to the largest value; a value of 0 or less is a space. */
+export function sparkline(values: readonly number[]): string {
+	const max = Math.max(0, ...values);
+	return values.map((v) => (v > 0 ? SPARK_BLOCKS[Math.max(0, Math.ceil((v / max) * SPARK_BLOCKS.length) - 1)] : " ")).join("");
 }

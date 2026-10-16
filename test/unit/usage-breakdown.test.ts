@@ -34,7 +34,7 @@ test("usageBreakdown: providers are grouped from the model ids, with their USD s
 	assert.deepEqual(shown(b.byProvider), ["openai $0.60 0.0 60.0%", "github-copilot $0.40 40.0 40.0%"]);
 });
 
-test("usageBreakdown: an agent has one row per provider it ran on, shares of the agents' USD", () => {
+test("usageBreakdown: an agent has one row per model it ran on, shares of the agents' USD", () => {
 	const b = usageBreakdown([
 		usdRun(copilot("m"), 0.3),
 		usdRun(copilot("m"), 0.2, "subagent", "orchestrator"),
@@ -42,13 +42,14 @@ test("usageBreakdown: an agent has one row per provider it ran on, shares of the
 		usdRun(copilot("m"), 0.1, "subagent", "Explore"),
 		usdRun(copilot("n"), 0.1, "subagent", "Explore"),
 	]);
-	assert.deepEqual(shown(b.byAgent), ["Explore $0.20 20.0 40.0%", "orchestrator $0.20 20.0 40.0%", "orchestrator $0.10 0.0 20.0%"]);
+	assert.deepEqual(shown(b.byAgent), ["orchestrator $0.20 20.0 40.0%", "Explore $0.10 10.0 20.0%", "Explore $0.10 10.0 20.0%", "orchestrator $0.10 0.0 20.0%"]);
 	assert.deepEqual(
-		b.byAgent.map((r) => [r.label, r.provider]),
+		b.byAgent.map((r) => [r.label, r.model]),
 		[
-			["Explore", "github-copilot"],
-			["orchestrator", "github-copilot"],
-			["orchestrator", "openai"],
+			["orchestrator", copilot("m")],
+			["Explore", copilot("m")],
+			["Explore", copilot("n")],
+			["orchestrator", "openai/gpt-5.5"],
 		],
 	);
 });
@@ -74,13 +75,13 @@ test("usageBreakdown: only free runs give rows with 0% shares, ranked by tokens"
 });
 
 test("usageBreakdown: an agent name containing the label separator cannot merge with another agent", () => {
-	const b = usageBreakdown([usdRun("openai/x", 0.1, "subagent", "a · openai"), usdRun("openai/x", 0.2, "subagent", "a")]);
-	assert.deepEqual(b.byAgent.map((r) => [r.label, r.provider]), [["a", "openai"], ["a · openai", "openai"]]);
+	const b = usageBreakdown([usdRun("openai/x", 0.1, "subagent", "a · openai/x"), usdRun("openai/x", 0.2, "subagent", "a")]);
+	assert.deepEqual(b.byAgent.map((r) => [r.label, r.model]), [["a", "openai/x"], ["a · openai/x", "openai/x"]]);
 });
 
-test("usageBreakdown: one agent on two providers with equal spend is ordered by provider", () => {
+test("usageBreakdown: one agent on two models with equal spend is ordered by model", () => {
 	const b = usageBreakdown([usdRun("openai/x", 0.1, "subagent", "a"), usdRun(copilot("x"), 0.1, "subagent", "a")]);
-	assert.deepEqual(b.byAgent.map((r) => r.provider), ["github-copilot", "openai"]);
+	assert.deepEqual(b.byAgent.map((r) => r.model), [copilot("x"), "openai/x"]);
 });
 
 test("usageBreakdown: equal USD and tokens are ordered alphabetically", () => {
@@ -159,4 +160,11 @@ test("monthSnapshot: breakdown of the records' runs, with the unreadable count a
 	assert.deepEqual(shown(snapshot.breakdown.byModel), [`${copilot("a")} $0.30 30.0 75.0%`, "openai/b $0.10 0.0 25.0%"]);
 	assert.equal(snapshot.unreadable, 2);
 	assert.equal(snapshot.loadedAt, loadedAt);
+});
+
+test("monthSnapshot: USD per UTC day from the 1st to the load's day; records outside the month are left out", () => {
+	const loadedAt = new Date(Date.UTC(2026, 9, 4, 14, 9));
+	const at = (timestamp: string, usd: number) => ({ timestamp, run: usdRun("openai/b", usd) });
+	const records = [at("2026-10-01T00:00:00.000Z", 0.5), at("2026-10-03T23:59:59.000Z", 0.25), at("2026-10-03T08:00:00.000Z", 0.25), at("2026-09-30T23:00:00.000Z", 9), at("bad", 9)];
+	assert.deepEqual(monthSnapshot({ records, unreadable: 0, aborted: false }, loadedAt).daily, [0.5, 0, 0.5, 0]);
 });

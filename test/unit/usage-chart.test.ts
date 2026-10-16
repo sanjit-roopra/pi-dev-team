@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { barChartLines, type BarChartOptions, type ChartRow } from "../../extensions/spend/lib/usage-chart.ts";
+import { barChartLines, type BarChartOptions, type ChartRow, sparkline } from "../../extensions/spend/lib/usage-chart.ts";
 import { splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/spend/lib/usage-split-bar.ts";
 
 const identity = (text: string) => text;
-const style = { bar: identity, muted: identity };
+const style = { bar: (_row: number, text: string) => text, muted: identity };
 const percent = (share: number) => `${(share * 100).toFixed(1)}%`;
 
 // Layout is label | bar | value | share, two spaces apart. With one-character labels, two-character
@@ -296,7 +296,7 @@ const sgr = (code: number, text: string) => `\x1b[${code}m${text}\x1b[0m`;
 const SEGMENT_CODES = [31, 32, 33, 35];
 const BAR_CODE = 34;
 const MUTED_CODE = 2;
-const taggedStyle: BarChartOptions["style"] = { bar: (t) => sgr(BAR_CODE, t), muted: (t) => sgr(MUTED_CODE, t) };
+const taggedStyle: BarChartOptions["style"] = { bar: (_row, t) => sgr(BAR_CODE, t), muted: (t) => sgr(MUTED_CODE, t) };
 const taggedSplitStyle: SplitBarOptions["style"] = { segment: (position, t) => sgr(SEGMENT_CODES[position], t), muted: (t) => sgr(MUTED_CODE, t) };
 
 test("bar chart: bar styling wraps the bar glyphs and muted wraps the share, nothing else", () => {
@@ -327,4 +327,10 @@ test("split bar: styled lines are no wider than the width, at every width", () =
 	for (let width = 0; width <= 100; width++) {
 		for (const l of splitBarLines(split(30, 60, 10), splitOptions(width, { style: taggedSplitStyle }))) assert.ok(visibleWidth(l) <= width, `${width}: ${JSON.stringify(l)}`);
 	}
+});
+
+test("sparkline: one glyph per value scaled to the largest; nothing spent is a space", () => {
+	assert.equal(sparkline([0, 1, 4, 8, 0.01, -1]), " ▁▄█▁ ");
+	assert.equal(sparkline([]), "");
+	assert.equal(sparkline([0, 0]), "  ");
 });

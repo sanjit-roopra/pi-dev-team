@@ -10,7 +10,7 @@ import { OVERLAY_HEIGHT_PERCENT, UsageView, type UsageViewDeps } from "../../ext
 import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: identity, muted: identity, segment: (_slot, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: (_row, text) => text, muted: identity, segment: (_slot, text) => text };
 
 /** A UsageView on stub deps, recording what it asked of the host. */
 function viewOn(runs: SpendRun[], extra: Partial<UsageViewDeps> = {}) {
@@ -289,7 +289,7 @@ test("the view persists across scope toggles, and Tab while loading keeps the lo
 	loader.loads[0].resolve({ records: records(copilotRun("gpt-5", 7, "subagent", "Explore")) });
 	await settle();
 	assert.ok(monthLines(view)[0].includes("By agent"));
-	assert.ok(monthLines(view).some((l) => l.startsWith("Explore · github-copilot")));
+	assert.ok(monthLines(view).some((l) => l.startsWith("Explore · gpt-5 (github-copilot)")));
 });
 
 test("a loader that throws synchronously is a failed load", async () => {

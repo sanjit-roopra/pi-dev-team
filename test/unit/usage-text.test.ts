@@ -20,8 +20,8 @@ test("this session, Copilot only: USD and credits, the thread split (one provide
 			"  github-copilot  $1.05  105.0 cr  100.0%",
 			"",
 			"By agent",
-			"  Explore · github-copilot       $0.30  30.0 cr  75.0%",
-			"  orchestrator · github-copilot  $0.10  10.0 cr  25.0%",
+			"  Explore · gpt-5 (github-copilot)                   $0.30  30.0 cr  75.0%",
+			"  orchestrator · claude-sonnet-4.5 (github-copilot)  $0.10  10.0 cr  25.0%",
 		].join("\n"),
 	);
 });
@@ -45,9 +45,9 @@ test("mixed providers: USD for all, credits only on Copilot rows, tokens when a 
 			"  ollama          $0.00           850k tok     0%",
 			"",
 			"By agent",
-			"  software-engineer · github-copilot  $0.90  90.0 cr     0 tok  75.0%",
-			"  arch-review · openai                $0.30              0 tok  25.0%",
-			"  Explore · ollama                    $0.00           850k tok     0%",
+			"  software-engineer · claude-sonnet-5.5 (github-copilot)  $0.90  90.0 cr     0 tok  75.0%",
+			"  arch-review · gpt-5.5 (openai)                          $0.30              0 tok  25.0%",
+			"  Explore · qwen3 (ollama)                                $0.00           850k tok     0%",
 		].join("\n"),
 	);
 });
@@ -83,15 +83,20 @@ test("wantedColumns: credits when a row has some, tokens when a row cost nothing
 test("viewRows: models, providers or agents, as ranked in the breakdown", () => {
 	assert.deepEqual(viewRows("model", multiProvider).map((r) => r.label), ["openai/gpt-5.5", "github-copilot/claude-sonnet-5.5", "ollama/qwen3"]);
 	assert.deepEqual(viewRows("provider", multiProvider).map((r) => r.label), ["openai", "github-copilot", "ollama"]);
-	assert.deepEqual(viewRows("agent", multiProvider).map((r) => r.label), ["software-engineer · github-copilot", "arch-review · openai", "Explore · ollama"]);
+	assert.deepEqual(viewRows("agent", multiProvider).map((r) => r.label), ["software-engineer · claude-sonnet-5.5 (github-copilot)", "arch-review · gpt-5.5 (openai)", "Explore · qwen3 (ollama)"]);
 });
 
 test("this month names the dates and when it was read, and notes unreadable files", () => {
-	const text = usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { unreadable: 2, loadedAt: NOW } });
+	const text = usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { daily: [], unreadable: 2, loadedAt: NOW } });
 	const lines = text.split("\n");
 	assert.equal(lines[0], "This month (Oct 1 – Oct 4) · $1.05 · 105.0 AI credits · as of 14:05");
 	assert.equal(lines.at(-1), "2 session files could not be read");
-	assert.ok(!usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { unreadable: 0, loadedAt: NOW } }).includes("could not be read"));
+	assert.ok(!usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { daily: [], unreadable: 0, loadedAt: NOW } }).includes("could not be read"));
+});
+
+test("this month adds the daily trend after the splits", () => {
+	const lines = usageSummary({ scope: "month", breakdown: mixed, now: NOW, month: { daily: [0.5, 0, 2, 1], unreadable: 0, loadedAt: NOW } }).split("\n");
+	assert.equal(lines[2], "Daily  ▂ █▄  today $1.00 · avg $0.88/day · peak $2.00 Oct 3");
 });
 
 test("the month heading shows UTC dates while 'as of' shows the local clock", () => {
@@ -100,7 +105,7 @@ test("the month heading shows UTC dates while 'as of' shows the local clock", ()
 	try {
 		// 02:00 UTC on Oct 1 is still Sep 30 in Los Angeles, but the billing month has begun.
 		const firstOfMonth = new Date(Date.UTC(2026, 9, 1, 2, 0));
-		const text = usageSummary({ scope: "month", breakdown: mixed, now: firstOfMonth, month: { unreadable: 0, loadedAt: firstOfMonth } });
+		const text = usageSummary({ scope: "month", breakdown: mixed, now: firstOfMonth, month: { daily: [], unreadable: 0, loadedAt: firstOfMonth } });
 		assert.equal(text.split("\n")[0], "This month (Oct 1 – Oct 1) · $1.05 · 105.0 AI credits · as of 19:00");
 	} finally {
 		if (tz === undefined) delete process.env.TZ;
@@ -110,7 +115,7 @@ test("the month heading shows UTC dates while 'as of' shows the local clock", ()
 
 test("no usage keeps the unreadable-files note, as the overlay does", () => {
 	assert.equal(
-		usageSummary({ scope: "month", breakdown: usageBreakdown([]), now: NOW, month: { unreadable: 3, loadedAt: NOW } }),
+		usageSummary({ scope: "month", breakdown: usageBreakdown([]), now: NOW, month: { daily: [], unreadable: 3, loadedAt: NOW } }),
 		"No usage this month\n\n3 session files could not be read",
 	);
 });
@@ -123,7 +128,7 @@ test("a tiny cost still counts as usage; it shows as under a cent", () => {
 test("no usage prints just the empty-state sentence", () => {
 	const none = usageBreakdown([]);
 	assert.equal(usageSummary({ scope: "session", breakdown: none, now: NOW }), "No usage in this session");
-	assert.equal(usageSummary({ scope: "month", breakdown: none, now: NOW, month: { unreadable: 0, loadedAt: NOW } }), "No usage this month");
+	assert.equal(usageSummary({ scope: "month", breakdown: none, now: NOW, month: { daily: [], unreadable: 0, loadedAt: NOW } }), "No usage this month");
 });
 
 test("main-only spend lists no agents", () => {

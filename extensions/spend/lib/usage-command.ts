@@ -38,17 +38,21 @@ export function parseUsageArgs(args: string): { scope: Scope } | { error: string
 const sessionRunsOf = (ctx: ExtensionContext): SpendRun[] => [...sessionSpend(sessionEntries(ctx))];
 const sessionRootOf = (ctx: ExtensionContext): string => sessionRoot(ctx.sessionManager.getSessionDir());
 
-/** A distinct colour per split segment slot, one per glyph in SPLIT_GLYPHS (usage-split-bar.ts), which tell the slots apart without colour. */
-const SEGMENT_COLORS = ["accent", "success", "warning", "muted"] as const;
+/**
+ * Distinct pi theme colours, used in order: split segment slot N (one per glyph in SPLIT_GLYPHS,
+ * usage-split-bar.ts, which tell the slots apart without colour) and chart row N share colour N, so
+ * By provider paints each provider as the provider split does. Chart rows past the end cycle round.
+ */
+const PALETTE = ["accent", "success", "warning", "syntaxKeyword", "syntaxString", "syntaxType"] as const;
 
-/** pi theme tokens for the overlay: accent bars, a distinct colour per split segment, muted secondary text. */
+/** pi theme tokens for the overlay: a distinct colour per chart row and split segment, muted secondary text. */
 function themeStyle(theme: Theme): UsageStyle {
 	return {
 		title: (text) => theme.bold(text),
 		error: (text) => theme.fg("error", text),
-		bar: (text) => theme.fg("accent", text),
+		bar: (row, text) => theme.fg(PALETTE[row % PALETTE.length], text),
 		muted: (text) => theme.fg("muted", text),
-		segment: (slot, text) => theme.fg(SEGMENT_COLORS[slot] ?? "muted", text),
+		segment: (slot, text) => theme.fg(PALETTE[slot] ?? "muted", text),
 	};
 }
 
