@@ -41,7 +41,8 @@ const sessionRootOf = (ctx: ExtensionContext): string => sessionRoot(ctx.session
 /**
  * Distinct pi theme colours, used in order: split segment slot N (one per glyph in SPLIT_GLYPHS,
  * usage-split-bar.ts, which tell the slots apart without colour) and chart row N share colour N, so
- * By provider paints each provider as the provider split does. Chart rows past the end cycle round.
+ * By provider paints each provider as the provider split does, up to the split's folded "other" slot.
+ * Chart rows past the end cycle round.
  */
 const PALETTE = ["accent", "success", "warning", "syntaxKeyword", "syntaxString", "syntaxType"] as const;
 
