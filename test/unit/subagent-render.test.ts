@@ -403,6 +403,14 @@ test("live: a long row is cut to the width, not wrapped; the final result still 
 	assert.ok(done.filter((row) => row.includes("y")).length > 1, "final output wraps");
 });
 
+test("live: a finished agent's output in the parallel view has no tabs and each line keeps its colour", () => {
+	const tagged = { fg: (color: string, text: string) => `<${color}>${text}</>`, bold: (text: string) => text } as never;
+	const r = result({ results: [taskView({ output: "a\tb\nc\nd" }), runningView({ recentCalls: [bash("ls")] })] });
+	const rows = renderSubagentResult(r, { expanded: false, isPartial: true }, tagged).render(40);
+	assert.ok(rows.every((row) => !row.includes("\t")), rows.join("\n"));
+	for (const line of ["a   b", "c", "d"]) assert.ok(rows.some((row) => row.includes(`<toolOutput>${line}</>`)), `${line}: ${rows.join("\n")}`);
+});
+
 test("live: stored times that are not real times show no clock", () => {
 	for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, "x"]) {
 		const out = drawLive(result({ results: [runningView({ slotGrantedAt: bad as never, stepStartedAt: bad as never, recentCalls: [bash("npm test", bad as never)] })] }));

@@ -268,7 +268,7 @@ function renderCollapsed(v: SubagentTaskView, theme: Theme, liveNow?: number): s
 		lines.push(...subagentBlock(v.subagents, SUBAGENT_INDENT, theme));
 	}
 	else if (v.output) {
-		lines.push(theme.fg("toolOutput", sanitizeTerminalText(v.output).trim().split("\n").slice(0, COLLAPSED_OUTPUT_LINES).join("\n")));
+		lines.push(...sanitizeTerminalText(v.output).trim().split("\n").slice(0, COLLAPSED_OUTPUT_LINES).map((l) => theme.fg("toolOutput", l)));
 	} else lines.push(theme.fg("muted", "(no output)"));
 	const wt = worktreeLine(v, theme);
 	if (wt) lines.push(wt);
@@ -322,7 +322,8 @@ class LiveRows implements Component {
 	}
 	invalidate(): void {}
 	render(width: number): string[] {
-		return this.text.split("\n").map((line) => truncateToWidth(line, width, "…", true));
+		// Tabs as three spaces, like Text: the terminal would jump to its next tab stop and overflow the row.
+		return this.text.split("\n").map((line) => truncateToWidth(line.replace(/\t/g, "   "), width, "…", true));
 	}
 }
 
