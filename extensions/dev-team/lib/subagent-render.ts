@@ -8,7 +8,7 @@
  */
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import { getMarkdownTheme, type Theme, type ToolRenderContext, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, Markdown, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Markdown, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { formatAiCredits, runsAiCredits } from "../../spend/lib/ai-credits.ts";
 import {
 	creditedRuns,
@@ -215,7 +215,9 @@ function shownCalls(calls: ToolCallSummary[]): ToolCallSummary[] {
 
 /**
  * The body of a running agent: its place in line while it waits for a slot, otherwise its latest
- * calls and, when no call is executing, how long the model has worked on its current step.
+ * calls and, when no call is executing, how long the model has worked on its current step. Live, it
+ * has a fixed height (COLLAPSED_TOOLS calls and a status row), so a new call or step replaces rows
+ * instead of moving everything below.
  */
 function runningLines(v: SubagentTaskView, theme: Theme, liveNow: number | undefined): string[] {
 	if (isWaitingForSlot(v)) return [theme.fg("muted", waitingText(v.queuePosition))];
@@ -225,7 +227,9 @@ function runningLines(v: SubagentTaskView, theme: Theme, liveNow: number | undef
 	const thinkingFor = hasExecutingCall ? undefined : formatElapsedSince(v.stepStartedAt, liveNow);
 	if (thinkingFor) lines.push(theme.fg("dim", `${SUBAGENT_INDENT}thinking… ${thinkingFor}`));
 	// Nothing to show after its first turn means it is ending (its last message had no calls).
-	return lines.length || v.turns ? lines : [theme.fg("muted", "(starting…)")];
+	if (!lines.length && !v.turns) lines.push(theme.fg("muted", "(starting…)"));
+	if (liveNow !== undefined) while (lines.length < COLLAPSED_TOOLS + 1) lines.push("");
+	return lines;
 }
 
 /** One subagent: status, name, turn and its latest call, then the agents it runs in turn. */
@@ -307,6 +311,26 @@ export function renderSubagentCall(args: DispatchArgs & { tasks?: DispatchArgs[]
 	return new Text(text, 0, 0);
 }
 
+/**
+ * A live view: every line exactly one terminal row, cut to the width instead of wrapped, so a longer
+ * or shorter call never changes the view's height.
+ */
+class LiveRows implements Component {
+	private readonly text: string;
+	constructor(text: string) {
+		this.text = text;
+	}
+	invalidate(): void {}
+	render(width: number): string[] {
+		return this.text.split("\n").map((line) => truncateToWidth(line, width, "…", true));
+	}
+}
+
+/** Collapsed text as a component: one row per line while the dispatch runs, wrapped once it is done. */
+function collapsedView(text: string, isPartial: boolean): Component {
+	return isPartial ? new LiveRows(text) : new Text(text, 0, 0);
+}
+
 /** The parallel header: done, running and waiting counts, the clock and the spend so far, or the outcome. */
 function summaryLine(details: SubagentDetails, spend: ReturnType<typeof spendOf>, theme: Theme, liveNow: number | undefined): string {
 	const views = details.results;
@@ -362,7 +386,7 @@ export function renderSubagentResult(
 		if (!isPartial && v.output && v.output.trim().split("\n").length > COLLAPSED_OUTPUT_LINES) {
 			text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
 		}
-		return new Text(text, 0, 0);
+		return collapsedView(text, isPartial);
 	}
 
 	const spend = spendOf(views);
@@ -388,5 +412,5 @@ export function renderSubagentResult(
 	if (skippedNote) text += `\n\n${skippedNote}`;
 	if (totalUsageText) text += `\n\n${theme.fg("dim", `Total: ${totalUsageText}`)}`;
 	if (!anyUnfinished) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
-	return new Text(text, 0, 0);
+	return collapsedView(text, isPartial);
 }

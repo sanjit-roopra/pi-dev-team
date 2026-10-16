@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { CLOCK_IDLE_LIMIT_MS, CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { applyChildEvent, newChildRunState } from "../../extensions/dev-team/lib/child-run.ts";
 import { DispatchProgress } from "../../extensions/dev-team/lib/subagent.ts";
@@ -380,7 +381,26 @@ test("live: after the final message the row shows only the agent and its usage w
 	progress.update(0, { slotGrantedAt: T0, stepStartedAt: T0 });
 	const final = applyChildEvent(newChildRunState(), { type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "done" }] } } as never, T0 + 5);
 	progress.update(0, final ?? {});
-	assert.deepEqual(drawLive(result(progress.snapshot())).split("\n"), ["⏳ a · 1m 05s", "1 turn ↑0 ↓0"], "no thinking clock, no (starting…)");
+	assert.deepEqual(drawLive(result(progress.snapshot())).split("\n"), ["⏳ a · 1m 05s", "", "", "", "", "1 turn ↑0 ↓0"], "no thinking clock, no (starting…), blank slots");
+});
+
+test("live: a running agent keeps its height as calls start, finish and grow longer", () => {
+	const heights = [
+		[],
+		[bash("ls")],
+		[bash("ls"), bash("npm test", NOW - 1_000)],
+		[bash("ls"), bash("npm test"), bash("x".repeat(200)), bash("git status")],
+	].map((recentCalls) => drawLive(result({ results: [runningView({ stepStartedAt: NOW - 1_000, recentCalls, usage })] })).split("\n").length);
+	assert.equal(new Set(heights).size, 1, String(heights));
+});
+
+test("live: a long row is cut to the width, not wrapped; the final result still wraps", () => {
+	const r = result({ results: [runningView({ recentCalls: [bash("x".repeat(200))] })] });
+	const live = renderSubagentResult(r, { expanded: false, isPartial: true }, theme).render(40);
+	assert.ok(live.every((row) => visibleWidth(row) === 40), live.join("\n"));
+	assert.ok(live.some((row) => row.includes("…")));
+	const done = renderSubagentResult(result({ results: [taskView({ output: "y".repeat(100) })] }), { expanded: false, isPartial: false }, theme).render(40);
+	assert.ok(done.filter((row) => row.includes("y")).length > 1, "final output wraps");
 });
 
 test("live: stored times that are not real times show no clock", () => {
