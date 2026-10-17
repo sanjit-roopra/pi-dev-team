@@ -79,6 +79,10 @@ To limit the work, set these in `~/.pi/agent/dev-team.json`:
 
 Run `/spend` for a chart of what your sessions cost, for every provider (local models count as $0).
 
+![The /spend month view showing daily costs, provider and thread splits, and costs by model with USD and AI credits](docs/images/spend.png)
+
+Example data rendered by `/spend`: monthly trends, provider shares, and main, subagent and overhead costs.
+
 - Views: **By model**, **By provider**, **By agent** (`Tab` to switch).
 - Scope: this session, or this month across all projects (`s` to switch). Or run `/spend session` / `/spend month`.
 - Split bars show providers, and main `█` / subagents `▓` / overhead `▒` (cache warm-ups, compaction, summaries).
