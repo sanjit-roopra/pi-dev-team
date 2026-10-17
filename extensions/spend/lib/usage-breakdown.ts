@@ -1,6 +1,6 @@
 /**
  * Where a session's spend went, for every provider: the same runs the status line totals
- * (session-spend.ts), grouped by model, by provider, by dispatched agent and provider, and by thread.
+ * (session-spend.ts), grouped by model, by provider, by dispatched agent and model, and by thread.
  * Each group sums USD (pi's own cost, which every provider reports), the GitHub Copilot AI credits of
  * the runs Copilot served (ai-credits.ts), and tokens. Shares are of USD. A run counts when it cost
  * something or used tokens, so a free local model still shows; a run with neither is left out, and an
@@ -32,10 +32,10 @@ export interface ThreadRow extends UsageRow<ThreadLabel> {
 	thread: SpendRun["thread"];
 }
 
-/** One dispatched agent's spend on one provider; `label` is the agent's name. */
+/** One dispatched agent's spend on one model; `label` is the agent's name. */
 export interface AgentRow extends UsageRow {
-	/** The provider that served this part of the agent's spend. */
-	provider: string;
+	/** The "provider/model" that served this part of the agent's spend. */
+	model: string;
 }
 
 export interface UsageBreakdown {
@@ -44,7 +44,7 @@ export interface UsageBreakdown {
 	/** "provider/model" rows. */
 	byModel: UsageRow[];
 	byProvider: UsageRow[];
-	/** One row per dispatched agent and provider (main-thread turns and overhead are not agents); shares are of the agents' own USD. */
+	/** One row per dispatched agent and model (main-thread turns and overhead are not agents); shares are of the agents' own USD. */
 	byAgent: AgentRow[];
 	/** "main", "subagents" and "overhead", whichever spent, ranked like the other groupings. */
 	byThread: ThreadRow[];
@@ -53,6 +53,7 @@ export interface UsageBreakdown {
 export const THREAD_LABEL: Record<SpendRun["thread"], ThreadLabel> = { main: "main", subagent: "subagents", overhead: "overhead" };
 /** The threads in the order the overlay's thread split draws them, so a glyph always means the same thread. */
 export const THREAD_ORDER: readonly ThreadLabel[] = Object.values(THREAD_LABEL);
+const DAY_MS = 86_400_000;
 /** Below this share a non-zero row displays as "<1%". */
 const TINY_SHARE = 0.01;
 /** The finest USD amount the display shows; below it a cost reads as "<$0.01". */
@@ -75,7 +76,7 @@ const plus = (a: SpendAmounts, b: SpendAmounts): SpendAmounts => ({ usd: a.usd +
 /** A group's label and what it spent, before ranking. */
 interface Group<L extends string, E> {
 	label: L;
-	/** Breaks ties between groups with the same label (an agent on two providers). */
+	/** Breaks ties between groups with the same label (an agent on two models). */
 	tieBreak: string;
 	amounts: SpendAmounts;
 	extra: E;
@@ -111,7 +112,7 @@ export function hasUsage(amounts: SpendAmounts): boolean {
 export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
 	const models = new Grouper<string, object>();
 	const providers = new Grouper<string, object>();
-	const agents = new Grouper<string, { provider: string }>();
+	const agents = new Grouper<string, { model: string }>();
 	const threads = new Grouper<ThreadLabel, { thread: SpendRun["thread"] }>();
 	for (const run of runs) {
 		const amounts = runAmounts(run);
@@ -120,8 +121,8 @@ export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
 		models.add(run.model, run.model, amounts, {});
 		providers.add(provider, provider, amounts, {});
 		threads.add(run.thread, THREAD_LABEL[run.thread], amounts, { thread: run.thread });
-		// Keyed on the pair, so no agent name can collide with another agent and provider.
-		if (run.thread === "subagent") agents.add(JSON.stringify([run.agent, provider]), run.agent, amounts, { provider }, provider);
+		// Keyed on the pair, so no agent name can collide with another agent and model.
+		if (run.thread === "subagent") agents.add(JSON.stringify([run.agent, run.model]), run.agent, amounts, { model: run.model }, run.model);
 	}
 	const byModel = models.ranked();
 	return {
@@ -136,15 +137,24 @@ export function usageBreakdown(runs: Iterable<SpendRun>): UsageBreakdown {
 /** What this month's load produced. */
 export interface MonthSnapshot {
 	breakdown: UsageBreakdown;
+	/** USD per UTC day of the month, from the 1st (index 0) to the day of `loadedAt`. */
+	daily: number[];
 	/** Session files that could not be read. */
 	unreadable: number;
 	/** When the load finished; the header says "as of" this time. */
 	loadedAt: Date;
 }
 
-/** The snapshot of a finished load: the breakdown of its runs, the files it could not read, and when it finished. */
+/** The snapshot of a finished load: the breakdown of its runs, their USD per day, the files it could not read, and when it finished. */
 export function monthSnapshot(history: SpendHistory, loadedAt: Date): MonthSnapshot {
-	return { breakdown: usageBreakdown(history.records.map((r) => r.run)), unreadable: history.unreadable, loadedAt };
+	const daily: number[] = new Array(loadedAt.getUTCDate()).fill(0);
+	const monthStart = Date.UTC(loadedAt.getUTCFullYear(), loadedAt.getUTCMonth(), 1);
+	const runs = history.records.map(({ timestamp, run }) => {
+		const day = Math.floor((Date.parse(timestamp) - monthStart) / DAY_MS);
+		if (day >= 0 && day < daily.length) daily[day] += positiveFiniteOrZero(costUsd(run.usage));
+		return run;
+	});
+	return { breakdown: usageBreakdown(runs), daily, unreadable: history.unreadable, loadedAt };
 }
 
 /** "83.3%", "<1%" for a non-zero share under 1% so a small row never reads as 0.0%, and "0%" for none. */

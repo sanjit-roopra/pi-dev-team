@@ -16,7 +16,7 @@ import {
 	type UsageBreakdown,
 	type UsageRow,
 } from "./usage-breakdown.ts";
-import type { BarChartOptions, ChartFormat } from "./usage-chart.ts";
+import { type BarChartOptions, type ChartFormat, sparkline } from "./usage-chart.ts";
 import { toSpacedSingleLine, toSingleLine } from "../../shared/terminal-text.ts";
 import type { Scope, View } from "./usage-state.ts";
 
@@ -24,8 +24,10 @@ export const SEPARATOR = " · ";
 export const SCOPE_TITLE: Record<Scope, string> = { session: "This session", month: "This month" };
 export const SCOPE_NOUN: Record<Scope, string> = { session: "this session", month: "this month" };
 export const VIEW_TITLE: Record<View, string> = { model: "By model", provider: "By provider", agent: "By agent" };
-/** Joins an agent and its provider in an agent row's label. */
-export const AGENT_PROVIDER_SEPARATOR = " · ";
+/** Joins an agent and its model in an agent row's label. */
+export const AGENT_MODEL_SEPARATOR = " · ";
+/** Names the month's line of daily USD. */
+export const TREND_TITLE = "Daily";
 /** The chart area's text while this month's files are read; the overlay appends the progress. */
 export const READING_SESSIONS = "Reading sessions…";
 
@@ -63,11 +65,32 @@ export function totalHeaderParts(total: SpendAmounts): string[] {
 	return [formatUsd(total.usd), ...(hasVisibleCredits(total.credits) ? [formatAiCredits(total.credits)] : [])];
 }
 
-/** The ranked rows of a view; an agent row is labelled "agent · provider". */
+/** "claude-sonnet-5.5 (github-copilot)": the model first, so a cut label keeps it; an id without a provider stays as it is. */
+function modelLabel(model: string): string {
+	const slash = model.indexOf("/");
+	return slash > 0 ? `${model.slice(slash + 1)} (${model.slice(0, slash)})` : model;
+}
+
+/** The ranked rows of a view; an agent row is labelled "agent · model (provider)". */
 export function viewRows(view: View, breakdown: UsageBreakdown): UsageRow[] {
 	if (view === "model") return breakdown.byModel;
 	if (view === "provider") return breakdown.byProvider;
-	return breakdown.byAgent.map((row) => ({ ...row, label: `${row.label}${AGENT_PROVIDER_SEPARATOR}${row.provider}` }));
+	return breakdown.byAgent.map((row) => ({ ...row, label: `${row.label}${AGENT_MODEL_SEPARATOR}${modelLabel(row.model)}` }));
+}
+
+/** True when the month's days have USD to draw. */
+export const hasTrend = (daily: readonly number[] | undefined): daily is number[] => !!daily?.some((usd) => usd > 0);
+
+/**
+ * The figures beside the daily sparkline, most useful first so a narrow line drops from the end:
+ * today's USD, the average day, and the peak day with its UTC date. `daily` runs from the 1st of
+ * `loadedAt`'s month (see MonthSnapshot).
+ */
+export function trendStats(daily: readonly number[], loadedAt: Date): string[] {
+	const peak = daily.indexOf(Math.max(...daily));
+	const average = daily.reduce((sum, usd) => sum + usd, 0) / daily.length;
+	const peakDate = new Date(Date.UTC(loadedAt.getUTCFullYear(), loadedAt.getUTCMonth(), peak + 1));
+	return [`today ${formatUsd(daily.at(-1) ?? 0)}`, `avg ${formatUsd(average)}/day`, `peak ${formatUsd(daily[peak])} ${monthDay(peakDate)}`];
 }
 
 /** One split of the total: its parts in drawing order, each with its USD and share of the total. */
@@ -138,7 +161,7 @@ function splitLine({ title, parts }: SplitSection): string {
 	return `${title}  ${spent.map((p) => `${toSingleLine(p.label)} ${formatUsd(p.usd)} ${formatShare(p.share)}`).join(SEPARATOR)}`;
 }
 
-/** Header, the provider and thread splits, then models, providers and agents ranked; or the empty-state sentence. Either way the unreadable-files note ends it, as in the overlay. */
+/** Header, the provider and thread splits, the month's daily trend, then models, providers and agents ranked; or the empty-state sentence. Either way the unreadable-files note ends it, as in the overlay. */
 export function usageSummary({ scope, breakdown, now, month }: UsageSummaryInput): string {
 	const note = unreadableFilesNote(month?.unreadable ?? 0);
 	const noteLines = note ? ["", note] : [];
@@ -151,6 +174,7 @@ export function usageSummary({ scope, breakdown, now, month }: UsageSummaryInput
 	return [
 		header,
 		...splitSections(breakdown).map(splitLine),
+		...(month && hasTrend(month.daily) ? [`${TREND_TITLE}  ${sparkline(month.daily)}  ${trendStats(month.daily, month.loadedAt).join(SEPARATOR)}`] : []),
 		...section("model"),
 		...section("provider"),
 		...section("agent"),
