@@ -132,6 +132,7 @@ All settings, with defaults:
   "autocompactMaxTokens": 200000, // compact between tasks at this many tokens; 0 = off (project file: 0 or 50000+)
   "readDedup": true,           // a repeated read of an unchanged file returns a short note
   "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
+  "allowPiSubagents": false,   // true lets the model use pi-subagents' tools (user file only)
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
 }

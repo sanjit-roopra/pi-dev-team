@@ -56,6 +56,8 @@ export interface DevTeamConfig {
 	readDedup: boolean;
 	/** Put the `claude` -> `pi` CLI shim on PATH for scripts that call `claude -p`. */
 	claudeShim: boolean;
+	/** Let the model use the pi-subagents package's tools; off, dev-team hides and blocks them (pi-subagents.ts). User file only. */
+	allowPiSubagents: boolean;
 	/** Extra environment variables for tools, hooks, scripts and subagents (e.g. DEV_TEAM_MAX_PARALLEL_BUILDS). */
 	env: Record<string, string>;
 }
@@ -99,6 +101,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	autocompactMaxTokens: 200_000,
 	readDedup: true,
 	claudeShim: true,
+	allowPiSubagents: false,
 	env: {},
 };
 
@@ -273,15 +276,16 @@ export function isProjectParallelLimitAllowed(value: unknown): boolean {
 /**
  * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
  * object is dropped whole), no `hooks` at all, since hooks include the guards (hooks are set in the
- * user's own config), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
+ * user's own config), no `allowPiSubagents` (it lifts a block), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
  * `maxParallelAgents` only when isProjectParallelLimitAllowed. `ignored` names everything left out, as
- * `env.KEY`, `env`, `hooks`, `autocompactMaxTokens` or `maxParallelAgents`.
+ * `env.KEY`, `env`, `hooks`, `allowPiSubagents`, `autocompactMaxTokens` or `maxParallelAgents`.
  */
 export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
-	const { env, hooks, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
+	const { env, hooks, allowPiSubagents, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
 	const out: Record<string, unknown> = rest;
 	if (hooks !== undefined) ignored.push("hooks");
+	if (allowPiSubagents !== undefined) ignored.push("allowPiSubagents");
 	if (autocompactMaxTokens !== undefined) {
 		if (isProjectAutocompactCeilingAllowed(autocompactMaxTokens)) out.autocompactMaxTokens = autocompactMaxTokens;
 		else ignored.push("autocompactMaxTokens");
