@@ -82,7 +82,7 @@ export function viewRows(view: View, breakdown: UsageBreakdown): UsageRow[] {
 export const hasTrend = (daily: readonly number[] | undefined): daily is number[] => !!daily?.some((usd) => usd > 0);
 
 /**
- * The figures beside the daily sparkline, most useful first so a narrow line drops from the end:
+ * The figures with the daily chart or sparkline, most useful first so a narrow line drops from the end:
  * today's USD, the average day, and the peak day with its UTC date. `daily` runs from the 1st of
  * `loadedAt`'s month (see MonthSnapshot).
  */

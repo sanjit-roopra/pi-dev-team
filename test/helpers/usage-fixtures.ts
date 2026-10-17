@@ -46,3 +46,15 @@ export const multiProvider = usageBreakdown([
 	providerRun("openai/gpt-5.5", 0.3, "subagent", "arch-review"),
 	providerRun("ollama/qwen3", 0, "subagent", "Explore", 850_000),
 ]);
+
+const FRAME_EDGE = /^[╭╰]─ (.*) ─+[╮╯]$/;
+const FRAME_SIDE = /^│ (.*) │$/;
+
+/** The overlay's lines without its frame (identity-styled): an edge's text, then each body line with its padding trimmed. */
+export function unframe(lines: readonly string[]): string[] {
+	return lines.map((line) => {
+		const text = FRAME_EDGE.exec(line)?.[1] ?? FRAME_SIDE.exec(line)?.[1].trimEnd();
+		if (text === undefined) throw new Error(`not a framed line: ${JSON.stringify(line)}`);
+		return text;
+	});
+}

@@ -1,13 +1,15 @@
 /**
  * Renders the /spend overlay. renderUsage() turns the view's state plus the usage breakdown
- * into the lines of the panel (header, daily trend, split bars, ranked chart, footer), fitted to the terminal's width
- * and height; it is pure (colour comes from the injected style), so tests drive it without pi. The
- * component that holds the state and reacts to keys is UsageView (usage-view.ts).
+ * into the lines of the panel (daily trend, split bars, ranked chart) inside a frame that carries the
+ * header and the key hints (usage-frame.ts), fitted to the terminal's width and height; it is pure
+ * (colour comes from the injected style), so tests drive it without pi. The component that holds the
+ * state and reacts to keys is UsageView (usage-view.ts).
  */
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { formatShare, formatUsd, hasUsage, type MonthSnapshot, type UsageBreakdown, type UsageRow } from "./usage-breakdown.ts";
 import { cutToWidth } from "../../shared/terminal-text.ts";
-import { barChartLines, type ChartStyle, sparkline } from "./usage-chart.ts";
+import { barChartLines, type ChartStyle, dailyChartLines, sparkline } from "./usage-chart.ts";
+import { FRAME_EDGE_LINES, frameBodyWidth, frameEdgeTextWidth, type FrameStyle, frameLines } from "./usage-frame.ts";
 import { type SplitBarOptions, type SplitStyle, splitBarLines } from "./usage-split-bar.ts";
 import type { UsageState } from "./usage-state.ts";
 import {
@@ -33,9 +35,7 @@ import {
 	wantedColumns,
 } from "./usage-text.ts";
 
-export interface UsageStyle extends ChartStyle, SplitStyle {
-	/** The header line. */
-	title(text: string): string;
+export interface UsageStyle extends ChartStyle, SplitStyle, FrameStyle {
 	/** The load failure message. */
 	error(text: string): string;
 }
@@ -124,15 +124,31 @@ function shownDaily(viewModel: UsageViewModel): number[] | undefined {
 	return state.scope === "month" && state.load.kind === "ready" && hasTrend(month?.daily) ? month.daily : undefined;
 }
 
-/** "Daily ▁▃█▂  today $1.20 · avg $3.40/day · peak $9.10 Oct 2": the figures drop from the end to fit `width`. */
-function trendLine(daily: readonly number[], loadedAt: Date, width: number, style: UsageStyle): string {
-	const spark = sparkline(daily);
+/**
+ * "Daily ▁▃█▂  today $1.20 · avg $3.40/day · peak $9.10 Oct 2", or without the sparkline above the
+ * bar chart: the figures drop from the end to fit `width`.
+ */
+function trendLine(daily: readonly number[], loadedAt: Date, width: number, style: UsageStyle, withSpark: boolean): string {
+	const spark = withSpark ? ` ${sparkline(daily)}` : "";
 	const stats = trendStats(daily, loadedAt);
 	for (let keep = stats.length; keep >= 0; keep--) {
 		const tail = keep ? `  ${stats.slice(0, keep).join(SEPARATOR)}` : "";
-		if (visibleWidth(`${TREND_TITLE} ${spark}${tail}`) <= width) return `${TREND_TITLE} ${style.bar(0, spark)}${style.muted(tail)}`;
+		if (visibleWidth(`${TREND_TITLE}${spark}${tail}`) <= width) return `${TREND_TITLE}${spark && style.bar(0, spark)}${style.muted(tail)}`;
 	}
-	return cutToWidth(`${TREND_TITLE} ${spark}`, width);
+	return cutToWidth(`${TREND_TITLE}${spark}`, width);
+}
+
+/** Lines of bars in the month's daily chart. */
+const DAILY_CHART_ROWS = 5;
+
+/** The days in `date`'s UTC month: the daily chart's axis runs to the last one. */
+const daysInMonth = (date: Date) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+
+/** The month's trend at its two sizes: the figures over the daily bar chart, and one sparkline line. */
+function trendBlocks(daily: readonly number[], loadedAt: Date, width: number, style: UsageStyle): { full: string[]; compact: string[] } {
+	const chart = dailyChartLines(daily, { width, rows: DAILY_CHART_ROWS, days: daysInMonth(loadedAt), formatValue: formatUsd, style });
+	const compact = [trendLine(daily, loadedAt, width, style, true)];
+	return { full: chart.length ? [trendLine(daily, loadedAt, width, style, false), ...chart] : compact, compact };
 }
 
 /** One split bar's lines: the bar, then its legend lines. */
@@ -169,7 +185,8 @@ interface LayoutRequest {
 	/** The split bars without their legends: what is left when the legends give way. */
 	splitBarCount: number;
 	hasFootnote: boolean;
-	hasTrend: boolean;
+	/** The trend's lines at full size (the daily bar chart) and compact (one sparkline line); 0 for none. */
+	trendLineCount: { full: number; compact: number };
 	chartRowCount: number;
 }
 
@@ -179,51 +196,54 @@ interface Layout {
 	/** Split bar lines kept (the bar first, then its legend). */
 	splitLineCount: number;
 	hasFootnote: boolean;
-	hasTrend: boolean;
+	/** Trend lines kept: the full chart, the compact sparkline, or 0. */
+	trendLineCount: number;
 	chartRowCount: number;
 }
 
-const PINNED_LINES = 2;
+/** The frame's top and bottom edges, which carry the header and the key hints. */
+const PINNED_LINES = FRAME_EDGE_LINES;
 const FOOTNOTE_LINES = 1;
-const TREND_LINES = 1;
 /** Chart rows worth keeping over the extras before the extras start to go. */
 const MIN_CHART_ROWS = 3;
-/** Blank lines after the header and before the footer. */
+/** Blank lines after the top edge and before the bottom one. */
 const OUTER_GAP_LINES = 2;
-/** The blank line after the trend and split bars, when there are any. */
-const SPLIT_GAP_LINES = 1;
 
-/** The blank lines kept between header, trend and split bars (when there are any), chart and footer. */
-const gapLineCount = (hasSplit: boolean) => OUTER_GAP_LINES + (hasSplit ? SPLIT_GAP_LINES : 0);
+/** The blank lines kept after the top edge, between trend, split bars and chart (when there are any), and before the bottom edge. */
+const gapLineCount = (o: Layout) => OUTER_GAP_LINES + (o.trendLineCount || o.splitLineCount ? 1 : 0) + (o.trendLineCount && o.splitLineCount ? 1 : 0);
 
 /**
- * Decides which lines are pinned and which flex for `height`. The header and footer always stay; the
- * rest give way in order (blank gaps, footnote, trend, split legends, split bars) until the chart gets
+ * Decides which lines are pinned and which flex for `height`. The frame's edges always stay; the rest
+ * give way in order (blank gaps, footnote, the daily chart for a sparkline, the trend, split legends,
+ * split bars) until the chart gets
  * MIN_CHART_ROWS rows or what it asked for, whichever is fewer. What is left goes to the chart.
  */
 function planLayout(height: number, request: LayoutRequest): Layout {
 	const free = Math.max(0, height - PINNED_LINES);
-	const { splitLineCount, hasFootnote, hasTrend } = request;
+	const { splitLineCount, hasFootnote, trendLineCount } = request;
+	const { full, compact } = trendLineCount;
 	const options: Layout[] = [
-		{ hasGaps: true, splitLineCount, hasFootnote, hasTrend, chartRowCount: 0 },
-		{ hasGaps: false, splitLineCount, hasFootnote, hasTrend, chartRowCount: 0 },
-		{ hasGaps: false, splitLineCount, hasFootnote: false, hasTrend, chartRowCount: 0 },
-		{ hasGaps: false, splitLineCount, hasFootnote: false, hasTrend: false, chartRowCount: 0 },
-		{ hasGaps: false, splitLineCount: Math.min(request.splitBarCount, splitLineCount), hasFootnote: false, hasTrend: false, chartRowCount: 0 },
-		{ hasGaps: false, splitLineCount: 0, hasFootnote: false, hasTrend: false, chartRowCount: 0 },
+		{ hasGaps: true, splitLineCount, hasFootnote, trendLineCount: full, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount, hasFootnote, trendLineCount: full, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount, hasFootnote: false, trendLineCount: full, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount, hasFootnote: false, trendLineCount: compact, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount, hasFootnote: false, trendLineCount: 0, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount: Math.min(request.splitBarCount, splitLineCount), hasFootnote: false, trendLineCount: 0, chartRowCount: 0 },
+		{ hasGaps: false, splitLineCount: 0, hasFootnote: false, trendLineCount: 0, chartRowCount: 0 },
 	];
 	const withChartRows = (o: Layout): Layout => ({
 		...o,
 		chartRowCount: Math.max(
 			0,
-			free - (o.hasGaps ? gapLineCount(splitLineCount > 0 || hasTrend) : 0) - o.splitLineCount - (o.hasFootnote ? FOOTNOTE_LINES : 0) - (o.hasTrend ? TREND_LINES : 0),
+			free - (o.hasGaps ? gapLineCount(o) : 0) - o.splitLineCount - (o.hasFootnote ? FOOTNOTE_LINES : 0) - o.trendLineCount,
 		),
 	});
 	const sized = options.map(withChartRows);
 	return sized.find((o) => o.chartRowCount >= Math.min(request.chartRowCount, MIN_CHART_ROWS)) ?? sized[sized.length - 1];
 }
 
-export function renderUsage(viewModel: UsageViewModel, { width, height, style }: RenderOptions): string[] {
+export function renderUsage(viewModel: UsageViewModel, { width: outerWidth, height, style }: RenderOptions): string[] {
+	const width = frameBodyWidth(outerWidth);
 	const breakdown = shownBreakdown(viewModel);
 	const message = bodyMessage(viewModel, breakdown);
 	// The split bars show whenever there is spend to split, even when the view's own chart is empty.
@@ -232,25 +252,25 @@ export function renderUsage(viewModel: UsageViewModel, { width, height, style }:
 	const splitLineCount = blocks.reduce((sum, b) => sum + 1 + b.legend.length, 0);
 	const footnote = footnoteText(viewModel);
 	const daily = shownDaily(viewModel);
+	const trend = daily && viewModel.month ? trendBlocks(daily, viewModel.month.loadedAt, width, style) : { full: [], compact: [] };
 	const rankedRows: UsageRow[] = breakdown ? viewRows(viewModel.state.view, breakdown) : [];
-	const plan = planLayout(height, { splitLineCount, splitBarCount: blocks.length, hasFootnote: !!footnote, hasTrend: !!daily, chartRowCount: message ? 1 : rankedRows.length });
+	const trendLineCount = { full: trend.full.length, compact: trend.compact.length };
+	const plan = planLayout(height, { splitLineCount, splitBarCount: blocks.length, hasFootnote: !!footnote, trendLineCount, chartRowCount: message ? 1 : rankedRows.length });
 
-	const topLines = [
-		...(daily && viewModel.month && plan.hasTrend ? [trendLine(daily, viewModel.month.loadedAt, width, style)] : []),
-		...fitSplitLines(blocks, plan.splitLineCount),
-	];
+	const trendLines = plan.trendLineCount === 0 ? [] : plan.trendLineCount === trend.full.length ? trend.full : trend.compact;
+	const topLines = [...trendLines, ...(trendLines.length && plan.splitLineCount && plan.hasGaps ? [""] : []), ...fitSplitLines(blocks, plan.splitLineCount)];
 	const paint = message?.tone === "error" ? style.error : (text: string) => text;
 	const body = message
 		? plan.chartRowCount > 0 ? [paint(cutToWidth(message.text, width))] : []
 		: barChartLines(rankedRows, { width, maxRows: plan.chartRowCount, format: CHART_FORMAT, wantedColumns: wantedColumns(rankedRows), style });
 	const gapLines = plan.hasGaps ? [""] : [];
-	return [
-		style.title(fitLine(headerCandidates(viewModel), width)),
+	const lines = [
 		...gapLines,
 		...(topLines.length ? [...topLines, ...gapLines] : []),
 		...body,
 		...(footnote && plan.hasFootnote ? [style.muted(cutToWidth(footnote, width))] : []),
 		...gapLines,
-		style.muted(fitLine(footerCandidates(viewModel.state), width)),
 	];
+	const edgeTextWidth = frameEdgeTextWidth(outerWidth);
+	return frameLines(lines, { width: outerWidth, title: fitLine(headerCandidates(viewModel), edgeTextWidth), footer: fitLine(footerCandidates(viewModel.state), edgeTextWidth), style });
 }

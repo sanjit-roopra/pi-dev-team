@@ -7,10 +7,10 @@ import type { SpendHistory } from "../../extensions/spend/lib/usage-history.ts";
 import type { UsageStyle } from "../../extensions/spend/lib/usage-render.ts";
 import { openUsage } from "../../extensions/spend/lib/usage-state.ts";
 import { OVERLAY_HEIGHT_PERCENT, UsageView, type UsageViewDeps } from "../../extensions/spend/lib/usage-view.ts";
-import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
+import { NOW, copilotRun, unframe } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: (_row, text) => text, muted: identity, segment: (_slot, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: (_row, text) => text, muted: identity, segment: (_slot, text) => text, border: identity, panel: identity };
 
 /** A UsageView on stub deps, recording what it asked of the host. */
 function viewOn(runs: SpendRun[], extra: Partial<UsageViewDeps> = {}) {
@@ -39,7 +39,7 @@ const manyRuns = manyCredits.map((credits, i) => copilotRun(`model-${i}`, credit
 test("the component renders this session by model, headed with the session's total", () => {
 	const total = manyCredits.reduce((sum, credits) => sum + credits, 0);
 	assert.equal(total, 1065);
-	assert.equal(viewOn(manyRuns).view.render(80)[0], "This session · By model · $10.65 · 1,065 AI credits");
+	assert.equal(unframe(viewOn(manyRuns).view.render(80))[0], "This session · By model · $10.65 · 1,065 AI credits");
 });
 
 test("the component fits the overlay's share of the terminal height at any width", () => {
@@ -48,13 +48,13 @@ test("the component fits the overlay's share of the terminal height at any width
 		for (const width of [10, 30, 80]) {
 			const lines = view.render(width);
 			assert.ok(lines.length <= overlayHeight(rows), `${width}x${rows}: ${lines.length} lines`);
-			assert.ok(lines.every((l) => visibleWidth(l) <= width));
+			assert.ok(lines.every((l) => visibleWidth(l) === width));
 		}
 	}
 });
 
 test("the component keeps the header and the close hint when the terminal is small", () => {
-	const lines = viewOn(manyRuns, { terminalRows: () => 12 }).view.render(30);
+	const lines = unframe(viewOn(manyRuns, { terminalRows: () => 12 }).view.render(30));
 	assert.match(lines[0], /^This sess/);
 	assert.ok(lines.at(-1)!.includes("Esc close"));
 });
@@ -67,13 +67,13 @@ test("Tab and Shift+Tab switch the view and ask for a re-render; the split bar s
 		assert.equal(calls.renders, before + 1, `a re-render after ${JSON.stringify(input)}`);
 	};
 	press(tab);
-	assert.ok(view.render(80)[0].includes("By provider"));
+	assert.ok(unframe(view.render(80))[0].includes("By provider"));
 	press(tab);
-	assert.ok(view.render(80)[0].includes("By agent"));
-	assert.ok(view.render(80).some((l) => l.includes("█ main $0.20")), "split bar still shown");
+	assert.ok(unframe(view.render(80))[0].includes("By agent"));
+	assert.ok(unframe(view.render(80)).some((l) => l.includes("█ main $0.20")), "split bar still shown");
 	press(shiftTab);
 	press(shiftTab);
-	assert.ok(view.render(80)[0].includes("By model"));
+	assert.ok(unframe(view.render(80))[0].includes("By model"));
 });
 
 test("Esc closes the overlay", () => {
@@ -93,11 +93,11 @@ test("an unrelated key changes nothing and asks for nothing", () => {
 test("invalidate rebuilds the session's breakdown from the runs; until then it is cached", () => {
 	const runs = [copilotRun("gpt-5", 20)];
 	const { view } = viewOn(runs);
-	assert.ok(view.render(80)[0].includes("20.0 AI credits"));
+	assert.ok(unframe(view.render(80))[0].includes("20.0 AI credits"));
 	runs.push(copilotRun("gpt-5", 30));
-	assert.ok(view.render(80)[0].includes("20.0 AI credits"), "cached");
+	assert.ok(unframe(view.render(80))[0].includes("20.0 AI credits"), "cached");
 	view.invalidate();
-	assert.ok(view.render(80)[0].includes("50.0 AI credits"), "rebuilt");
+	assert.ok(unframe(view.render(80))[0].includes("50.0 AI credits"), "rebuilt");
 });
 
 // ---------------------------------------------------------------------------------------------- this-month load
@@ -118,7 +118,8 @@ function stubLoader() {
 }
 const records = (...runs: SpendRun[]) => runs.map((r) => ({ timestamp: "2026-10-02T10:00:00.000Z", run: r }));
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
-const monthLines = (view: UsageView) => view.render(80);
+/** Wide enough for the full month header in the frame's top edge. */
+const monthLines = (view: UsageView) => unframe(view.render(90));
 
 function monthViewOn(runs: SpendRun[] = [], opening: "session" | "month" = "month", extra: Partial<UsageViewDeps> = {}) {
 	const loader = stubLoader();

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { barChartLines, type BarChartOptions, type ChartRow, sparkline } from "../../extensions/spend/lib/usage-chart.ts";
+import { barChartLines, type BarChartOptions, type ChartRow, dailyChartLines, sparkline } from "../../extensions/spend/lib/usage-chart.ts";
 import { splitBarLines, type SplitBarOptions, type SplitPart } from "../../extensions/spend/lib/usage-split-bar.ts";
 
 const identity = (text: string) => text;
@@ -333,4 +333,36 @@ test("sparkline: one glyph per value scaled to the largest; nothing spent is a s
 	assert.equal(sparkline([0, 1, 4, 8, 0.01, -1]), " ▁▄█▁ ");
 	assert.equal(sparkline([]), "");
 	assert.equal(sparkline([0, 0]), "  ");
+});
+
+const daily = (values: number[], width = 40, days = 7, rows = 2) => dailyChartLines(values, { width, rows, days, formatValue: (v) => `$${v}`, style });
+
+test("daily chart: bars a column apart scaled to the peak, a dot for a day that cost nothing, the future blank", () => {
+	assert.deepEqual(daily([4, 0, 8, 1]), [
+		"$8 ┤    █        ",
+		"$0 ┤█ · █ ▂      ",
+		"   └┬─────┬─┬───┬",
+		"    1     4     7",
+	]);
+});
+
+test("daily chart: days go side by side when a column apart does not fit, and [] when neither does", () => {
+	assert.deepEqual(daily([4, 0, 8, 1], 11), ["$8 ┤  █    ", "$0 ┤█·█▂   ", "   └┬──┬┬─┬", "    1  4  7"]);
+	assert.deepEqual(daily([4, 0, 8, 1], 10), []);
+	assert.deepEqual(daily([0, 0]), [], "nothing to draw");
+	assert.deepEqual(daily([1], 40, 7, 0), [], "no rows");
+});
+
+test("daily chart: today's number wins over a neighbour less than two spaces away, and is painted as a bar", () => {
+	const numbers = (width: number) =>
+		dailyChartLines([1, 2, 3, 4, 5, 6, 7, 8, 9], { width, rows: 1, days: 31, formatValue: String, style: { bar: (_r, t) => `<${t}>`, muted: identity } }).at(-1);
+	assert.equal(numbers(80), "   1       5       <9>           15        20        25          31");
+	assert.equal(numbers(36), "   1   5   <9>     15   20   25    31");
+});
+
+test("daily chart: every line fits the width, at any width", () => {
+	const values = Array.from({ length: 17 }, (_, i) => (i * 37) % 11);
+	for (let width = 0; width <= 90; width++) {
+		for (const line of dailyChartLines(values, { width, rows: 4, days: 31, formatValue: (v) => `$${v.toFixed(2)}`, style })) assert.ok(visibleWidth(line) <= width, `${width}: "${line}"`);
+	}
 });

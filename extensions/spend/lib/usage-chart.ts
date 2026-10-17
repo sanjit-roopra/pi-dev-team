@@ -1,5 +1,6 @@
 /**
- * Block-character ranked bar chart for the /spend overlay (barChartLines); the stacked
+ * Block-character charts for the /spend overlay: the ranked bar chart (barChartLines), the month's
+ * daily bars (dailyChartLines) and their one-line fallback (sparkline); the stacked
  * splits are usage-split-bar.ts. Pure string rendering: every line is built from plain
  * text, measured with pi-tui's visibleWidth, cut where needed and only then styled, so a line never
  * exceeds the width it was asked for and colour comes from the injected style alone. Formatting
@@ -159,4 +160,85 @@ const SPARK_BLOCKS = "▁▂▃▄▅▆▇█";
 export function sparkline(values: readonly number[]): string {
 	const max = Math.max(0, ...values);
 	return values.map((v) => (v > 0 ? SPARK_BLOCKS[Math.max(0, Math.ceil((v / max) * SPARK_BLOCKS.length) - 1)] : " ")).join("");
+}
+
+export interface DailyChartOptions {
+	/** Terminal columns every returned line must fit in. */
+	width: number;
+	/** Lines of bars; each holds eight steps of height. */
+	rows: number;
+	/** Days the axis spans (the whole month); the last value given is today, and the days after it stay empty. */
+	days: number;
+	/** The axis labels: the peak at the top, 0 at the baseline. */
+	formatValue(value: number): string;
+	style: ChartStyle;
+}
+
+/** Days with a tick and a number under the axis; today and the month's last day are added. */
+const DAY_TICKS = [1, 5, 10, 15, 20, 25];
+/** "┤" or "│" between the value labels and the bars. */
+const AXIS_GAP = 2;
+
+/**
+ * Vertical bars, one column per day from the 1st, `rows` high and scaled to the largest value, with
+ * the peak and 0 marked on a value axis at the left and day numbers under a tick axis, today's in the
+ * bar colour. Days go a column apart when the width allows, side by side when not; [] when even that does not fit, so the
+ * caller can fall back to the sparkline. A day that cost nothing is a `·` on the baseline, so it reads
+ * as zero rather than as missing.
+ */
+export function dailyChartLines(values: readonly number[], { width, rows, days, formatValue, style }: DailyChartOptions): string[] {
+	const max = Math.max(0, ...values);
+	if (rows < 1 || !(max > 0)) return [];
+	const topLabel = formatValue(max);
+	const baseLabel = formatValue(0);
+	const labelWidth = Math.max(visibleWidth(topLabel), visibleWidth(baseLabel));
+	const plotWidth = width - labelWidth - AXIS_GAP;
+	const step = days * 2 - 1 <= plotWidth ? 2 : days <= plotWidth ? 1 : 0;
+	if (!step) return [];
+	const columnOf = (day: number) => (day - 1) * step;
+	const plotColumns = columnOf(days) + 1;
+	const heights = values.map((v) => (v > 0 ? Math.max(1, Math.round((v / max) * rows * EIGHTHS_PER_CELL)) : 0));
+
+	const barRow = (row: number): string => {
+		const below = (rows - 1 - row) * EIGHTHS_PER_CELL;
+		let line = "";
+		for (let day = 1; day <= days; day++) {
+			if (day > 1 && step === 2) line += " ";
+			const height = heights[day - 1];
+			const level = Math.min(EIGHTHS_PER_CELL, Math.max(0, (height ?? 0) - below));
+			if (level > 0) line += style.bar(0, SPARK_BLOCKS[level - 1]);
+			else line += height === 0 && row === rows - 1 ? style.muted("·") : " ";
+		}
+		return line;
+	};
+	const axisLabel = (row: number) => (row === 0 ? topLabel : row === rows - 1 ? baseLabel : "");
+	const bars = Array.from({ length: rows }, (_, row) => {
+		const label = axisLabel(row);
+		return style.muted(`${" ".repeat(labelWidth - visibleWidth(label))}${label} ${label ? "┤" : "│"}`) + barRow(row);
+	});
+
+	const today = Math.min(values.length, days);
+	// Today first, then the ends, then the rest: a number less than two spaces from one already placed is left out (its tick stays).
+	const ticks = [...new Set([today, 1, days, ...DAY_TICKS.filter((d) => d < days)])].filter((d) => d >= 1);
+	const tickColumns = new Set(ticks.map(columnOf));
+	let axis = "";
+	for (let column = 0; column < plotColumns; column++) axis += tickColumns.has(column) ? "┬" : "─";
+	const placed: { day: number; from: number; to: number }[] = [];
+	for (const day of ticks) {
+		const from = columnOf(day);
+		const to = from + String(day).length;
+		if (!placed.some((p) => from <= p.to + 1 && to + 1 >= p.from)) placed.push({ day, from, to });
+	}
+	const indent = " ".repeat(labelWidth + 2);
+	let numbers = "";
+	let used = visibleWidth(indent);
+	for (const { day, from } of placed.sort((a, b) => a.from - b.from)) {
+		const text = String(day);
+		const start = visibleWidth(indent) + from;
+		if (start + text.length > width) break;
+		const gap = " ".repeat(start - used);
+		numbers += style.muted(gap) + (day === today ? style.bar(0, text) : style.muted(text));
+		used = start + text.length;
+	}
+	return [...bars, style.muted(`${" ".repeat(labelWidth + 1)}└${axis}`), style.muted(indent) + numbers];
 }

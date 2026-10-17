@@ -46,10 +46,15 @@ const sessionRootOf = (ctx: ExtensionContext): string => sessionRoot(ctx.session
  */
 const PALETTE = ["accent", "success", "warning", "syntaxKeyword", "syntaxString", "syntaxType"] as const;
 
-/** pi theme tokens for the overlay: a distinct colour per chart row and split segment, muted secondary text. */
+/** Widest the overlay gets; pi narrows it to the terminal. */
+export const OVERLAY_WIDTH = 100;
+
+/** pi theme tokens for the overlay: a framed panel on its own background, a distinct colour per chart row and split segment, muted secondary text. */
 function themeStyle(theme: Theme): UsageStyle {
 	return {
-		title: (text) => theme.bold(text),
+		title: (text) => theme.bold(theme.fg("accent", text)),
+		border: (text) => theme.fg("borderAccent", text),
+		panel: (line) => theme.bg("customMessageBg", line),
 		error: (text) => theme.fg("error", text),
 		bar: (row, text) => theme.fg(PALETTE[row % PALETTE.length], text),
 		muted: (text) => theme.fg("muted", text),
@@ -93,7 +98,7 @@ async function showOverlay(ctx: ExtensionContext, initial: Transition, deps: Usa
 					initial,
 				);
 			},
-			{ overlay: true, overlayOptions: { maxHeight: `${OVERLAY_HEIGHT_PERCENT}%` } },
+			{ overlay: true, overlayOptions: { width: OVERLAY_WIDTH, maxHeight: `${OVERLAY_HEIGHT_PERCENT}%` } },
 		);
 	} catch {
 		return false;

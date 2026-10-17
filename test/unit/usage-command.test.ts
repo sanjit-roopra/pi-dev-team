@@ -1,7 +1,7 @@
 process.env.TZ = "UTC";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/spend/lib/usage-command.ts";
+import { OVERLAY_WIDTH, parseUsageArgs, runUsage, type UsageDeps } from "../../extensions/spend/lib/usage-command.ts";
 import type { SpendHistory } from "../../extensions/spend/lib/usage-history.ts";
 import { OVERLAY_HEIGHT_PERCENT } from "../../extensions/spend/lib/usage-view.ts";
 import { NOW, copilotRun } from "../helpers/usage-fixtures.ts";
@@ -50,7 +50,11 @@ function fakeDeps(history: Partial<SpendHistory> | Error = {}) {
 }
 
 const fakeTui = (rows = 30) => ({ terminal: { rows }, requestRender() {} });
-const fakeTheme = { fg: (color: string, text: string) => `<${color}>${text}</${color}>`, bold: (text: string) => `*${text}*` };
+const fakeTheme = {
+	fg: (color: string, text: string) => `<${color}>${text}</${color}>`,
+	bg: (color: string, text: string) => `[${color}]${text}[/${color}]`,
+	bold: (text: string) => `*${text}*`,
+};
 
 test("without a UI the session summary is printed, no overlay is opened", async () => {
 	const { deps, emitted } = fakeDeps();
@@ -101,7 +105,7 @@ test("when the overlay opened and closed, no text is printed", async () => {
 	};
 	await runUsage(fakeCtx({ hasUI: true, entries: [copilotTurn("a", 40)], custom }), "", deps);
 	assert.deepEqual(emitted, []);
-	assert.deepEqual(options, { overlay: true, overlayOptions: { maxHeight: "90%" } });
+	assert.deepEqual(options, { overlay: true, overlayOptions: { width: OVERLAY_WIDTH, maxHeight: "90%" } });
 });
 
 test("the overlay component renders this session, themed, within the terminal height, and closes through done()", async () => {
@@ -116,6 +120,8 @@ test("the overlay component renders this session, themed, within the terminal he
 	assert.ok(lines.length <= Math.floor((20 * OVERLAY_HEIGHT_PERCENT) / 100));
 	assert.ok(lines[0].includes("This session · By model · $0.40 · 40.0 AI credits"), lines[0]);
 	assert.ok(lines.some((l) => l.includes("<accent>")), "bars use the accent colour");
+	assert.ok(lines.every((l) => l.startsWith("[customMessageBg]") && l.endsWith("[/customMessageBg]")), "every line is on the panel background");
+	assert.ok(lines[0].includes("<borderAccent>╭─ </borderAccent>"), `the frame is drawn in the border colour: ${lines[0]}`);
 	view.handleInput("q");
 	assert.equal(closed, 1);
 });

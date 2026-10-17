@@ -4,11 +4,12 @@ import { test } from "node:test";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { type UsageBreakdown, usageBreakdown } from "../../extensions/spend/lib/usage-breakdown.ts";
 import { renderUsage, type UsageStyle, type UsageViewModel } from "../../extensions/spend/lib/usage-render.ts";
+import { EDGE_TEXT_INSET, FRAME_MIN_WIDTH, FRAME_SIDE_COLUMNS } from "../../extensions/spend/lib/usage-frame.ts";
 import type { UsageState } from "../../extensions/spend/lib/usage-state.ts";
-import { mixed, multiProvider, NOW, providerRun, copilotRun } from "../helpers/usage-fixtures.ts";
+import { mixed, multiProvider, NOW, providerRun, copilotRun, unframe } from "../helpers/usage-fixtures.ts";
 
 const identity = (text: string) => text;
-const style: UsageStyle = { title: identity, error: identity, bar: (_row, text) => text, muted: identity, segment: (_slot, text) => text };
+const style: UsageStyle = { title: identity, error: identity, bar: (_row, text) => text, muted: identity, segment: (_slot, text) => text, border: identity, panel: identity };
 
 const breakdown = (...runs: ReturnType<typeof copilotRun>[]): UsageBreakdown => usageBreakdown(runs);
 const state = (scope: UsageState["scope"], view: UsageState["view"], load: UsageState["load"] = { kind: scope === "month" ? "ready" : "idle" }): UsageState => ({ scope, view, load });
@@ -20,7 +21,10 @@ const viewModel = (s: UsageState, extra: Partial<UsageViewModel> = {}): UsageVie
 	now: NOW,
 	...extra,
 });
-const render = (m: UsageViewModel, width = 80, height = 40) => renderUsage(m, { width, height, style });
+/** Renders `bodyWidth` columns of body inside the frame (FRAME_SIDE_COLUMNS more in all) and returns the lines unframed. */
+const render = (m: UsageViewModel, bodyWidth = 80, height = 40) => unframe(renderUsage(m, { width: bodyWidth + FRAME_SIDE_COLUMNS, height, style }));
+/** Renders a frame whose edges have `textWidth` columns for their text, unframed. */
+const renderEdges = (m: UsageViewModel, textWidth: number) => unframe(renderUsage(m, { width: textWidth + EDGE_TEXT_INSET, height: 40, style }));
 
 test("the header names the scope, the view and the total", () => {
 	assert.equal(render(viewModel(sessionModel))[0], "This session · By model · $1.05 · 105.0 AI credits");
@@ -94,18 +98,35 @@ test("each chart row's bar gets its own colour slot, by rank", () => {
 const DAILY = [0.5, 0, 2, 1];
 const withDaily = (s: UsageState) => viewModel(s, { month: { breakdown: mixed, daily: DAILY, unreadable: 0, loadedAt: NOW } });
 
-test("this month shows a daily sparkline with today, the average and the peak, above the split bars", () => {
+test("this month shows its figures over a daily bar chart, with the peak and day axes, above the split bars", () => {
 	const lines = render(withDaily(state("month", "model")));
-	assert.equal(lines[2], "Daily ▂ █▄  today $1.00 · avg $0.88/day · peak $2.00 Oct 3");
-	assert.ok(/^█+▓+▒+$/.test(lines[3]), lines[3]);
+	assert.deepEqual(lines.slice(2, 10), [
+		"Daily  today $1.00 · avg $0.88/day · peak $2.00 Oct 3",
+		"$2.00 ┤    █",
+		"      │    █",
+		"      │    █ ▄",
+		"      │▂   █ █",
+		"$0.00 ┤█ · █ █",
+		"      └┬─────┬─┬─────────┬─────────┬─────────┬─────────┬───────────┬",
+		"       1     4           10        15        20        25          31",
+	]);
+	assert.equal(lines[10], "");
+	assert.ok(/^█+▓+▒+$/.test(lines[11]), lines[11]);
 });
 
-test("the trend's figures drop from the end to fit, then the sparkline is cut", () => {
+test("a narrow daily chart puts the days side by side, and the trend's figures drop from the end to fit", () => {
+	const lines = render(withDaily(state("month", "model")), 40);
+	assert.equal(lines[2], "Daily  today $1.00 · avg $0.88/day");
+	assert.equal(lines[7], "$0.00 ┤█·██");
+	assert.equal(lines[9], "       1  4     10   15   20   25    31");
+});
+
+test("without room for the daily chart, the trend is one sparkline line whose figures drop, then cut", () => {
 	const at = (width: number) => render(withDaily(state("month", "model")), width)[2];
-	assert.equal(at(40), "Daily ▂ █▄  today $1.00 · avg $0.88/day");
-	assert.equal(at(25), "Daily ▂ █▄  today $1.00");
+	assert.equal(at(80 - 50), "Daily ▂ █▄  today $1.00");
 	assert.equal(at(12), "Daily ▂ █▄");
 	assert.equal(at(8), "Daily ▂…");
+	assert.equal(render(withDaily(state("month", "model")), 80, 12)[1], "Daily ▂ █▄  today $1.00 · avg $0.88/day · peak $2.00 Oct 3");
 });
 
 test("the trend gives way before the split legends when height is short, and this session has none", () => {
@@ -210,7 +231,7 @@ test("a narrow header drops the snapshot time, then the dates, then the credits,
 	const noClock = "This month (Oct 1 – Oct 4) · By model · $1.05 · 105.0 AI credits";
 	const noDates = "This month · By model · $1.05 · 105.0 AI credits";
 	const noCredits = "This month · By model · $1.05";
-	const header = (width: number) => render(viewModel(state("month", "model")), width)[0];
+	const header = (width: number) => renderEdges(viewModel(state("month", "model")), width)[0];
 	assert.equal(header(full.length), full);
 	assert.equal(header(full.length - 1), noClock);
 	assert.equal(header(noClock.length - 1), noDates);
@@ -223,7 +244,7 @@ test("a narrow footer drops the view hint, then the scope hint, and always keeps
 	const full = "Tab view · s this month · Esc close";
 	const noViewHint = "s this month · Esc close";
 	const escOnly = "Esc close";
-	const footer = (width: number) => render(viewModel(sessionModel), width).at(-1);
+	const footer = (width: number) => renderEdges(viewModel(sessionModel), width).at(-1);
 	assert.equal(footer(full.length), full);
 	assert.equal(footer(full.length - 1), noViewHint);
 	assert.equal(footer(noViewHint.length - 1), escOnly);
@@ -232,7 +253,7 @@ test("a narrow footer drops the view hint, then the scope hint, and always keeps
 
 test("a loading footer drops the view hint, then the cancel hint", () => {
 	const cancelAndEsc = "s cancel · Esc close";
-	const footer = (width: number) => render(viewModel(state("month", "model", { kind: "loading" })), width).at(-1);
+	const footer = (width: number) => renderEdges(viewModel(state("month", "model", { kind: "loading" })), width).at(-1);
 	assert.equal(footer(cancelAndEsc.length), cancelAndEsc);
 	assert.equal(footer(cancelAndEsc.length - 1), "Esc close");
 });
@@ -257,21 +278,27 @@ function everyViewModel(): [string, UsageViewModel][] {
 	return out;
 }
 
-test("no line is wider than the terminal, the panel fits the height, and header and footer stay", () => {
+test("every line is exactly the overlay's width, the panel fits the height, and header and footer stay", () => {
 	for (const [name, m] of everyViewModel()) {
-		for (const width of [10, 30, 80]) {
+		for (const width of [4, 10, 30, 80, 100]) {
 			for (const height of [3, 4, 5, 6, 8, 10, 12, 20, 36, 60]) {
-				const lines = render(m, width, height);
+				const lines = renderUsage(m, { width, height, style });
 				const where = `${name} @ ${width}x${height}`;
 				assert.ok(lines.length <= height, `${where}: ${lines.length} lines\n${lines.join("\n")}`);
-				for (const line of lines) assert.ok(visibleWidth(line) <= width, `${where}: "${line}" is ${visibleWidth(line)} wide`);
-				assert.match(lines[0], /^This (sess|mont)/, where);
-				assert.ok(lines.at(-1)!.includes("Esc close"), `${where}: footer "${lines.at(-1)}"`);
+				for (const line of lines) {
+					const lineWidth = visibleWidth(line);
+					const message = `${where}: "${line}" is ${lineWidth} wide`;
+					if (width < FRAME_MIN_WIDTH) assert.ok(lineWidth <= width, message);
+					else assert.equal(lineWidth, width, message);
+				}
+				if (width < FRAME_MIN_WIDTH) continue;
+				const shown = unframe(lines);
+				assert.match(shown[0], /^Th/, where);
+				assert.ok(shown.at(-1)!.includes("Esc"), `${where}: footer "${shown.at(-1)}"`);
 			}
 		}
 	}
 });
-
 test("rows beyond the height fold into other (N) while the header and footer stay pinned", () => {
 	const many = breakdown(...Array.from({ length: 14 }, (_, i) => copilotRun(`m${i}`, 100 - i)));
 	const lines = render(viewModel(sessionModel, { session: many }), 80, 10);
