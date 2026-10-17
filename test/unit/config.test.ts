@@ -113,6 +113,15 @@ test("loadConfig: an oversized project config file is skipped", (t) => {
 	assert.equal(loadConfig(project, { includeProject: true, userConfigFile }).config.maxParallelAgents, userOnly);
 });
 
+test("allowPiSubagents: only the user's own file lifts the pi-subagents block", (t) => {
+	assert.deepEqual(filterProjectConfig({ allowPiSubagents: true }), { data: {}, ignored: ["allowPiSubagents"] });
+	const { project, userConfigFile } = fixture(t);
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ allowPiSubagents: true }));
+	assert.equal(loadConfig(project, { includeProject: true, userConfigFile }).config.allowPiSubagents, false);
+	fs.writeFileSync(userConfigFile, JSON.stringify({ allowPiSubagents: true }));
+	assert.equal(loadConfig(project, { includeProject: true, userConfigFile }).config.allowPiSubagents, true);
+});
+
 test("project hooks: ignored whatever their shape; the user's own hooks config stands", (t) => {
 	for (const hooks of [{ enabled: false }, { disabled: ["destructive_guard"] }, { enable: 5 }, { timeoutSec: 1 }, [], "x", null]) {
 		assert.deepEqual(filterProjectConfig({ hooks, maxParallelAgents: 2 }), { data: { maxParallelAgents: 2 }, ignored: ["hooks"] }, JSON.stringify(hooks));
