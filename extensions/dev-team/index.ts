@@ -38,7 +38,7 @@ import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwarde
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
-import { piSubagentsBlockReason, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
+import { piSubagentsBlockReason, piSubagentsLoadsLater, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
 import { describeRunaway, ToolArgsWatchdog } from "./lib/tool-args-watchdog.ts";
 import { childTrustOf, shimTrustEnv } from "./lib/trust.ts";
 import { runUsage } from "../spend/lib/usage-command.ts";
@@ -393,7 +393,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		return config.allowPiSubagents ? new Set() : piSubagentsTools(pi.getAllTools());
 	}
 
-	/** Deactivates the blocked tools. pi-subagents loads first in the default package order, so this runs after it re-selects them. */
+	/** Deactivates the blocked tools. Runs after pi-subagents re-selects them only when it loads first (piSubagentsLoadsLater). */
 	function deactivateForeignTools(blocked: ReadonlySet<string>) {
 		const kept = withoutBlocked(pi.getActiveTools(), blocked);
 		if (kept) pi.setActiveTools(kept);
@@ -407,7 +407,11 @@ export default function devTeam(pi: ExtensionAPI) {
 		readTracker.reset();
 		applyEnv(ctx);
 		await applyAgentFlag(ctx);
-		deactivateForeignTools(blockedForeignTools());
+		const blocked = blockedForeignTools();
+		deactivateForeignTools(blocked);
+		if (blocked.size && !isSubagent && piSubagentsLoadsLater(pi.getAllTools(), DEV_TEAM_SUBAGENT_TOOL)) {
+			notify(ctx, ["dev-team: pi-subagents loads after dev-team, so its tools can reappear in the prompt (calls stay blocked). List npm:pi-subagents before pi-dev-team in the packages of pi's settings.json."]);
+		}
 		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
 		if (isSubagent) return;
 		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
@@ -434,7 +438,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const tierModelsText = hasAgentPrompt
 			? ""
 			: tierModelsLine(config.models, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, (id) => !!findModel(ctx, id));
-		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle), tierModelsText);
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0);
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
 			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
@@ -552,7 +556,9 @@ export default function devTeam(pi: ExtensionAPI) {
 		const call = e.partial.content[e.contentIndex];
 		const runaway = argsWatchdog.add(e.contentIndex, e.delta, call?.type === "toolCall" ? call.name : "");
 		if (!runaway) return;
-		notify(ctx, [describeRunaway(runaway)], "warning");
+		// A dispatched agent has no UI; its stderr is what the parent reports when the run fails.
+		if (ctx.hasUI) notify(ctx, [describeRunaway(runaway)]);
+		else console.error(describeRunaway(runaway));
 		ctx.abort();
 	});
 
@@ -605,11 +611,11 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 }
 
-function compatGuide(packageRoot: string, index: string, interactive: boolean, styleGuide: string | undefined, tierModelsText: string): string {
+function compatGuide(packageRoot: string, index: string, interactive: boolean, styleGuide: string | undefined, tierModelsText: string, piSubagentsBlocked: boolean): string {
 	return [
 		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
 		`- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=${DEV_TEAM_SUBAGENT_TOOL}(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).`,
-		`- Always use ${DEV_TEAM_SUBAGENT_TOOL} for dev-team dispatch, including instructions that say to dispatch, spawn or run agents, parallel subagents, an independent review, or to use the subagent tool. Other extensions' subagent tools (pi-subagents: subagents_enable, subagent) are blocked: they skip the dev-team tier models, the dispatch hooks and the review evidence the PR gate checks.`,
+		`- Always use ${DEV_TEAM_SUBAGENT_TOOL} for dev-team dispatch, including instructions that say to dispatch, spawn or run agents, parallel subagents, an independent review, or to use the subagent tool. Other extensions' subagent tools skip the dev-team tier models, the dispatch hooks and the review evidence the PR gate checks${piSubagentsBlocked ? "; pi-subagents' tools are blocked in this session" : ""}.`,
 		'- A slash command inside dev-team instructions ("run /plan", "invoke /code-review --internal", "/dev-team:project-init") means: call the skill tool with that name and the text after it as args, then follow what it returns. Never ask the user to type it.',
 		`- \${CLAUDE_PLUGIN_ROOT} is ${packageRoot} and is exported in bash. knowledge/, scripts/, agents/, skills/, templates/, hooks/ paths in the instructions are relative to it.`,
 		"- Runtime state lives under .claude/ in the project (memory, metrics, hooks, plans) exactly as the skills describe. Project instructions are AGENTS.md / CLAUDE.md.",
