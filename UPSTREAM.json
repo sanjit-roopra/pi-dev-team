@@ -129,6 +129,11 @@
       "hits": 1
     },
     {
+      "file": "knowledge/telemetry-schema.md",
+      "reason": "ceremony: hooks log metrics, the skill writes nothing",
+      "hits": 1
+    },
+    {
       "file": "agents/software-engineer.md",
       "reason": "lean production code: the engineer names what it skipped",
       "hits": 1

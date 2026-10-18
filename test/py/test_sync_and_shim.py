@@ -68,10 +68,11 @@ class SyncHelpers(unittest.TestCase):
 
     def test_ceremony_skills_are_not_loaded_on_every_task(self):
         for rel in ("skills/context-loading-protocol/SKILL.md", "skills/performance-metrics/SKILL.md",
-                    "agents/orchestrator.md", "skills/build/SKILL.md"):
+                    "agents/orchestrator.md", "skills/build/SKILL.md", "knowledge/telemetry-schema.md"):
             with self.subTest(rel=rel):
                 text = (ROOT / rel).read_text()
-                for phrase in ("start of every task", "end of every task", "at task completion to log", "at the start of this task"):
+                for phrase in ("start of every task", "end of every task", "at task completion to log", "at the start of this task",
+                               "`/performance-metrics` skill"):
                     self.assertNotIn(phrase, text)
 
 

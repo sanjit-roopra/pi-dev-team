@@ -300,6 +300,12 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "[Context Loading Protocol](../context-loading-protocol/SKILL.md) to pick what to load per phase.",
         "ceremony: the context budget step does nothing for ordinary pi tasks",
     ),
+    (
+        "knowledge/telemetry-schema.md",
+        r"`/performance-metrics` skill \(model-authored append at task completion\), via `hooks/task_completion_metrics\.py`",
+        "`hooks/task_completion_metrics.py`",
+        "ceremony: hooks log metrics, the skill writes nothing",
+    ),
 ]
 
 
