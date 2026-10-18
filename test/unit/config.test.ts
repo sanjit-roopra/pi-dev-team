@@ -123,6 +123,18 @@ test("allowPiSubagents: only the user's own file lifts the pi-subagents block", 
 	assert.equal(loadConfig(project, { includeProject: true, userConfigFile }).config.allowPiSubagents, true);
 });
 
+test("askTimeoutSec: only the user's own file sets it, and only to a whole number of seconds", (t) => {
+	assert.deepEqual(filterProjectConfig({ askTimeoutSec: 0 }), { data: {}, ignored: ["askTimeoutSec"] });
+	const { project, userConfigFile } = fixture(t);
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ askTimeoutSec: 0 }));
+	const load = () => loadConfig(project, { includeProject: true, userConfigFile }).config.askTimeoutSec;
+	assert.equal(load(), DEFAULT_CONFIG.askTimeoutSec, "a project cannot turn the human gates off");
+	for (const [value, want] of [[0, 0], [30, 30], [-5, 120], [1.5, 120], ["abc", 120], [null, 120]] as const) {
+		fs.writeFileSync(userConfigFile, JSON.stringify({ askTimeoutSec: value }));
+		assert.equal(load(), want, JSON.stringify(value));
+	}
+});
+
 test("project hooks: ignored whatever their shape; the user's own hooks config stands", (t) => {
 	for (const hooks of [{ enabled: false }, { disabled: ["destructive_guard"] }, { enable: 5 }, { timeoutSec: 1 }, [], "x", null]) {
 		assert.deepEqual(filterProjectConfig({ hooks, maxParallelAgents: 2 }), { data: { maxParallelAgents: 2 }, ignored: ["hooks"] }, JSON.stringify(hooks));

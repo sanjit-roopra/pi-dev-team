@@ -36,7 +36,7 @@ import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
-import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
+import { confirmCaution, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { piSubagentsBlockReason, piSubagentsLoadsLater, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
 import { describeRunaway, ToolArgsWatchdog } from "./lib/tool-args-watchdog.ts";
@@ -106,7 +106,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
-		if (ctx.hasUI && !isSubagent) process.env.DEV_TEAM_INTERACTIVE = "1";
+		if (ctx.hasUI && !isSubagent && config.askTimeoutSec > 0) process.env.DEV_TEAM_INTERACTIVE = "1";
 		else delete process.env.DEV_TEAM_INTERACTIVE;
 		// The claude shim's children inherit this session's trust decision as dev_team_subagent's do
 		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_DIR itself.
@@ -155,7 +155,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		depth,
 		onUsage: (r) => pi.appendEntry(SUBAGENT_USAGE_ENTRY, usageEntryOf(r, portVersion)),
 	});
-	registerAskUser(pi);
+	registerAskUser(pi, getConfig);
 	registerWebFetch(pi);
 
 	pi.registerTool({
@@ -255,7 +255,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
 			`autoFormat: ${cfg.autoFormat}  githubStyle: ${cfg.githubStyle}  claudeShim: ${cfg.claudeShim}  maxParallelAgents: ${cfg.maxParallelAgents}`,
-			`interactive gates: ${process.env.DEV_TEAM_INTERACTIVE === "1" ? "on" : "off (non-interactive defaults)"}`,
+			`interactive gates: ${process.env.DEV_TEAM_INTERACTIVE === "1" ? `on (answers time out after ${cfg.askTimeoutSec} s)` : "off (non-interactive defaults)"}`,
 		];
 		report(ctx, lines.join("\n"));
 	}
@@ -493,6 +493,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		);
 		notify(ctx, out.notices);
 		if (out.block) return { block: true, reason: out.block };
+		const declined = await confirmCaution(out.advisories, ctx, config.askTimeoutSec);
+		if (declined) return { block: true, reason: declined };
 		if (out.updatedInput) applyUpdatedInput(event.toolName, input, out.updatedInput);
 		const advisories = styleVerdict.note ? [styleVerdict.note, ...out.advisories] : out.advisories;
 		if (advisories.length) pendingAdvisories.set(event.toolCallId, advisories);
@@ -630,7 +632,7 @@ function compatGuide(packageRoot: string, index: string, interactive: boolean, s
 		"- Runtime state lives under .claude/ in the project (memory, metrics, hooks, plans) exactly as the skills describe. Project instructions are AGENTS.md / CLAUDE.md.",
 		'- Plugin hooks run on your tool calls. A blocked call returns the reason: follow it, do not work around it. Text after "dev-team hook notes:" in a tool result is advisory feedback from those hooks.',
 		interactive
-			? "- Human gates: a human is attached (DEV_TEAM_INTERACTIVE=1). Ask with ask_user and wait for the answer; never assume approval."
+			? "- Human gates: a human may be attached (DEV_TEAM_INTERACTIVE=1). Ask with ask_user. Unanswered questions time out: then apply the (recommended) option or the documented non-interactive default, say so, and go on."
 			: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
 		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,

@@ -124,15 +124,16 @@ All settings, with defaults:
   "thinking": { "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max" }, // agent effort -> pi thinking level
   "maxParallelAgents": 6,      // max agents per process (project file: 1 to 16)
   "maxSubagentDepth": 2,       // how deep agents can start agents
-  "subagentTimeoutSec": 3600,  // stop an agent after this time
-  "autoFormat": false,         // format files after each edit (/setup turns this on)
-  "githubStyle": "block",      // block, warn or off: pull request and issue text rules
-  "skillIndex": "compact",     // compact, full or off: the command list in the system prompt
-  "skillIndexChars": 220,      // max description length in the compact list
-  "autocompactMaxTokens": 200000, // compact between tasks at this many tokens; 0 = off (project file: 0 or 50000+)
-  "readDedup": true,           // a repeated read of an unchanged file returns a short note
-  "claudeShim": true,          // a `claude -p` call in the scripts runs pi instead
+  "subagentTimeoutSec": 3600,  // stop an agent after this
+  "autoFormat": false,         // format files after each edit (/setup sets it)
+  "githubStyle": "block",      // block, warn or off: PR and issue text rules
+  "skillIndex": "compact",     // compact, full or off: command list in the system prompt
+  "skillIndexChars": 220,      // max description length in that list
+  "autocompactMaxTokens": 200000, // compact between tasks at this many tokens; 0 = off (project: 0 or 50000+)
+  "readDedup": true,           // re-reading an unchanged file gives a note
+  "claudeShim": true,          // scripts' `claude -p` runs pi
   "allowPiSubagents": false,   // true lets the model use pi-subagents' tools (user file only)
+  "askTimeoutSec": 120,        // questions wait this long, then go on; 0 = never ask
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
 }

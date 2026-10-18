@@ -6,7 +6,7 @@
  *   node test/e2e/run.mjs            # all scenarios
  *   node test/e2e/run.mjs subagent   # scenarios whose name contains "subagent"
  */
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -96,6 +96,47 @@ function pi(env, prompt, { json = false, extra = [], usePackageFlag = true, sess
 		maxBuffer: 64 * 1024 * 1024,
 	});
 	return { code: r.status, out: r.stdout ?? "", err: r.stderr ?? "" };
+}
+
+/**
+ * `pi --mode rpc`, where a human UI is attached. `answer(request)` replies to each dialog, or returns
+ * undefined to leave it unanswered. Resolves with every event once the run settles.
+ */
+function piRpc(env, prompt, answer) {
+	const args = ["-e", PROVIDER, "-e", PKG, "--model", "scripted/s1", "--no-session", "--mode", "rpc"];
+	const child = spawn("pi", args, { cwd: env.repo, env: isolatedEnv(env), stdio: ["pipe", "pipe", "pipe"] });
+	return new Promise((resolve, reject) => {
+		const events = [];
+		let buf = "";
+		let err = "";
+		const timer = setTimeout(() => {
+			child.kill();
+			reject(new Error(`rpc run did not settle: ${err.slice(-500)}`));
+		}, 120_000);
+		child.stderr.on("data", (d) => (err += d));
+		child.stdout.on("data", (d) => {
+			buf += d;
+			for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
+				const line = buf.slice(0, i);
+				buf = buf.slice(i + 1);
+				let e;
+				try {
+					e = JSON.parse(line);
+				} catch {
+					continue;
+				}
+				events.push(e);
+				const reply = e.type === "extension_ui_request" && ["select", "confirm", "input"].includes(e.method) ? answer(e) : undefined;
+				if (reply) child.stdin.write(`${JSON.stringify({ type: "extension_ui_response", id: e.id, ...reply })}\n`);
+				if (e.type === "agent_settled") {
+					clearTimeout(timer);
+					child.kill();
+					resolve(events);
+				}
+			}
+		});
+		child.stdin.write(`${JSON.stringify({ type: "prompt", message: prompt })}\n`);
+	});
 }
 
 function toolResults(jsonl) {
@@ -220,6 +261,30 @@ const scenarios = {
 	"destructive_guard blocks reset --hard on the default branch"(env) {
 		const r = pi(env, script([{ tool: "bash", args: { command: "git reset --hard HEAD" } }]));
 		assert(r.out.includes("[destructive_guard] BLOCKED"), r.out);
+	},
+
+	async "with a human attached, a CAUTION command and ask_user wait askTimeoutSec, then the run goes on without them"(env) {
+		const agentDir = path.join(env.home, ".pi", "agent");
+		fs.mkdirSync(agentDir, { recursive: true });
+		fs.writeFileSync(path.join(agentDir, "dev-team.json"), JSON.stringify({ askTimeoutSec: 1 }));
+		for (const dir of ["allowed", "unanswered"]) fs.mkdirSync(path.join(env.repo, dir));
+		const steps = [
+			{ tool: "bash", args: { command: "rm -rf allowed" } },
+			{ tool: "bash", args: { command: "rm -rf unanswered" } },
+			{ tool: "ask_user", args: { question: "Approve?", options: ["yes (recommended)", "no"] } },
+		];
+		const dialogs = [];
+		const events = await piRpc(env, script(steps), (req) => {
+			dialogs.push(req);
+			return req.method === "confirm" && req.message.includes("rm -rf allowed") ? { confirmed: true } : undefined;
+		});
+		const results = events.filter((e) => e.type === "tool_execution_end").map((e) => (e.result?.content ?? []).map((c) => c.text ?? "").join(""));
+		assert(dialogs.length === 3 && dialogs.every((d) => d.timeout === 1000), `dialogs: ${JSON.stringify(dialogs)}`);
+		assert(dialogs[0].method === "confirm" && dialogs[0].message.includes("[destructive_guard] CAUTION"), JSON.stringify(dialogs[0]));
+		assert(!fs.existsSync(path.join(env.repo, "allowed")), "the approved command did not run");
+		assert(fs.existsSync(path.join(env.repo, "unanswered")), "the unanswered command ran");
+		assert(results.length === 3 && results[1].includes("was not run"), `results: ${JSON.stringify(results)}`);
+		assert(results[2].includes("No answer arrived within 1 s"), `ask_user: ${results[2]}`);
 	},
 
 	"a project's .pi/dev-team.json cannot switch the guards off"(env) {
