@@ -71,7 +71,7 @@ OVERRIDE_BASES: dict[str, str] = {
 }
 
 # Lean production code (PORTING.md section 5): the lean fix rule, word for word as in the code-review core, and
-# the agent edits that carry it. Production code only; test scope stays with the Gherkin scenarios and the mutation gate.
+# the agent edits that carry it. Production code only; test scope stays with the Gherkin scenarios.
 LEAN_FIX_RULE = (
     "**Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a "
     "module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it "
@@ -93,7 +93,7 @@ REUSE_LADDER = """- **Simplicity First (pre-write reuse ladder).** Read the code
 
   Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security, accessibility, synchronization, idempotency, transactions, retries or cleanup on error paths to save lines: they are requirements the design implies, even when no scenario names them.
 
-  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this rule: write every test they call for.
+  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios, never from this rule: write every test they call for.
 
   A deliberate shortcut gets a `shortcut:` comment at the spot, naming what it skips and when that would need revisiting, so `grep -rn "shortcut:"` lists the debt."""
 LEAN_PATCHES: list[tuple[str, str, str, str]] = [

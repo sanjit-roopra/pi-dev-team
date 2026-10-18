@@ -59,6 +59,7 @@
     "PORTING.md",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "!skills/**/node_modules/**"
   ]
 }

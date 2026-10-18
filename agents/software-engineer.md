@@ -55,7 +55,7 @@ Three reflexes that fire at the moment code is written — not just at review ti
 
   Fewer lines, never denser lines: clarity beats brevity. No nested ternaries, no clever one-liners, no packing several steps into one expression to save a line. Never cut input validation, error handling at a real boundary, security, accessibility, synchronization, idempotency, transactions, retries or cleanup on error paths to save lines: they are requirements the design implies, even when no scenario names them.
 
-  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this rule: write every test they call for.
+  The ladder governs production code only. Test scope comes from the plan's Gherkin scenarios, never from this rule: write every test they call for.
 
   A deliberate shortcut gets a `shortcut:` comment at the spot, naming what it skips and when that would need revisiting, so `grep -rn "shortcut:"` lists the debt.
   Test: "Would a senior engineer say this is overcomplicated?"
