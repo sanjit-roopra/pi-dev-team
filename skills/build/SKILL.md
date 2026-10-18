@@ -31,6 +31,8 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Agent, AskUserQuestion
 - The retry applies only to the failure-signature dead-end. Every other Escalation condition stops as written.
 
 **Lean production code.** At sub-step 6, `refactor-opportunity-review` is the simplify lens: it only deletes, inlines or replaces production code, and its `error` findings (mechanical removals) fail the lens so the fix loop applies them. Block-to-block duplication now belongs to `structure-review`, whatever sub-step 6 says; replacing a re-implementation with an existing function stays with this lens. In every checkpoint fix loop, the lean fix rule in `agents/quality-reviewer.md` step 4 overrides the actionability table in `knowledge/three-phase-workflow.md` § Review Loop. Test files are exempt.
+
+**The plan file is the current state, not a log.** Update `**Status**` and `## Build Progress` in place. Do not add Historical, authorization or approval sections to the plan: approvals go to `.claude/metrics/config-changelog.jsonl`, and history lives in git.
 <!-- pi-port-notes -->
 
 
