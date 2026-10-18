@@ -570,6 +570,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			"Dispatch a dev-team agent (Claude Code's Agent/Task tool) in an isolated pi process with its own context.",
 			"The agent sees only `task`, so include every file path, diff range, scope marker and constraint it needs.",
 			"For parallel work either call this tool several times in one message or pass `tasks`.",
+			'An agent that edits shares its cwd with agents run at once; give it isolation: "worktree" or run it first.',
 			'Accepts Claude field names too: subagent_type (= agent), prompt (= task). isolation: "worktree" runs it on a new branch in its own git worktree.',
 			"Agents: any file in the package agents/ directory (e.g. software-engineer, qa-engineer, architect, security-review, test-review, spec-compliance-review, plan-review-*), project .pi/agents or .claude/agents, plus Explore and general-purpose.",
 		].join(" "),
