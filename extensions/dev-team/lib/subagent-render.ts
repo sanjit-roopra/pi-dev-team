@@ -7,7 +7,7 @@
  * as pi's own tool renderer does, so child output cannot drive the terminal.
  */
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import { getMarkdownTheme, type Theme, type ToolRenderContext, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
+import { getMarkdownTheme, type Theme, type ToolRenderResultOptions } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, Markdown, Spacer, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { formatAiCredits, runsAiCredits } from "../../spend/lib/ai-credits.ts";
 import {
@@ -24,7 +24,7 @@ import {
 	type ToolCallSummary,
 	type UsageTotals,
 } from "./subagent-types.ts";
-import { syncClock } from "./live-clock.ts";
+import { syncClock, type ToolRenderContext } from "./live-clock.ts";
 import { sanitizeTerminalText, toSingleLine } from "../../shared/terminal-text.ts";
 
 const COLLAPSED_TOOLS = 3;
