@@ -278,16 +278,17 @@ export function isProjectParallelLimitAllowed(value: unknown): boolean {
 /**
  * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
  * object is dropped whole), no `hooks` at all, since hooks include the guards (hooks are set in the
- * user's own config), no `allowPiSubagents` (it lifts a block), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
+ * user's own config), no `allowPiSubagents` (it lifts a block), no `askTimeoutSec` (0 turns the human gates off), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
  * `maxParallelAgents` only when isProjectParallelLimitAllowed. `ignored` names everything left out, as
- * `env.KEY`, `env`, `hooks`, `allowPiSubagents`, `autocompactMaxTokens` or `maxParallelAgents`.
+ * `env.KEY`, `env`, `hooks`, `allowPiSubagents`, `askTimeoutSec`, `autocompactMaxTokens` or `maxParallelAgents`.
  */
 export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
-	const { env, hooks, allowPiSubagents, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
+	const { env, hooks, allowPiSubagents, askTimeoutSec, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
 	const out: Record<string, unknown> = rest;
 	if (hooks !== undefined) ignored.push("hooks");
 	if (allowPiSubagents !== undefined) ignored.push("allowPiSubagents");
+	if (askTimeoutSec !== undefined) ignored.push("askTimeoutSec");
 	if (autocompactMaxTokens !== undefined) {
 		if (isProjectAutocompactCeilingAllowed(autocompactMaxTokens)) out.autocompactMaxTokens = autocompactMaxTokens;
 		else ignored.push("autocompactMaxTokens");
@@ -322,6 +323,7 @@ export function loadConfig(
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
 		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
+		if ("askTimeoutSec" in data && !(Number.isInteger(data.askTimeoutSec) && (data.askTimeoutSec as number) >= 0)) delete data.askTimeoutSec;
 		// A tier table that is not a table (null, a list) would replace the whole table; it sets nothing.
 		if ("models" in data && !isPlainObject(data.models)) delete data.models;
 		config = mergeConfig(config, data);
