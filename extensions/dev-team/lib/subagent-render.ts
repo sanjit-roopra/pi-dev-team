@@ -157,7 +157,7 @@ function headerLine(v: SubagentTaskView, theme: Theme, liveNow?: number): string
 }
 
 function worktreeLine(v: SubagentTaskView, theme: Theme): string {
-	return v.worktree ? theme.fg("muted", `worktree ${sanitizeTerminalText(describeWorktree(v.worktree))}`) : "";
+	return v.worktree ? theme.fg("muted", `worktree ${toSingleLine(describeWorktree(v.worktree))}`) : "";
 }
 
 const TOOL_CALL_CHARS = 80;
@@ -371,7 +371,7 @@ export function renderSubagentResult(
 	const liveNow = isPartial ? now : undefined;
 	const skipped = details.skippedProjectAgents ?? details.untrustedProjectAgents ?? [];
 	const skippedNote = skipped.length
-		? theme.fg("warning", `project agents skipped (project not trusted): ${sanitizeTerminalText(skipped.join(", "))}`)
+		? theme.fg("warning", `project agents skipped (project not trusted): ${toSingleLine(skipped.join(", "))}`)
 		: "";
 
 	if (views.length === 1) {
