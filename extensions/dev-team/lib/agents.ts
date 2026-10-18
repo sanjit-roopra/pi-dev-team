@@ -212,6 +212,7 @@ export function mapTools(claudeTools: string[] | undefined, available: string[])
 	const tools = new Set<string>();
 	const unmapped: string[] = [];
 	const scopedBash: string[] = [];
+	let plainBash = false;
 	for (const raw of claudeTools) {
 		const entry = raw.trim();
 		if (!entry) continue;
@@ -225,6 +226,8 @@ export function mapTools(claudeTools: string[] | undefined, available: string[])
 		const scoped = entry.match(/^(\w+)\((.*)\)$/s);
 		const base = (scoped ? scoped[1] : entry).toLowerCase();
 		if (scoped && base === "bash") scopedBash.push(scoped[2]);
+		// Plain Bash grants all of bash, so scoped grants no longer limit it.
+		else if (base === "bash") plainBash = true;
 		const mapped = CLAUDE_TO_PI_TOOL[base];
 		if (mapped === undefined) {
 			// Already a pi tool name?
@@ -234,8 +237,6 @@ export function mapTools(claudeTools: string[] | undefined, available: string[])
 		}
 		for (const t of mapped) tools.add(t);
 	}
-	// Plain Bash grants all of bash, so scoped grants no longer limit it.
-	const plainBash = claudeTools.some((t) => t.trim().toLowerCase() === "bash");
 	return { tools: [...tools], unmapped, scopedBash: plainBash ? [] : scopedBash };
 }
 

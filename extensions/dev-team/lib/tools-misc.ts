@@ -147,7 +147,7 @@ export function registerWebFetch(pi: ExtensionAPI): void {
 		}),
 		annotations: { readOnlyHint: true, openWorldHint: true },
 		async execute(_id, params, signal) {
-			const url = params.url.replace(/^http:\/\/(?!localhost[:/]|127\.0\.0\.1[:/])/, "https://");
+			const url = params.url.replace(/^http:\/\/(?!(?:localhost|127\.0\.0\.1)(?:[:/]|$))/, "https://");
 			const controller = new AbortController();
 			const timer = setTimeout(() => controller.abort(), 30_000);
 			signal?.addEventListener("abort", () => controller.abort(), { once: true });
