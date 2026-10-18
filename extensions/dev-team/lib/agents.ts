@@ -234,7 +234,9 @@ export function mapTools(claudeTools: string[] | undefined, available: string[])
 		}
 		for (const t of mapped) tools.add(t);
 	}
-	return { tools: [...tools], unmapped, scopedBash };
+	// Plain Bash grants all of bash, so scoped grants no longer limit it.
+	const plainBash = claudeTools.some((t) => t.trim().toLowerCase() === "bash");
+	return { tools: [...tools], unmapped, scopedBash: plainBash ? [] : scopedBash };
 }
 
 export interface ModelChoice {

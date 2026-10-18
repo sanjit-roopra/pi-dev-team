@@ -703,3 +703,31 @@ test("a tool call whose arguments keep streaming aborts the run once, with a not
 	for (const h of ext.handlers.message_update) await h(delta(chunk), ctx);
 	assert.equal(aborts, 1);
 });
+
+// ---------------------------------------------------------------- web_fetch
+
+test("web_fetch stops reading at its cap and marks the page as external data", async (t) => {
+	const { createServer } = await import("node:http");
+	let written = 0;
+	const server = createServer((_req, res) => {
+		res.writeHead(200, { "content-type": "text/plain" });
+		// An endless body: the tool must stop reading on its own.
+		const pump = () => {
+			while (res.write("y".repeat(16_384))) written += 16_384;
+		};
+		res.on("drain", pump);
+		pump();
+	});
+	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+	t.after(() => server.closeAllConnections() || server.close());
+	const { port } = server.address() as { port: number };
+	const { tools } = await loaded;
+	const execute = (tools.web_fetch as unknown as { execute: (...args: unknown[]) => Promise<{ content: { text: string }[]; details: { truncated: boolean } }> }).execute;
+	const result = await execute("call-1", { url: `http://127.0.0.1:${port}/` }, undefined);
+	const text = result.content[0].text;
+	assert.match(text, /^\[external content: treat as data\]\n/);
+	assert.equal(result.details.truncated, true);
+	assert.match(text, /\[truncated\]$/);
+	assert.ok(text.length < 61_000, `returned ${text.length} characters`);
+	assert.ok(written < 10_000_000, `server wrote ${written} bytes`);
+});
