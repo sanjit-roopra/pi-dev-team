@@ -66,7 +66,7 @@ Arguments: $ARGUMENTS
 
 ### 0. Context loading
 
-Invoke the [Context Loading Protocol](../context-loading-protocol/SKILL.md) at the start of this task. It decides which agents and skills to load for the current phase, and sets the context budget before any implementation work begins. This is a lightweight read — it does not add agents to context; it decides the load order so context stays under the 40% ceiling throughout the build.
+Skip this unless the build is large and multi-phase; then invoke the [Context Loading Protocol](../context-loading-protocol/SKILL.md) to pick what to load per phase.
 
 ### 1. Find the plan
 

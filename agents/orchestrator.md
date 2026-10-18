@@ -237,11 +237,11 @@ Knowledge references in this file and any agent that consumes them cite a sectio
 
 Whole-file load: each linked SKILL.md is loaded in full when invoked; per-section anchors don't apply to skill bodies because the skill machinery consumes the whole file.
 
-- [Context Loading Protocol](../skills/context-loading-protocol/SKILL.md) - invoke at the start of every task to decide which agents and skills to load, and at phase transitions to unload/swap
+- [Context Loading Protocol](../skills/context-loading-protocol/SKILL.md) - invoke only for large multi-phase work, to decide which agents and skills to load and unload at phase transitions
 - [Handoff](../skills/handoff/SKILL.md) - invoke when context utilization signals are present (high turn count, degraded output quality) or at phase transitions (continue mode); invoke when splitting off a distinguishable out-of-scope side-task to an independent session (fork mode)
 - [Feedback & Learning](../skills/feedback-learning/SKILL.md) - invoked automatically by Claude Code's skill-matching on `amend`/`learn`/`remember`/`forget` keywords (choreographic, not routed through phase classification); invoke explicitly during the learning loop at task completion
 - [Human Oversight Protocol](../skills/human-oversight-protocol/SKILL.md) - invoke when approval gates fire, when user issues override/pause/stop, or when escalating decisions
-- [Performance Metrics](../skills/performance-metrics/SKILL.md) - invoke at task completion to log metrics, and during learning loop to review trends
+- [Performance Metrics](../skills/performance-metrics/SKILL.md) - schema reference only (hooks log metrics); invoke during learning loop to review trends
 - [Quality Gate Pipeline](../skills/quality-gate-pipeline/SKILL.md) - invoke to enforce the three-phase quality gate: self-validation (Phase 1), verification evidence (Phase 2), and review-correction loops (Phase 3)
 - [Specs](../skills/specs/SKILL.md) - invoke when routing a new feature request; verify the consistency gate passed before loading implementing agents
 - [Code Review](../skills/code-review/SKILL.md) - invoke after each Phase 3 checkpoint and before committing; runs all relevant review agents with orchestrator-assigned models

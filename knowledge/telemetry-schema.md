@@ -650,7 +650,7 @@ Self-reported per-task completion log, one file per calendar date.
 | `timestamp` | string | ISO-8601 |
 | (task-specific fields) | — | Tokens, cost, agents used, rework cycles, hallucination events — see `skills/performance-metrics/SKILL.md` for the full field list |
 
-- **Emitter:** `/performance-metrics` skill (model-authored append at task completion), via `hooks/task_completion_metrics.py`.
+- **Emitter:** `hooks/task_completion_metrics.py`.
 - **Consent:** gated by `telemetry_consent.is_enabled()` (`~/.claude/telemetry.json` `{"enabled": true}`, home-scoped) — no longer unconditional as of Slice 2 (#1406).
 - **Consumers:** `skills/harness-audit/SKILL.md` (self-reported half of the harness-audit join, alongside `session-digest.jsonl`'s real-session half), `skills/governance-compliance/SKILL.md`.
 

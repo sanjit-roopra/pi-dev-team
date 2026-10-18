@@ -269,6 +269,43 @@ PATCHES: list[tuple[str, str, str, str]] = [
         'Use the `dev_team_subagent` tool with `agent: "Explore"`',
         "Claude's built-in Explore agent is provided by the port",
     ),
+    (
+        "skills/context-loading-protocol/SKILL.md",
+        r"Use at the start of every task to",
+        "Use only for large multi-phase work (pi auto-compacts, so skip it for ordinary tasks) to",
+        "ceremony: the context budget step does nothing for ordinary pi tasks",
+    ),
+    (
+        "skills/performance-metrics/SKILL.md",
+        r"Log task completion data to \.claude/metrics/\. Use at the end of every task to record",
+        "Schema reference for .claude/metrics/. Hooks log task data, so do not invoke it at task end. Fields:",
+        "ceremony: hooks log metrics, the skill writes nothing",
+    ),
+    (
+        "agents/orchestrator.md",
+        r"invoke at the start of every task to decide which agents and skills to load, and at phase transitions to unload/swap",
+        "invoke only for large multi-phase work, to decide which agents and skills to load and unload at phase transitions",
+        "ceremony: the context budget step does nothing for ordinary pi tasks",
+    ),
+    (
+        "agents/orchestrator.md",
+        r"invoke at task completion to log metrics, and during",
+        "schema reference only (hooks log metrics); invoke during",
+        "ceremony: hooks log metrics, the skill writes nothing",
+    ),
+    (
+        "skills/build/SKILL.md",
+        r"Invoke the \[Context Loading Protocol\]\(\.\./context-loading-protocol/SKILL\.md\) at the start of this task\..*?throughout the build\.",
+        "Skip this unless the build is large and multi-phase; then invoke the "
+        "[Context Loading Protocol](../context-loading-protocol/SKILL.md) to pick what to load per phase.",
+        "ceremony: the context budget step does nothing for ordinary pi tasks",
+    ),
+    (
+        "knowledge/telemetry-schema.md",
+        r"`/performance-metrics` skill \(model-authored append at task completion\), via `hooks/task_completion_metrics\.py`",
+        "`hooks/task_completion_metrics.py`",
+        "ceremony: hooks log metrics, the skill writes nothing",
+    ),
 ]
 
 
