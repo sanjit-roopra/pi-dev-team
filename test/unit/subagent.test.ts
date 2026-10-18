@@ -904,6 +904,8 @@ test("scopeMarkerOnOwnLine moves a mid-line review scope marker to the start of 
 	assert.equal(scopeMarkerOnOwnLine("Intro\nFiles in scope for this review: a.ts"), "Intro\nFiles in scope for this review: a.ts");
 	assert.equal(scopeMarkerOnOwnLine("Files in scope for this review: a.ts"), "Files in scope for this review: a.ts");
 	assert.equal(scopeMarkerOnOwnLine("no marker"), "no marker");
+});
+
 const cleanExit = { exitCode: 0, signal: null, stopReason: "stop", aborted: false, timedOut: false };
 for (const [title, exit, verdict] of [
 	["a clean exit after a normal stop is ok", {}, { ok: true }],
