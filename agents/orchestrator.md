@@ -113,10 +113,9 @@ effective concurrency, then barrier and reconcile before the next wave starts. A
 failing slice or a reconcile conflict halts loudly and starts no next-wave slice.
 The mechanics — the three scripts (`build_wave.py`, `build_jobs.py`,
 `build_wave_reconcile.py`), the concurrency formula, the sequential-degradation
-rule, and the **`worktree.baseRef` prerequisite users must set themselves** — are
+rule — are
 in `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#wave-aware-build-dispatch`. Read that section before
-running a wave; `/build`'s Step 4 detect-and-warn surfaces the `worktree.baseRef`
-requirement on every invocation regardless.
+running a wave.
 
 ## Task Size Gate
 

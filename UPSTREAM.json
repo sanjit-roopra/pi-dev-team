@@ -69,6 +69,26 @@
       "hits": 1
     },
     {
+      "file": "agents/orchestrator.md",
+      "reason": "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+      "hits": 1
+    },
+    {
+      "file": "agents/orchestrator.md",
+      "reason": "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+      "hits": 1
+    },
+    {
+      "file": "knowledge/three-phase-workflow.md",
+      "reason": "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+      "hits": 1
+    },
+    {
+      "file": "knowledge/request-processing-flow.md",
+      "reason": "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+      "hits": 1
+    },
+    {
       "file": "skills/review-agent/SKILL.md",
       "reason": "agent definitions live in the package, not the project",
       "hits": 1
