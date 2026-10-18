@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -54,7 +55,7 @@ def fail(msg: str, code: int = 1) -> int:
 
 def map_tools(spec: str) -> list[str]:
     out: list[str] = []
-    for raw in spec.replace(",", " ").split():
+    for raw in re.findall(r"[^\s,(]+(?:\([^)]*\))?", spec):
         base = raw.split("(", 1)[0].strip().lower()
         if base not in TOOL_MAP:
             warn(f"no pi tool for {raw}; dropped")

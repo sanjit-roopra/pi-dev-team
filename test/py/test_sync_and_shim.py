@@ -1,4 +1,6 @@
 """Tests for sync/sync_upstream.py helpers and the bin/claude shim. Run: python3 -m unittest discover -s test/py"""
+import contextlib
+import io
 import json
 import os
 import stat
@@ -160,7 +162,11 @@ class Shim(unittest.TestCase):
             self.assertNotIn("--approve", declined)
 
     def test_map_tools(self):
-        self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
+            self.assertEqual(shim.map_tools("Bash(npm run *),Read"), ["bash", "read"])
+        self.assertEqual(err.getvalue(), "", "patterns with spaces are not dropped tools")
         for tool in ("Agent", "Task"):
             with self.subTest(tool=tool):
                 self.assertEqual(shim.map_tools(tool), ["dev_team_subagent"])
