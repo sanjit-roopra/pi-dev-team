@@ -135,6 +135,11 @@
       "hits": 1
     },
     {
+      "file": "knowledge/skills-registry.md",
+      "reason": "the registry lists only skills the port ships",
+      "hits": 5
+    },
+    {
       "file": "agents/software-engineer.md",
       "reason": "lean production code: the engineer names what it skipped",
       "hits": 1

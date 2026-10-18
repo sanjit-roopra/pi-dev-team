@@ -1,4 +1,6 @@
 """Tests for sync/sync_upstream.py helpers and the bin/claude shim. Run: python3 -m unittest discover -s test/py"""
+import contextlib
+import io
 import json
 import os
 import stat
@@ -65,6 +67,11 @@ class SyncHelpers(unittest.TestCase):
         self.assertNotIn("build_worktree_baseref.py", (ROOT / "skills" / "build" / "SKILL.md").read_text())
         for doc in ("agents/orchestrator.md", "knowledge/three-phase-workflow.md", "knowledge/request-processing-flow.md"):
             self.assertNotIn("worktree.baseRef", (ROOT / doc).read_text(), doc)
+        registry = (ROOT / "knowledge" / "skills-registry.md").read_text()
+        for s in info["droppedSkills"]:
+            self.assertNotIn(f"skills/{s}/SKILL.md", registry, s)
+        check = subprocess.run([sys.executable, str(ROOT / "hooks" / "lib" / "build_knowledge_index.py"), "--check"], capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stderr[:2000])
 
     def test_ceremony_skills_are_not_loaded_on_every_task(self):
         for rel in ("skills/context-loading-protocol/SKILL.md", "skills/performance-metrics/SKILL.md",
@@ -155,10 +162,26 @@ class Shim(unittest.TestCase):
             self.assertNotIn("--approve", declined)
 
     def test_map_tools(self):
-        self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(shim.map_tools("Read Glob Grep Skill(review-agent *) Agent Task"), ["read", "find", "ls", "grep", "skill", "dev_team_subagent"])
+            self.assertEqual(shim.map_tools("Bash(npm run *),Read"), ["bash", "read"])
+        self.assertEqual(err.getvalue(), "", "patterns with spaces are not dropped tools")
         for tool in ("Agent", "Task"):
             with self.subTest(tool=tool):
                 self.assertEqual(shim.map_tools(tool), ["dev_team_subagent"])
+
+    def test_shim_names_each_flag_and_tool_it_drops(self):
+        with tempfile.TemporaryDirectory() as d:
+            pi, _ = self._fake_pi(d, [{"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}], "stopReason": "stop"}}])
+            out = subprocess.run([sys.executable, str(ROOT / "bin" / "claude"), "-p", "--disallowedTools", "Write", "--frobnicate",
+                                  "--allowedTools", "Read WebSearch", "--verbose", "x"],
+                                 capture_output=True, text=True, env={**os.environ, "DEV_TEAM_PI_BIN": str(pi)})
+            self.assertEqual(out.returncode, 0, out.stderr)
+            lines = out.stderr.splitlines()
+            self.assertEqual(len(lines), 3, out.stderr)
+            for word in ("--disallowedTools", "--frobnicate", "WebSearch"):
+                self.assertEqual(sum(word in l for l in lines), 1, word)
 
     def _fake_pi(self, d, events, code=0):
         script = Path(d) / "fake-pi"

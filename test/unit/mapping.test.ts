@@ -379,6 +379,12 @@ test("subagent prompt lists the frontmatter and body-named skills and no others"
 	assert.doesNotMatch(listed, /gamma/, "a skill the agent never names");
 });
 
+test("subagent prompt advertises only frontmatter skills the pool has", () => {
+	const prompt = buildSystemPrompt(agentDef(["alpha", "agent-audit"], "body"), ROOT, [], [], skillMap("alpha"), 220);
+	assert.match(prompt, /per your frontmatter `skills:` list\): alpha\. /);
+	assert.doesNotMatch(prompt, /agent-audit/, "a skill the port dropped");
+});
+
 test("subagent prompt says other skills load by name only when it lists skills", () => {
 	const def = agentDef(["alpha"], "body");
 	assert.match(buildSystemPrompt(def, ROOT, [], [], skillMap("alpha"), 220), /load any by name with the skill tool/);
