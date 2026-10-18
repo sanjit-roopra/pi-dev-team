@@ -58,6 +58,8 @@ export interface DevTeamConfig {
 	claudeShim: boolean;
 	/** Let the model use the pi-subagents package's tools; off, dev-team hides and blocks them (pi-subagents.ts). User file only. */
 	allowPiSubagents: boolean;
+	/** Seconds a question or destructive-command confirm waits for the human before the run goes on without them; 0 = never ask (as if no human were attached). */
+	askTimeoutSec: number;
 	/** Extra environment variables for tools, hooks, scripts and subagents (e.g. DEV_TEAM_MAX_PARALLEL_BUILDS). */
 	env: Record<string, string>;
 }
@@ -102,6 +104,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	readDedup: true,
 	claudeShim: true,
 	allowPiSubagents: false,
+	askTimeoutSec: 120,
 	env: {},
 };
 

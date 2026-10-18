@@ -247,6 +247,31 @@ test("the dev-team extension leaves the AI credits status line to the spend exte
 	assert.ok(!statuses.includes("dev-team-ai-credits"), statuses.join(", "));
 });
 
+test("with a human attached the guide says unanswered questions time out; askTimeoutSec 0 runs as if no human were attached", async (t) => {
+	const saved = process.env.DEV_TEAM_INTERACTIVE;
+	t.after(() => {
+		if (saved === undefined) delete process.env.DEV_TEAM_INTERACTIVE;
+		else process.env.DEV_TEAM_INTERACTIVE = saved;
+	});
+	const ctx = {
+		cwd: os.tmpdir(),
+		hasUI: true,
+		mode: "print",
+		isProjectTrusted: () => false,
+		ui: { setStatus: () => {}, notify: () => {} },
+		sessionManager: { getEntries: () => [], getSessionId: () => "s", getSessionFile: () => undefined },
+	};
+	for (const [config, interactive, gate] of [[{}, "1", /time out/], [{ askTimeoutSec: 0 }, undefined, /no human is attached/]] as const) {
+		const ext = await loadExtension({ config });
+		t.after(ext.cleanup);
+		for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+		assert.equal(process.env.DEV_TEAM_INTERACTIVE, interactive, JSON.stringify(config));
+		const opts: { sections?: Record<string, string> } = {};
+		await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, ctx);
+		assert.match(opts.sections?.dev_team?.match(/^- Human gates.*$/m)?.[0] ?? "", gate);
+	}
+});
+
 test("a dispatched agent's own prompt goes after the shared guide, not in pi's appended prompt", async () => {
 	const child = await loadExtension({ flags: { [AGENT_PROMPT_FLAG]: AGENT_PROMPT_FLAG_VALUE } });
 	try {

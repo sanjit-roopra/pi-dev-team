@@ -3,8 +3,9 @@
  *   ask_user  — AskUserQuestion (human gates in /plan, /specs, /build, /setup, ...)
  *   web_fetch — WebFetch (source-verification, competitive-analysis)
  */
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ExtensionUIDialogOptions } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import type { DevTeamConfig } from "./config.ts";
 
 const OptionSchema = Type.Object({
 	label: Type.String(),
@@ -29,13 +30,16 @@ type Q = { question: string; header?: string; options?: { label: string; descrip
 
 const OTHER = "Other (type an answer)";
 
-async function askOne(q: Q, ctx: ExtensionContext): Promise<string | undefined> {
+/** A human answers dialogs only in the main session with a UI (DEV_TEAM_INTERACTIVE, unset when askTimeoutSec is 0). */
+const humanAttached = (ctx: ExtensionContext) => ctx.hasUI && process.env.DEV_TEAM_INTERACTIVE === "1";
+
+async function askOne(q: Q, ctx: ExtensionContext, opts: ExtensionUIDialogOptions): Promise<string | undefined> {
 	const title = q.header ? `${q.header}: ${q.question}` : q.question;
-	if (!q.options?.length) return ctx.ui.input(title);
+	if (!q.options?.length) return ctx.ui.input(title, undefined, opts);
 	const labels = q.options.map((o) => (o.description ? `${o.label} — ${o.description}` : o.label));
 	if (q.multiSelect) {
 		const listing = labels.map((l, i) => `${i + 1}. ${l}`).join("\n");
-		const raw = await ctx.ui.input(`${title}\n${listing}\nEnter numbers separated by commas, or free text`);
+		const raw = await ctx.ui.input(`${title}\n${listing}\nEnter numbers separated by commas, or free text`, undefined, opts);
 		if (raw === undefined) return undefined;
 		const picks = raw
 			.split(",")
@@ -43,25 +47,43 @@ async function askOne(q: Q, ctx: ExtensionContext): Promise<string | undefined> 
 			.filter((n) => Number.isInteger(n) && n >= 1 && n <= labels.length);
 		return picks.length ? picks.map((n) => q.options?.[n - 1]?.label).join(", ") : raw;
 	}
-	const choice = await ctx.ui.select(title, [...labels, OTHER]);
+	const choice = await ctx.ui.select(title, [...labels, OTHER], opts);
 	if (choice === undefined) return undefined;
-	if (choice === OTHER) return ctx.ui.input(title);
+	if (choice === OTHER) return ctx.ui.input(title, undefined, opts);
 	return q.options[labels.indexOf(choice)]?.label ?? choice;
 }
 
-export function registerAskUser(pi: ExtensionAPI): void {
+const CAUTION_PREFIX = "[destructive_guard] CAUTION";
+
+/**
+ * destructive_guard only warns about a CAUTION command. With a human attached, ask first; a no or no
+ * answer within askTimeoutSec returns the reason to block just that call. Otherwise show the warning
+ * before the command runs (it also reaches the model with the result).
+ */
+export async function confirmCaution(advisories: string[], ctx: ExtensionContext, timeoutSec: number): Promise<string | undefined> {
+	const caution = advisories.find((a) => a.startsWith(CAUTION_PREFIX));
+	if (!caution) return undefined;
+	if (!humanAttached(ctx)) {
+		if (ctx.hasUI) ctx.ui.notify(caution, "warning");
+		return undefined;
+	}
+	if (await ctx.ui.confirm("Run this destructive command?", caution, { timeout: timeoutSec * 1000 })) return undefined;
+	return `${caution}\nThe user declined it or did not answer within ${timeoutSec} s, so this command was not run. Go on without it: use a safer command, or leave the step for the user and say so.`;
+}
+
+export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig): void {
 	pi.registerTool({
 		name: "ask_user",
 		label: "Ask user",
 		description:
-			"Ask the human one or more questions (Claude Code's AskUserQuestion). Use for dev-team human gates: approvals, ambiguity resolution, choices. In non-interactive runs it returns that no human is attached; then take the documented non-interactive default.",
+			"Ask the human one or more questions (Claude Code's AskUserQuestion). Use for dev-team human gates: approvals, ambiguity resolution, choices. Mark the option you would pick with (recommended). If no human is attached or no answer comes in time, it says so; then take that option or the documented non-interactive default.",
 		promptSnippet: "Ask the human a question (AskUserQuestion equivalent)",
 		parameters: AskParams,
 		executionMode: "sequential",
 		// It asks the human, so only the model may call it, never a codemode script.
 		exposure: "model-only",
 		annotations: { readOnlyHint: true, openWorldHint: false },
-		async execute(_id, params, _signal, _onUpdate, ctx) {
+		async execute(_id, params, signal, _onUpdate, ctx) {
 			const questions: Q[] = params.questions?.length
 				? (params.questions as Q[])
 				: params.question
@@ -74,7 +96,7 @@ export function registerAskUser(pi: ExtensionAPI): void {
 						]
 					: [];
 			if (!questions.length) throw new Error("Provide `question` or `questions`.");
-			if (!ctx.hasUI || process.env.DEV_TEAM_INTERACTIVE !== "1") {
+			if (!humanAttached(ctx)) {
 				return {
 					content: [
 						{
@@ -85,13 +107,17 @@ export function registerAskUser(pi: ExtensionAPI): void {
 					details: { answered: false },
 				};
 			}
+			const timeoutSec = getConfig().askTimeoutSec;
 			const answers: { question: string; answer: string | null }[] = [];
+			// After one unanswered question the human is away: ask no more.
 			for (const q of questions) {
-				const a = await askOne(q, ctx);
+				const a = answers.some((x) => x.answer === null) ? undefined : await askOne(q, ctx, { signal, timeout: timeoutSec * 1000 });
 				answers.push({ question: q.question, answer: a ?? null });
 			}
-			const text = answers.map((a) => `Q: ${a.question}\nA: ${a.answer ?? "(dismissed — no answer)"}`).join("\n\n");
-			return { content: [{ type: "text", text }], details: { answered: true, answers } };
+			const answered = answers.every((a) => a.answer !== null);
+			const text = answers.map((a) => `Q: ${a.question}\nA: ${a.answer ?? "(no answer)"}`).join("\n\n");
+			const note = `\n\nNo answer arrived within ${timeoutSec} s. Apply the option marked (recommended), or else the documented non-interactive default, record that you did, and keep going. The user may steer later by typing.`;
+			return { content: [{ type: "text", text: answered ? text : text + note }], details: { answered, answers } };
 		},
 	});
 }
