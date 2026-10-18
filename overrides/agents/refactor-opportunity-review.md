@@ -52,7 +52,7 @@ drift) — plus the "Reinvented built-in / helper" row in
 
 Return `{"status": "skip", "issues": [], "summary": "No production code to simplify in changed files"}` when:
 
-- Only test files changed — test scope comes from the plan's Gherkin scenarios and the mutation gate, never from this lens
+- Only test files changed — test scope comes from the plan's Gherkin scenarios, never from this lens
 - Only configuration or documentation changed
 - Changes are trivial (single-line edits, imports)
 
