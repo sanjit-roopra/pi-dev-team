@@ -512,6 +512,12 @@ test("the model is told where the complete output is", () => {
 	assert.ok(outputForModel(big, "/tmp/x.md").endsWith(`[output truncated at ${OUTPUT_CAP} bytes; the complete output is in /tmp/x.md (read it with offset/limit)]`));
 });
 
+test("the model is told where a whole output is saved; the TUI is not", () => {
+	assert.equal(outputForModel("short", "/tmp/x.md"), "short\n\n[output: /tmp/x.md]");
+	assert.match(formatResultText([runResult({ output: "short", fullOutputFile: "/tmp/x.md" })], []), /^short\n\n\[output: \/tmp\/x\.md\]/);
+	assert.equal(viewFromResult(runResult({ output: "short", fullOutputFile: "/tmp/x.md" })).output, "short");
+});
+
 test("the TUI names the file without the model's read instruction", () => {
 	const shown = outputForView(big, "/tmp/x.md");
 	assert.ok(shown.endsWith(`[output truncated at ${OUTPUT_CAP} bytes; complete output: /tmp/x.md]`));

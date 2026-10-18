@@ -54,7 +54,7 @@ export interface SubagentRunResult {
 	task: string;
 	ok: boolean;
 	output: string;
-	/** Where the complete output was saved when it is longer than the tool result may carry. */
+	/** Where the complete output was saved (the parent reads it from there instead of copying it). */
 	fullOutputFile?: string;
 	error?: string;
 	model?: string;
@@ -221,9 +221,9 @@ function cutOutput(text: string): string {
 	return Buffer.from(text, "utf8").subarray(0, OUTPUT_CAP).toString("utf8").replace(/\uFFFD$/, "");
 }
 
-/** The output as the model gets it: cut when oversized, with where to read the complete text. */
+/** The output as the model gets it: cut when oversized, with where the complete text is saved. */
 export function outputForModel(text: string, fullOutputFile?: string): string {
-	if (!isOversized(text)) return text;
+	if (!isOversized(text)) return fullOutputFile ? `${text}\n\n[output: ${fullOutputFile}]` : text;
 	const fullOutputNote = fullOutputFile ? `; the complete output is in ${fullOutputFile} (read it with offset/limit)` : "";
 	return `${cutOutput(text)}\n\n[output truncated at ${OUTPUT_CAP} bytes${fullOutputNote}]`;
 }
@@ -475,7 +475,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			for (const line of stderr.split("\n")) if (/\[[\w.-]+\] failed \(/.test(line)) hooks.warn(`${def.name}: ${line}`);
 			worktree = wt && finishWorktree(wt);
 			const output = finalText(run.messages);
-			const fullOutputFile = isOversized(output) ? saveFullOutput(sessionId, def.name, agentId, output) : undefined;
+			const fullOutputFile = output ? saveFullOutput(sessionId, def.name, agentId, output) : undefined;
 			const verdict = childVerdict({ exitCode: exit.code, signal: exit.signal, stopReason: run.stopReason, aborted, timedOut });
 			const result: SubagentRunResult = {
 				agent: def.name,
