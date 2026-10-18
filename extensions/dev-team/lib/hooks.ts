@@ -10,13 +10,13 @@
  *                                   {"decision":"block","reason"}, permissionDecision "deny", systemMessage
  *   exit 0 + text on stdout      -> advisory (context for SessionStart/UserPromptSubmit, tool-result note otherwise)
  *   exit 0 + stderr only         -> user notice
- *   anything else / timeout      -> ignored (fail-open), like Claude Code for non-2 exits
+ *   anything else / timeout      -> does not block (fail-open), like Claude Code for non-2 exits; warns the user
  */
 import { spawn, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { DEV_TEAM_SUBAGENT_TOOL } from "./agents.ts";
-import { type DevTeamConfig, isHookEnabled } from "./config.ts";
+import { DEFAULT_CONFIG, type DevTeamConfig, isHookEnabled } from "./config.ts";
 
 export type ClaudeEvent =
 	| "SessionStart"
@@ -195,11 +195,19 @@ export class HookBridge {
 	private readonly packageRoot: string;
 	private readonly getConfig: () => DevTeamConfig;
 	private readonly resolveInterpreter: () => string | null;
+	private readonly warn: (line: string) => void;
 
-	constructor(packageRoot: string, getConfig: () => DevTeamConfig, resolveInterpreter: () => string | null = resolvePython) {
+	/** @param warn shows a hook that failed (crash, timeout, no start) to the user. */
+	constructor(
+		packageRoot: string,
+		getConfig: () => DevTeamConfig,
+		resolveInterpreter: () => string | null = resolvePython,
+		warn: (line: string) => void = console.error,
+	) {
 		this.packageRoot = packageRoot;
 		this.getConfig = getConfig;
 		this.resolveInterpreter = resolveInterpreter;
+		this.warn = warn;
 		this.specs = loadHookSpecs(packageRoot);
 	}
 
@@ -250,22 +258,28 @@ export class HookBridge {
 					},
 					stdio: ["pipe", "pipe", "pipe"],
 				});
-			} catch {
+			} catch (e) {
+				run.stderr = String(e);
 				resolve(run);
 				return;
 			}
-			const timer = setTimeout(() => {
-				run.timedOut = true;
-				proc.kill("SIGKILL");
-			}, Math.max(1, config.hooks.timeoutSec) * 1000);
+			const timeoutSec = Number(config.hooks.timeoutSec);
+			const timer = setTimeout(
+				() => {
+					run.timedOut = true;
+					proc.kill("SIGKILL");
+				},
+				Math.max(1, Number.isFinite(timeoutSec) ? timeoutSec : DEFAULT_CONFIG.hooks.timeoutSec) * 1000,
+			);
 			proc.stdout?.on("data", (d) => {
 				run.stdout += d.toString();
 			});
 			proc.stderr?.on("data", (d) => {
 				run.stderr += d.toString();
 			});
-			proc.on("error", () => {
+			proc.on("error", (e) => {
 				clearTimeout(timer);
+				run.stderr += String(e);
 				resolve(run);
 			});
 			proc.on("close", (code) => {
@@ -316,15 +330,17 @@ export class HookBridge {
 		outcome.runs = runs;
 		const blocks: string[] = [];
 		for (const r of runs) {
-			if (r.timedOut) continue;
 			const out = r.stdout.trim();
 			const err = r.stderr.trim();
+			if (r.timedOut || (r.code !== 0 && r.code !== 2)) {
+				this.warn(`[${r.name}] failed (${r.timedOut ? "timeout" : `exit ${r.code ?? "?"}`})${err ? `: ${err.slice(-300)}` : ""}`);
+				continue;
+			}
 			if (r.code === 2) {
 				const reason = [...new Set([out, err].filter(Boolean))].join("\n") || `${r.name} blocked this action.`;
 				blocks.push(`[${r.name}] ${reason}`);
 				continue;
 			}
-			if (r.code !== 0) continue;
 			if (r.json) {
 				const j = r.json;
 				const hso = (j.hookSpecificOutput ?? {}) as Record<string, unknown>;

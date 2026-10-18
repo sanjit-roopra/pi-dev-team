@@ -15,6 +15,7 @@ import {
 	presetAdvice,
 	fileTierModels,
 	projectFileSettingTiers,
+	updateConfigFile,
 } from "../../extensions/dev-team/lib/config.ts";
 
 /** A project with .pi/dev-team.json and .pi/dev-team.local.json, and a user config file. */
@@ -370,4 +371,14 @@ test("loadConfig: a models value that is not a table sets nothing", (t) => {
 		const p = projectWith(t, { shared: { models } });
 		assert.deepEqual(loadConfig(p.cwd, { includeProject: true, userConfigFile: path.join(p.cwd, "none.json") }).config.models, DEFAULT_CONFIG.models, JSON.stringify(models));
 	}
+});
+
+test("updateConfigFile: merges into the file, and refuses to overwrite one it cannot parse", (t) => {
+	const p = projectWith(t, { shared: { models: { haiku: "x/y" } } });
+	updateConfigFile(p.shared, { models: { opus: "a/b" } });
+	assert.deepEqual(JSON.parse(fs.readFileSync(p.shared, "utf-8")).models, { haiku: "x/y", opus: "a/b" });
+	fs.writeFileSync(p.local, "{ broken");
+	assert.throws(() => updateConfigFile(p.local, { models: { opus: "a/b" } }), /not valid JSON/);
+	assert.equal(fs.readFileSync(p.local, "utf-8"), "{ broken");
+	assert.deepEqual(fs.readdirSync(path.dirname(p.local)).sort(), ["dev-team.json", "dev-team.local.json"], "no temp file left behind");
 });
