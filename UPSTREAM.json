@@ -64,6 +64,11 @@
       "hits": 1
     },
     {
+      "file": "skills/build/SKILL.md",
+      "reason": "worktrees: pi always branches from HEAD, so the Claude Code baseRef check is a false warning",
+      "hits": 1
+    },
+    {
       "file": "skills/review-agent/SKILL.md",
       "reason": "agent definitions live in the package, not the project",
       "hits": 1
