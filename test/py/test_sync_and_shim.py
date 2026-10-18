@@ -67,15 +67,20 @@ class SyncHelpers(unittest.TestCase):
 class LeanCode(unittest.TestCase):
     """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
 
-    PORT_ONLY_AGENT_FILES = {"Explore.md", "general-purpose.md"}  # port-added agents: no upstream file to pin
+    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md"}  # port-added: no upstream file to pin
 
-    def test_every_upstream_agent_override_is_pinned_and_shipped(self):
-        override_rels = {f"agents/{p.name}" for p in (ROOT / "overrides" / "agents").glob("*.md") if p.name not in self.PORT_ONLY_AGENT_FILES}
-        self.assertEqual(override_rels, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("agents/")},
-                         "pin each upstream agent override in OVERRIDE_BASES, or list a port-added agent in PORT_ONLY_AGENT_FILES")
+    def test_every_upstream_override_is_pinned_and_shipped(self):
+        overrides = ROOT / "overrides"
+        override_rels = {
+            str(p.relative_to(overrides)) for p in overrides.rglob("*")
+            if p.is_file() and "__pycache__" not in p.parts and p.relative_to(overrides).parts[0] != "notes"
+            and not p.relative_to(overrides).is_relative_to("skills/code-review/references")
+        }
+        self.assertEqual(override_rels - self.PORT_ONLY_FILES, set(sync.OVERRIDE_BASES),
+                         "pin each upstream override in OVERRIDE_BASES, or list a port-added file in PORT_ONLY_FILES")
         for rel in override_rels:
             with self.subTest(rel=rel):
-                self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes(), "run npm run sync")
+                self.assertEqual((overrides / rel).read_bytes(), (ROOT / rel).read_bytes(), "run npm run sync")
 
     def test_the_lean_fix_rule_is_one_rule_everywhere_it_applies(self):
         for rel in ("agents/quality-reviewer.md", "agents/structure-review.md", "skills/code-review/SKILL.md"):

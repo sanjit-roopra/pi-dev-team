@@ -2,7 +2,7 @@
 """Sync upstream bdfinst/agentic-dev-team `plugins/dev-team` into this pi package.
 
 Usage:
-  python3 sync/sync_upstream.py --upstream /path/to/agentic-dev-team [--check]
+  python3 sync/sync_upstream.py --upstream /path/to/agentic-dev-team
 
 What it does (idempotent, stdlib only):
   1. Replaces the managed directories (agents, skills, hooks, scripts, knowledge,
@@ -64,6 +64,10 @@ OVERRIDE_BASES: dict[str, str] = {
     "skills/code-review/SKILL.md": "97d0b514bef1a8b9ee18c8e6d043419c0c43fffd1ab701aea3beaf5f9edb6303",
     # The simplify lens (PORTING.md section 5); the other lean-code agent edits are LEAN_PATCHES.
     "agents/refactor-opportunity-review.md": "e25b0d4ffe63dd4afd6a4dde59961145b2eb89d02e7523fadcd98e5b2d376f35",
+    # pi-specific rewrites of upstream skills.
+    "skills/upgrade/SKILL.md": "f04da3363a3ed9c9ff5887bd744715d9094e8366645fb5cee53f87170af418e2",
+    "skills/version/SKILL.md": "b732c81872fb2b3ccf9c01841e4c8aa5a2c14f349b0c1a99c5474b8d4936277b",
+    "skills/headless-run/SKILL.md": "080af9400a03d3c6152350646edbe016d70e381dc8654be8cf410d2c9134a855",
 }
 
 # Lean production code (PORTING.md section 5): the lean fix rule, word for word as in the code-review core, and
@@ -401,7 +405,7 @@ def main() -> int:
     for note in sorted((overrides / "notes").glob("*.md")) if (overrides / "notes").is_dir() else []:
         skill_md = PKG / "skills" / note.stem / "SKILL.md"
         if not skill_md.is_file():
-            print(f"warning: note for missing skill {note.stem}", file=sys.stderr)
+            failures.append(f"overrides/notes/{note.name}: skill {note.stem} is missing; drop or rename the note")
             continue
         insert_note(skill_md, note.read_text(encoding="utf-8"))
         noted.append(note.stem)
