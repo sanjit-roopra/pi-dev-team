@@ -15,7 +15,8 @@ What it does (idempotent, stdlib only):
   5. Applies the small, explicit text patch sets (PATCHES, and LEAN_PATCHES for lean production code). Every patch must
      match at least once, so upstream drift is caught instead of silently
      skipped.
-  6. Writes UPSTREAM.json (commit, version, what was dropped/overridden/patched).
+  6. Rebuilds knowledge/index.json.
+  7. Writes UPSTREAM.json (commit, version, what was dropped/overridden/patched).
 
 Everything not listed here (extensions/, bin/, sync/, overrides/, test/,
 PORTING.md, README.md, package.json) is owned by the port and never touched.
@@ -306,6 +307,12 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "`hooks/task_completion_metrics.py`",
         "ceremony: hooks log metrics, the skill writes nothing",
     ),
+    (
+        "knowledge/skills-registry.md",
+        r"(?m)^\| `/(?:" + "|".join(map(re.escape, DROPPED_SKILLS)) + r")` \|.*\n",
+        "",
+        "the registry lists only skills the port ships",
+    ),
 ]
 
 
@@ -494,6 +501,9 @@ def main() -> int:
         if hits == 0:
             failures.append(f"{pattern}: /{regex[:60]}.../ ({why})")
         patched.append({"file": pattern, "reason": why, "hits": hits})
+
+    # The index covers knowledge/ and skills/, so it is stale after the drops, overrides and patches above.
+    subprocess.run([sys.executable, str(PKG / "hooks" / "lib" / "build_knowledge_index.py")], check=True)
 
     version = ""
     manifest = plugin / ".claude-plugin" / "plugin.json"

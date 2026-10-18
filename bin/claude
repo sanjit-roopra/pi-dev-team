@@ -43,8 +43,12 @@ TOOL_MAP = {
 }
 
 
-def fail(msg: str, code: int = 1) -> int:
+def warn(msg: str) -> None:
     print(f"claude (pi-dev-team shim): {msg}", file=sys.stderr)
+
+
+def fail(msg: str, code: int = 1) -> int:
+    warn(msg)
     return code
 
 
@@ -52,6 +56,8 @@ def map_tools(spec: str) -> list[str]:
     out: list[str] = []
     for raw in spec.replace(",", " ").split():
         base = raw.split("(", 1)[0].strip().lower()
+        if base not in TOOL_MAP:
+            warn(f"no pi tool for {raw}; dropped")
         for t in TOOL_MAP.get(base, []):
             if t not in out:
                 out.append(t)
@@ -128,6 +134,7 @@ def main(argv: list[str]) -> int:
             tools = (tools or []) + map_tools(nxt)
             i += 1
         elif a in ("--disallowedTools", "--disallowed-tools") and nxt is not None:
+            warn(f"ignored {a} {nxt}")
             i += 1
         elif a == "--append-system-prompt" and nxt is not None:
             append_prompt.append(nxt)
@@ -145,7 +152,7 @@ def main(argv: list[str]) -> int:
             prompt_parts.extend(argv[i + 1 :])
             break
         elif a.startswith("-") and not prompt_parts:
-            pass  # unknown flag: ignore
+            warn(f"ignored unknown flag {a}")
         else:
             prompt_parts.append(a)
         i += 1
