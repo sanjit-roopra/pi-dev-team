@@ -40,6 +40,9 @@ export interface SubagentUsageEntry {
 	nested?: NestedUsage[];
 	/** The pi-dev-team package version that ran the dispatch; absent in older sessions. */
 	port?: string;
+	/** How the child's last turn ended, and the signal that ended the child, when there are any. */
+	stopReason?: string;
+	signal?: string;
 }
 
 /**

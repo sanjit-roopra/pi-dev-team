@@ -34,8 +34,8 @@ import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
-import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
-import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry } from "./lib/subagent-types.ts";
+import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
+import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
 import { registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { piSubagentsBlockReason, piSubagentsLoadsLater, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
@@ -153,18 +153,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		getConfig,
 		hooks,
 		depth,
-		onUsage: (r) => {
-			pi.appendEntry(SUBAGENT_USAGE_ENTRY, {
-				agent: r.agent,
-				model: r.model,
-				tier: r.tier,
-				ok: r.ok,
-				durationMs: r.durationMs,
-				usage: { ...r.usage },
-				...(r.nested.length ? { nested: r.nested } : {}),
-				port: portVersion,
-			} satisfies SubagentUsageEntry);
-		},
+		onUsage: (r) => pi.appendEntry(SUBAGENT_USAGE_ENTRY, usageEntryOf(r, portVersion)),
 	});
 	registerAskUser(pi);
 	registerWebFetch(pi);

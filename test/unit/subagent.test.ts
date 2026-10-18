@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { discoverDispatchAgents, NOT_A_MODEL_ID, parseAgentFile, projectAgentsRequested, tierModelsLine } from "../../extensions/dev-team/lib/agents.ts";
@@ -8,7 +10,7 @@ import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../exte
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
-import { acquireSlot, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, scopeMarkerOnOwnLine, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { acquireSlot, childVerdict, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, scopeMarkerOnOwnLine, stopChild, type SubagentRunResult, usageEntryOf, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type LiveSubagentView, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -902,4 +904,50 @@ test("scopeMarkerOnOwnLine moves a mid-line review scope marker to the start of 
 	assert.equal(scopeMarkerOnOwnLine("Intro\nFiles in scope for this review: a.ts"), "Intro\nFiles in scope for this review: a.ts");
 	assert.equal(scopeMarkerOnOwnLine("Files in scope for this review: a.ts"), "Files in scope for this review: a.ts");
 	assert.equal(scopeMarkerOnOwnLine("no marker"), "no marker");
+const cleanExit = { exitCode: 0, signal: null, stopReason: "stop", aborted: false, timedOut: false };
+for (const [title, exit, verdict] of [
+	["a clean exit after a normal stop is ok", {}, { ok: true }],
+	["a child with no turns is ok when it exits 0", { stopReason: undefined }, { ok: true }],
+	["a non-zero exit fails", { exitCode: 2 }, { ok: false, reason: "exit code 2" }],
+	["death by a signal fails, not exit 0", { exitCode: null, signal: "SIGKILL" }, { ok: false, reason: "killed by SIGKILL" }],
+	["a reply cut at the length limit fails", { stopReason: "length" }, { ok: false, reason: "stopped: length" }],
+	["a model error fails", { stopReason: "error" }, { ok: false, reason: "stopped: error" }],
+	["a model abort fails", { stopReason: "aborted" }, { ok: false, reason: "stopped: aborted" }],
+	["a timeout fails, whatever the exit", { timedOut: true, exitCode: null, signal: "SIGTERM" }, { ok: false, reason: "timed out" }],
+	["an abort fails, whatever the exit", { aborted: true }, { ok: false, reason: "aborted" }],
+] as const) {
+	test(`childVerdict: ${title}`, () => assert.deepEqual(childVerdict({ ...cleanExit, ...exit }), verdict));
+}
+
+/** A node child that prints "ready" once its SIGTERM handler is in place. */
+async function readyChild(t: TestContext, onTerm: string) {
+	const proc = spawn(process.execPath, ["-e", `process.on("SIGTERM", () => { ${onTerm} }); console.log("ready"); setInterval(() => {}, 1000);`], { stdio: ["ignore", "pipe", "ignore"] });
+	t.after(() => proc.kill("SIGKILL"));
+	await once(proc.stdout, "data");
+	return proc;
+}
+
+test("stopChild: a child that ignores SIGTERM is killed after the grace time", { timeout: 5000 }, async (t) => {
+	const proc = await readyChild(t, "");
+	const exited = once(proc, "exit");
+	stopChild(proc, 50);
+	const [code, signal] = await exited;
+	assert.deepEqual([code, signal], [null, "SIGKILL"]);
+});
+
+test("stopChild: a child that stops on SIGTERM is not killed, and the cancel clears the force", { timeout: 5000 }, async (t) => {
+	const proc = await readyChild(t, "process.exit(3)");
+	const exited = once(proc, "exit");
+	const cancel = stopChild(proc, 50);
+	const [code] = await exited;
+	cancel();
+	assert.equal(code, 3);
+});
+
+test("usage entry: carries the stop reason and the signal when there are any", () => {
+	const entry = usageEntryOf(runResult({ ok: false, stopReason: "length", signal: "SIGKILL" }));
+	assert.equal(entry.stopReason, "length");
+	assert.equal(entry.signal, "SIGKILL");
+	assert.deepEqual(Object.keys(usageEntryOf(runResult({}))).sort(), ["agent", "durationMs", "model", "ok", "tier", "usage"]);
+	assert.equal(usageEntryOf(runResult({}), "1.2.3").port, "1.2.3");
 });
