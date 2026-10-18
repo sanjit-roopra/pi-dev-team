@@ -277,7 +277,7 @@ const scenarios = {
 				{
 					tools: [
 						{ tool: "dev_team_subagent", args: { agent: "dev-team:security-review", task: `Files in scope for this review: src/a.js\n${pass}` } },
-						{ tool: "dev_team_subagent", args: { subagent_type: "test-review", prompt: `Files in scope for this review: src/a.js\n${fail}` } },
+						{ tool: "dev_team_subagent", args: { subagent_type: "test-review", prompt: `Review the diff. Files in scope for this review: src/a.js\n${fail}` } },
 					],
 				},
 			]),

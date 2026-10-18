@@ -8,7 +8,7 @@ import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../exte
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
-import { acquireSlot, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { acquireSlot, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, scopeMarkerOnOwnLine, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type LiveSubagentView, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -895,4 +895,11 @@ test("progress: finish clears the live fields, executing marks included", () => 
 	assert.equal(view.stepStartedAt, undefined);
 	assert.deepEqual(view.recentCalls, [npmTest]);
 	assert.equal(view.slotGrantedAt, 3, "when it started stays");
+});
+
+test("scopeMarkerOnOwnLine moves a mid-line review scope marker to the start of a line", () => {
+	assert.equal(scopeMarkerOnOwnLine("Review it. Files in scope for this review: a.ts, b.ts"), "Review it. \nFiles in scope for this review: a.ts, b.ts");
+	assert.equal(scopeMarkerOnOwnLine("Intro\nFiles in scope for this review: a.ts"), "Intro\nFiles in scope for this review: a.ts");
+	assert.equal(scopeMarkerOnOwnLine("Files in scope for this review: a.ts"), "Files in scope for this review: a.ts");
+	assert.equal(scopeMarkerOnOwnLine("no marker"), "no marker");
 });

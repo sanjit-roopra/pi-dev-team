@@ -159,6 +159,11 @@ function finalText(messages: PiMessageLike[]): string {
 	return "";
 }
 
+/** review_verdict_recorder.py reads the review scope marker only at a line start; models often write it mid-line. */
+export function scopeMarkerOnOwnLine(task: string): string {
+	return task.replace(/(?<=[^\n])(?=Files in scope for this review: )/, "\n");
+}
+
 /** The one rule for when a child's output is too long to return whole. */
 export function isOversized(text: string): boolean {
 	return Buffer.byteLength(text, "utf8") > OUTPUT_CAP;
@@ -266,7 +271,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		const started = Date.now();
 		const config = getConfig();
 		const requested = dispatchAgent(input);
-		let task = dispatchTask(input);
+		let task = scopeMarkerOnOwnLine(dispatchTask(input));
 		const empty = toUsageTotals(emptyPiUsage(), 0);
 		const fail = (error: string, extra: Partial<SubagentRunResult> = {}): SubagentRunResult => ({
 			agent: requested || "(none)",
