@@ -10,7 +10,7 @@
  *   PreToolUse(Agent) before (dispatch ledger for the PR gate), SubagentStop after
  *   (review-verdict ledger, completion guard, task metrics) with a synthetic Claude transcript.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -35,6 +35,7 @@ import {
 	type NestedUsage,
 	type ProgressPatch,
 	type SubagentDetails,
+	type SubagentUsageEntry,
 	type SubagentTaskView,
 	sumPiUsage,
 	toUsageTotals,
@@ -59,6 +60,8 @@ export interface SubagentRunResult {
 	model?: string;
 	tier?: string;
 	stopReason?: string;
+	/** The signal that ended the child, when one did. */
+	signal?: string;
 	/** The child's own turns. */
 	usage: UsageTotals;
 	/** Agents the child dispatched itself (any depth), credited to those agents. */
@@ -77,6 +80,50 @@ export const LABEL_CHARS = 80;
 const STATUS_LINE_CALLS = 3;
 
 const OUTPUT_CAP = 50 * 1024;
+const KILL_GRACE_MS = 5000;
+
+export interface ChildExit {
+	exitCode: number | null;
+	signal: string | null;
+	stopReason?: string;
+	aborted: boolean;
+	timedOut: boolean;
+}
+
+/** Whether a child finished its task: exit 0, no signal, and a last turn that ended normally. */
+export function childVerdict(c: ChildExit): { ok: boolean; reason?: string } {
+	if (c.timedOut) return { ok: false, reason: "timed out" };
+	if (c.aborted) return { ok: false, reason: "aborted" };
+	if (c.signal) return { ok: false, reason: `killed by ${c.signal}` };
+	if (c.exitCode !== 0) return { ok: false, reason: `exit code ${c.exitCode}` };
+	if (c.stopReason === "error" || c.stopReason === "aborted" || c.stopReason === "length") return { ok: false, reason: `stopped: ${c.stopReason}` };
+	return { ok: true };
+}
+
+/** SIGTERM now, SIGKILL after `graceMs` if the child is still running. Returns a cancel for the SIGKILL. */
+export function stopChild(proc: ChildProcess, graceMs = KILL_GRACE_MS): () => void {
+	proc.kill("SIGTERM");
+	const timer = setTimeout(() => {
+		if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL");
+	}, graceMs);
+	return () => clearTimeout(timer);
+}
+
+/** The session entry the cost meter and the session report read for one dispatch. */
+export function usageEntryOf(r: SubagentRunResult, port?: string): SubagentUsageEntry {
+	return {
+		agent: r.agent,
+		model: r.model,
+		tier: r.tier,
+		ok: r.ok,
+		durationMs: r.durationMs,
+		usage: { ...r.usage },
+		...(r.nested.length ? { nested: r.nested } : {}),
+		...(r.stopReason ? { stopReason: r.stopReason } : {}),
+		...(r.signal ? { signal: r.signal } : {}),
+		...(port ? { port } : {}),
+	};
+}
 
 /**
  * The label a parallel call's progress header shows: its own `description`, on one line, capped by
@@ -317,9 +364,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 		const release = await acquireSlot(semaphore, update, { signal });
 		if (!release) throw new Error(`Subagent ${def.name} was aborted`);
 		let wt: ReturnType<typeof createWorktree> | undefined;
+		let worktree: WorktreeInfo | undefined;
+		let tmpDir: string | undefined;
 		const agentId = randomUUID().replace(/-/g, "").slice(0, 16);
-		const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
 		try {
+			tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-agent-"));
 			const runCwd = input.isolation === "worktree" ? (wt = createWorktree(baseCwd, def.name, agentId.slice(0, 8))).path : baseCwd;
 
 			const parentModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -361,7 +410,7 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			let aborted = false;
 			let timedOut = false;
 
-			const exitCode = await new Promise<number>((resolve) => {
+			const exit = await new Promise<{ code: number | null; signal: string | null }>((resolve) => {
 				const inv = getPiInvocation(args);
 				const proc = spawn(inv.command, inv.args, { cwd: runCwd, env, shell: false, stdio: ["ignore", "pipe", "pipe"] });
 				let buf = "";
@@ -389,11 +438,9 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				proc.stderr.on("data", (d) => {
 					stderr += d.toString();
 				});
+				let cancelForce: (() => void) | undefined;
 				const kill = () => {
-					proc.kill("SIGTERM");
-					setTimeout(() => {
-						if (!proc.killed) proc.kill("SIGKILL");
-					}, 5000);
+					cancelForce ??= stopChild(proc);
 				};
 				const timer =
 					config.subagentTimeoutSec > 0
@@ -402,15 +449,17 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 								kill();
 							}, config.subagentTimeoutSec * 1000)
 						: undefined;
-				proc.on("close", (code) => {
+				proc.on("close", (code, sig) => {
 					if (timer) clearTimeout(timer);
+					cancelForce?.();
 					if (buf.trim()) onLine(buf);
-					resolve(code ?? 0);
+					resolve({ code, signal: sig });
 				});
 				proc.on("error", (e) => {
 					if (timer) clearTimeout(timer);
+					cancelForce?.();
 					stderr += String(e);
-					resolve(1);
+					resolve({ code: 1, signal: null });
 				});
 				if (signal) {
 					const onAbort = () => {
@@ -424,27 +473,28 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 
 			// A child has no UI, so its hook-failure warnings arrive on stderr; show them here.
 			for (const line of stderr.split("\n")) if (/\[[\w.-]+\] failed \(/.test(line)) hooks.warn(`${def.name}: ${line}`);
-			const worktree = wt ? finishWorktree(wt) : undefined;
+			worktree = wt && finishWorktree(wt);
 			const output = finalText(run.messages);
 			const fullOutputFile = isOversized(output) ? saveFullOutput(sessionId, def.name, agentId, output) : undefined;
-			const ok = exitCode === 0 && !aborted && !timedOut && run.stopReason !== "error" && run.stopReason !== "aborted";
+			const verdict = childVerdict({ exitCode: exit.code, signal: exit.signal, stopReason: run.stopReason, aborted, timedOut });
 			const result: SubagentRunResult = {
 				agent: def.name,
 				source: def.source,
 				task,
-				ok,
+				ok: verdict.ok,
 				output,
 				fullOutputFile,
-				error: ok
+				error: verdict.ok
 					? undefined
 					: timedOut
 						? `timed out after ${config.subagentTimeoutSec}s`
 						: aborted
 							? "aborted"
-							: run.errorMessage || stderr.trim().slice(-4000) || `exit code ${exitCode}`,
+							: run.errorMessage || stderr.trim().slice(-4000) || verdict.reason,
 				model: run.model,
 				tier: choice.tier,
 				stopReason: run.stopReason,
+				signal: exit.signal ?? undefined,
 				usage: toUsageTotals(run.own, run.turns),
 				nested: run.nested,
 				totalUsage: run.turns ? run.total : undefined,
@@ -478,10 +528,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			return result;
 		} catch (e) {
 			if (e instanceof Error && e.message.endsWith("was aborted")) throw e;
-			return fail(e instanceof Error ? e.message : String(e), { agent: def.name });
+			worktree ??= wt && finishWorktree(wt);
+			return fail(e instanceof Error ? e.message : String(e), { agent: def.name, worktree });
 		} finally {
 			release();
-			fs.rmSync(tmpDir, { recursive: true, force: true });
+			if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 		}
 	}
 
