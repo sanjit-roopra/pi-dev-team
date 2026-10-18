@@ -67,16 +67,16 @@ class SyncHelpers(unittest.TestCase):
 class LeanCode(unittest.TestCase):
     """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
 
-    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md"}  # port-added: no upstream file to pin
+    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md"}  # port-added (plus code-review references): no upstream file to pin
 
     def test_every_upstream_override_is_pinned_and_shipped(self):
         overrides = ROOT / "overrides"
         override_rels = {
             str(p.relative_to(overrides)) for p in overrides.rglob("*")
             if p.is_file() and "__pycache__" not in p.parts and p.relative_to(overrides).parts[0] != "notes"
-            and not p.relative_to(overrides).is_relative_to("skills/code-review/references")
         }
-        self.assertEqual(override_rels - self.PORT_ONLY_FILES, set(sync.OVERRIDE_BASES),
+        port_only = self.PORT_ONLY_FILES | {r for r in override_rels if r.startswith("skills/code-review/references/")}
+        self.assertEqual(override_rels - port_only, set(sync.OVERRIDE_BASES),
                          "pin each upstream override in OVERRIDE_BASES, or list a port-added file in PORT_ONLY_FILES")
         for rel in override_rels:
             with self.subTest(rel=rel):
