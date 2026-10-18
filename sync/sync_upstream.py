@@ -102,8 +102,15 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
         "agents/software-engineer.md",
         re.escape("- End-of-turn: one sentence on what was implemented and what tests confirm it.\n"),
         "- End-of-turn: one sentence on what was implemented and what tests confirm it, then one `Skipped:` line naming "
-        "what you deliberately left out or did not check, and the risk (`Skipped: none` when nothing was).\n",
+        "what you deliberately left out or did not check, and any problem you noticed but did not touch (a bug, dead or "
+        "stale code), with the risk (`Skipped: none` when nothing was).\n",
         "lean production code: the engineer names what it skipped",
+    ),
+    (
+        "agents/software-engineer.md",
+        re.escape("(mention it instead, don't delete it)"),
+        "(name it in your `Skipped:` line instead, don't delete it)",
+        "lean production code: noticed dead code goes to Skipped:",
     ),
     (
         "agents/software-engineer.md",
