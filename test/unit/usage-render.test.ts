@@ -218,7 +218,7 @@ test("an error reason cannot smuggle control characters or extra lines", () => {
 });
 
 test("unreadable files get a footnote under this month's chart, and none under this session's", () => {
-	const unreadable = (n: number) => render(viewModel(state("month", "model"), { month: { breakdown: mixed, unreadable: n, loadedAt: NOW } }));
+	const unreadable = (n: number) => render(viewModel(state("month", "model"), { month: { breakdown: mixed, daily: [], unreadable: n, loadedAt: NOW } }));
 	const lines = unreadable(2);
 	assert.equal(lines.at(-3), "2 session files could not be read");
 	assert.ok(unreadable(1).includes("1 session file could not be read"));
@@ -261,7 +261,7 @@ test("a loading footer drops the view hint, then the cancel hint", () => {
 /** Every scope, view and load state the overlay can be in, with enough models to need folding. */
 function everyViewModel(): [string, UsageViewModel][] {
 	const many = breakdown(...Array.from({ length: 14 }, (_, i) => copilotRun(`model-with-a-long-name-${i}`, 100 - i, i % 3 === 0 ? "subagent" : "main", `agent-${i}`)), copilotRun("x", 3, "overhead", "compaction"));
-	const readyMonth = (breakdownOf: UsageBreakdown, unreadable = 0) => ({ breakdown: breakdownOf, unreadable, loadedAt: NOW });
+	const readyMonth = (breakdownOf: UsageBreakdown, unreadable = 0) => ({ breakdown: breakdownOf, daily: [], unreadable, loadedAt: NOW });
 	const out: [string, UsageViewModel][] = [];
 	for (const view of ["model", "provider", "agent"] as const) {
 		out.push([`session ${view} data`, viewModel(state("session", view), { session: many })]);

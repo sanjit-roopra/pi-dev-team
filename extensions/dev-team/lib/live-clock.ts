@@ -3,7 +3,10 @@
  * anything. It lives in pi's per-row renderer state (`context.state`, with `context.invalidate` to
  * redraw), as pi's own bash renderer keeps its timer, and stops on the final result.
  */
-import type { ToolRenderContext } from "@earendil-works/pi-coding-agent";
+import type { ToolRenderers } from "@earendil-works/pi-coding-agent";
+
+/** pi does not export its renderer context type, so take it from the renderer signature. */
+export type ToolRenderContext = Parameters<NonNullable<ToolRenderers["renderResult"]>>[3];
 
 export const CLOCK_TICK_MS = 1000;
 /** With no update for this long the clock stops (its run is gone); the next update starts it again. */

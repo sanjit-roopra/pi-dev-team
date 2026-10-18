@@ -9,7 +9,7 @@ import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
 import { acquireSlot, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, type SubagentRunResult, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
-import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
+import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type LiveSubagentView, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
@@ -255,7 +255,7 @@ test("child events: malformed agent entries from a child are dropped or made saf
 		{ agent: "hostile-call", status: "running", turns: 3, recentCalls: [{ name: "read" }] },
 	]);
 	let levels = 0;
-	for (let v = patch?.subagents?.[2]; v; v = v.subagents?.[0]) levels++;
+	for (let v: LiveSubagentView | undefined = patch?.subagents?.[2]; v; v = v.subagents?.[0]) levels++;
 	assert.equal(levels, 4, "deeper levels are dropped");
 });
 
