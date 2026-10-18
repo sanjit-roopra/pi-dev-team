@@ -12,7 +12,9 @@ type ToolDef = { name: string; exposure?: string; annotations?: Record<string, b
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;
 type CommandDef = { description?: string; getArgumentCompletions?: (prefix: string) => { value: string }[]; handler: (args: string, ctx: unknown) => Promise<void> | void };
 
-async function loadExtension(opts: { flags?: Record<string, unknown>; config?: Record<string, unknown> } = {}) {
+type ToolInfo = { name: string; sourceInfo: { path: string; source: string; origin?: string } };
+
+async function loadExtension(opts: { flags?: Record<string, unknown>; config?: Record<string, unknown>; allTools?: ToolInfo[]; activeTools?: string[] } = {}) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-load-"));
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
@@ -27,12 +29,16 @@ async function loadExtension(opts: { flags?: Record<string, unknown>; config?: R
 	const tools: Record<string, ToolDef> = {};
 	const handlers: Record<string, Handler[]> = {};
 	const commands: Record<string, CommandDef> = {};
-	// Every API the factory may call is a no-op, except registerTool, registerCommand and on, which are recorded.
+	const active = { tools: opts.activeTools ?? [] };
+	// Every API the factory may call is a no-op, except the tool set and registerTool, registerCommand and on, which are recorded.
 	const recorders: Record<string, unknown> = {
 		registerTool: (def: ToolDef) => (tools[def.name] = def),
 		registerCommand: (name: string, def: CommandDef) => (commands[name] = def),
 		on: (event: string, handler: Handler) => (handlers[event] ??= []).push(handler),
 		getFlag: (name: string) => opts.flags?.[name],
+		getAllTools: () => opts.allTools ?? [],
+		getActiveTools: () => active.tools,
+		setActiveTools: (names: string[]) => (active.tools = names),
 	};
 	const fakePi = new Proxy({}, { get: (_t, key) => recorders[String(key)] ?? (() => undefined) });
 	const { default: devTeam } = await import("../../extensions/dev-team/index.ts");
@@ -46,7 +52,7 @@ async function loadExtension(opts: { flags?: Record<string, unknown>; config?: R
 	};
 	/** The tier models /dev-team models saved to this extension's user config file. */
 	const savedModels = () => JSON.parse(fs.readFileSync(path.join(dir, "dev-team.json"), "utf-8")).models;
-	return { tools, commands, handlers, probedAtLoad: fs.existsSync(marker), probed: () => fs.existsSync(marker), savedModels, cleanup };
+	return { tools, commands, handlers, active, probedAtLoad: fs.existsSync(marker), probed: () => fs.existsSync(marker), savedModels, cleanup };
 }
 
 const loaded = loadExtension();
@@ -576,4 +582,124 @@ test("dev_team_subagent's execute labels a parallel dispatch's progress and stam
 	assert.ok(updates.length > 0, "progress was streamed");
 	updates.forEach((u, i) => assert.deepEqual([u.details?.label, u.details?.dispatchStartedAt], ["code-review round 2/4", 5_000], `update ${i}`));
 	assert.deepEqual([final.details.label, final.details.dispatchStartedAt], ["code-review round 2/4", 5_000], "the final details the view keeps");
+});
+
+// ---------------------------------------------------------------- pi-subagents
+
+const SUBAGENTS_SOURCE = { path: "/home/u/.pi/agent/npm/node_modules/pi-subagents/index.js", source: "npm:pi-subagents", origin: "package" };
+const piSubagentsTools: ToolInfo[] = ["subagents_enable", "subagent", "contact_supervisor", "bg_wait", "subagent_status"].map((name) => ({ name, sourceInfo: SUBAGENTS_SOURCE }));
+const ownTools: ToolInfo[] = ["read", "bash", "dev_team_subagent"].map((name) => ({ name, sourceInfo: { path: "builtin:" + name, source: "builtin" } }));
+const subagentsSession = (config?: Record<string, unknown>, allTools = [...piSubagentsTools, ...ownTools]) =>
+	loadExtension({ config, allTools, activeTools: ["read", "bash", "dev_team_subagent", "subagents_enable", "bg_wait"] });
+const blockCtx = { cwd: os.tmpdir(), hasUI: false, sessionManager: { getSessionId: () => "s", getSessionFile: () => undefined } };
+
+test("tool_call blocks pi-subagents' tools and points the model at dev_team_subagent; bg_wait and contact_supervisor still run", async (t) => {
+	const ext = await subagentsSession();
+	t.after(ext.cleanup);
+	for (const toolName of ["subagents_enable", "subagent", "subagent_status"]) {
+		const r = (await ext.handlers.tool_call[0]({ toolName, toolCallId: toolName, input: {} }, blockCtx)) as { block?: boolean; reason?: string } | undefined;
+		assert.equal(r?.block, true, toolName);
+		assert.match(r?.reason ?? "", /dev_team_subagent/);
+	}
+	for (const toolName of ["bg_wait", "contact_supervisor"]) assert.equal(await ext.handlers.tool_call[0]({ toolName, toolCallId: toolName, input: {} }, blockCtx), undefined);
+});
+
+test("without pi-subagents installed nothing is blocked, not even another package's tool named subagent", async (t) => {
+	const other = { path: "/home/u/git/pi-subagents/.pi/extensions/subagent.ts", source: "local", origin: "top-level" };
+	const ext = await loadExtension({ allTools: [...ownTools, { name: "subagent", sourceInfo: other }] });
+	t.after(ext.cleanup);
+	assert.equal(await ext.handlers.tool_call[0]({ toolName: "subagent", toolCallId: "x", input: {} }, blockCtx), undefined);
+});
+
+test("pi-subagents' loader is blocked by name even when pi reports no package source for it", async (t) => {
+	const ext = await loadExtension({ allTools: [...ownTools, { name: "subagents_enable", sourceInfo: { path: "x", source: "local" } }] });
+	t.after(ext.cleanup);
+	const r = (await ext.handlers.tool_call[0]({ toolName: "subagents_enable", toolCallId: "x", input: {} }, blockCtx)) as { block?: boolean } | undefined;
+	assert.equal(r?.block, true);
+});
+
+test("a git or versioned pi-subagents source is recognised", async (t) => {
+	for (const source of ["git:github.com/someone/pi-subagents", "npm:pi-subagents@1.4.0", "../pi-subagents"]) {
+		const ext = await loadExtension({ allTools: [...ownTools, { name: "subagent", sourceInfo: { path: "/x/index.js", source, origin: "package" } }] });
+		t.after(ext.cleanup);
+		const r = (await ext.handlers.tool_call[0]({ toolName: "subagent", toolCallId: "x", input: {} }, blockCtx)) as { block?: boolean } | undefined;
+		assert.equal(r?.block, true, source);
+	}
+});
+
+test("session_start tells the user when pi-subagents loads after dev-team", async (t) => {
+	const notices: string[] = [];
+	const ctx = { ...blockCtx, hasUI: true, mode: "print", isProjectTrusted: () => false, ui: { notify: (text: string) => notices.push(text), setStatus: () => {} }, sessionManager: { ...blockCtx.sessionManager, getEntries: () => [] } };
+	for (const [order, expected] of [[[...piSubagentsTools, ...ownTools], 0], [[...ownTools, ...piSubagentsTools], 1]] as const) {
+		const ext = await subagentsSession(undefined, [...order]);
+		t.after(ext.cleanup);
+		notices.length = 0;
+		for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+		assert.equal(notices.filter((n) => n.includes("pi-subagents loads after dev-team")).length, expected);
+	}
+});
+
+test("session_start and each run start drop pi-subagents from the tools and the system prompt", async (t) => {
+	const ext = await subagentsSession();
+	t.after(ext.cleanup);
+	const ctx = { ...blockCtx, mode: "print", isProjectTrusted: () => false, sessionManager: { ...blockCtx.sessionManager, getEntries: () => [] } };
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	assert.deepEqual(ext.active.tools, ["read", "bash", "dev_team_subagent", "bg_wait"]);
+	// pi-subagents runs first and adds its loader to the selection and its catalog to the sections.
+	ext.active.tools = [...ext.active.tools, "subagents_enable"];
+	const opts = {
+		selectedTools: ["read", "bash", "dev_team_subagent", "bg_wait", "subagents_enable", "subagent"],
+		toolSnippets: { read: "r", subagents_enable: "pi-subagents is installed. For authorized specialist, independent-review…" },
+		toolGuidelines: { subagent: ["use me"], read: ["g"] },
+		sections: { advertised_subagents: "catalog", other: "kept" } as Record<string, string>,
+		skills: [
+			{ name: "pi-subagents", filePath: "/home/u/.pi/agent/npm/node_modules/pi-subagents/skills/pi-subagents/SKILL.md", sourceInfo: SUBAGENTS_SOURCE },
+			{ name: "x", filePath: "/home/u/git/pi-subagents/.pi/skills/x/SKILL.md", sourceInfo: { source: "local", origin: "top-level" } },
+		],
+	};
+	await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, ctx);
+	assert.deepEqual(ext.active.tools, ["read", "bash", "dev_team_subagent", "bg_wait"]);
+	assert.deepEqual(opts.selectedTools, ["read", "bash", "dev_team_subagent", "bg_wait"]);
+	assert.deepEqual(Object.keys(opts.toolSnippets), ["read"]);
+	assert.deepEqual(Object.keys(opts.toolGuidelines), ["read"]);
+	assert.equal(opts.sections.advertised_subagents, undefined);
+	assert.equal(opts.sections.other, "kept");
+	assert.match(opts.sections.dev_team, /pi-subagents' tools are blocked in this session/);
+	assert.deepEqual(opts.skills.map((s) => s.name), ["x"]);
+});
+
+test("allowPiSubagents: true leaves pi-subagents alone", async (t) => {
+	const ext = await subagentsSession({ allowPiSubagents: true });
+	t.after(ext.cleanup);
+	assert.equal(await ext.handlers.tool_call[0]({ toolName: "subagents_enable", toolCallId: "x", input: {} }, blockCtx), undefined);
+	const skills = [{ name: "pi-subagents", filePath: "/s/SKILL.md", sourceInfo: SUBAGENTS_SOURCE }];
+	const opts = { selectedTools: ["read", "subagents_enable"], sections: { advertised_subagents: "catalog" } as Record<string, string>, skills };
+	await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { cwd: os.tmpdir(), isProjectTrusted: () => false });
+	assert.deepEqual(opts.selectedTools, ["read", "subagents_enable"]);
+	assert.equal(opts.sections.advertised_subagents, "catalog");
+	assert.equal(opts.skills.length, 1);
+	assert.doesNotMatch(opts.sections.dev_team, /blocked in this session/);
+	assert.ok(ext.active.tools.includes("subagents_enable"));
+});
+
+// ---------------------------------------------------------------- runaway tool-call arguments
+
+test("a tool call whose arguments keep streaming aborts the run once, with a notice", async (t) => {
+	const ext = await loadExtension();
+	t.after(ext.cleanup);
+	let aborts = 0;
+	const notices: string[] = [];
+	const ctx = { hasUI: true, abort: () => aborts++, ui: { notify: (text: string) => notices.push(text) } };
+	const partial = { content: [{ type: "text", text: "" }, { type: "toolCall", name: "dev_team_subagent" }] };
+	const delta = (text: string) => ({ assistantMessageEvent: { type: "toolcall_delta", contentIndex: 1, delta: text, partial } });
+	for (const h of ext.handlers.message_start) await h({}, ctx);
+	const chunk = "x".repeat(10_000);
+	for (let i = 0; i < 30; i++) for (const h of ext.handlers.message_update) await h(delta(chunk), ctx);
+	assert.equal(aborts, 1);
+	assert.equal(notices.length, 1);
+	assert.match(notices[0], /dev_team_subagent call streamed 260k characters of arguments \(limit 256k\)/);
+	// The next message is counted from zero.
+	for (const h of ext.handlers.message_start) await h({}, ctx);
+	for (const h of ext.handlers.message_update) await h(delta(chunk), ctx);
+	assert.equal(aborts, 1);
 });
