@@ -186,6 +186,8 @@ REFERENCE_FOR_BRANCH_SCRIPT = {
     "finding_signature.py": "06-findings-and-fix-loop.md",
     "verify_tier.py": "06-findings-and-fix-loop.md",
 }
+# Scripts the core never runs because pi does that step another way.
+NOT_RUN_ON_PI = {"dispatch_waves.py"}
 # The core is meant to load at about a third of upstream's size; a regrowth past this means text moved back in.
 CORE_SIZE_BUDGET_BYTES = 40_000
 # Reference -> words its "Read it when" row must contain, for the references a step must read.
@@ -261,7 +263,9 @@ class CodeReviewCoreRouting(unittest.TestCase):
         in_core = set(INVOKED_SCRIPT_RE.findall(CORE))
         for script in invoked:
             with self.subTest(script=script):
-                if script in REFERENCE_FOR_BRANCH_SCRIPT:
+                if script in NOT_RUN_ON_PI:
+                    self.assertNotIn(script, in_core)
+                elif script in REFERENCE_FOR_BRANCH_SCRIPT:
                     self.assertIn(f"references/{REFERENCE_FOR_BRANCH_SCRIPT[script]}", STEPS)
                     self.assertNotIn(script, in_core, "the core runs a branch script itself; drop it from the branch map")
                 else:
@@ -274,6 +278,12 @@ class CodeReviewCoreRouting(unittest.TestCase):
         for block in blocks:
             with self.subTest(block=block.splitlines()[0]):
                 self.assertIn(block, upstream)
+
+    def test_step_4_dispatches_once_and_classifies_the_saved_output(self):
+        step = text_between(CORE, "### 4. Run each enabled agent", "\n### 5. Aggregate results")
+        self.assertIn("one `dev_team_subagent` call with `tasks`", step)
+        self.assertIn("[output: <path>]", step)  # the line subagent.ts appends to each result
+        self.assertNotIn("contract-raw-", step, "the parent must not re-type reviewer output")
 
     def test_step_3_keeps_the_added_from_rule(self):
         step = text_between(CORE, "### 3. Determine enabled agents", "### 4. Run each enabled agent")

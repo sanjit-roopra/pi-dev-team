@@ -1,6 +1,6 @@
 /**
  * Files the port writes for a session: synthetic subagent transcripts (read by the SubagentStop hooks)
- * and the complete output of a subagent whose result was cut. All of it lives in one private
+ * and the complete output of every subagent. All of it lives in one private
  * directory per pi process, created with mkdtemp (mode 0700, unpredictable name), so another local
  * user cannot pre-create or redirect it in a shared temp directory. Files are created exclusively
  * (`wx`). Everything is removed when pi quits; a reload, new, resumed or forked session keeps it, since
@@ -47,7 +47,7 @@ export function removeProcessFiles(baseDir?: string): void {
 	if (!baseDir) delete shared[ROOT_KEY];
 }
 
-/** Keep a subagent's complete output when its result was cut; undefined if it cannot be saved. */
+/** Keep a subagent's complete output; undefined if it cannot be saved. */
 export function saveFullOutput(sessionId: string, agent: string, agentId: string, output: string, baseDir?: string): string | undefined {
 	try {
 		return writeSessionFile(sessionId, "subagent-output", `${agent}-${agentId}.md`, output, baseDir);

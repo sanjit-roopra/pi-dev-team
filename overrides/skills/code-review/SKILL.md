@@ -30,7 +30,7 @@ Role: orchestrator. Route work to review agents; do not review code yourself. Pa
 
 Output templates and JSON schemas: [`output-format.md`](output-format.md). Example report: [`examples/sample-report.md`](examples/sample-report.md).
 
-**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with two exceptions. First, `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`). Second, the lean fix rule in step 5b is a pi change that narrows the actionability table in `references/05-aggregate.md` and the fix loop in `references/06-findings-and-fix-loop.md`: the rule wins.
+**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with three exceptions. First, `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`). Second, the lean fix rule in step 5b is a pi change that narrows the actionability table in `references/05-aggregate.md` and the fix loop in `references/06-findings-and-fix-loop.md`: the rule wins. Third, step 4's single dispatch and its `[output: <path>]` files replace the waves of `references/04a-dispatch-waves.md` and the `contract-raw-<agent>.md` copies of `references/04d-contract-validation-and-retry.md`.
 
 | Reference | Read it when |
 | --- | --- |
@@ -38,7 +38,7 @@ Output templates and JSON schemas: [`output-format.md`](output-format.md). Examp
 | `references/01-target-files.md` | **always** when the documentation-only short-circuit fires (step 1) |
 | `references/02-gates-and-static-analysis.md` | a step 2b script exits non-zero |
 | `references/03-enabled-agents.md` | a step 3 script exits non-zero, or `select_lenses.py` prints a warning code not listed in step 3 |
-| `references/04a-dispatch-waves.md` | `dispatch_waves.py` exits non-zero or prints no `waves` |
+| `references/04a-dispatch-waves.md` | never: pi sends the whole roster in one dispatch (step 4) |
 | `references/04b-context-pack.md` | **always** when `DEV_TEAM_REVIEW_CONTEXT_PACK=on` |
 | `references/04c-dispatch-payload-and-ledger.md` | `verdict_scope.py` skips any file (how to report the skips) |
 | `references/04d-contract-validation-and-retry.md` | **always** when `dispatch_reconcile.py`'s `missing` is non-empty |
@@ -246,13 +246,7 @@ Drop every agent in `skipLenses` and note it (gated by diff signal). Only `arch-
 
 **Dispatch-capability gate (re-confirm here, not just at the top of this file — issue #1461).** Before spawning anything below, re-verify the `Agent`/`Task` tool is present in this toolset. If it is not, STOP per the Orchestrator constraints above — do not fall back to reviewing the files yourself, inline, as a stand-in for the panel; report the missing capability and halt the run before any agent is spawned.
 
-**Waves.** Compute the split; do not guess a batch size:
-
-```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_waves.py" --agents "<comma-separated eligible agent names, cheap-first order as select_lenses.py returned them, filtered by the change-shape/change-size/change-impact gates but not re-sorted>"
-```
-
-Dispatch **exactly the waves it printed, in that order**, as parallel subagents in one message per wave, and wait for each wave to return before the next one and before aggregating.
+**One dispatch.** Send every eligible agent (cheap-first, as `select_lenses.py` returned them, filtered by the change-shape/change-size/change-impact gates but not re-sorted) in one `dev_team_subagent` call with `tasks`, and wait for it before aggregating. pi's `maxParallelAgents` limit runs them as slots free up, so the whole roster is one wave and `dispatch_waves.py` is not run.
 
 **Shared context pack: off unless the caller opts in** (`DEV_TEAM_REVIEW_CONTEXT_PACK=on`). Only then **read** `references/04b-context-pack.md` and follow it.
 
@@ -274,7 +268,7 @@ Dispatch **exactly the waves it printed, in that order**, as parallel subagents 
 - **Per-agent output**: the contract in [`knowledge/review-agent-output-contract.md`](../../knowledge/review-agent-output-contract.md), wrapped with `agentName`/`modelTier` (shape in `output-format.md`).
 - **Graph-assisted review**: pass the step 1c tool availability to every read-only review agent.
 
-**After each wave: classify, then reconcile.** For each agent in the wave that returned something, write its raw final-turn text with the **Write tool** (never a shell heredoc, `echo` or `printf`) to `.claude/memory/contract-raw-<agent>.md`, classify it, then delete the file, also when the script errors:
+**After the dispatch: classify, then reconcile.** Each agent's result carries the file pi saved its complete output to: `[output: <path>]`, or `the complete output is in <path>` when cut. Classify each agent that returned something from that path (no path → treat it as missing); never copy the output into a file yourself:
 
 ```bash
 sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/validate_review_output.py" --agent "<name>" --file "<path to that agent's raw output>"
@@ -286,7 +280,7 @@ Exit 0 → the agent goes in `--returned`. Exit 1 → it does not (the script al
 sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names, in the order dispatch_waves.py listed them>" --returned "<this wave's contract-valid agent names>"
 ```
 
-`--dispatched` lists only the agents of this wave that actually received a prompt; leave out agents skipped for no matching files or by the ledger (their wave slot stays unused, `references/04c-dispatch-payload-and-ledger.md`). Pass `--returned ""` when no agent in the wave returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before the next wave; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
+`--dispatched` lists only the agents that actually received a prompt, in `tasks` order (do not run `dispatch_waves.py`); leave out agents skipped for no matching files or by the ledger (`references/04c-dispatch-payload-and-ledger.md`). Pass `--returned ""` when no agent returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before aggregating; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
 
 ### 5. Aggregate results
 
