@@ -10,7 +10,7 @@ import { applyChildEvent, newChildRunState, summarizeToolCall } from "../../exte
 import { HookBridge } from "../../extensions/dev-team/lib/hooks.ts";
 import { DEFAULT_CONFIG } from "../../extensions/dev-team/lib/config.ts";
 import { Semaphore } from "../../extensions/dev-team/lib/semaphore.ts";
-import { acquireSlot, childVerdict, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, scopeMarkerOnOwnLine, stopChild, type SubagentRunResult, usageEntryOf, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
+import { acquireSlot, childVerdict, DispatchProgress, dispatchLabel, formatResultText, LABEL_CHARS, parallelLimit, outputForModel, outputForView, scopeMarkerOnOwnLine, sharedTreeWarning, stopChild, type SubagentRunResult, usageEntryOf, viewFromResult } from "../../extensions/dev-team/lib/subagent.ts";
 import { addPiUsage, creditedRuns, describeWorktree, emptyPiUsage, sumPiUsage, toUsageTotals, type LiveSubagentView, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 import { type ChildTrust, canonicalDir, childTrusted, childTrustOf, shimTrustEnv, trustArgs } from "../../extensions/dev-team/lib/trust.ts";
 
@@ -326,6 +326,25 @@ function runResult(overrides: Partial<SubagentRunResult>): SubagentRunResult {
 }
 
 const removedWorktree = { path: "/r/w", branch: "b", kept: false, dirty: false, commits: 0 };
+
+const treeWriter = { agent: "software-engineer", cwd: "/repo" };
+const treeReviewer = { agent: "test-review", cwd: "/repo", claudeTools: ["Read", "Grep"] };
+
+test("shared tree: a writer run at once with another agent in its directory is warned about", () => {
+	const warning = sharedTreeWarning([treeWriter, treeReviewer]);
+	assert.match(warning ?? "", /software-engineer.*\/repo.*test-review/);
+	assert.equal(sharedTreeWarning([{ ...treeWriter, claudeTools: ["Read", "Edit"] }, treeReviewer]), warning);
+});
+
+test("shared tree: no warning when the writer has its own worktree, or nothing writes", () => {
+	assert.equal(sharedTreeWarning([{ ...treeWriter, isolation: "worktree" }, treeReviewer]), undefined);
+	assert.equal(sharedTreeWarning([treeReviewer, { ...treeReviewer, agent: "security-review" }]), undefined);
+});
+
+test("shared tree: no warning for a writer alone or in another directory", () => {
+	assert.equal(sharedTreeWarning([treeWriter]), undefined);
+	assert.equal(sharedTreeWarning([treeWriter, { ...treeReviewer, cwd: "/other" }]), undefined);
+});
 
 test("result text: one agent returns its output, or the failure", () => {
 	assert.equal(formatResultText([runResult({})], []), "out");

@@ -168,6 +168,31 @@ export async function acquireSlot(
 	return release;
 }
 
+/** One agent's use of a directory in a dispatch: where it runs, what it may do, and whether it has its own worktree. */
+export interface TreeUse {
+	agent: string;
+	cwd: string;
+	claudeTools?: string[];
+	isolation?: string;
+}
+
+/**
+ * A one-line warning when agents run at once in one directory and one of them writes there (Edit or
+ * Write, or no tools list): the others then read files that change under them, and a review verdict
+ * hashes bytes the writer may still change. Undefined when every writer has its own worktree.
+ */
+export function sharedTreeWarning(uses: TreeUse[]): string | undefined {
+	const shared = uses.filter((u) => u.isolation !== "worktree");
+	const isWriter = (u: TreeUse) => !u.claudeTools || u.claudeTools.some((t) => t.trim() === "Edit" || t.trim() === "Write");
+	for (const w of shared.filter(isWriter)) {
+		const others = shared.filter((u) => u !== w && u.cwd === w.cwd).map((u) => u.agent);
+		if (others.length) {
+			return `[warning: ${w.agent} writes in ${w.cwd} while ${others.join(", ")} run there at once; give the writer isolation "worktree" or run it first]`;
+		}
+	}
+	return undefined;
+}
+
 function getPiInvocation(args: string[]): { command: string; args: string[] } {
 	const currentScript = process.argv[1];
 	const isBunVirtualScript = currentScript?.startsWith("/$bunfs/root/");
@@ -306,6 +331,8 @@ export const SubagentParams = Type.Object({
 export function registerSubagentTool(deps: SubagentDeps): void {
 	const { pi, packageRoot, getConfig, hooks } = deps;
 	const semaphore = new Semaphore(parallelLimit(getConfig().maxParallelAgents));
+	// Calls running now, each with every use it overlapped: several calls in one message run at once.
+	const running = new Set<Set<TreeUse>>();
 
 	async function runOne(
 		input: DispatchArgs,
@@ -570,20 +597,31 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			const trust = childTrustOf(ctx);
 			const { agents, skippedProjectAgents } = discoverDispatchAgents(ctx.cwd, packageRoot, trust.projectTrusted, list.map(dispatchAgent));
 			const progress = new DispatchProgress(list, skippedProjectAgents, onUpdate as DispatchUpdate | undefined, { label: dispatchLabel(params) });
+			const uses = list.flatMap((t): TreeUse[] => {
+				const def = resolveAgentName(agents, dispatchAgent(t));
+				return def ? [{ agent: def.name, cwd: path.resolve(ctx.cwd, t.cwd ?? "."), claudeTools: def.claudeTools, isolation: t.isolation }] : [];
+			});
+			const overlapped = new Set(uses);
+			for (const other of running) {
+				for (const u of other) overlapped.add(u);
+				for (const u of uses) other.add(u);
+			}
+			running.add(overlapped);
 			const results = await Promise.all(
 				list.map(async (t, i) => {
 					const r = await runOne(t, ctx, signal, agents, (patch) => progress.update(i, patch), trust);
 					progress.finish(i, r);
 					return r;
 				}),
-			);
+			).finally(() => running.delete(overlapped));
+			const warning = sharedTreeWarning([...overlapped]);
 			const usage = sumPiUsage(results.map((r) => r.totalUsage));
 			const isKnownModel = (id: string) => {
 				const [provider, ...rest] = id.split("/");
 				return !!ctx.modelRegistry?.find(provider, rest.join("/"));
 			};
 			return {
-				content: [{ type: "text", text: formatResultText(results, skippedProjectAgents, isKnownModel) }],
+				content: [{ type: "text", text: `${formatResultText(results, skippedProjectAgents, isKnownModel)}${warning ? `\n\n${warning}` : ""}` }],
 				details: progress.snapshot(),
 				...(usage ? { usage } : {}),
 				...(results.length === 1 && !results[0].ok ? { isError: true } : {}),
