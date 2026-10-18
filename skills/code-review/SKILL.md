@@ -268,7 +268,7 @@ Drop every agent in `skipLenses` and note it (gated by diff signal). Only `arch-
 - **Per-agent output**: the contract in [`knowledge/review-agent-output-contract.md`](../../knowledge/review-agent-output-contract.md), wrapped with `agentName`/`modelTier` (shape in `output-format.md`).
 - **Graph-assisted review**: pass the step 1c tool availability to every read-only review agent.
 
-**After the dispatch: classify, then reconcile.** Each agent's result ends with `[output: <path>]`, the file pi saved its complete output to. Classify each agent that returned something from that path; never copy the output into a file yourself:
+**After the dispatch: classify, then reconcile.** Each agent's result carries the file pi saved its complete output to: `[output: <path>]`, or `the complete output is in <path>` when cut. Classify each agent that returned something from that path (no path → treat it as missing); never copy the output into a file yourself:
 
 ```bash
 sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/validate_review_output.py" --agent "<name>" --file "<path to that agent's raw output>"
@@ -280,7 +280,7 @@ Exit 0 → the agent goes in `--returned`. Exit 1 → it does not (the script al
 sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names, in the order dispatch_waves.py listed them>" --returned "<this wave's contract-valid agent names>"
 ```
 
-`--dispatched` lists only the agents that actually received a prompt, in dispatch order; leave out agents skipped for no matching files or by the ledger (`references/04c-dispatch-payload-and-ledger.md`). Pass `--returned ""` when no agent returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before aggregating; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
+`--dispatched` lists only the agents that actually received a prompt, in `tasks` order (do not run `dispatch_waves.py`); leave out agents skipped for no matching files or by the ledger (`references/04c-dispatch-payload-and-ledger.md`). Pass `--returned ""` when no agent returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before aggregating; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
 
 ### 5. Aggregate results
 
