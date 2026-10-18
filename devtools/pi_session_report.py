@@ -24,9 +24,10 @@ abandoned branches were paid for too.
 
 Subagents run with --no-session, so their own transcripts are not stored. The
 parent session keeps one `dev-team-subagent-usage` entry per dispatch (agent,
-model, tier, ok, duration, the child's own usage, and `nested` for the agents
-the child dispatched itself). Subagent cost counts both, the same rule as the
-extension's creditedRuns(). That entry is all this script can say about a child.
+model, tier, ok, duration, the child's own usage, `nested` for the agents
+the child dispatched itself, and `port`, the pi-dev-team version). Subagent
+cost counts both, the same rule as the extension's creditedRuns(). That entry
+is all this script can say about a child.
 
 The wire strings below are copied from extensions/dev-team and extensions/spend; a test checks that
 they still appear there. Token counts are estimates: characters / 4, except
@@ -35,8 +36,8 @@ they still appear there. Token counts are estimates: characters / 4, except
 `code` also runs a read-only `git log` in each session's cwd. It counts commits
 on local branches authored between the session's first and last entry (author
 date, so a later rebase does not move a commit into another session), split
-into test and production files by hooks/lib/test_file_classify.py, the
-canonical test-file rule. Merges, lockfiles and commits GitHub made (squash
+into docs (Markdown), tests (hooks/lib/test_file_classify.py, the canonical
+test-file rule) and code. Merges, lockfiles and commits GitHub made (squash
 merges, committer noreply@github.com) are skipped. Uncommitted work is not
 counted, and two sessions open at once in one repository both count the same
 commits. Stdlib only, read-only.
@@ -114,7 +115,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "hooks" / "lib")
 from test_file_classify import is_test_file  # noqa: E402  the canonical test-file rule (knowledge/test-file-indicators.md)
 
 # `code` columns. Lockfiles are generated, not written, so they count as neither.
-CODE_COLUMNS = ("commits", "prodAdded", "prodRemoved", "testAdded", "testRemoved")
+CODE_COLUMNS = ("commits", "codeAdded", "codeRemoved", "docsAdded", "docsRemoved", "testAdded", "testRemoved")
+DOC_SUFFIXES = (".md", ".mdx")
 LOCKFILES = frozenset({
     "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lockb", "uv.lock", "poetry.lock",
     "Pipfile.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "packages.lock.json",
@@ -526,6 +528,7 @@ def report_sessions(sessions: Iterable[Session]) -> list[dict]:
             "parentCostUsd": round(parent_cost(s), 4),
             "subagentCostUsd": round(sum(credited_cost(r) for r in records), 4),
             "overheadCostUsd": round(overhead_cost(s), 4),
+            "port": ", ".join(sorted({str(r["port"]) for r in records if r.get("port")})) or None,
         })
     return rows
 
@@ -580,11 +583,18 @@ def count_commits(log: str, root: str, first: datetime, last: datetime) -> Count
         added, removed, path = parts
         if not added.isdigit() or Path(path).name in LOCKFILES:  # "-" for binary files
             continue
-        # Under the root, so the C#/Java content probe reads the file as it is in the current checkout.
-        kind = "test" if is_test_file(str(Path(root) / path)) else "prod"
+        kind = file_kind(root, path)
         counts[f"{kind}Added"] += int(added)
         counts[f"{kind}Removed"] += int(removed)
     return counts
+
+
+def file_kind(root: str, path: str) -> str:
+    """docs, test or code: Markdown is docs wherever it lives."""
+    if path.lower().endswith(DOC_SUFFIXES):
+        return "docs"
+    # Under the root, so the C#/Java content probe reads the file as it is in the current checkout.
+    return "test" if is_test_file(str(Path(root) / path)) else "code"
 
 
 def report_code(sessions: Iterable[Session]) -> list[dict]:
@@ -801,7 +811,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("steps", parents=[common, selection], help="what ran inside each run of one skill")
     p.add_argument("-s", "--skill", required=True, help="skill name, for example code-review or build")
     p.add_argument("--outputs", action="append", default=[], metavar="TEXT", help="show output of bash calls whose command contains TEXT (repeatable)")
-    sub.add_parser("code", parents=[common, selection], help="output tokens and lines committed (test vs production) per session")
+    sub.add_parser("code", parents=[common, selection], help="output tokens and lines committed (code, docs, test) per session")
     p = sub.add_parser("timeline", parents=[common], help="ordered events of one session")
     p.add_argument("session", help="session file, a unique part of its id, or 'latest'")
     p.add_argument("-p", "--project", help="limit the session search to this project")

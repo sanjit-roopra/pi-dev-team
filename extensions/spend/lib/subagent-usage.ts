@@ -38,6 +38,8 @@ export interface SubagentUsageEntry {
 	usage: UsageTotals;
 	/** Agents the child dispatched itself, at any depth. */
 	nested?: NestedUsage[];
+	/** The pi-dev-team package version that ran the dispatch; absent in older sessions. */
+	port?: string;
 }
 
 /**

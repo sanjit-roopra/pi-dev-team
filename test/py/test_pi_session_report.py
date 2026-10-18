@@ -57,8 +57,10 @@ def tool_result_entry(entry_id, parent, call_id, tool, text, is_error=False, det
                          toolCallId=call_id, toolName=tool, isError=is_error, **extra)
 
 
-def usage_entry(entry_id, parent, agent, ok=True, cost=0.0, nested=()):
+def usage_entry(entry_id, parent, agent, ok=True, cost=0.0, nested=(), port=None):
     data = {"agent": agent, "model": "m", "tier": "haiku", "ok": ok, "durationMs": 2000, "usage": {"cost": cost}}
+    if port:
+        data["port"] = port
     if nested:
         data["nested"] = list(nested)
     return {"type": "custom", "customType": report.USAGE_ENTRY, "id": entry_id, "parentId": parent, "data": data}
@@ -201,6 +203,12 @@ class SessionsReport(Base):
     def test_blocks_and_errors_are_separate(self):
         self.assertEqual(self.row["hookBlocks"], 2)  # PostToolUse feedback on the dispatch, PreToolUse guard on gh
         self.assertEqual(self.row["toolErrors"], 1)  # the unknown skill
+
+    def test_port_is_the_package_version_its_dispatches_recorded(self):
+        self.assertIsNone(self.row["port"])  # entries written before the port version was recorded
+        entries = [*main_session(), usage_entry("x2", "a5", "a", port="0.5.0"), usage_entry("x3", "x2", "b", port="0.5.0")]
+        write_session(self.root, "ported", entries)
+        self.assertEqual(self.run_cli("sessions", "-p", "ported")[0]["port"], "0.5.0")
 
     def test_compactions_and_skills(self):
         self.assertEqual(self.row["compactions"], 1)
@@ -463,20 +471,24 @@ def numstat_commit(author_date, files, committer=AUTHOR_EMAIL):
 
 
 class CountCommits(unittest.TestCase):
-    """Parsing git_numstat_log's output: window, skips and the test/prod split."""
+    """Parsing git_numstat_log's output: window, skips and the test/code/docs split."""
 
     def count(self, *commits):
         return dict(report.count_commits("\n".join(commits), "/repo", *WINDOW))
 
-    def test_splits_added_and_removed_lines_into_test_and_prod(self):
-        counts = self.count(numstat_commit(IN_WINDOW, {"app.py": (10, 4), "tests/test_app.py": (30, 2), "web/form.spec.ts": (5, 1)}))
-        self.assertEqual(counts, {"commits": 1, "prodAdded": 10, "prodRemoved": 4, "testAdded": 35, "testRemoved": 3})
+    def test_splits_added_and_removed_lines_into_test_code_and_docs(self):
+        counts = self.count(numstat_commit(IN_WINDOW, {"app.py": (10, 4), "tests/test_app.py": (30, 2), "web/form.spec.ts": (5, 1), "README.md": (7, 2)}))
+        self.assertEqual(counts, {"commits": 1, "codeAdded": 10, "codeRemoved": 4, "docsAdded": 7, "docsRemoved": 2, "testAdded": 35, "testRemoved": 3})
+
+    def test_a_docs_only_commit_adds_no_code(self):
+        counts = self.count(numstat_commit(IN_WINDOW, {"README.md": (12, 2), "docs/specs/plan.md": (30, 0), "tests/README.md": (4, 1), "site/Intro.MDX": (1, 0)}))
+        self.assertEqual(counts, {"commits": 1, "codeAdded": 0, "codeRemoved": 0, "docsAdded": 47, "docsRemoved": 3, "testAdded": 0, "testRemoved": 0})
 
     def test_window_includes_commits_authored_exactly_at_its_bounds(self):
         window = (report.parse_timestamp("2026-10-07T14:00:00Z"), report.parse_timestamp("2026-10-07T15:00:00Z"))
         log = "\n".join([numstat_commit("2026-10-07T14:00:00+00:00", {"start.py": (2, 0)}),
                          numstat_commit("2026-10-07T17:00:00+02:00", {"end.py": (4, 0)})])
-        self.assertEqual(report.count_commits(log, "/repo", *window)["prodAdded"], 6)
+        self.assertEqual(report.count_commits(log, "/repo", *window)["codeAdded"], 6)
 
     def test_window_excludes_commits_outside_the_session(self):
         counts = self.count(
@@ -485,17 +497,17 @@ class CountCommits(unittest.TestCase):
             numstat_commit("2026-10-07T17:00:00+02:00", {"end.py": (4, 0)}),  # 15:00:00 UTC
             numstat_commit("2026-10-07T15:00:01+00:00", {"after.py": (8, 0)}),
         )
-        self.assertEqual((counts["commits"], counts["prodAdded"]), (1, 4))
+        self.assertEqual((counts["commits"], counts["codeAdded"]), (1, 4))
 
     def test_skips_github_commits_lockfiles_and_binaries(self):
         counts = self.count(
             numstat_commit(IN_WINDOW, {"merged.py": (99, 0)}, committer=GITHUB_EMAIL),
             numstat_commit(IN_WINDOW, {"package-lock.json": (500, 20), "web/uv.lock": (40, 0), "logo.png": ("-", "-"), "app.py": (3, 0)}),
         )
-        self.assertEqual(counts, {"commits": 1, "prodAdded": 3, "prodRemoved": 0, "testAdded": 0, "testRemoved": 0})
+        self.assertEqual(counts, {"commits": 1, "codeAdded": 3, "codeRemoved": 0, "docsAdded": 0, "docsRemoved": 0, "testAdded": 0, "testRemoved": 0})
 
     def test_uses_the_canonical_test_file_rule(self):
-        cases = {"src/features/cart/slice.ts": "prod", "features/checkout.feature": "test", "docs/specs/plan.md": "prod",
+        cases = {"src/features/cart/slice.ts": "code", "features/checkout.feature": "test",
                  "src/__tests__/b.ts": "test", "test_c.py": "test", "c_test.py": "test", "e.spec.ts": "test"}
         for path, kind in cases.items():
             with self.subTest(path=path):
@@ -523,7 +535,7 @@ PARENT_OUTPUT, CHILD_OUTPUT, NESTED_OUTPUT = (60, 40), 3, 7
 OUTPUT_TOKENS = sum(PARENT_OUTPUT) + CHILD_OUTPUT + NESTED_OUTPUT
 XUNIT_TEST = "public class FooTests {\n  [Fact]\n  public void Works() {}\n}\n"  # a test by content, not by name
 PLAIN_CS = "public class Program {}\n"
-OLD_LINES, APP_LINES, APP_TEST_LINES = 50, 10, 30
+OLD_LINES, APP_LINES, APP_TEST_LINES, DOC_LINES = 50, 10, 30, 20
 
 
 def code_session(cwd):
@@ -554,7 +566,7 @@ class CodeReport(Base):
         self.repo = Path(repo_dir.name)
         git(self.repo, "init", "-q")
         commit(self.repo, {"old.py": OLD_LINES}, "2026-10-07T13:00:00Z")
-        commit(self.repo, {"app.py": APP_LINES, "tests/test_app.py": APP_TEST_LINES, "src/FooTests.cs": XUNIT_TEST, "sub/Program.cs": PLAIN_CS}, "2026-10-07T14:30:00Z")
+        commit(self.repo, {"app.py": APP_LINES, "tests/test_app.py": APP_TEST_LINES, "src/FooTests.cs": XUNIT_TEST, "sub/Program.cs": PLAIN_CS, "docs/guide.md": DOC_LINES}, "2026-10-07T14:30:00Z")
         git(self.repo, "checkout", "-q", "-b", "move")
         git(self.repo, "mv", "old.py", "tests/test_old.py")
         git(self.repo, "commit", "-m", "move", date="2026-10-07T14:35:00Z")  # without --no-renames this is one "a => b" line
@@ -574,7 +586,7 @@ class CodeReport(Base):
 
     def test_counts_the_session_commits_but_not_merges_or_the_stash(self):
         self.assertEqual(self.columns(str(self.repo)),
-                         {"commits": 2, "prodAdded": APP_LINES + PLAIN_CS.count("\n"), "prodRemoved": OLD_LINES,
+                         {"commits": 2, "codeAdded": APP_LINES + PLAIN_CS.count("\n"), "codeRemoved": OLD_LINES, "docsAdded": DOC_LINES, "docsRemoved": 0,
                           "testAdded": APP_TEST_LINES + XUNIT_TEST.count("\n") + OLD_LINES, "testRemoved": 0})
 
     def test_a_session_in_a_subdirectory_counts_the_whole_repository(self):
@@ -636,7 +648,7 @@ class ExtensionContract(unittest.TestCase):
         self.assertIn("pre_pr_review", report.known_hook_names())
         self.assertIn(f'name: "{report.SKILL_TOOL}"', index)
         self.assertIn("The user invoked", skills)
-        for field in ("ok: boolean", "tier?: string", "durationMs: number", "usage: UsageTotals", "nested?: NestedUsage[]"):
+        for field in ("ok: boolean", "tier?: string", "durationMs: number", "usage: UsageTotals", "nested?: NestedUsage[]", "port?: string"):
             self.assertIn(field, types)
 
 

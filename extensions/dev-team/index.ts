@@ -50,11 +50,21 @@ function packageRootDir(): string {
 	return path.resolve(here, "..", "..");
 }
 
+/** package.json or UPSTREAM.json of this package, or {} when it cannot be read. */
+function readJson(file: string): { version?: string; commit?: string } {
+	try {
+		return JSON.parse(fs.readFileSync(file, "utf-8"));
+	} catch {
+		return {};
+	}
+}
+
 const HOOK_NAME_PREFIX = /^\[[\w-]+\] /;
 const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "startup", new: "clear", resume: "resume", fork: "resume" };
 
 export default function devTeam(pi: ExtensionAPI) {
 	const packageRoot = packageRootDir();
+	const portVersion = readJson(path.join(packageRoot, "package.json")).version;
 	const isSubagent = process.env.DEV_TEAM_SUBAGENT === "1";
 	const depth = Number(process.env.DEV_TEAM_SUBAGENT_DEPTH || 0) || 0;
 	let cwd = process.cwd();
@@ -140,6 +150,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				durationMs: r.durationMs,
 				usage: { ...r.usage },
 				...(r.nested.length ? { nested: r.nested } : {}),
+				port: portVersion,
 			} satisfies SubagentUsageEntry);
 		},
 	});
@@ -230,13 +241,7 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	function showStatus(ctx: ExtensionContext) {
 		const { config: cfg, sources, ignoredProjectSettings } = loadConfig(ctx.cwd, projectConfigOpts(ctx));
-		const upstream = (() => {
-			try {
-				return JSON.parse(fs.readFileSync(path.join(packageRoot, "UPSTREAM.json"), "utf-8"));
-			} catch {
-				return {};
-			}
-		})();
+		const upstream = readJson(path.join(packageRoot, "UPSTREAM.json"));
 		const agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const enabledHooks = hooks.all.filter((h) => isHookEnabled(cfg, h.name));

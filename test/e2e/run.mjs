@@ -81,8 +81,9 @@ function isolatedEnv(env) {
 	return out;
 }
 
-function pi(env, prompt, { json = false, extra = [], usePackageFlag = true } = {}) {
-	const args = ["-e", PROVIDER, ...(usePackageFlag ? ["-e", PKG] : []), "--model", "scripted/s1", "--no-session", ...extra];
+/** With `sessionDir`, pi saves the session there instead of running ephemeral. */
+function pi(env, prompt, { json = false, extra = [], usePackageFlag = true, sessionDir } = {}) {
+	const args = ["-e", PROVIDER, ...(usePackageFlag ? ["-e", PKG] : []), "--model", "scripted/s1", ...(sessionDir ? ["--session-dir", sessionDir] : ["--no-session"]), ...extra];
 	if (json) args.push("--mode", "json");
 	args.push("-p", prompt);
 	const r = spawnSync("pi", args, {
@@ -333,6 +334,16 @@ const scenarios = {
 		assert(childInput > 0, "children reported no input tokens");
 		assert(dispatch.usage?.input === childInput && dispatch.usage.output === childOutput, `tool result usage ${JSON.stringify(dispatch.usage)} vs children in=${childInput} out=${childOutput}`);
 		assert(dispatch.usage.totalTokens >= childInput + childOutput, `totalTokens ${dispatch.usage.totalTokens}`);
+	},
+
+	"subagent usage entry records the package version, so a session report can tell port versions apart"(env) {
+		const sessionDir = path.join(env.root, "sessions");
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { subagent_type: "Explore", prompt: script([{ text: "a" }]) } }]), { sessionDir });
+		assert(r.code === 0, `dispatch failed: ${r.err}`);
+		const entries = fs.readdirSync(sessionDir).flatMap((f) => readJsonl(path.join(sessionDir, f)));
+		const usage = entries.filter((e) => e.type === "custom" && e.customType === "dev-team-subagent-usage");
+		const { version } = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf-8"));
+		assert(usage.length === 1 && usage[0].data.port === version, `usage entries: ${JSON.stringify(usage)}`);
 	},
 
 	"subagent: project agents and overrides run by default; the child is trusted (DEV_TEAM_TRUSTED_DIR set, no --no-approve)"(env) {
