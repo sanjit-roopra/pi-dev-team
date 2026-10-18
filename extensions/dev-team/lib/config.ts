@@ -361,9 +361,10 @@ export function updateConfigFile(file: string, patch: Record<string, unknown>): 
 	if (!current && fs.existsSync(file)) throw new Error(`${file} is not valid JSON; fix or remove it, then try again.`);
 	const next = mergeConfig(current ?? {}, patch);
 	fs.mkdirSync(path.dirname(file), { recursive: true });
-	const tmp = `${file}.${process.pid}.tmp`;
+	const target = current ? fs.realpathSync(file) : file; // a symlinked config keeps its link
+	const tmp = `${target}.${process.pid}.tmp`;
 	fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
-	fs.renameSync(tmp, file);
+	fs.renameSync(tmp, target);
 }
 
 export function isHookEnabled(config: DevTeamConfig, hookName: string): boolean {

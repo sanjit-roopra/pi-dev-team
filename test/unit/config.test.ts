@@ -382,3 +382,11 @@ test("updateConfigFile: merges into the file, and refuses to overwrite one it ca
 	assert.equal(fs.readFileSync(p.local, "utf-8"), "{ broken");
 	assert.deepEqual(fs.readdirSync(path.dirname(p.local)).sort(), ["dev-team.json", "dev-team.local.json"], "no temp file left behind");
 });
+
+test("updateConfigFile: writes through a symlinked config and keeps the link", (t) => {
+	const p = projectWith(t, { shared: { models: { haiku: "x/y" } } });
+	fs.symlinkSync(p.shared, p.local);
+	updateConfigFile(p.local, { models: { opus: "a/b" } });
+	assert.ok(fs.lstatSync(p.local).isSymbolicLink(), "link replaced by a file");
+	assert.deepEqual(JSON.parse(fs.readFileSync(p.shared, "utf-8")).models, { haiku: "x/y", opus: "a/b" });
+});

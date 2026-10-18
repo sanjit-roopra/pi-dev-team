@@ -195,7 +195,7 @@ export class HookBridge {
 	private readonly packageRoot: string;
 	private readonly getConfig: () => DevTeamConfig;
 	private readonly resolveInterpreter: () => string | null;
-	private readonly warn: (line: string) => void;
+	readonly warn: (line: string) => void;
 
 	/** @param warn shows a hook that failed (crash, timeout, no start) to the user. */
 	constructor(
