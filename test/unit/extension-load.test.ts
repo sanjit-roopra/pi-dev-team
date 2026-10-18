@@ -719,7 +719,10 @@ test("web_fetch stops reading at its cap and marks the page as external data", a
 		pump();
 	});
 	await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-	t.after(() => server.closeAllConnections() || server.close());
+	t.after(() => {
+		server.closeAllConnections();
+		server.close();
+	});
 	const { port } = server.address() as { port: number };
 	const { tools } = await loaded;
 	const execute = (tools.web_fetch as unknown as { execute: (...args: unknown[]) => Promise<{ content: { text: string }[]; details: { truncated: boolean } }> }).execute;
