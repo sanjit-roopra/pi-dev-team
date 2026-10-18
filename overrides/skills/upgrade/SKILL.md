@@ -18,8 +18,9 @@ You have been invoked with the `/upgrade` command. Arguments: none.
 1. Report the current version: run the `/version` command's script
    (`${CLAUDE_PLUGIN_ROOT}/package.json` and `UPSTREAM.json`).
 2. Find how the package is installed: `pi list` (look for `pi-dev-team`).
-   - **git or npm source** → run `pi update` (add `--local` if it is listed under
-     project settings). Report the version delta afterwards.
+   - **git or npm source** → run `pi update <source>` to update that package,
+     regardless of whether it is installed globally or in project settings.
+     Report the version delta afterwards.
    - **local path** (e.g. `./pi-dev-team`) → pi does not update local packages.
      Tell the user to pull the package directory (`git -C <path> pull`) or, when
      it is a sync of upstream, to run
