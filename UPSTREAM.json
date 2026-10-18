@@ -104,6 +104,31 @@
       "hits": 1
     },
     {
+      "file": "skills/context-loading-protocol/SKILL.md",
+      "reason": "ceremony: the context budget step does nothing for ordinary pi tasks",
+      "hits": 1
+    },
+    {
+      "file": "skills/performance-metrics/SKILL.md",
+      "reason": "ceremony: hooks log metrics, the skill writes nothing",
+      "hits": 1
+    },
+    {
+      "file": "agents/orchestrator.md",
+      "reason": "ceremony: the context budget step does nothing for ordinary pi tasks",
+      "hits": 1
+    },
+    {
+      "file": "agents/orchestrator.md",
+      "reason": "ceremony: hooks log metrics, the skill writes nothing",
+      "hits": 1
+    },
+    {
+      "file": "skills/build/SKILL.md",
+      "reason": "ceremony: the context budget step does nothing for ordinary pi tasks",
+      "hits": 1
+    },
+    {
       "file": "agents/software-engineer.md",
       "reason": "lean production code: the engineer names what it skipped",
       "hits": 1

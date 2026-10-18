@@ -1,6 +1,6 @@
 ---
 name: performance-metrics
-description: Log task completion data to .claude/metrics/. Use at the end of every task to record tokens, cost, agents used, rework cycles, and hallucination events. Also use for periodic reporting to identify efficiency and quality trends.
+description: Schema reference for .claude/metrics/. Hooks log task data, so do not invoke it at task end. Fields: tokens, cost, agents used, rework cycles, and hallucination events. Also use for periodic reporting to identify efficiency and quality trends.
 role: worker
 user-invocable: true
 ---
