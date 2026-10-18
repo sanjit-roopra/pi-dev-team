@@ -935,12 +935,11 @@ test("stopChild: a child that ignores SIGTERM is killed after the grace time", {
 	assert.deepEqual([code, signal], [null, "SIGKILL"]);
 });
 
-test("stopChild: a child that stops on SIGTERM is not killed, and the cancel clears the force", { timeout: 5000 }, async (t) => {
+test("stopChild: a child that stops on SIGTERM is not killed", { timeout: 5000 }, async (t) => {
 	const proc = await readyChild(t, "process.exit(3)");
 	const exited = once(proc, "exit");
-	const cancel = stopChild(proc, 50);
+	stopChild(proc, 50);
 	const [code] = await exited;
-	cancel();
 	assert.equal(code, 3);
 });
 
