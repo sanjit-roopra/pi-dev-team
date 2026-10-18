@@ -146,6 +146,11 @@
     },
     {
       "file": "agents/software-engineer.md",
+      "reason": "lean production code: noticed dead code goes to Skipped:",
+      "hits": 1
+    },
+    {
+      "file": "agents/software-engineer.md",
       "reason": "lean production code: the reuse ladder",
       "hits": 1
     },

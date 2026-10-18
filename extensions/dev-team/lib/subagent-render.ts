@@ -108,7 +108,7 @@ export function formatUsage(u: UsageTotals | undefined, { model, durationMs, aiC
 	if (u.cost) parts.push(formatCost(u.cost, aiCredits));
 	else if (aiCredits) parts.push(`(${formatAiCredits(aiCredits)})`);
 	if (durationMs !== undefined) parts.push(`${(durationMs / SECOND_MS).toFixed(1)}s`);
-	if (model) parts.push(sanitizeTerminalText(model));
+	if (model) parts.push(toSingleLine(model));
 	return parts.join(" ");
 }
 
@@ -147,10 +147,10 @@ function statusIcon(v: Pick<SubagentTaskView, "status" | "queuePosition">, theme
 
 /** `liveNow` is set only while the dispatch runs (a partial result); see formatElapsedSince. */
 function headerLine(v: SubagentTaskView, theme: Theme, liveNow?: number): string {
-	let line = `${statusIcon(v, theme)} ${theme.fg("toolTitle", theme.bold(sanitizeTerminalText(v.agent)))}`;
+	let line = `${statusIcon(v, theme)} ${theme.fg("toolTitle", theme.bold(toSingleLine(v.agent)))}`;
 	if (v.source === "project") line += theme.fg("muted", " (project)");
-	if (v.tier && v.tier !== "inherit") line += theme.fg("muted", ` [${sanitizeTerminalText(v.tier)}]`);
-	if (v.status === "failed" && v.stopReason && v.stopReason !== "stop") line += ` ${theme.fg("error", `[${sanitizeTerminalText(v.stopReason)}]`)}`;
+	if (v.tier && v.tier !== "inherit") line += theme.fg("muted", ` [${toSingleLine(v.tier)}]`);
+	if (v.status === "failed" && v.stopReason && v.stopReason !== "stop") line += ` ${theme.fg("error", `[${toSingleLine(v.stopReason)}]`)}`;
 	const runningFor = isRunningInSlot(v) ? formatElapsedSince(v.slotGrantedAt, liveNow) : undefined;
 	if (runningFor) line += theme.fg("dim", ` · ${runningFor}`);
 	return line;

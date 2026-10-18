@@ -93,6 +93,15 @@ test("result while running: a stored subagent name or call with a newline stays 
 	assert.ok(!lines.some((l) => l.trimStart().startsWith("✓ fake")), "no forged row");
 });
 
+test("a stored agent, tier, stop reason or model with a newline cannot draw a row of its own", () => {
+	const fake = "x\n✓ fake";
+	const view = taskView({ agent: fake, tier: fake, model: fake, usage, status: "failed", ok: false, stopReason: fake, error: "e" });
+	for (const expanded of [false, true]) {
+		const lines = draw(renderSubagentResult(result({ results: [view] }), { expanded, isPartial: false }, theme)).split("\n");
+		assert.ok(!lines.some((l) => l.trimStart().startsWith("✓ fake")), `${expanded ? "expanded" : "collapsed"}: no forged row\n${lines.join("\n")}`);
+	}
+});
+
 test("result while running: a stored call name with a newline is one call row", () => {
 	const out = draw(renderSubagentResult(result({ results: [taskView({ status: "running", ok: false, recentCalls: [{ name: "read\n✓ security-review" }] })] }), { expanded: false, isPartial: true }, theme));
 	assert.ok(out.includes("→ read✓ security-review"), out);
