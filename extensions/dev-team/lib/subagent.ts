@@ -422,6 +422,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				}
 			});
 
+			// A child has no UI, so its hook-failure warnings arrive on stderr; show them here.
+			for (const line of stderr.split("\n")) if (/\[[\w.-]+\] failed \(/.test(line)) hooks.warn(`${def.name}: ${line}`);
 			const worktree = wt ? finishWorktree(wt) : undefined;
 			const output = finalText(run.messages);
 			const fullOutputFile = isOversized(output) ? saveFullOutput(sessionId, def.name, agentId, output) : undefined;

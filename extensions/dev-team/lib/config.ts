@@ -355,12 +355,16 @@ export function fileTierModels(file: string): Record<string, string> {
 	);
 }
 
-/** Read-modify-write one config file (used by /dev-team models). */
+/** Read-modify-write one config file (used by /dev-team models). A file it cannot parse is left alone, not replaced. */
 export function updateConfigFile(file: string, patch: Record<string, unknown>): void {
-	const current = readJson(file) ?? {};
-	const next = mergeConfig(current, patch);
+	const current = readJson(file);
+	if (!current && fs.existsSync(file)) throw new Error(`${file} is not valid JSON; fix or remove it, then try again.`);
+	const next = mergeConfig(current ?? {}, patch);
 	fs.mkdirSync(path.dirname(file), { recursive: true });
-	fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+	const target = current ? fs.realpathSync(file) : file; // a symlinked config keeps its link
+	const tmp = `${target}.${process.pid}.tmp`;
+	fs.writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`, "utf-8");
+	fs.renameSync(tmp, target);
 }
 
 export function isHookEnabled(config: DevTeamConfig, hookName: string): boolean {

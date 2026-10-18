@@ -82,13 +82,13 @@ function isolatedEnv(env) {
 }
 
 /** With `sessionDir`, pi saves the session there instead of running ephemeral. */
-function pi(env, prompt, { json = false, extra = [], usePackageFlag = true, sessionDir } = {}) {
+function pi(env, prompt, { json = false, extra = [], usePackageFlag = true, sessionDir, vars = {} } = {}) {
 	const args = ["-e", PROVIDER, ...(usePackageFlag ? ["-e", PKG] : []), "--model", "scripted/s1", ...(sessionDir ? ["--session-dir", sessionDir] : ["--no-session"]), ...extra];
 	if (json) args.push("--mode", "json");
 	args.push("-p", prompt);
 	const r = spawnSync("pi", args, {
 		cwd: env.repo,
-		env: isolatedEnv(env),
+		env: { ...isolatedEnv(env), ...vars },
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
 		timeout: 120_000,
@@ -228,6 +228,16 @@ const scenarios = {
 		const r = pi(env, script([{ tool: "write", args: { path: ".env", content: "SECRET=1" } }]));
 		assert(r.out.includes("[pre_tool_guard] BLOCKED"), `guard did not run: ${r.out.slice(0, 300)} ${r.err}`);
 		assert(!fs.existsSync(path.join(env.repo, ".env")), ".env was written");
+	},
+
+	// A child's guard that crashes fails open, but the parent still tells the user (the child has no UI).
+	"a crashed guard in a dispatched agent warns the parent"(env) {
+		const python = path.join(env.root, "python-crashing-in-child");
+		fs.writeFileSync(python, '#!/bin/sh\ncase "$1" in *pre_tool_guard.py) [ -n "$DEV_TEAM_AGENT_NAME" ] && { echo "guard crashed" >&2; exit 1; };; esac\nexec python3 "$@"\n', { mode: 0o755 });
+		const child = script([{ tool: "write", args: { path: "ok.txt", content: "x" } }]);
+		const r = pi(env, script([{ tool: "dev_team_subagent", args: { subagent_type: "general-purpose", prompt: child } }]), { vars: { DEV_TEAM_PYTHON: python } });
+		assert(fs.existsSync(path.join(env.repo, "ok.txt")), `child did not write: ${r.out.slice(-500)} ${r.err}`);
+		assert(r.err.includes("general-purpose: [pre_tool_guard] failed (exit 1): guard crashed"), `no warning in the parent: ${r.err.slice(-1000)}`);
 	},
 
 	"freeze mode limits writes to allowed patterns"(env) {

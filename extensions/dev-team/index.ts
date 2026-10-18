@@ -31,7 +31,7 @@ import {
 import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
 import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
-import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, toClaudeInput } from "./lib/hooks.ts";
+import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool } from "./lib/subagent.ts";
@@ -71,7 +71,18 @@ export default function devTeam(pi: ExtensionAPI) {
 	// Project config is read again at session start, once pi's trust decision is known.
 	let config: DevTeamConfig = loadConfig(cwd, { includeProject: false }).config;
 	const getConfig = () => config;
-	const hooks = new HookBridge(packageRoot, getConfig);
+	let ui: ExtensionContext["ui"] | undefined;
+	let pythonWarned = false;
+	/** To the UI when there is one, else stderr (which a dispatched agent's parent reports). */
+	function warn(line: string) {
+		try {
+			if (ui) return ui.notify(line, "warning");
+		} catch {
+			/* a ctx left over from a replaced session */
+		}
+		console.error(line);
+	}
+	const hooks = new HookBridge(packageRoot, getConfig, resolvePython, warn);
 	const pendingAdvisories = new Map<string, string[]>();
 	const styleGate = createStyleGate();
 	const readTracker = new ReadTracker();
@@ -87,6 +98,7 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	function applyEnv(ctx: ExtensionContext) {
 		cwd = ctx.cwd;
+		ui = ctx.hasUI ? ctx.ui : undefined;
 		// A project's .pi/dev-team.json counts only when pi trusts the project, and then filtered
 		// (allow-listed env settings, no hooks; see filterProjectConfig).
 		config = loadConfig(cwd, projectConfigOpts(ctx)).config;
@@ -417,7 +429,10 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (blocked.size && !isSubagent && piSubagentsLoadsLater(pi.getAllTools(), DEV_TEAM_SUBAGENT_TOOL)) {
 			notify(ctx, ["dev-team: pi-subagents loads after dev-team, so its tools can reappear in the prompt (calls stay blocked). List npm:pi-subagents before pi-dev-team in the packages of pi's settings.json."]);
 		}
-		if (!hooks.python && ctx.hasUI) ctx.ui.notify("dev-team: python >= 3.10 not found — hook guards are disabled.", "warning");
+		if (!hooks.python && !pythonWarned) {
+			pythonWarned = true;
+			warn("dev-team: python >= 3.10 not found — hook guards are disabled.");
+		}
 		if (isSubagent) return;
 		const out = await runSessionStart(ctx, SESSION_SOURCE[event.reason] ?? "startup");
 		sessionContext = out.context;
