@@ -62,6 +62,9 @@ class SyncHelpers(unittest.TestCase):
                 self.assertIn(note.stem, info["notes"])
                 self.assertIn(note.read_text().strip(), (ROOT / "skills" / note.stem / "SKILL.md").read_text())
         self.assertIn("DEV_TEAM_INTERACTIVE", (ROOT / "skills" / "plan" / "SKILL.md").read_text())
+        self.assertNotIn("build_worktree_baseref.py", (ROOT / "skills" / "build" / "SKILL.md").read_text())
+        for doc in ("agents/orchestrator.md", "knowledge/three-phase-workflow.md", "knowledge/request-processing-flow.md"):
+            self.assertNotIn("worktree.baseRef", (ROOT / doc).read_text(), doc)
 
 
 class LeanCode(unittest.TestCase):

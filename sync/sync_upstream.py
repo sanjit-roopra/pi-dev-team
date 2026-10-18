@@ -220,6 +220,36 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "interactivity: tool shells have no TTY in pi",
     ),
     (
+        "skills/build/SKILL.md",
+        r"(?s)\*\*Base-ref check \(top-level session.*?no crash-recovery surface\.\n",
+        "**Base ref.** In pi, worktree subagents always branch from local HEAD; no setting or check is needed.\n",
+        "worktrees: pi always branches from HEAD, so the Claude Code baseRef check is a false warning",
+    ),
+    (
+        "agents/orchestrator.md",
+        r"rule, and the \*\*`worktree\.baseRef` prerequisite users must set themselves\*\* — are",
+        "rule — are",
+        "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+    ),
+    (
+        "agents/orchestrator.md",
+        r"; `/build`'s Step 4 detect-and-warn surfaces the `worktree\.baseRef`\nrequirement on every invocation regardless\.",
+        ".",
+        "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+    ),
+    (
+        "knowledge/three-phase-workflow.md",
+        r"\*\*`worktree\.baseRef` prerequisite \(issue #553\)\.\*\*[^\n]*",
+        "**Base ref.** In pi, worktree subagents always branch from local HEAD; no setting or check is needed.",
+        "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+    ),
+    (
+        "knowledge/request-processing-flow.md",
+        r" Worktree isolation requires Claude Code's `worktree\.baseRef` setting[^)]*\)\.",
+        "",
+        "worktrees: pi always branches from HEAD; no baseRef prerequisite",
+    ),
+    (
         "skills/review-agent/SKILL.md",
         r"Read `\.claude/agents/<name>\.md`\. If the file doesn't exist, list available\s+review agents from `\.claude/agents/`",
         "Read `.claude/agents/<name>.md` (project override) or else `${CLAUDE_PLUGIN_ROOT}/agents/<name>.md`. "

@@ -123,7 +123,7 @@ Effective concurrency 1 (fully-dependent plan, `--jobs 1`, or `DEV_TEAM_MAX_PARA
 
 > Read a slice's status during a wave only from its structured result, never from a live transcript read into this orchestrating context — see `docs/agent-architecture.md` → Subagent status checks.
 
-**`worktree.baseRef` prerequisite (issue #553).** Worktree fan-out only works when Claude Code's `worktree.baseRef` setting is `"head"` — otherwise each subagent worktree branches from `origin/<default>` and cannot see the caller's uncommitted-to-remote spec, plan, or prior-wave commits. Users must set this in **`.claude/settings.json`** (project scope) or **`~/.claude/settings.json`** (user scope); plugin-scope `plugins/<name>/settings.json` and project-local `.claude/settings.local.json` are **not** honored by 2.1.198's worktree isolation. `/build`'s Step 4 detect-and-warn surfaces the requirement loudly on every invocation until the user sets it (or opts out with `DEV_TEAM_WORKTREE_BASE_FRESH=1`). Full audit trail: `docs/spikes/worktree-baseref-head-spike.md`.
+**Base ref.** In pi, worktree subagents always branch from local HEAD; no setting or check is needed.
 
 ### Review depth by complexity
 
