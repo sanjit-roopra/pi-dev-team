@@ -15,6 +15,7 @@ import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTool
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
 import { isModelVisibleRead, ReadTracker } from "./lib/read-dedup.ts";
 import {
+	type AnswerMode,
 	DEFAULT_CONFIG,
 	type DevTeamConfig,
 	isHookEnabled,
@@ -36,7 +37,11 @@ import { recordCost } from "./lib/metrics.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
-import { confirmCaution, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
+import { confirmCaution, dialogTimeoutMs, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
+import { sendAway } from "./lib/away-notify.ts";
+import { type Brief, BriefGate, DEV_TEAM_BRIEF_TOOL, diffNumstat, lintBrief, registerBriefTool, sizeAdvisory } from "./lib/brief.ts";
+import { createPlainGate, lintQuestion, type PlainQuestion, questionStyleGuide } from "./lib/plain-questions.ts";
+import { pickOne, typeAnswer, type Waiter } from "./lib/question-dialog.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { piSubagentsBlockReason, piSubagentsLoadsLater, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
 import { describeRunaway, ToolArgsWatchdog } from "./lib/tool-args-watchdog.ts";
@@ -60,6 +65,8 @@ function readJson(file: string): { version?: string; commit?: string } {
 }
 
 const HOOK_NAME_PREFIX = /^\[[\w-]+\] /;
+/** A request that asks to answer every question itself: wait mode for that task. */
+const WAIT_REQUEST = /\b(?:grill me|ask me everything)\b/i;
 const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "startup", new: "clear", resume: "resume", fork: "resume" };
 
 export default function devTeam(pi: ExtensionAPI) {
@@ -86,6 +93,13 @@ export default function devTeam(pi: ExtensionAPI) {
 	const pendingAdvisories = new Map<string, string[]>();
 	const styleGate = createStyleGate();
 	const readTracker = new ReadTracker();
+	const plainGate = createPlainGate();
+	const briefGate = new BriefGate();
+	/** `/dev-team wait|timeout` for this session; unset = the config's answerMode. */
+	let sessionAnswerMode: AnswerMode | undefined;
+	/** The current request asked to be grilled ("grill me"): wait for every answer. */
+	let taskWaits = false;
+	const answerMode = (): AnswerMode => (taskWaits ? "wait" : (sessionAnswerMode ?? config.answerMode));
 	let sessionContext: string[] = [];
 	let running = 0;
 
@@ -106,8 +120,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
-		if (ctx.hasUI && !isSubagent && config.askTimeoutSec > 0) process.env.DEV_TEAM_INTERACTIVE = "1";
-		else delete process.env.DEV_TEAM_INTERACTIVE;
+		applyInteractive(ctx);
 		// The claude shim's children inherit this session's trust decision as dev_team_subagent's do
 		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_DIR itself.
 		const shim = shimTrustEnv(childTrustOf(ctx), forwardedArgs());
@@ -117,6 +130,32 @@ export default function devTeam(pi: ExtensionAPI) {
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
 		process.env.PATH = (config.claudeShim ? [bin, ...parts] : parts).join(path.delimiter);
+	}
+
+	/** A human answers questions when there is a UI and questions are on: askTimeoutSec > 0, or wait mode. */
+	function applyInteractive(ctx: ExtensionContext) {
+		if (ctx.hasUI && !isSubagent && (config.askTimeoutSec > 0 || answerMode() === "wait")) process.env.DEV_TEAM_INTERACTIVE = "1";
+		else delete process.env.DEV_TEAM_INTERACTIVE;
+	}
+
+	/** Sends to config.notify when the run goes on without the human; a failure only warns. */
+	function onAway(title: string, text: string) {
+		if (!config.notify) return;
+		void sendAway(config.notify, title, text).then((err) => err && warn(err));
+	}
+
+	/** Asks the human to approve a feature brief (dev_team_brief). */
+	async function approveFeature(ctx: ExtensionContext, glance: string, signal: AbortSignal | undefined) {
+		if (!ctx.hasUI || process.env.DEV_TEAM_INTERACTIVE !== "1") return { answer: "away" as const };
+		const waiter: Waiter = { waiting: false };
+		const timeoutMs = dialogTimeoutMs(answerMode(), config.askTimeoutSec);
+		const go = "Go: build it (recommended)";
+		const change = "Change something";
+		const pick = await pickOne(ctx, { title: "Build this?", body: glance.split("\n"), options: [go, change, "Stop"], timeoutMs, signal, waiter });
+		if (pick === go) return { answer: "go" as const };
+		if (pick === change) return { answer: "change" as const, change: await typeAnswer(ctx, { title: "What should change?", body: [], timeoutMs, signal, waiter }) };
+		if (pick === undefined && waiter.timedOut) return { answer: "away" as const };
+		return { answer: "stop" as const };
 	}
 
 	function notify(ctx: ExtensionContext, lines: string[], level: "info" | "warning" = "warning") {
@@ -155,8 +194,9 @@ export default function devTeam(pi: ExtensionAPI) {
 		depth,
 		onUsage: (r) => pi.appendEntry(SUBAGENT_USAGE_ENTRY, usageEntryOf(r, portVersion)),
 	});
-	registerAskUser(pi, getConfig);
+	registerAskUser(pi, getConfig, { answerMode, onAway });
 	registerWebFetch(pi);
+	registerBriefTool(pi, { gate: briefGate, approveFeature, onAway });
 
 	pi.registerTool({
 		name: "skill",
@@ -205,6 +245,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				}
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
 				void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: `/${current.name}${args ? ` ${args}` : ""}` }, ctx.cwd);
+				briefGate.noteSkill(current.name);
 				const text = commandText(current, args ?? "");
 				const before = ctx.sessionManager.getEntries().length;
 				if (ctx.isIdle()) await pi.sendUserMessage(text);
@@ -221,9 +262,9 @@ export default function devTeam(pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("dev-team", {
-		description: "pi-dev-team: status | models | hooks | doctor",
+		description: "pi-dev-team: status | models | hooks | doctor | wait | timeout",
 		getArgumentCompletions: (prefix) =>
-			["status", "models", "hooks", "doctor"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
+			["status", "models", "hooks", "doctor", "wait", "timeout"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
 		handler: async (args, ctx) => {
 			const [sub = "status", ...rest] = (args ?? "").trim().split(/\s+/).filter(Boolean);
 			// Earlier name of /spend, kept for one release.
@@ -231,6 +272,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			if (sub === "models") return configureModels(ctx);
 			if (sub === "hooks") return showHooks(ctx);
 			if (sub === "doctor") return doctor(ctx);
+			if (sub === "wait" || sub === "timeout") return switchAnswerMode(ctx, sub);
 			return showStatus(ctx);
 		},
 	});
@@ -238,6 +280,18 @@ export default function devTeam(pi: ExtensionAPI) {
 	function report(ctx: ExtensionContext, text: string) {
 		if (ctx.hasUI) ctx.ui.notify(text, "info");
 		else console.log(text);
+	}
+
+	function switchAnswerMode(ctx: ExtensionContext, mode: AnswerMode) {
+		sessionAnswerMode = mode;
+		applyInteractive(ctx);
+		const timeoutText = config.askTimeoutSec > 0 ? `go on alone after ${config.askTimeoutSec} s` : "are off (askTimeoutSec is 0)";
+		report(ctx, `dev-team: questions now ${mode === "wait" ? "wait for you" : timeoutText} (this session).`);
+	}
+
+	function answerModeLine(cfg: DevTeamConfig): string {
+		if (process.env.DEV_TEAM_INTERACTIVE !== "1") return "off (non-interactive defaults)";
+		return answerMode() === "wait" ? "on (wait for every answer)" : `on (answers time out after ${cfg.askTimeoutSec} s)`;
 	}
 
 	function showStatus(ctx: ExtensionContext) {
@@ -255,7 +309,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
 			`autoFormat: ${cfg.autoFormat}  githubStyle: ${cfg.githubStyle}  claudeShim: ${cfg.claudeShim}  maxParallelAgents: ${cfg.maxParallelAgents}`,
-			`interactive gates: ${process.env.DEV_TEAM_INTERACTIVE === "1" ? `on (answers time out after ${cfg.askTimeoutSec} s)` : "off (non-interactive defaults)"}`,
+			`interactive gates: ${answerModeLine(cfg)}  routing: ${cfg.routing}${cfg.notify ? `  notify: ${cfg.notify.split(":")[0]}` : ""}`,
 		];
 		report(ctx, lines.join("\n"));
 	}
@@ -447,7 +501,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const tierModelsText = hasAgentPrompt
 			? ""
 			: tierModelsLine(config.models, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, (id) => !!findModel(ctx, id));
-		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1", styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0);
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief");
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
 			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
@@ -469,6 +523,12 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("input", async (event, ctx) => {
 		if (!isSubagent && event.source !== "extension") {
 			void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: event.text }, ctx.cwd);
+			// A new request, not a steer or follow-up to the running one and not a /command (its handler notes the skill).
+			if (!event.streamingBehavior && !event.text.trimStart().startsWith("/")) {
+				briefGate.newRequest();
+				taskWaits = WAIT_REQUEST.test(event.text);
+				applyInteractive(ctx);
+			}
 		}
 		return { action: "continue" };
 	});
@@ -482,7 +542,19 @@ export default function devTeam(pi: ExtensionAPI) {
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", `dev-team: ${running} agent call(s) running`);
 			return undefined;
 		}
-		const styleVerdict = event.toolName === "bash" && typeof input.command === "string" ? styleGate(config.githubStyle, input.command, ctx.cwd) : {};
+		if (event.toolName === "skill" && typeof input.name === "string") briefGate.noteSkill(input.name);
+		if (!isSubagent && config.routing === "brief") {
+			const unbriefed = briefGate.check(event.toolName, input, ctx.cwd);
+			if (unbriefed) return { block: true, reason: unbriefed };
+		}
+		const styleVerdict =
+			event.toolName === "bash" && typeof input.command === "string"
+				? styleGate(config.githubStyle, input.command, ctx.cwd)
+				: event.toolName === "ask_user"
+					? plainGate(config.githubStyle, "question", input, askedQuestions(input).flatMap(lintQuestion))
+					: event.toolName === DEV_TEAM_BRIEF_TOOL
+						? plainGate(config.githubStyle, "brief", input, lintBrief(input as unknown as Brief))
+						: {};
 		if (styleVerdict.block) return { block: true, reason: styleVerdict.block };
 		const claudeTool = claudeToolName(event.toolName);
 		const out = await hooks.run(
@@ -493,7 +565,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		);
 		notify(ctx, out.notices);
 		if (out.block) return { block: true, reason: out.block };
-		const declined = await confirmCaution(out.advisories, ctx, config.askTimeoutSec);
+		const declined = await confirmCaution(out.advisories, ctx, config.askTimeoutSec, answerMode());
 		if (declined) return { block: true, reason: declined };
 		if (out.updatedInput) applyUpdatedInput(event.toolName, input, out.updatedInput);
 		const advisories = styleVerdict.note ? [styleVerdict.note, ...out.advisories] : out.advisories;
@@ -531,6 +603,13 @@ export default function devTeam(pi: ExtensionAPI) {
 			tool_response: toolResponse,
 		};
 		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
+		if (briefGate.kind === "tiny" && !briefGate.sizeWarned && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
+			const grown = sizeAdvisory(diffNumstat(ctx.cwd));
+			if (grown) {
+				briefGate.sizeWarned = true;
+				outcomes.push({ advisories: [grown], notices: [], runs: [] });
+			}
+		}
 		// Hooks see the real text; the model gets a note when it already has this exact read in context.
 		const readNote = config.readDedup && isModelVisibleRead(event) ? readTracker.noteForRepeatedRead({ cwd: ctx.cwd, input, text }) : undefined;
 		const content = readNote ? [{ type: "text" as const, text: readNote }] : event.content;
@@ -622,7 +701,23 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 }
 
-function compatGuide(packageRoot: string, index: string, interactive: boolean, styleGuide: string | undefined, tierModelsText: string, piSubagentsBlocked: boolean): string {
+/** The questions of an ask_user call, in either shape. */
+function askedQuestions(input: Record<string, unknown>): PlainQuestion[] {
+	if (Array.isArray(input.questions)) return input.questions.filter((q): q is PlainQuestion => !!q && typeof q === "object" && typeof q.question === "string");
+	if (typeof input.question !== "string") return [];
+	const options = Array.isArray(input.options) ? input.options.map((o) => (typeof o === "string" ? { label: o } : o)) : undefined;
+	return [{ question: input.question, why: typeof input.why === "string" ? input.why : undefined, options }];
+}
+
+function compatGuide(
+	packageRoot: string,
+	index: string,
+	interactive: AnswerMode | undefined,
+	styleGuide: string | undefined,
+	tierModelsText: string,
+	piSubagentsBlocked: boolean,
+	routing: boolean,
+): string {
 	return [
 		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
 		`- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=${DEV_TEAM_SUBAGENT_TOOL}(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).`,
@@ -631,13 +726,20 @@ function compatGuide(packageRoot: string, index: string, interactive: boolean, s
 		`- \${CLAUDE_PLUGIN_ROOT} is ${packageRoot} and is exported in bash. knowledge/, scripts/, agents/, skills/, templates/, hooks/ paths in the instructions are relative to it.`,
 		"- Runtime state lives under .claude/ in the project (memory, metrics, hooks, plans) exactly as the skills describe. Project instructions are AGENTS.md / CLAUDE.md.",
 		'- Plugin hooks run on your tool calls. A blocked call returns the reason: follow it, do not work around it. Text after "dev-team hook notes:" in a tool result is advisory feedback from those hooks.',
-		interactive
-			? "- Human gates: a human may be attached (DEV_TEAM_INTERACTIVE=1). Ask with ask_user. Unanswered questions time out: then apply the (recommended) option or the documented non-interactive default, say so, and go on."
-			: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
+		interactive === "wait"
+			? "- Human gates: the user wants to answer every question (DEV_TEAM_INTERACTIVE=1, wait mode). Ask with ask_user; questions wait for the answer. Never go on alone past an open decision."
+			: interactive
+				? "- Human gates: a human may be attached (DEV_TEAM_INTERACTIVE=1). Ask with ask_user. Unanswered questions time out: then apply the (recommended) option or the documented non-interactive default, say so, and go on."
+				: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
+		...(routing
+			? [
+					`- Plain requests: when the user types a request without a /command, call ${DEV_TEAM_BRIEF_TOOL} before you change any file, so they see what you build. You pick the kind: question, tiny, feature or vague. File changes before it are blocked.`,
+				]
+			: []),
 		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
 		...(tierModelsText ? [`- ${tierModelsText}`] : []),
-		styleGuide ? `\n${styleGuide}` : "",
+		styleGuide ? `\n${styleGuide}\n\n${questionStyleGuide(routing)}` : "",
 		index ? `\nDev-team skills (load with the skill tool; "(/x)" = also a user command):\n${index}` : "",
 	].join("\n");
 }

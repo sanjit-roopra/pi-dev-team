@@ -3,9 +3,11 @@
  *   ask_user  — AskUserQuestion (human gates in /plan, /specs, /build, /setup, ...)
  *   web_fetch — WebFetch (source-verification, competitive-analysis)
  */
-import type { ExtensionAPI, ExtensionContext, ExtensionUIDialogOptions } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import type { DevTeamConfig } from "./config.ts";
+import type { AnswerMode, DevTeamConfig } from "./config.ts";
+import { type PlainQuestion, questionLayout, recommendedFirst } from "./plain-questions.ts";
+import { pickOne, typeAnswer, type Waiter } from "./question-dialog.ts";
 
 const OptionSchema = Type.Object({
 	label: Type.String(),
@@ -14,43 +16,59 @@ const OptionSchema = Type.Object({
 
 const QuestionSchema = Type.Object({
 	question: Type.String({ description: "The question to ask" }),
-	header: Type.Optional(Type.String({ description: "Short label" })),
+	header: Type.Optional(Type.String({ description: "Short label, at most 8 words" })),
+	why: Type.Optional(Type.String({ description: "One line: why the answer matters" })),
 	options: Type.Optional(Type.Array(OptionSchema, { description: "Choices; omit for a free-text answer" })),
 	multiSelect: Type.Optional(Type.Boolean()),
 });
 
 const AskParams = Type.Object({
 	question: Type.Optional(Type.String({ description: "Single question (or use `questions`)" })),
+	why: Type.Optional(Type.String({ description: "One line: why the answer matters" })),
 	options: Type.Optional(Type.Array(Type.Union([Type.String(), OptionSchema]))),
 	multiSelect: Type.Optional(Type.Boolean()),
 	questions: Type.Optional(Type.Array(QuestionSchema, { description: "Several questions (Claude AskUserQuestion shape)" })),
 });
 
-type Q = { question: string; header?: string; options?: { label: string; description?: string }[]; multiSelect?: boolean };
+type Q = PlainQuestion & { multiSelect?: boolean };
 
 const OTHER = "Other (type an answer)";
 
-/** A human answers dialogs only in the main session with a UI (DEV_TEAM_INTERACTIVE, unset when askTimeoutSec is 0). */
+/** A human answers dialogs only in the main session with a UI (DEV_TEAM_INTERACTIVE, see index.ts applyInteractive). */
 const humanAttached = (ctx: ExtensionContext) => ctx.hasUI && process.env.DEV_TEAM_INTERACTIVE === "1";
 
-async function askOne(q: Q, ctx: ExtensionContext, opts: ExtensionUIDialogOptions): Promise<string | undefined> {
-	const title = q.header ? `${q.header}: ${q.question}` : q.question;
-	if (!q.options?.length) return ctx.ui.input(title, undefined, opts);
-	const labels = q.options.map((o) => (o.description ? `${o.label} — ${o.description}` : o.label));
+/** Milliseconds a question waits, or undefined: wait for the human. */
+export function dialogTimeoutMs(mode: AnswerMode, timeoutSec: number): number | undefined {
+	return mode === "wait" || timeoutSec <= 0 ? undefined : timeoutSec * 1000;
+}
+
+interface AskOpts {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	waiter: Waiter;
+}
+
+/** One question in the fixed layout (plain-questions.ts): progress, title, why, recommended option first. */
+async function askOne(q: Q, index: number, total: number, ctx: ExtensionContext, opts: AskOpts): Promise<string | undefined> {
+	const { title, body } = questionLayout(q, index, total);
+	const req = { title, body, ...opts };
+	if (!q.options?.length) return typeAnswer(ctx, req);
+	const options = recommendedFirst(q.options);
+	const labels = options.map((o) => (o.description ? `${o.label}: ${o.description}` : o.label));
 	if (q.multiSelect) {
-		const listing = labels.map((l, i) => `${i + 1}. ${l}`).join("\n");
-		const raw = await ctx.ui.input(`${title}\n${listing}\nEnter numbers separated by commas, or free text`, undefined, opts);
+		const listing = labels.map((l, i) => `${i + 1}. ${l}`);
+		const raw = await typeAnswer(ctx, { ...req, body: [...body, ...listing, "Enter numbers separated by commas, or free text"] });
 		if (raw === undefined) return undefined;
 		const picks = raw
 			.split(",")
 			.map((s) => Number(s.trim()))
 			.filter((n) => Number.isInteger(n) && n >= 1 && n <= labels.length);
-		return picks.length ? picks.map((n) => q.options?.[n - 1]?.label).join(", ") : raw;
+		return picks.length ? picks.map((n) => options[n - 1]?.label).join(", ") : raw;
 	}
-	const choice = await ctx.ui.select(title, [...labels, OTHER], opts);
+	const choice = await pickOne(ctx, { ...req, options: [...labels, OTHER] });
 	if (choice === undefined) return undefined;
-	if (choice === OTHER) return ctx.ui.input(title, undefined, opts);
-	return q.options[labels.indexOf(choice)]?.label ?? choice;
+	if (choice === OTHER) return typeAnswer(ctx, req);
+	return options[labels.indexOf(choice)]?.label ?? choice;
 }
 
 const CAUTION_PREFIX = "[destructive_guard] CAUTION";
@@ -60,18 +78,27 @@ const CAUTION_PREFIX = "[destructive_guard] CAUTION";
  * answer within askTimeoutSec returns the reason to block just that call. Otherwise show the warning
  * before the command runs (it also reaches the model with the result).
  */
-export async function confirmCaution(advisories: string[], ctx: ExtensionContext, timeoutSec: number): Promise<string | undefined> {
+export async function confirmCaution(advisories: string[], ctx: ExtensionContext, timeoutSec: number, mode: AnswerMode = "timeout"): Promise<string | undefined> {
 	const caution = advisories.find((a) => a.startsWith(CAUTION_PREFIX));
 	if (!caution) return undefined;
 	if (!humanAttached(ctx)) {
 		if (ctx.hasUI) ctx.ui.notify(caution, "warning");
 		return undefined;
 	}
-	if (await ctx.ui.confirm("Run this destructive command?", caution, { timeout: timeoutSec * 1000 })) return undefined;
-	return `${caution}\nThe user declined it or did not answer within ${timeoutSec} s, so this command was not run. Go on without it: use a safer command, or leave the step for the user and say so.`;
+	const timeout = dialogTimeoutMs(mode, timeoutSec);
+	if (await ctx.ui.confirm("Run this destructive command?", caution, { timeout })) return undefined;
+	const why = timeout === undefined ? "The user declined it" : `The user declined it or did not answer within ${timeoutSec} s`;
+	return `${caution}\n${why}, so this command was not run. Go on without it: use a safer command, or leave the step for the user and say so.`;
 }
 
-export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig): void {
+export interface AskUserDeps {
+	/** The answer mode now: the session's or the task's switch, else the config's. */
+	answerMode?: () => AnswerMode;
+	/** Tells an absent human what the run assumed for them. */
+	onAway?: (title: string, text: string) => void;
+}
+
+export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig, deps: AskUserDeps = {}): void {
 	pi.registerTool({
 		name: "ask_user",
 		label: "Ask user",
@@ -90,6 +117,7 @@ export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig
 					? [
 							{
 								question: params.question,
+								why: params.why,
 								options: params.options?.map((o) => (typeof o === "string" ? { label: o } : o)),
 								multiSelect: params.multiSelect,
 							},
@@ -108,16 +136,27 @@ export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig
 				};
 			}
 			const timeoutSec = getConfig().askTimeoutSec;
+			const mode = deps.answerMode?.() ?? getConfig().answerMode;
+			const waiter: Waiter = { waiting: false };
+			const timeoutMs = dialogTimeoutMs(mode, timeoutSec);
 			const answers: { question: string; answer: string | null }[] = [];
-			// After one unanswered question the human is away: ask no more.
-			for (const q of questions) {
-				const a = answers.some((x) => x.answer === null) ? undefined : await askOne(q, ctx, { signal, timeout: timeoutSec * 1000 });
+			// After one unanswered question the human is away (or skipped): ask no more.
+			for (const [i, q] of questions.entries()) {
+				const a = answers.some((x) => x.answer === null) ? undefined : await askOne(q, i, questions.length, ctx, { signal, timeoutMs, waiter });
 				answers.push({ question: q.question, answer: a ?? null });
 			}
 			const answered = answers.every((a) => a.answer !== null);
 			const text = answers.map((a) => `Q: ${a.question}\nA: ${a.answer ?? "(no answer)"}`).join("\n\n");
-			const note = `\n\nNo answer arrived within ${timeoutSec} s. Apply the option marked (recommended), or else the documented non-interactive default, record that you did, and keep going. The user may steer later by typing.`;
-			return { content: [{ type: "text", text: answered ? text : text + note }], details: { answered, answers } };
+			if (answered) return { content: [{ type: "text", text }], details: { answered, answers } };
+			const timedOut = waiter.timedOut === true;
+			const what = timedOut ? `No answer arrived within ${timeoutSec} s.` : "The user closed the question without an answer.";
+			const mark = timedOut ? "assumed (timeout)" : "assumed (skipped)";
+			const note = `\n\n${what} Apply the option marked (recommended), or else the documented non-interactive default, mark it "${mark}" where the skill logs decisions, list it under "Decide these" at the top of the brief and the PR, and keep going. Do not ask follow-up questions that build on these guesses. The user may steer later by typing.`;
+			if (timedOut) {
+				const open = answers.filter((a) => a.answer === null).map((a) => `- ${a.question}`);
+				deps.onAway?.("dev-team goes on without your answer", ["Assumed the recommended answer for:", ...open].join("\n"));
+			}
+			return { content: [{ type: "text", text: text + note }], details: { answered, answers } };
 		},
 	});
 }

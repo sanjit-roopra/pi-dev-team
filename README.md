@@ -38,6 +38,10 @@ A guard hook is a small script that runs around a tool call. It can stop an unsa
 
 Each command stops and asks you before it continues. `/ship <task>` runs all four, with the same stops.
 
+A plain request without a command first gets a short brief: what the team builds, when it is done, what it assumes. A bigger task waits for your ok, then runs `/ship`.
+
+Each question shows its time left. Press `w` to make it wait, or run `/dev-team wait` for the session. A request with "grill me" waits too.
+
 Other commands:
 
 - `/code-review`: about 25 agents review your change, one topic each (security, tests, naming, ...).
@@ -57,9 +61,9 @@ By default every tier uses your session model. To map tiers to models, run `/dev
 - `inherit`: your session model (default)
 - `custom`: set each tier yourself
 
-A code review can start more than 20 agents, so cheaper models for the lower tiers save a lot. `/dev-team doctor` suggests a preset when one fits your provider.
+A code review can start 20+ agents, so cheaper lower tiers save a lot. `/dev-team doctor` suggests a preset.
 
-If a `/build` step fails the same way twice, the team retries it once on the next stronger tier, then asks you. With `inherit` there is no stronger model, so no retry.
+A `/build` step that fails twice retries once on a stronger tier (not with `inherit`), then asks you.
 
 ## Safety and cost
 
@@ -81,8 +85,7 @@ Run `/spend` for a chart of what your sessions cost, for every provider (local m
 
 - Views: **By model**, **By provider**, **By agent** (`Tab` to switch).
 - Scope: this session, or this month across all projects (`s` to switch). Or run `/spend session` / `/spend month`.
-- Split bars show providers, and main `█` / subagents `▓` / overhead `▒` (cache warm-ups, compaction, summaries).
-- Without a terminal UI (`pi -p`, RPC), `/spend` prints a text summary.
+- Bars: main `█`, subagents `▓`, overhead `▒`. Without a terminal UI, `/spend` prints text.
 - `Esc` or `q` closes it.
 
 | Term | Meaning |
@@ -90,13 +93,11 @@ Run `/spend` for a chart of what your sessions cost, for every provider (local m
 | USD | pi's catalog price for the tokens. For a ChatGPT or Claude plan, not what the plan bills. |
 | AI credits | GitHub Copilot's unit: 1 credit per $0.01 of Copilot's USD, before your plan's allowance ([pricing](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)). |
 
-The month starts on the 1st at 00:00 UTC, like GitHub's billing period. `/dev-team usage` is the old name of `/spend` and still works.
+The month starts on the 1st at 00:00 UTC.
 
-For a per-run cost log with a regression check, run `/telemetry on`, then `/cost-report` after a run. `/telemetry on` also records, on your machine only, which commands and skills you use.
+`/telemetry on` logs each run's cost (`/cost-report`) and, on your machine only, which commands you use.
 
-### Use `/spend` without the team
-
-`/spend` is its own extension (`extensions/spend/index.ts`) and needs nothing from the team. To switch the team off in one project, run `pi config --local` there and switch off `extensions/dev-team/index.ts`. To switch it off everywhere, do the same with `pi config`. pi reads a project's settings only when you trust the project.
+`/spend` also works without the team: switch off `extensions/dev-team/index.ts` with `pi config` (or `pi config --local`).
 
 ## Pull request and issue text
 
@@ -134,6 +135,9 @@ All settings, with defaults:
   "claudeShim": true,          // scripts' `claude -p` runs pi
   "allowPiSubagents": false,   // true lets the model use pi-subagents' tools (user file only)
   "askTimeoutSec": 120,        // questions wait this long, then go on; 0 = never ask
+  "answerMode": "timeout",     // timeout, or wait: questions wait for you
+  "routing": "brief",          // brief or off: a brief before a plain request changes files
+  "notify": "",                // "ntfy:<random topic>": phone push when the team goes on alone (user file only)
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
 }

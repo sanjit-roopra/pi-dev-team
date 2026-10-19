@@ -402,3 +402,41 @@ test("updateConfigFile: writes through a symlinked config and keeps the link", (
 	assert.ok(fs.lstatSync(p.local).isSymbolicLink(), "link replaced by a file");
 	assert.deepEqual(JSON.parse(fs.readFileSync(p.shared, "utf-8")).models, { haiku: "x/y", opus: "a/b" });
 });
+
+test("answerMode, routing and notify default to timeout, brief and nowhere", () => {
+	assert.equal(DEFAULT_CONFIG.answerMode, "timeout");
+	assert.equal(DEFAULT_CONFIG.routing, "brief");
+	assert.equal(DEFAULT_CONFIG.notify, "");
+});
+
+test("loadConfig: answerMode, routing and notify keep valid values and drop anything else", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-answer-cfg-"));
+	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+	const userConfigFile = path.join(dir, "user.json");
+	const load = (data: Record<string, unknown>) => {
+		fs.writeFileSync(userConfigFile, JSON.stringify(data));
+		return loadConfig(dir, { includeProject: false, userConfigFile }).config;
+	};
+	const valid = load({ answerMode: "wait", routing: "off", notify: "ntfy:my-topic" });
+	assert.equal(valid.answerMode, "wait");
+	assert.equal(valid.routing, "off");
+	assert.equal(valid.notify, "ntfy:my-topic");
+	const invalid = load({ answerMode: "forever", routing: 1, notify: 42 });
+	assert.equal(invalid.answerMode, "timeout");
+	assert.equal(invalid.routing, "brief");
+	assert.equal(invalid.notify, "");
+});
+
+test("a project file may set answerMode and routing but not notify", (t) => {
+	assert.deepEqual(filterProjectConfig({ answerMode: "wait", routing: "off", notify: "ntfy:x" }), {
+		data: { answerMode: "wait", routing: "off" },
+		ignored: ["notify"],
+	});
+	const { project, userConfigFile } = fixture(t);
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ answerMode: "wait", routing: "off", notify: "ntfy:evil" }));
+	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
+	assert.equal(config.answerMode, "wait");
+	assert.equal(config.routing, "off");
+	assert.equal(config.notify, "", "a project cannot choose where briefs are sent");
+	assert.ok(ignoredProjectSettings.includes("notify"));
+});

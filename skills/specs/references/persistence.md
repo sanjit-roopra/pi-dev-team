@@ -23,6 +23,8 @@ After the gate passes, persist all three artifacts plus the verdict so downstrea
 ```markdown
 # Spec: <Feature Name>
 
+<!-- spec-version: 2 -->
+
 ## Intent Description
 <intent artifact>
 
@@ -49,6 +51,14 @@ All gap and ambiguity findings from the Ambiguity Resolution Protocol, with thei
 | Decision | Classification | Resolved By | Rationale / Answer |
 |----------|---------------|-------------|-------------------|
 | <decision text> | `inferable` / `requires-stakeholder-input` | inference / human | <rationale or human's answer> |
+
+## Decision Log
+
+Every question asked in the grilling rounds and its answer.
+
+| Round | Question | Answer | Source |
+|-------|----------|--------|--------|
+| 1 | <question> | <answer> | `user` / `assumed (timeout)` |
 
 ## Consistency Gate
 - [x/  ] Intent is unambiguous

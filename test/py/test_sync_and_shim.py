@@ -86,7 +86,7 @@ class SyncHelpers(unittest.TestCase):
 class LeanCode(unittest.TestCase):
     """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
 
-    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md"}  # port-added (plus code-review references): no upstream file to pin
+    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md", "skills/specs/references/grilling.md"}  # port-added (plus code-review references): no upstream file to pin
 
     def test_every_upstream_override_is_pinned_and_shipped(self):
         overrides = ROOT / "overrides"
