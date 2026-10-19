@@ -73,6 +73,12 @@ class SyncHelpers(unittest.TestCase):
         check = subprocess.run([sys.executable, str(ROOT / "hooks" / "lib" / "build_knowledge_index.py"), "--check"], capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stderr[:2000])
 
+    def test_upstream_json_lists_patches_in_the_order_sync_applies_them(self):
+        info = json.loads((ROOT / "UPSTREAM.json").read_text())
+        recorded = [(p["file"], p["reason"]) for p in info["patches"]]
+        expected = [(pattern, why) for pattern, _regex, _repl, why in sync.PATCHES + sync.LEAN_PATCHES]
+        self.assertEqual(recorded, expected)
+
     def test_ceremony_skills_are_not_loaded_on_every_task(self):
         for rel in ("skills/context-loading-protocol/SKILL.md", "skills/performance-metrics/SKILL.md",
                     "agents/orchestrator.md", "skills/build/SKILL.md", "knowledge/telemetry-schema.md"):
@@ -86,7 +92,7 @@ class SyncHelpers(unittest.TestCase):
 class LeanCode(unittest.TestCase):
     """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
 
-    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md"}  # port-added (plus code-review references): no upstream file to pin
+    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md", "skills/specs/references/grilling.md"}  # port-added (plus code-review references): no upstream file to pin
 
     def test_every_upstream_override_is_pinned_and_shipped(self):
         overrides = ROOT / "overrides"

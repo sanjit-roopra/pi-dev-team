@@ -33,6 +33,7 @@
     "skills/code-review/references/07-report.md",
     "skills/code-review/references/08-09-corrections-and-gate.md",
     "skills/headless-run/SKILL.md",
+    "skills/specs/references/grilling.md",
     "skills/upgrade/SKILL.md",
     "skills/version/SKILL.md"
   ],
@@ -138,6 +139,31 @@
       "file": "knowledge/skills-registry.md",
       "reason": "the registry lists only skills the port ships",
       "hits": 5
+    },
+    {
+      "file": "skills/specs/SKILL.md",
+      "reason": "grilling: one batch of questions misses the questions its answers open",
+      "hits": 1
+    },
+    {
+      "file": "skills/specs/SKILL.md",
+      "reason": "spec version: compare with the marker the template writes, not a frontmatter field that does not exist",
+      "hits": 1
+    },
+    {
+      "file": "skills/specs/SKILL.md",
+      "reason": "docs/experiments is not shipped",
+      "hits": 2
+    },
+    {
+      "file": "skills/specs/references/persistence.md",
+      "reason": "spec version: the template writes the marker /specs checks",
+      "hits": 1
+    },
+    {
+      "file": "skills/specs/references/persistence.md",
+      "reason": "grilling: log every question and answer",
+      "hits": 1
     },
     {
       "file": "agents/software-engineer.md",

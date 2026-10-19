@@ -320,6 +320,51 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "",
         "the registry lists only skills the port ships",
     ),
+    (
+        "skills/specs/SKILL.md",
+        r"\*\*Step C — Resolve `requires-stakeholder-input` items\.\*\* Collect all such items and present them as a single batch "
+        r"to the human before writing acceptance criteria:\n\n> .*?\n\nWait for answers\. Only then finalize the criteria\.",
+        "**Step C — Resolve `requires-stakeholder-input` items in rounds.** Load "
+        "[`references/grilling.md`](references/grilling.md) and ask them in rounds: each round asks every open decision "
+        "whose prerequisites are settled, with a recommended answer, then the next round asks what those answers opened. "
+        "Stop when nothing is open, or at the first timeout (take that round's recommended answers, log them "
+        "`assumed (timeout)`). Only then finalize the criteria.",
+        "grilling: one batch of questions misses the questions its answers open",
+    ),
+    (
+        "skills/specs/SKILL.md",
+        r"  - If the marker is absent or predates the current skill version \(see frontmatter `version:`\):.*?\n"
+        r"  - If the marker matches the current version:",
+        "  - If the file has no `<!-- spec-version: 2 -->` line (the marker the body template in "
+        "[`references/persistence.md`](references/persistence.md) writes): update it in place to the current template, "
+        "keep every decision and log row, add the marker, and say so. Ask only when the user may want a fresh spec "
+        "instead (recommended: update in place).\n"
+        "  - If the marker is `<!-- spec-version: 2 -->`:",
+        "spec version: compare with the marker the template writes, not a frontmatter field that does not exist",
+    ),
+    (
+        "skills/specs/SKILL.md",
+        r"\n\(Rec 1, `docs/experiments/RECOMMENDATIONS\.md`\)|, reported in\n`docs/experiments/02-final-results\.md`",
+        "",
+        "docs/experiments is not shipped",
+    ),
+    (
+        "skills/specs/references/persistence.md",
+        r"# Spec: <Feature Name>\n\n## Intent Description",
+        "# Spec: <Feature Name>\n\n<!-- spec-version: 2 -->\n\n## Intent Description",
+        "spec version: the template writes the marker /specs checks",
+    ),
+    (
+        "skills/specs/references/persistence.md",
+        r"(\| <decision text> \| `inferable` / `requires-stakeholder-input` \| inference / human \| <rationale or human's answer> \|\n)",
+        "| <decision text> | `inferable` / `requires-stakeholder-input` | inference / human | <rationale or human's answer> |\n\n"
+        "## Decision Log\n\n"
+        "Every question asked in the grilling rounds and its answer.\n\n"
+        "| Round | Question | Answer | Source |\n"
+        "|-------|----------|--------|--------|\n"
+        "| 1 | <question> | <answer> | `user` / `assumed (timeout)` / `assumed (no human)` |\n",
+        "grilling: log every question and answer",
+    ),
 ]
 
 

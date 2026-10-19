@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -25,7 +26,7 @@ async function loadExtension(opts: { flags?: Record<string, unknown>; config?: R
 	process.env.PI_CODING_AGENT_DIR = dir;
 	// A run of this suite from inside a dispatched agent must still load the extension as a main session.
 	delete process.env.DEV_TEAM_SUBAGENT;
-	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block", ...opts.config }));
+	fs.writeFileSync(path.join(dir, "dev-team.json"), JSON.stringify({ githubStyle: "block", routing: "off", ...opts.config }));
 	const tools: Record<string, ToolDef> = {};
 	const handlers: Record<string, Handler[]> = {};
 	const commands: Record<string, CommandDef> = {};
@@ -65,7 +66,7 @@ test("loading the extension starts no process (the Python probe waits for first 
 
 test("every dev-team tool declares pi's safety hints", async () => {
 	const { tools } = await loaded;
-	assert.deepEqual(Object.keys(tools).sort(), ["ask_user", "dev_team_subagent", "skill", "web_fetch"]);
+	assert.deepEqual(Object.keys(tools).sort(), ["ask_user", "dev_team_brief", "dev_team_subagent", "skill", "web_fetch"]);
 	for (const tool of Object.values(tools)) assert.ok(tool.annotations, `${tool.name} has annotations`);
 });
 
@@ -758,4 +759,456 @@ test("web_fetch stops reading at its cap and marks the page as external data", a
 	assert.match(text, /\[truncated\]$/);
 	assert.ok(text.length < 61_000, `returned ${text.length} characters`);
 	assert.ok(written < 10_000_000, `server wrote ${written} bytes`);
+});
+
+// ---------------------------------------------------------------- routing, plain questions, answer mode
+
+type Verdict = { block?: boolean; reason?: string } | undefined;
+const ROUTING_REASON = /dev-team routing/;
+
+/** Saves DEV_TEAM_INTERACTIVE and puts it back after the test. */
+function keepInteractiveEnv(t: TestContext) {
+	const saved = process.env.DEV_TEAM_INTERACTIVE;
+	t.after(() => {
+		if (saved === undefined) delete process.env.DEV_TEAM_INTERACTIVE;
+		else process.env.DEV_TEAM_INTERACTIVE = saved;
+	});
+}
+
+/** A fresh extension, a tool_call through its handler, and a typed request through its input handler. */
+async function routingHarness(t: TestContext, config: Record<string, unknown> = { routing: "brief" }, extra: Record<string, unknown> = {}) {
+	keepInteractiveEnv(t);
+	const ext = await loadExtension({ config });
+	t.after(ext.cleanup);
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-route-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	const ctx = { ...blockCtx, cwd, hasUI: false, isProjectTrusted: () => false, ...extra };
+	let n = 0;
+	const call = (toolName: string, input: Record<string, unknown>) => ext.handlers.tool_call[0]({ toolName, toolCallId: `c${n++}`, input }, ctx) as Promise<Verdict>;
+	const write = () => call("write", { path: "src/a.ts", content: "x" });
+	const type = (text: string, more: Record<string, unknown> = {}) => ext.handlers.input[0]({ text, source: "interactive", ...more }, ctx);
+	const brief = (kind: string, params: Record<string, unknown> = { building: "Add a flag.", doneWhen: "The flag works." }) =>
+		(ext.tools.dev_team_brief as unknown as { execute: (...args: unknown[]) => Promise<BriefResult> }).execute("b", { kind, ...params }, undefined, () => {}, ctx);
+	/** Runs a registered /command the way pi does: idle, in the TUI. */
+	const command = (name: string, args = "") =>
+		ext.commands[name].handler(args, { ...ctx, isIdle: () => true, mode: "tui", ui: { notify: () => {}, setStatus: () => {}, ...(ctx as { ui?: object }).ui }, sessionManager: { ...ctx.sessionManager, getEntries: () => [] } });
+	return { ext, ctx, cwd, call, write, type, brief, command };
+}
+type BriefResult = { content: { text: string }[]; details: Record<string, unknown> };
+
+test("with routing brief, a write before any brief is blocked with a reason naming dev_team_brief, and no hook runs", async (t) => {
+	const { ext, write } = await routingHarness(t);
+	const r = await write();
+	assert.equal(r?.block, true);
+	assert.match(r?.reason ?? "", /dev_team_brief/);
+	assert.equal(ext.probed(), false, "no hook ran for the blocked call");
+});
+
+test("with routing brief, a read and a write to the team's own .claude state are not blocked by routing", async (t) => {
+	const { call } = await routingHarness(t);
+	assert.doesNotMatch((await call("read", { path: "src/a.ts" }))?.reason ?? "", ROUTING_REASON);
+	assert.doesNotMatch((await call("write", { path: ".claude/memory/x.json", content: "{}" }))?.reason ?? "", ROUTING_REASON);
+});
+
+test("a tiny brief opens the gate; a new typed request closes it again", async (t) => {
+	const { write, type, brief } = await routingHarness(t);
+	await brief("tiny");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON, "the write after the brief passes the gate");
+	await type("do something");
+	assert.match((await write())?.reason ?? "", ROUTING_REASON, "a new request needs its own brief");
+});
+
+test("a steer is not a new request, so it leaves the gate open", async (t) => {
+	const { write, type, brief } = await routingHarness(t);
+	await brief("tiny");
+	await type("also do this", { streamingBehavior: "steer" });
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("typed text starting with / that reaches the input handler is a new request and closes the gate", async (t) => {
+	const { write, type, brief } = await routingHarness(t);
+	await brief("tiny");
+	await type("/tmp/notes.txt explain what this file says");
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("a /command the user runs opens the gate; a later typed request closes it again", async (t) => {
+	for (const name of ["plan", "pr"]) {
+		const { write, type, command } = await routingHarness(t);
+		await command(name, "add caching");
+		assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON, `after /${name}`);
+		await type("now do something else");
+		assert.match((await write())?.reason ?? "", ROUTING_REASON, `typed request after /${name}`);
+	}
+});
+
+test("'grill me' in a /command's args waits for every answer; the next /command without it does not", async (t) => {
+	const { ext, ctx, command } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiCtx([]));
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	await command("plan", "add caching, grill me");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1");
+	await command("plan", "add caching");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined);
+});
+
+test("\"don't grill me\" in a typed request does not turn on wait mode", async (t) => {
+	const { ext, ctx, type } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiCtx([]));
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	for (const text of ["don't grill me, fix the typo", "Do not grill me on this", "no need to ask me everything"]) {
+		await type(text);
+		assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, text);
+	}
+});
+
+test("before a brief, dispatching an agent that can write is blocked and not counted as running; a read-only agent runs", async (t) => {
+	const statuses: string[] = [];
+	const ui = { notify: () => {}, setStatus: (_key: string, text?: string) => void statuses.push(text ?? "") };
+	const { call } = await routingHarness(t, { routing: "brief" }, { hasUI: true, ui });
+	const blocked = await call("dev_team_subagent", { agent: "software-engineer", task: "change the code" });
+	assert.equal(blocked?.block, true);
+	assert.match(blocked?.reason ?? "", ROUTING_REASON);
+	assert.deepEqual(statuses, [], "no running status for the blocked dispatch");
+	const parallel = await call("dev_team_subagent", { tasks: [{ agent: "plan-review-acceptance", task: "look" }, { agent: "general-purpose", task: "edit" }] });
+	assert.equal(parallel?.block, true, "one writer among parallel tasks blocks the call");
+	// plan-review-acceptance has only Read, Grep and Glob.
+	assert.equal(await call("dev_team_subagent", { agent: "plan-review-acceptance", task: "look around" }), undefined);
+	assert.deepEqual(statuses, ["dev-team: 1 agent call(s) running"]);
+});
+
+test("after a brief, dispatching an agent that can write is not blocked", async (t) => {
+	const { call, brief } = await routingHarness(t);
+	await brief("tiny");
+	assert.equal(await call("dev_team_subagent", { agent: "software-engineer", task: "change the code" }), undefined);
+});
+
+test("a tiny brief shows the brief, saves it with the session id and opens the gate", async (t) => {
+	const { cwd, write, brief } = await routingHarness(t);
+	const r = await brief("tiny");
+	assert.match(r.content[0].text, /^The user sees this brief:/);
+	assert.equal(r.details.kind, "tiny");
+	const saved = JSON.parse(fs.readFileSync(path.join(cwd, ".claude", "memory", "brief.json"), "utf-8"));
+	assert.equal(saved.sessionId, "s");
+	assert.equal(saved.approved, "tiny");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("a tiny brief without doneWhen asks again and leaves the gate closed", async (t) => {
+	const { write, brief } = await routingHarness(t);
+	const r = await brief("tiny", { building: "Add a flag." });
+	assert.match(r.content[0].text, /needs "building" and "doneWhen"/);
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("a resume brief with no /command in the session opens nothing", async (t) => {
+	const { write, brief } = await routingHarness(t);
+	const r = await brief("resume", {});
+	assert.equal(r.details.open, false);
+	assert.match(r.content[0].text, /nothing to resume/);
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("after a /command, a typed answer closes the gate, the block names resume, and a resume brief opens it again", async (t) => {
+	const { write, type, brief, command } = await routingHarness(t);
+	await command("plan", "add caching");
+	await type("the second option");
+	assert.match((await write())?.reason ?? "", /answers or continues \/plan from the previous request, pick resume/);
+	const r = await brief("resume", {});
+	assert.equal(r.details.open, true);
+	assert.equal(r.content[0].text, "Go on with /plan.");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("loading a flow skill such as ship opens the gate without a brief", async (t) => {
+	const { call, write } = await routingHarness(t);
+	await call("skill", { name: "ship" });
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("with routing off a write is never blocked by routing", async (t) => {
+	const { write, type } = await routingHarness(t, { routing: "off" });
+	await type("do something");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("an ask_user header of 12 words is blocked once for plain language and passes when sent again unchanged", async (t) => {
+	const { call } = await routingHarness(t, { routing: "off" });
+	const input = { questions: [{ header: "one two three four five six seven eight nine ten eleven twelve", question: "Which one?", options: [{ label: "A (recommended)" }, { label: "B" }] }] };
+	const first = await call("ask_user", input);
+	assert.equal(first?.block, true);
+	assert.match(first?.reason ?? "", /plain language/);
+	assert.doesNotMatch((await call("ask_user", input))?.reason ?? "", /plain language/, "the resend passes");
+});
+
+test("with githubStyle off a long ask_user header is never blocked", async (t) => {
+	const { call } = await routingHarness(t, { routing: "off", githubStyle: "off" });
+	const input = { questions: [{ header: "one two three four five six seven eight nine ten eleven twelve", question: "Which one?" }] };
+	assert.doesNotMatch((await call("ask_user", input))?.reason ?? "", /plain language/);
+});
+
+/** A UI context whose notices are kept. */
+function uiCtx(notes: string[]) {
+	return {
+		cwd: os.tmpdir(),
+		hasUI: true,
+		mode: "print",
+		isProjectTrusted: () => false,
+		ui: { setStatus: () => {}, notify: (text: string) => void notes.push(text) },
+		sessionManager: { getEntries: () => [], getSessionId: () => "s", getSessionFile: () => undefined },
+	};
+}
+
+test("/dev-team wait makes questions wait for every answer; /dev-team timeout switches back", async (t) => {
+	keepInteractiveEnv(t);
+	const ext = await loadExtension();
+	t.after(ext.cleanup);
+	const notes: string[] = [];
+	const ctx = uiCtx(notes);
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	const status = async () => {
+		notes.length = 0;
+		await ext.commands["dev-team"].handler("status", ctx);
+		return notes.join("\n");
+	};
+	await ext.commands["dev-team"].handler("wait", ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1");
+	assert.match(await status(), /wait for every answer/);
+	await ext.commands["dev-team"].handler("timeout", ctx);
+	const after = await status();
+	assert.doesNotMatch(after, /wait for every answer/);
+	assert.match(after, /answers time out after 120 s/);
+});
+
+/** The dev_team section of the system prompt. */
+async function guideOf(ext: Awaited<ReturnType<typeof loadExtension>>, ctx: unknown = { cwd: os.tmpdir(), isProjectTrusted: () => false }) {
+	const opts: { sections?: Record<string, string> } = {};
+	await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, ctx);
+	return opts.sections?.dev_team ?? "";
+}
+
+test("with routing brief the guide tells the session to call dev_team_brief and carries the questions guide", async (t) => {
+	const ext = await loadExtension({ config: { routing: "brief" } });
+	t.after(ext.cleanup);
+	const guide = await guideOf(ext);
+	assert.match(guide, /^- Plain requests: .*dev_team_brief/m);
+	assert.match(guide, /Questions \(ask_user\) and briefs/);
+});
+
+test("with routing off the guide has no plain-requests line", async (t) => {
+	const ext = await loadExtension({ config: { routing: "off" } });
+	t.after(ext.cleanup);
+	assert.doesNotMatch(await guideOf(ext), /^- Plain requests/m);
+});
+
+test("with routing off the guide does not mention dev_team_brief", async (t) => {
+	const ext = await loadExtension({ config: { routing: "off" } });
+	t.after(ext.cleanup);
+	assert.doesNotMatch(await guideOf(ext), /dev_team_brief/);
+});
+
+test("with answerMode wait in config and a human attached, the Human gates line says wait", async (t) => {
+	keepInteractiveEnv(t);
+	const ext = await loadExtension({ config: { answerMode: "wait" } });
+	t.after(ext.cleanup);
+	const ctx = uiCtx([]);
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	assert.match((await guideOf(ext, ctx)).match(/^- Human gates.*$/m)?.[0] ?? "", /wait mode/);
+});
+
+test("'grill me' in a typed request waits for every answer for that task, even with askTimeoutSec 0", async (t) => {
+	const { ext, ctx, type } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiCtx([]));
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "askTimeoutSec 0: no human gates");
+	await type("Add caching. Grill me on the details.");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1");
+	assert.match((await guideOf(ext, ctx)).match(/^- Human gates.*$/m)?.[0] ?? "", /wait mode/);
+	await type("now fix the typo");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "the next request goes back to the config");
+});
+
+// ---------------------------------------------------------------- brief gate: skills, dispatch, new work
+
+test("loading code-review, a user command, opens the gate without a brief", async (t) => {
+	const { call, write } = await routingHarness(t);
+	await call("skill", { name: "code-review" });
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("before a brief, dispatching an agent that can dispatch others (orchestrator) is blocked", async (t) => {
+	const { call } = await routingHarness(t);
+	const r = await call("dev_team_subagent", { agent: "orchestrator", task: "x" });
+	assert.equal(r?.block, true);
+	assert.match(r?.reason ?? "", ROUTING_REASON);
+});
+
+test("before a brief, agents whose only tools read or run bash (Explore, platform-engineer) run", async (t) => {
+	const { call } = await routingHarness(t);
+	for (const agent of ["Explore", "platform-engineer"]) assert.equal(await call("dev_team_subagent", { agent, task: "look around" }), undefined, agent);
+});
+
+test("an empty tasks list counts the call's own agent, so software-engineer is blocked before a brief", async (t) => {
+	const { call } = await routingHarness(t);
+	const r = await call("dev_team_subagent", { tasks: [], agent: "software-engineer", task: "change the code" });
+	assert.equal(r?.block, true);
+});
+
+test("/ship removes an older brief.json in the project; /pr keeps it", async (t) => {
+	for (const [name, kept] of [["ship", false], ["pr", true]] as const) {
+		const { cwd, command } = await routingHarness(t);
+		const file = path.join(cwd, ".claude", "memory", "brief.json");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "{}");
+		await command(name, "add caching");
+		assert.equal(fs.existsSync(file), kept, `/${name}`);
+	}
+});
+
+// ---------------------------------------------------------------- wait mode
+
+/** uiCtx without its cwd, so the harness's own temp cwd stays. */
+function uiExtra() {
+	const { cwd: _cwd, ...rest } = uiCtx([]);
+	return rest;
+}
+
+test("\"you don't need to grill me\" does not turn on wait mode", async (t) => {
+	const { ext, ctx, type } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiExtra());
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	await type("you don't need to grill me, just fix it");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined);
+});
+
+test("'grill me' in /specs keeps waiting across a plain reply; a later request after one that ran no flow drops it", async (t) => {
+	const { ext, ctx, type, command } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiExtra());
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	await command("specs", "add caching, grill me");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1");
+	await type("the second option");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1", "a reply inside the flow keeps wait mode");
+	await type("now fix the typo");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "the reply ran no flow, so this request is new work");
+});
+
+test("with githubStyle off the guide still carries the questions guide", async (t) => {
+	const ext = await loadExtension({ config: { githubStyle: "off" } });
+	t.after(ext.cleanup);
+	const guide = await guideOf(ext);
+	assert.match(guide, /Questions \(ask_user\)/);
+	assert.doesNotMatch(guide, /GitHub text style/);
+});
+
+test("/dev-team wait with askTimeoutSec 0 turns human gates on; /dev-team timeout turns them off again", async (t) => {
+	keepInteractiveEnv(t);
+	const ext = await loadExtension({ config: { askTimeoutSec: 0 } });
+	t.after(ext.cleanup);
+	const ctx = uiCtx([]);
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "after session_start");
+	await ext.commands["dev-team"].handler("wait", ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1", "after wait");
+	await ext.commands["dev-team"].handler("timeout", ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "after timeout");
+});
+
+// ---------------------------------------------------------------- feature approval
+
+/** A routing harness with a human in rpc mode whose select and input give these answers. */
+async function featureHarness(t: TestContext, pick: (options: string[]) => string | undefined, typed?: string) {
+	const ui = {
+		notify: () => {},
+		setStatus: () => {},
+		select: async (_title: string, options: string[]) => pick(options),
+		input: async () => typed,
+	};
+	const h = await routingHarness(t, { routing: "brief" }, { hasUI: true, mode: "rpc", ui });
+	process.env.DEV_TEAM_INTERACTIVE = "1";
+	const saved = () => {
+		const file = path.join(h.cwd, ".claude", "memory", "brief.json");
+		return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf-8")) : undefined;
+	};
+	return { ...h, saved };
+}
+
+test("a feature brief the user approves opens the gate, saves the brief and says to run /ship", async (t) => {
+	const { brief, write, saved } = await featureHarness(t, (o) => o.find((x) => x.startsWith("Go")));
+	const r = await brief("feature");
+	assert.equal(r.details.answer, "go");
+	assert.match(r.content[0].text, /^Approved\. Run \/ship now/);
+	assert.equal(saved()?.approved, "user");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("Stop or Esc on a feature brief stops it: the gate stays closed and nothing is saved", async (t) => {
+	for (const [label, pick] of [["Stop", (o: string[]) => o.find((x) => x === "Stop")], ["Esc", () => undefined]] as const) {
+		const { brief, write, saved } = await featureHarness(t, pick);
+		const r = await brief("feature");
+		assert.equal(r.details.answer, "stop", label);
+		assert.match(r.content[0].text, /The user stopped this/, label);
+		assert.equal(saved(), undefined, label);
+		assert.match((await write())?.reason ?? "", ROUTING_REASON, label);
+	}
+});
+
+test("a feature brief nobody answers in time goes on alone, without a notify target", async (t) => {
+	const { brief, write, saved } = await featureHarness(t, () => undefined);
+	let calls = 0;
+	// The dialog took longer than its timeout.
+	t.mock.method(performance, "now", () => (calls++ === 0 ? 0 : 1_000_000));
+	const r = await brief("feature");
+	assert.equal(r.details.answer, "away");
+	assert.match(r.content[0].text, /Nobody answered/);
+	assert.equal(saved()?.approved, "no answer");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("Change on a feature brief returns the typed change and leaves the gate closed", async (t) => {
+	const { brief, write, saved } = await featureHarness(t, (o) => o.find((x) => x.startsWith("Change")), "only the CLI flag");
+	const r = await brief("feature");
+	assert.equal(r.details.answer, "change");
+	assert.match(r.content[0].text, /The user wants changes to the brief: only the CLI flag/);
+	assert.equal(saved(), undefined);
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+// ---------------------------------------------------------------- tiny brief size
+
+const GIT_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"];
+
+/** Removes git's repository variables from process.env for this test (diffSnapshot reads them). */
+function isolateGitEnv(t: TestContext) {
+	for (const key of GIT_VARS) {
+		const saved = process.env[key];
+		delete process.env[key];
+		t.after(() => {
+			if (saved !== undefined) process.env[key] = saved;
+		});
+	}
+}
+
+/** Runs git in cwd with no inherited repository variables. */
+function git(cwd: string, ...args: string[]) {
+	const env = { ...process.env };
+	for (const key of GIT_VARS) delete env[key];
+	execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, env, stdio: "ignore" });
+}
+
+test("a tiny brief that grows to 4 new files gets one size advisory; a failed call gets none", async (t) => {
+	isolateGitEnv(t);
+	const { ext, ctx, cwd, brief } = await routingHarness(t);
+	git(cwd, "init", "-q");
+	fs.writeFileSync(path.join(cwd, "README.md"), "hi\n");
+	git(cwd, "add", ".");
+	git(cwd, "commit", "-q", "-m", "init");
+	await brief("tiny");
+	for (const name of ["a", "b", "c", "d"]) fs.writeFileSync(path.join(cwd, `${name}.ts`), "x\n");
+	let n = 0;
+	const result = async (isError = false) => {
+		const r = (await ext.handlers.tool_result[0]({ toolName: "write", toolCallId: `w${n++}`, input: { path: "d.ts", content: "x\n" }, content: [{ type: "text", text: "ok" }], isError }, ctx)) as
+			| { content?: { text: string }[] }
+			| undefined;
+		return (r?.content ?? []).map((c) => c.text).join("");
+	};
+	const ADVISORY = /this "tiny" change now touches 4 files/;
+	assert.doesNotMatch(await result(true), ADVISORY, "failed call");
+	assert.match(await result(), ADVISORY, "first write past the size");
+	assert.doesNotMatch(await result(), ADVISORY, "only once");
 });

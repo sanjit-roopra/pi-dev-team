@@ -54,6 +54,13 @@ function projectAgentCall() {
 	return script([{ tools: [{ tool: "dev_team_subagent", args: { tasks } }] }]);
 }
 
+/** The isolated user config (~/.pi/agent/dev-team.json); routing is off unless `settings` says otherwise. */
+function writeUserConfig(home, settings) {
+	const agentDir = path.join(home, ".pi", "agent");
+	fs.mkdirSync(agentDir, { recursive: true });
+	fs.writeFileSync(path.join(agentDir, "dev-team.json"), JSON.stringify({ routing: "off", ...settings }));
+}
+
 function setupRepo() {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "pi-dev-team-e2e-"));
 	const repo = path.join(root, "repo");
@@ -63,6 +70,8 @@ function setupRepo() {
 	fs.writeFileSync(path.join(home, ".claude", "telemetry.json"), '{"enabled": true}');
 	// a user who ran /setup: keeps the autocompact_setup_nudge advisory out of the echoed prompt
 	fs.writeFileSync(path.join(home, ".claude", "settings.json"), '{"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"}}');
+	// routing off: scenarios that write from a plain prompt test their own subject, not the brief gate
+	writeUserConfig(home, {});
 	const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "pipe" });
 	git("init", "-q", "-b", "main");
 	git("config", "user.email", "t@example.com");
@@ -258,15 +267,28 @@ const scenarios = {
 		assert(!fs.existsSync(path.join(env.repo, ".env")), ".env was written");
 	},
 
+	"with routing on, a plain-prompt write waits for dev_team_brief, then goes ahead"(env) {
+		writeUserConfig(env.home, { routing: "brief" });
+		const write = { tool: "write", args: { path: "ok.txt", content: "ok\n" } };
+		let r = pi(env, script([write]), { json: true });
+		const blocked = toolResults(r.out).find((x) => x.tool === "write");
+		assert(blocked?.isError && blocked.text.includes("call dev_team_brief before the first file change"), `write not blocked: ${JSON.stringify(blocked)} ${r.err}`);
+		assert(!fs.existsSync(path.join(env.repo, "ok.txt")), "ok.txt was written before a brief");
+		const brief = { tool: "dev_team_brief", args: { kind: "tiny", building: "Add ok.txt", doneWhen: "ok.txt exists" } };
+		r = pi(env, script([brief, write]), { json: true });
+		const results = toolResults(r.out);
+		assert(results.length === 2 && results.every((x) => !x.isError), `brief then write failed: ${JSON.stringify(results)} ${r.err}`);
+		assert(fs.existsSync(path.join(env.repo, "ok.txt")), "ok.txt not written after the brief");
+		assert(fs.existsSync(path.join(env.repo, ".claude", "memory", "brief.json")), "brief.json not saved");
+	},
+
 	"destructive_guard blocks reset --hard on the default branch"(env) {
 		const r = pi(env, script([{ tool: "bash", args: { command: "git reset --hard HEAD" } }]));
 		assert(r.out.includes("[destructive_guard] BLOCKED"), r.out);
 	},
 
 	async "with a human attached, a CAUTION command and ask_user wait askTimeoutSec, then the run goes on without them"(env) {
-		const agentDir = path.join(env.home, ".pi", "agent");
-		fs.mkdirSync(agentDir, { recursive: true });
-		fs.writeFileSync(path.join(agentDir, "dev-team.json"), JSON.stringify({ askTimeoutSec: 1 }));
+		writeUserConfig(env.home, { askTimeoutSec: 1 });
 		for (const dir of ["allowed", "unanswered"]) fs.mkdirSync(path.join(env.repo, dir));
 		const steps = [
 			{ tool: "bash", args: { command: "rm -rf allowed" } },

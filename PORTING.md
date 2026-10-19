@@ -78,10 +78,11 @@ The model uses dev-team through four tools:
 |---|---|---|
 | `dev_team_subagent` | Agent / Task | Runs the agent in a child `pi` process with its own context, tools and tier model. Single calls, parallel calls (several calls in one message, or `tasks[]`), and `isolation: "worktree"`. Accepts `subagent_type`/`prompt` too. Live per-agent progress in the TUI; child spend counts in pi's session totals. |
 | `skill` | Skill | Loads a skill with arguments substituted. This is how skills chain (`/specs` → `/plan`, `/ship` → everything). |
-| `ask_user` | AskUserQuestion | The human gates. In non-interactive runs (`pi -p`, subagents) it tells the model to take the documented default. |
+| `ask_user` | AskUserQuestion | The human gates, in plain language (`lib/plain-questions.ts`). `w` or `answerMode: wait` stops the timeout. Non-interactive runs take the documented default. |
 | `web_fetch` | WebFetch | URL to text. |
+| `dev_team_brief` | none (port) | A plain request's brief before its first file change; `tool_call` blocks writes until it (`lib/brief.ts`, `routing`). |
 
-The dispatch tool is named `dev_team_subagent` so this package can coexist with `pi-subagents`, which registers `subagent`. Dev-team workflows use their own dispatch tool for model tiers, hooks, and metrics. Other workflows can still use the other package's `subagent` tool.
+The dispatch tool is `dev_team_subagent`, not `subagent`, so the package coexists with `pi-subagents`.
 
 ## 4. What is dropped, and why
 

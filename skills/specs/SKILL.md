@@ -20,8 +20,7 @@ per-slice Gherkin scenarios, or begin building.
 
 ## Positioning — what this skill is for
 
-This skill's value is **resolving ambiguity with a human before build begins**
-(Rec 1, `docs/experiments/RECOMMENDATIONS.md`). No downstream workflow recovers
+This skill's value is **resolving ambiguity with a human before build begins**. No downstream workflow recovers
 information the spec never stated — under vague specs every workflow arm scored
 0% on acceptance tests probing an omitted decision. The Ambiguity Resolution
 Protocol below is the mechanism: it forces every gap to be either resolved by a
@@ -30,8 +29,7 @@ human or documented as inferable before implementation starts.
 What this skill is **not** for: edge-case synthesis. Run to completion, the
 full `/specs`→`/plan`→`/build` pipeline's explicit acceptance-criteria
 synthesis does not out-perform TDD's failing-test discipline at surfacing
-unstated edge cases (25% vs. 33% pooled EDGE pass — Experiment 03, reported in
-`docs/experiments/02-final-results.md`). The two have different failure modes
+unstated edge cases (25% vs. 33% pooled EDGE pass — Experiment 03). The two have different failure modes
 and both are worth keeping: `/specs` catches ambiguity a human must resolve;
 the build cadence's per-behavior tests catch edge cases the spec implies but
 never enumerates.
@@ -75,8 +73,8 @@ this feature:
 
 - If no spec file exists: proceed directly to the collaboration loop below.
 - If a spec file exists: read its opening lines and check for a `<!-- spec-version: -->` comment or a `**Format:**` header field.
-  - If the marker is absent or predates the current skill version (see frontmatter `version:`): surface this to the user — *"An existing spec was found but appears to use an older format. Regenerate from scratch, or confirm you want to update in place?"* — and wait for explicit direction before proceeding.
-  - If the marker matches the current version: proceed to the collaboration loop below with the existing file as base.
+  - If the file has no `<!-- spec-version: 2 -->` line (the marker the body template in [`references/persistence.md`](references/persistence.md) writes): update it in place to the current template, keep every decision and log row, add the marker, and say so. Ask only when the user may want a fresh spec instead (recommended: update in place).
+  - If the marker is `<!-- spec-version: 2 -->`: proceed to the collaboration loop below with the existing file as base.
 
 This prevents silently overwriting a current spec and catches format drift before
 the plan phase consumes stale artifacts.
@@ -146,11 +144,7 @@ this does not duplicate `plan-review-acceptance`.
 | `inferable` | A reasonable developer, given the codebase and domain, would make the same choice | Document the inference and its rationale; proceed |
 | `requires-stakeholder-input` | The decision depends on product or business intent not evident from context; two reasonable developers would choose differently | **Block — ask the human before proceeding** |
 
-**Step C — Resolve `requires-stakeholder-input` items.** Collect all such items and present them as a single batch to the human before writing acceptance criteria:
-
-> "Before writing acceptance criteria, I need clarification on N decisions the spec leaves open: [list]"
-
-Wait for answers. Only then finalize the criteria.
+**Step C — Resolve `requires-stakeholder-input` items in rounds.** Load [`references/grilling.md`](references/grilling.md) and ask them in rounds: each round asks every open decision whose prerequisites are settled, with a recommended answer, then the next round asks what those answers opened. Stop when nothing is open, or at the first timeout (take that round's recommended answers, log them `assumed (timeout)`). Only then finalize the criteria.
 
 **What "inferable" is NOT:** a convenient default. Naturalness or simplicity does not make a decision inferable — the test is whether a developer working from context alone would reliably land on the same answer. If in doubt, classify as `requires-stakeholder-input`.
 
