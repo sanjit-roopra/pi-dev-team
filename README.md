@@ -42,6 +42,17 @@ A plain request without a command first gets a short brief: what the team builds
 
 Each question shows its time left. Press `w` to make it wait, or run `/dev-team wait` for the session. A request with "grill me" waits too.
 
+### Phone message when the team goes on alone (optional)
+
+If you do not answer in time, the team takes the recommended answer and goes on. It can tell your phone. It uses ntfy, a free phone app. You need no account.
+
+1. Install the ntfy app (App Store or Google Play).
+2. Make up a long random name, for example `dev-team-k3v9q2x7m4`. Anyone who knows the name can read your messages.
+3. In the app, tap `+` and subscribe to that name.
+4. Add the name to `~/.pi/agent/dev-team.json`: `{ "notify": "ntfy:dev-team-k3v9q2x7m4" }`
+
+The message shows what the team builds, or which answers it took for you. Without step 4, nothing is sent.
+
 Other commands:
 
 - `/code-review`: about 25 agents review your change, one topic each (security, tests, naming, ...).
@@ -137,17 +148,17 @@ All settings, with defaults:
   "askTimeoutSec": 120,        // questions wait this long, then go on; 0 = never ask
   "answerMode": "timeout",     // timeout, or wait: questions wait for you
   "routing": "brief",          // brief or off: a brief before a plain request changes files
-  "notify": "",                // "ntfy:<random topic>": phone push when the team goes on alone (user file only)
+  "notify": "",                // "ntfy:<name>": phone message (see above; user file only)
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
 }
 ```
 
-A project file cannot change `hooks`, and its `env` accepts only `DEV_TEAM_*` settings. So a cloned repository cannot turn off your guards. `/dev-team hooks` shows which guards are on.
+A project file cannot change `hooks`, so a cloned repository cannot turn off your guards. `/dev-team hooks` shows which guards are on.
 
 ### Sensitive-file guard
 
-Agents cannot write files that look like secrets: `.env`, `*.key`, `*.pem`, names with `secret` or `credential`, or files in a `secrets/` or `credentials/` folder (full list: `hooks/guards.json`). Markdown files are allowed. Approving in chat does not lift the block.
+Agents cannot write files that look like secrets, for example `.env`, `*.key` or `*.pem` (full list: `hooks/guards.json`). Approving in chat does not lift the block.
 
 To allow a file, add a pattern in your own `~/.pi/agent/dev-team.json` (a project file cannot):
 
