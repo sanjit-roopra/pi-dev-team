@@ -13,9 +13,11 @@ import {
 	DEV_TEAM_BRIEF_TOOL,
 	diffSnapshot,
 	type FeatureAnswer,
+	FLOW_SKILLS,
 	isMutatingBash,
 	lintBrief,
 	MAX_GLANCE_LINES,
+	NEW_WORK_SKILLS,
 	parseDiff,
 	registerBriefTool,
 	renderBrief,
@@ -24,6 +26,8 @@ import {
 } from "../../extensions/dev-team/lib/brief.ts";
 
 // ---------------------------------------------------------------- isMutatingBash
+
+const CWD = path.resolve("/repo");
 
 const READ_ONLY = [
 	"ls",
@@ -84,7 +88,7 @@ test("isMutatingBash counts git commit as a change whatever its quoted message h
 	assert.equal(isMutatingBash('git commit -m "a > b"'), true);
 });
 
-// Pinned bugs: see final report.
+// `>&2` and `2>&1` copy a stream: they write no file.
 test("isMutatingBash treats a redirect to stderr (>&2) as read-only", () => {
 	assert.equal(isMutatingBash("echo hi >&2"), false);
 });
@@ -128,16 +132,190 @@ test("isMutatingBash still flags an unquoted glued redirect such as echo x>f", (
 	assert.equal(isMutatingBash("echo x > \"out.txt\""), true);
 });
 
-// Production bug: a word that is only partly quoted is skipped whole, so the unquoted redirect in it is missed.
+// A word that is only partly quoted still holds an unquoted redirect.
 for (const command of ["echo x >\"out.txt\"", "cat a >\"$F\"", "echo \"x\">f", "echo x>'f'"]) {
 	test(`isMutatingBash flags the unquoted redirect in the partly quoted word of ${JSON.stringify(command)}`, () => {
 		assert.equal(isMutatingBash(command), true);
 	});
 }
 
-// ---------------------------------------------------------------- BriefGate
+for (const command of ["echo $(rm x)", 'echo "$(touch f)"', "x=$(git commit -m m)", "echo $(echo $(rm a))", "echo `touch`", "x=`touch`"]) {
+	test(`isMutatingBash flags the command the shell runs inside ${JSON.stringify(command)}`, () => {
+		assert.equal(isMutatingBash(command), true);
+	});
+}
 
-const CWD = path.resolve("/repo");
+for (const command of ["echo $(cat f)", "echo '$(rm x)'", "echo '`rm x`'", "echo $(git status)"]) {
+	test(`isMutatingBash lets the read-only or quoted substitution in ${JSON.stringify(command)} pass`, () => {
+		assert.equal(isMutatingBash(command), false);
+	});
+}
+
+// The shell runs a backtick command whatever spaces it holds, and also inside double quotes.
+for (const command of ["echo `rm x`", 'echo "`rm x`"', "x=`git commit -m m`"]) {
+	test(`isMutatingBash flags the backtick command with arguments in ${JSON.stringify(command)}`, () => {
+		assert.equal(isMutatingBash(command), true);
+	});
+}
+
+test("isMutatingBash ignores a write inside a substitution when its target is outside the project", () => {
+	assert.equal(isMutatingBash("echo $(rm /tmp/x)", CWD), false);
+	assert.equal(isMutatingBash("echo $(rm src/x)", CWD), true);
+});
+
+function withHome(t: TestContext, home: string): void {
+	const old = process.env.HOME;
+	process.env.HOME = home;
+	t.after(() => {
+		if (old === undefined) delete process.env.HOME;
+		else process.env.HOME = old;
+	});
+}
+
+for (const command of [
+	"echo x > /tmp/a",
+	"echo x > $TMPDIR/a",
+	"echo x > ${TMPDIR}/a",
+	"echo x > ~/a",
+	"echo x > /dev/null",
+	"echo x > /dev/stderr",
+	"mkdir /tmp/d",
+	"mkdir -p /tmp/a /tmp/b",
+	"touch ~/notes.txt",
+	"rm -f /tmp/x",
+	"cp /tmp/a /tmp/b",
+]) {
+	test(`isMutatingBash lets ${JSON.stringify(command)} pass: it writes outside the project`, (t) => {
+		withHome(t, path.resolve("/home/u"));
+		assert.equal(isMutatingBash(command, path.resolve("/home/u/repo")), false);
+	});
+}
+
+for (const command of ["echo x > /home/u/repo/a", "echo x > ~/repo/a", "mkdir src/d", "rm /tmp/x src/a", "echo x > sub/../a", "cp /tmp/a b"]) {
+	test(`isMutatingBash flags ${JSON.stringify(command)}: it writes inside the project`, (t) => {
+		withHome(t, path.resolve("/home/u"));
+		assert.equal(isMutatingBash(command, path.resolve("/home/u/repo")), true);
+	});
+}
+
+test("isMutatingBash flags a ~ path when the project is the home folder itself", (t) => {
+	withHome(t, path.resolve("/home/u"));
+	assert.equal(isMutatingBash("echo x > ~/a", path.resolve("/home/u")), true);
+});
+
+test("isMutatingBash without a cwd still flags writes to absolute and ~ paths", () => {
+	assert.equal(isMutatingBash("echo x > /tmp/a"), true);
+	assert.equal(isMutatingBash("mkdir /tmp/d"), true);
+	assert.equal(isMutatingBash("echo x > ~/a"), true);
+	assert.equal(isMutatingBash("echo x > $TMPDIR/a"), false);
+});
+
+// The shell computes this target, so its text says nothing about where it is.
+test("isMutatingBash flags a redirect whose target is computed by a substitution", () => {
+	assert.equal(isMutatingBash('echo x > "$(pwd)/a"', CWD), true);
+});
+
+for (const command of ["echo x > .claude/a", "mkdir -p .dev-team-reports/r", "touch .claude/memory/x.json", `echo x > ${path.join(CWD, ".claude", "m")}`]) {
+	test(`isMutatingBash lets ${JSON.stringify(command)} pass: it writes the team's own state`, () => {
+		assert.equal(isMutatingBash(command, CWD), false);
+	});
+}
+
+test("isMutatingBash flags a lookalike of the state folders", () => {
+	assert.equal(isMutatingBash("touch .claudex", CWD), true);
+	assert.equal(isMutatingBash("echo x > .dev-team-reports-old/a", CWD), true);
+});
+
+for (const command of ["echo -n>f", "echo a-b>f", "echo a=b>f", "x=1>f", "echo a=b>>f"]) {
+	test(`isMutatingBash flags the redirect glued to a word with - or = in ${JSON.stringify(command)}`, () => {
+		assert.equal(isMutatingBash(command), true);
+	});
+}
+
+for (const command of ["echo 'a>|b'", 'echo "x >| y"', "echo x '>|' y", "echo a\\>\\|b"]) {
+	test(`isMutatingBash treats the quoted >| in ${JSON.stringify(command)} as text`, () => {
+		assert.equal(isMutatingBash(command), false);
+	});
+}
+
+for (const command of ["ls >|out", "echo x >| f"]) {
+	test(`isMutatingBash flags the clobbering redirect in ${JSON.stringify(command)}`, () => {
+		assert.equal(isMutatingBash(command), true);
+	});
+}
+
+const HEREDOC_ARG = "\"$(cat <<'EOF'\na > b\nEOF\n)\"";
+
+test("isMutatingBash treats a > in a $(cat <<'EOF') body as text", () => {
+	assert.equal(isMutatingBash(`git log --grep ${HEREDOC_ARG}`), false);
+	assert.equal(isMutatingBash(`echo ${HEREDOC_ARG}`), false);
+	assert.equal(isMutatingBash("x=$(cat <<'EOF'\na > b\nEOF\n)"), false);
+});
+
+test("isMutatingBash still flags a real redirect after a $(cat <<'EOF') argument", () => {
+	assert.equal(isMutatingBash(`echo ${HEREDOC_ARG} > out.txt`), true);
+	assert.equal(isMutatingBash(`gh pr create --body ${HEREDOC_ARG}`), true);
+});
+
+for (const command of [
+	"git stash list",
+	"git stash show",
+	"git stash show -p stash@{1}",
+	"git tag",
+	"git tag -l",
+	"git tag --list 'v*'",
+	"git tag --contains HEAD",
+	"git tag --points-at HEAD",
+	"git worktree list",
+	"git branch",
+	"git branch -a",
+	"git branch -r",
+	"git branch -vv",
+	"git branch --list 'feat*'",
+	"git branch --all",
+]) {
+	test(`isMutatingBash lets the git list form ${JSON.stringify(command)} pass`, () => {
+		assert.equal(isMutatingBash(command), false);
+	});
+}
+
+for (const command of [
+	"git stash",
+	"git stash push -m x",
+	"git stash pop",
+	"git stash drop",
+	"git stash apply",
+	"git tag v1",
+	"git tag -a v1 -m x",
+	"git tag -d v1",
+	"git worktree add ../x",
+	"git worktree remove ../x",
+	"git worktree prune",
+	"git branch new",
+	"git branch -d old",
+	"git branch -D old",
+	"git branch -m a b",
+	"git branch --delete old",
+	"git branch -c a b",
+]) {
+	test(`isMutatingBash flags the git change ${JSON.stringify(command)}`, () => {
+		assert.equal(isMutatingBash(command), true);
+	});
+}
+
+for (const command of ["go version", "go test ./...", "go build ./...", "go vet ./...", "go env GOPATH", "npm view x", "npm ls", "cargo build", "cargo test", "uv run pytest", "pip list", "pip3 show x", "brew list"]) {
+	test(`isMutatingBash lets the read-only tool command ${JSON.stringify(command)} pass`, () => {
+		assert.equal(isMutatingBash(command), false);
+	});
+}
+
+for (const command of ["go get example.com/x", "go mod tidy", "go install ./cmd/x", "go generate ./...", "npm i", "pnpm add x", "yarn remove x", "bun install", "cargo add x", "uv sync", "uv add x", "pip3 install x", "gem install x", "brew install x"]) {
+	test(`isMutatingBash flags the dependency change ${JSON.stringify(command)}`, () => {
+		assert.equal(isMutatingBash(command), true);
+	});
+}
+
+// ---------------------------------------------------------------- BriefGate
 
 test("BriefGate starts closed and blocks write, edit and mutating bash with a reason naming dev_team_brief", () => {
 	const gate = new BriefGate();
@@ -313,24 +491,141 @@ test("blockReason mentions resume and the flow only after a flow ran", () => {
 	gate.newRequest();
 	const reason = gate.check("write", { path: "src/a.ts" }, CWD) ?? "";
 	assert.match(reason, /pick resume/);
-	assert.match(reason, /\/specs/);
+	assert.match(reason, /\/specs from the previous request/);
+});
+
+test("BriefGate opens for the extra skills it is given, such as user commands", () => {
+	const gate = new BriefGate(new Set([...FLOW_SKILLS, "code-review", "pr"]));
+	gate.noteSkill("dev-team:code-review");
+	assert.equal(gate.open, true);
+	assert.equal(gate.lastFlow, "code-review");
+	assert.equal(new BriefGate().briefPosted("tiny"), true, "the default set still works");
+	const plain = new BriefGate();
+	plain.noteSkill("code-review");
+	assert.equal(plain.open, false, "the default set holds only the flow skills");
+});
+
+test("NEW_WORK_SKILLS holds the commands that start new work, all of them flow skills", () => {
+	assert.deepEqual([...NEW_WORK_SKILLS].sort(), ["autoship", "fix", "ship", "specs"]);
+	for (const name of NEW_WORK_SKILLS) assert.ok(FLOW_SKILLS.has(name), name);
+});
+
+test("newRequest says no on a fresh gate and after a request that ran no flow", () => {
+	const gate = new BriefGate();
+	assert.equal(gate.newRequest(), false);
+	gate.briefPosted("tiny");
+	assert.equal(gate.newRequest(), false);
+});
+
+test("newRequest says yes after a request that ran a flow skill or a /command, and keeps lastFlow", () => {
+	const gate = new BriefGate();
+	gate.noteSkill("ship");
+	assert.equal(gate.newRequest(), true);
+	assert.equal(gate.lastFlow, "ship");
+	gate.commandRan("/build");
+	assert.equal(gate.newRequest(), true);
+	assert.equal(gate.lastFlow, "build");
+});
+
+test("newRequest keeps the flow across a chain of resume briefs", () => {
+	const gate = new BriefGate();
+	gate.commandRan("/specs");
+	for (let i = 0; i < 3; i++) {
+		assert.equal(gate.newRequest(), true, `request ${i}`);
+		assert.equal(gate.briefPosted("resume"), true, `resume ${i}`);
+		assert.equal(gate.lastFlow, "specs");
+	}
+});
+
+test("newRequest forgets lastFlow once a request neither ran nor resumed the flow", () => {
+	const gate = new BriefGate();
+	gate.noteSkill("ship");
+	assert.equal(gate.newRequest(), true);
+	gate.briefPosted("tiny");
+	assert.equal(gate.newRequest(), false);
+	assert.equal(gate.lastFlow, undefined);
+	assert.equal(gate.briefPosted("resume"), false);
+	assert.equal(gate.open, false);
+	assert.doesNotMatch(gate.blockReason(), /resume/);
+});
+
+test("newRequest forgets lastFlow after a request with only a question", () => {
+	const gate = new BriefGate();
+	gate.noteSkill("ship");
+	gate.newRequest();
+	gate.briefPosted("question");
+	assert.equal(gate.newRequest(), false);
+	assert.equal(gate.lastFlow, undefined);
+});
+
+test("a resume brief after a tiny brief in the same request keeps the gate open and the kind tiny", () => {
+	const gate = new BriefGate();
+	gate.briefPosted("tiny");
+	assert.equal(gate.briefPosted("resume"), true);
+	assert.equal(gate.kind, "tiny");
+	assert.equal(gate.newRequest(), false, "a tiny brief resumed no flow");
+});
+
+for (const later of ["question", "vague", "resume"] as const) {
+	for (const first of ["tiny", "feature"] as const) {
+		test(`a ${later} brief after a ${first} brief keeps the kind ${first}`, () => {
+			const gate = new BriefGate();
+			gate.briefPosted(first);
+			assert.equal(gate.briefPosted(later), true);
+			assert.equal(gate.kind, first);
+		});
+	}
+
+	test(`a ${later} brief while a flow keeps the gate open sets no kind`, () => {
+		const gate = new BriefGate();
+		gate.noteSkill("ship");
+		gate.briefPosted(later);
+		assert.equal(gate.kind, undefined);
+		assert.equal(gate.open, true);
+	});
+}
+
+test("a tiny brief after a question replaces the kind", () => {
+	const gate = new BriefGate();
+	gate.briefPosted("question");
+	gate.briefPosted("tiny");
+	assert.equal(gate.kind, "tiny");
+});
+
+test("BriefGate.check lets bash writes to state and outside paths pass and blocks a substitution that writes", () => {
+	const gate = new BriefGate();
+	assert.equal(gate.check("bash", { command: "echo x > .claude/a" }, CWD), undefined);
+	assert.equal(gate.check("bash", { command: "echo x > /tmp/a" }, CWD), undefined);
+	assert.ok(gate.check("bash", { command: "echo $(rm src/a)" }, CWD));
 });
 
 // ---------------------------------------------------------------- sizeAdvisory
 
 const numstat = (...rows: [string, string][]) => rows.map(([a, r], i) => `${a}\t${r}\tf${i}.ts`).join("\n");
-const fromClean = (rows: string, untracked = "") => sizeAdvisory(new Map(), parseDiff(rows, untracked));
+const fromClean = (rows: string, untracked: Record<string, number> = {}) => sizeAdvisory(new Map(), parseDiff(rows, untracked));
 
-test("parseDiff reads numstat rows and untracked files, binary rows as 0 lines", () => {
+test("parseDiff reads numstat rows and untracked files with their line counts, binary rows as 0 lines", () => {
 	assert.deepEqual(
-		[...parseDiff("3\t2\ta.ts\n-\t-\timg.png\n", "new.ts\n\na.ts\n")],
+		[...parseDiff("3\t2\ta.ts\n-\t-\timg.png\n", { "new.ts": 7, "a.ts": 99 })],
 		[
 			["a.ts", 5],
 			["img.png", 0],
-			["new.ts", 0],
+			["new.ts", 7],
 		],
 	);
 	assert.equal(parseDiff("").size, 0);
+});
+
+test("parseDiff leaves out .claude and .dev-team-reports, tracked or untracked", () => {
+	const snapshot = parseDiff("1\t0\t.claude/memory/brief.json\n2\t0\t.dev-team-reports/r.md\n3\t0\tsrc/a.ts", {
+		".claude/plan.md": 40,
+		".dev-team-reports/x/y.md": 9,
+		".claudex/a": 1,
+	});
+	assert.deepEqual([...snapshot], [
+		["src/a.ts", 3],
+		[".claudex/a", 1],
+	]);
 });
 
 test("sizeAdvisory stays quiet at 3 files and 150 lines", () => {
@@ -367,14 +662,39 @@ test("sizeAdvisory counts only the lines added since the brief to a file dirty b
 });
 
 test("sizeAdvisory counts new untracked files since the brief", () => {
-	const before = parseDiff("1\t0\ta.ts", "old.txt");
-	const after = parseDiff("1\t0\ta.ts", "old.txt\nn1.ts\nn2.ts\nn3.ts\nn4.ts");
+	const before = parseDiff("1\t0\ta.ts", { "old.txt": 5 });
+	const after = parseDiff("1\t0\ta.ts", { "old.txt": 5, "n1.ts": 0, "n2.ts": 0, "n3.ts": 0, "n4.ts": 0 });
 	assert.match(sizeAdvisory(before, after) ?? "", /4 files and 0 lines/);
 });
 
-function gitRepo(t: TestContext): string {
+test("sizeAdvisory counts the lines of one big new untracked file", () => {
+	assert.equal(fromClean("", { "new.ts": 150 }), undefined);
+	assert.match(fromClean("", { "new.ts": 151 }) ?? "", /1 files and 151 lines/);
+});
+
+const GIT_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR", "GIT_CEILING_DIRECTORIES"];
+
+/**
+ * Clears the git variables a hook or worktree may set, on process.env too (diffSnapshot reads it),
+ * until the test ends. `ceiling` stops git from finding a repository above it.
+ */
+function cleanGitEnv(t: TestContext, ceiling?: string): NodeJS.ProcessEnv {
+	const saved = Object.fromEntries(GIT_VARS.map((name) => [name, process.env[name]]));
+	for (const name of GIT_VARS) delete process.env[name];
+	if (ceiling) process.env.GIT_CEILING_DIRECTORIES = ceiling;
+	t.after(() => {
+		for (const [name, value] of Object.entries(saved)) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	});
+	return { ...process.env };
+}
+
+function gitRepo(t: TestContext, commit = true): string {
 	const dir = tempDir(t);
-	const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "ignore" });
+	const env = cleanGitEnv(t);
+	const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, env, stdio: "ignore" });
 	git("init", "-q");
 	git("config", "user.email", "t@example.com");
 	git("config", "user.name", "t");
@@ -382,27 +702,67 @@ function gitRepo(t: TestContext): string {
 	fs.writeFileSync(path.join(dir, "a.txt"), "one\ntwo\n");
 	fs.writeFileSync(path.join(dir, ".gitignore"), "ignored.txt\n");
 	git("add", ".");
-	git("commit", "-q", "-m", "init");
+	if (commit) git("commit", "-q", "-m", "init");
 	return dir;
 }
 
-test("diffSnapshot reads changed lines and untracked files from a real git repo", (t) => {
+test("diffSnapshot reads changed lines and untracked files with their line counts from a real git repo", (t) => {
 	const dir = gitRepo(t);
 	assert.equal(diffSnapshot(dir)?.size, 0);
 	fs.writeFileSync(path.join(dir, "a.txt"), "one\nTWO\nthree\n");
-	fs.writeFileSync(path.join(dir, "new.ts"), "x\n");
+	fs.writeFileSync(path.join(dir, "new.ts"), "x\ny\n");
+	fs.writeFileSync(path.join(dir, "no-newline.ts"), "x\ny\nz");
+	fs.writeFileSync(path.join(dir, "empty.ts"), "");
 	fs.writeFileSync(path.join(dir, "ignored.txt"), "x\n");
 	assert.deepEqual(
 		[...(diffSnapshot(dir) ?? [])].sort(),
 		[
 			["a.txt", 3],
-			["new.ts", 0],
+			["empty.ts", 0],
+			["new.ts", 2],
+			["no-newline.ts", 3],
+		],
+	);
+});
+
+test("diffSnapshot counts a new untracked file over 1 MB as one line too many for a tiny change", (t) => {
+	const dir = gitRepo(t);
+	fs.writeFileSync(path.join(dir, "big.txt"), "x".repeat(1_000_001));
+	assert.deepEqual([...(diffSnapshot(dir) ?? [])], [["big.txt", 151]]);
+});
+
+test("diffSnapshot leaves out .claude and .dev-team-reports files, tracked or untracked", (t) => {
+	const dir = gitRepo(t);
+	fs.mkdirSync(path.join(dir, ".claude", "memory"), { recursive: true });
+	fs.mkdirSync(path.join(dir, ".dev-team-reports"));
+	fs.writeFileSync(path.join(dir, ".claude", "memory", "brief.json"), "{}\n");
+	fs.writeFileSync(path.join(dir, ".dev-team-reports", "r.md"), "a\nb\n");
+	fs.writeFileSync(path.join(dir, "src.ts"), "x\n");
+	assert.deepEqual([...(diffSnapshot(dir) ?? [])], [["src.ts", 1]]);
+	execFileSync("git", ["add", "-A"], { cwd: dir, env: cleanGitEnv(t), stdio: "ignore" });
+	execFileSync("git", ["commit", "-q", "-m", "state"], { cwd: dir, env: cleanGitEnv(t), stdio: "ignore" });
+	fs.writeFileSync(path.join(dir, ".claude", "memory", "brief.json"), "{\n}\n");
+	assert.equal(diffSnapshot(dir)?.size, 0);
+});
+
+test("diffSnapshot works in a repo with no commit yet", (t) => {
+	const dir = gitRepo(t, false);
+	assert.equal(diffSnapshot(dir)?.size, 0, "staged files match the index");
+	fs.writeFileSync(path.join(dir, "a.txt"), "one\ntwo\nthree\n");
+	fs.writeFileSync(path.join(dir, "new.ts"), "x\n");
+	assert.deepEqual(
+		[...(diffSnapshot(dir) ?? [])].sort(),
+		[
+			["a.txt", 1],
+			["new.ts", 1],
 		],
 	);
 });
 
 test("diffSnapshot is undefined outside a git repo", (t) => {
-	assert.equal(diffSnapshot(tempDir(t)), undefined);
+	const dir = tempDir(t);
+	cleanGitEnv(t, path.dirname(dir));
+	assert.equal(diffSnapshot(dir), undefined);
 });
 
 // ---------------------------------------------------------------- renderBrief / lintBrief
@@ -493,6 +853,25 @@ test("saveBrief replaces an older brief.json and leaves no temp file", (t) => {
 	saveBrief(dir, { ...tiny, building: "Second" }, { approved: "user" });
 	assert.equal(JSON.parse(fs.readFileSync(path.join(dir, BRIEF_FILE), "utf-8")).building, "Second");
 	assert.deepEqual(fs.readdirSync(path.join(dir, ".claude", "memory")), ["brief.json"]);
+});
+
+test("saveBrief removes its temp file when the rename fails", (t) => {
+	const dir = tempDir(t);
+	fs.mkdirSync(path.join(dir, BRIEF_FILE), { recursive: true });
+	fs.writeFileSync(path.join(dir, BRIEF_FILE, "keep"), "x");
+	assert.doesNotThrow(() => saveBrief(dir, tiny, { approved: "tiny" }));
+	assert.deepEqual(fs.readdirSync(path.join(dir, ".claude", "memory")), ["brief.json"]);
+	assert.deepEqual(fs.readdirSync(path.join(dir, BRIEF_FILE)), ["keep"]);
+});
+
+test("saveBrief gives each write its own temp file, so a stale one does not stop it", (t) => {
+	const dir = tempDir(t);
+	const memory = path.join(dir, ".claude", "memory");
+	fs.mkdirSync(memory, { recursive: true });
+	fs.writeFileSync(path.join(memory, "brief.json.tmp"), "stale");
+	saveBrief(dir, tiny, { approved: "tiny" });
+	assert.equal(JSON.parse(fs.readFileSync(path.join(dir, BRIEF_FILE), "utf-8")).approved, "tiny");
+	assert.deepEqual(fs.readdirSync(memory).sort(), ["brief.json", "brief.json.tmp"]);
 });
 
 function linkedBrief(t: TestContext): { dir: string; outside: string; target: string } {
@@ -608,8 +987,71 @@ test("dev_team_brief kind resume after a /command opens the gate and names it", 
 	gate.newRequest();
 	const r = await execute("1", { kind: "resume" }, undefined, undefined, fakeCtx(tempDir(t)).ctx);
 	assert.equal(gate.open, true);
-	assert.match(r.content[0].text, /Go on with \/ship/);
+	assert.match(r.content[0].text, /Go on with \/ship\./);
 });
+
+test("dev_team_brief kind resume after a tiny brief in the same request says it already has a brief", async (t) => {
+	const dir = tempDir(t);
+	const { execute, gate } = briefTool();
+	await execute("1", tiny, undefined, undefined, fakeCtx(dir).ctx);
+	const r = await execute("2", { kind: "resume" }, undefined, undefined, fakeCtx(dir).ctx);
+	assert.equal(r.content[0].text, "Go on: this request already has a brief.");
+	assert.equal(gate.open, true);
+	assert.equal(gate.kind, "tiny");
+	assert.ok(fs.existsSync(path.join(dir, BRIEF_FILE)), "the tiny brief stays");
+});
+
+test("dev_team_brief kind resume is refused once the flow is over", async (t) => {
+	const { execute, gate } = briefTool();
+	gate.noteSkill("ship");
+	gate.newRequest();
+	gate.briefPosted("tiny");
+	gate.newRequest();
+	const r = await execute("1", { kind: "resume" }, undefined, undefined, fakeCtx(tempDir(t)).ctx);
+	assert.equal(gate.open, false);
+	assert.match(r.content[0].text, /nothing to resume/);
+});
+
+for (const kind of ["question", "vague"] as const) {
+	test(`dev_team_brief kind ${kind} keeps brief.json when this request already has a tiny brief`, async (t) => {
+		const dir = tempDir(t);
+		const { execute, gate } = briefTool();
+		await execute("1", tiny, undefined, undefined, fakeCtx(dir).ctx);
+		await execute("2", { kind }, undefined, undefined, fakeCtx(dir).ctx);
+		assert.ok(fs.existsSync(path.join(dir, BRIEF_FILE)));
+		assert.equal(gate.kind, "tiny");
+	});
+
+	test(`dev_team_brief kind ${kind} keeps brief.json while the previous request's flow may go on`, async (t) => {
+		const dir = tempDir(t);
+		saveBrief(dir, tiny, { approved: "user" });
+		const { execute, gate } = briefTool();
+		gate.commandRan("/ship");
+		assert.equal(gate.newRequest(), true);
+		await execute("1", { kind }, undefined, undefined, fakeCtx(dir).ctx);
+		assert.ok(fs.existsSync(path.join(dir, BRIEF_FILE)));
+	});
+
+	test(`dev_team_brief kind ${kind} keeps brief.json while a flow runs in this request`, async (t) => {
+		const dir = tempDir(t);
+		saveBrief(dir, tiny, { approved: "user" });
+		const { execute, gate } = briefTool();
+		gate.noteSkill("ship");
+		await execute("1", { kind }, undefined, undefined, fakeCtx(dir).ctx);
+		assert.ok(fs.existsSync(path.join(dir, BRIEF_FILE)));
+	});
+
+	test(`dev_team_brief kind ${kind} removes brief.json once the previous flow is over`, async (t) => {
+		const dir = tempDir(t);
+		saveBrief(dir, tiny, { approved: "user" });
+		const { execute, gate } = briefTool();
+		gate.commandRan("/ship");
+		gate.newRequest();
+		gate.newRequest();
+		await execute("1", { kind }, undefined, undefined, fakeCtx(dir).ctx);
+		assert.equal(fs.existsSync(path.join(dir, BRIEF_FILE)), false);
+	});
+}
 
 for (const kind of ["tiny", "feature"] as const) {
 	for (const missing of ["building", "doneWhen"] as const) {

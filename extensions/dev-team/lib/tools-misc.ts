@@ -129,7 +129,7 @@ export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig
 					content: [
 						{
 							type: "text",
-							text: "NON-INTERACTIVE: no human is attached to this run. Do not wait. Apply the documented non-interactive default for this gate and record that you did.",
+							text: 'NON-INTERACTIVE: no human is attached to this run. Do not wait. Apply the documented non-interactive default (or the option marked (recommended)), mark it "assumed (no human)" where the skill logs decisions, list it under "Decide these" for the PR, and ask no follow-up questions that build on it.',
 						},
 					],
 					details: { answered: false },

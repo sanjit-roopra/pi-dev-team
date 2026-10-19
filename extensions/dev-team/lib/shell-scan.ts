@@ -16,6 +16,8 @@ export interface ShellWord {
 	dynamic: boolean;
 	/** [start, end) ranges of `text` that were quoted or escaped: a `>` there is text, not an operator. */
 	quotedSpans?: [number, number][];
+	/** The simple commands inside this word's `$(...)`, which the shell runs too. */
+	substitutions?: ShellSegment[];
 	redirect?: "heredoc" | "here-string";
 	heredocBody?: string;
 }
@@ -138,9 +140,11 @@ function readSubstitution(source: string, start: number, word: ShellWord, depth:
 		return source.length;
 	}
 	const inner = scanSegments(source, start, depth);
+	(word.substitutions ??= []).push(...inner.segments);
 	const [only] = inner.segments;
 	const catHeredoc = inner.segments.length === 1 && only.length === 2 && only[0].text === "cat" && !only[0].dynamic ? only[1] : undefined;
-	if (catHeredoc?.redirect === "heredoc" && !catHeredoc.dynamic) word.text += catHeredoc.heredocBody;
+	// The body is literal data, so a `>` in it is no operator.
+	if (catHeredoc?.redirect === "heredoc" && !catHeredoc.dynamic) appendQuoted(word, () => (word.text += catHeredoc.heredocBody));
 	else word.dynamic = true;
 	return inner.end;
 }

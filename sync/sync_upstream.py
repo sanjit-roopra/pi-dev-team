@@ -362,7 +362,7 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "Every question asked in the grilling rounds and its answer.\n\n"
         "| Round | Question | Answer | Source |\n"
         "|-------|----------|--------|--------|\n"
-        "| 1 | <question> | <answer> | `user` / `assumed (timeout)` |\n",
+        "| 1 | <question> | <answer> | `user` / `assumed (timeout)` / `assumed (no human)` |\n",
         "grilling: log every question and answer",
     ),
 ]

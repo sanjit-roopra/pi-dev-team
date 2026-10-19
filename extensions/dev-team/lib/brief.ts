@@ -12,12 +12,13 @@
  * A /command the user types runs its own gates, so it opens the gate for its request.
  */
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { lintGhText } from "./github-style.ts";
-import { scanShell, unquotedView } from "./shell-scan.ts";
+import { type ShellSegment, scanShell, unquotedView } from "./shell-scan.ts";
 
 export const BRIEF_KINDS = ["question", "tiny", "feature", "vague", "resume"] as const;
 export type BriefKind = (typeof BRIEF_KINDS)[number];
@@ -30,8 +31,11 @@ export interface Brief {
 	slices?: string[];
 }
 
-/** Skills that run their own human gates; a request whose model loads one needs no brief. */
+/** Skills that run their own human gates; a request whose model loads one needs no brief. index.ts adds every user command. */
 export const FLOW_SKILLS: ReadonlySet<string> = new Set(["specs", "plan", "build", "fix", "ship", "autoship", "continue"]);
+
+/** Commands that start new work: an older request's brief.json must not reach their PR. */
+export const NEW_WORK_SKILLS: ReadonlySet<string> = new Set(["specs", "ship", "autoship", "fix"]);
 
 /** A skill name as the skill tool resolves it: no "/", no "<namespace>:", lower case. */
 export function bareSkillName(name: string): string {
@@ -42,64 +46,132 @@ export const BRIEF_FILE = path.join(".claude", "memory", "brief.json");
 export const TINY_MAX_FILES = 3;
 export const TINY_MAX_LINES = 150;
 export const MAX_GLANCE_LINES = 15;
+/** Lines of an untracked file are counted up to this size; a bigger one counts as TINY_MAX_LINES + 1. */
+const MAX_COUNTED_BYTES = 1_000_000;
 
 // ---------------------------------------------------------------- gate
 
 const MUTATING_COMMANDS = new Set(["rm", "rmdir", "mv", "cp", "mkdir", "touch", "tee", "ln", "chmod", "chown", "truncate", "dd", "patch", "install", "rsync", "unzip"]);
-const MUTATING_GIT = new Set(["add", "commit", "push", "checkout", "switch", "restore", "reset", "rm", "mv", "apply", "am", "merge", "rebase", "cherry-pick", "revert", "stash", "tag", "clean", "pull", "init", "clone", "worktree"]);
-const MUTATING_PACKAGE = new Set(["install", "i", "add", "remove", "rm", "uninstall", "un", "update", "up", "upgrade", "ci", "init", "version", "publish", "link"]);
-const PACKAGE_MANAGERS = new Set(["npm", "pnpm", "yarn", "bun", "pip", "pip3", "uv", "cargo", "go", "gem", "brew"]);
+const MUTATING_GIT = new Set(["add", "commit", "push", "checkout", "switch", "restore", "reset", "rm", "mv", "apply", "am", "merge", "rebase", "cherry-pick", "revert", "clean", "pull", "init", "clone"]);
+/** Subcommands that change files or the project's dependencies, per tool. */
+const MUTATING_SUBCOMMANDS: Record<string, ReadonlySet<string>> = {
+	npm: new Set(["install", "i", "add", "remove", "rm", "uninstall", "un", "update", "up", "upgrade", "ci", "init", "version", "publish", "link"]),
+	pip: new Set(["install", "uninstall"]),
+	uv: new Set(["add", "remove", "sync", "lock", "pip", "init"]),
+	cargo: new Set(["add", "remove", "install", "update", "init", "new", "publish", "fix"]),
+	go: new Set(["get", "install", "mod", "generate", "work"]),
+	gem: new Set(["install", "uninstall", "update"]),
+	brew: new Set(["install", "uninstall", "upgrade", "reinstall"]),
+};
+for (const alias of ["pnpm", "yarn", "bun"]) MUTATING_SUBCOMMANDS[alias] = MUTATING_SUBCOMMANDS.npm;
+MUTATING_SUBCOMMANDS.pip3 = MUTATING_SUBCOMMANDS.pip;
 /** sed -i, sed -Ei, perl -pi, --in-place. */
 const IN_PLACE = /^-[A-Za-z]*i|^--in-place/;
 /** Words before the command itself. */
 const PREFIXES = new Set(["sudo", "env", "command", "nohup", "time", "exec", "xargs"]);
 const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-/** `>`, `>>`, `2>` or `>|` starting a word, or glued to a word without spaces (`hi>>f`), with its target. */
-const REDIRECT = /^(?:\d)?>>?\|?(.*)$|^[^\s<>=-]+?>>?(\S*)$/;
+/** `>`, `>>`, `2>` or `>|` starting a word, or glued to the end of a word (`hi>>f`), with its target. */
+const REDIRECT = /^(?:\d)?>>?\|?(.*)$|^[^\s<>]+?>>?\|?(\S*)$/;
+const DEVICE = /^\/dev\/(?:null|stdout|stderr|tty)$/;
+const COPY_COMMANDS = new Set(["cp", "ln", "install", "rsync"]);
+
+/** A path a command writes; `dynamic`: the shell computes part of it. */
+interface Target {
+	text: string;
+	dynamic: boolean;
+}
 
 /**
  * The file a redirect in word i writes, or undefined. Only an unquoted `>` counts (`views`: words
- * with quoted characters masked), the target keeps its quotes' text. scanShell splits at `&`, so
- * `>&2` and `2>&1` leave a redirect with no target: they write no file.
+ * with quoted characters masked); the target keeps its quotes' text. scanShell splits at `&` and `|`,
+ * so `>&2` and `2>&1` leave a redirect with no target (no file); `>|` is found in isMutatingBash.
  */
-function redirectTarget(words: string[], views: string[], i: number): string | undefined {
+function redirectTarget(segment: ShellSegment, views: string[], i: number): Target | undefined {
 	const m = REDIRECT.exec(views[i]);
 	if (!m) return undefined;
+	const word = segment[i];
 	const captured = m[1] ?? m[2] ?? "";
-	const target = words[i].slice(words[i].length - captured.length);
-	return target || (m[1] !== undefined ? words[i + 1] : undefined);
+	if (captured) return { text: word.text.slice(word.text.length - captured.length), dynamic: word.dynamic };
+	const next = m[1] !== undefined ? segment[i + 1] : undefined;
+	return next && { text: next.text, dynamic: next.dynamic };
 }
 
-/** Whether a bash command line visibly writes files or repository state. Read-only commands, tests and builds pass. */
-export function isMutatingBash(command: string): boolean {
-	// scanShell splits `>|` (write even with noclobber) at the pipe.
-	if (/>\|\s*[^\s&]/.test(command)) return true;
-	for (const segment of scanShell(command)) {
+/**
+ * Whether a path is outside the project (`/tmp/x`, `$TMPDIR/x`, `~/x`), so writing it changes nothing
+ * here. A path the shell computes (`"$(pwd)/a"`) is taken as inside.
+ */
+function outsideProject({ text: target, dynamic }: Target, cwd: string | undefined): boolean {
+	if (DEVICE.test(target) || /^\$\{?TMPDIR\b/.test(target)) return true;
+	if (dynamic) return false;
+	if (!cwd || !(path.isAbsolute(target) || target.startsWith("~"))) return false;
+	const rel = path.relative(cwd, path.resolve(cwd, target.replace(/^~/, process.env.HOME ?? "~")));
+	return rel.startsWith("..") || path.isAbsolute(rel);
+}
+
+/** Whether writing `target` changes the project: inside it and not the team's own state. */
+function writesProject(target: Target, cwd: string | undefined): boolean {
+	return !isStatePath(target.text, cwd ?? "") && !outsideProject(target, cwd);
+}
+
+/** A git subcommand that changes the repository; list forms of stash, tag and worktree do not. */
+function gitChanges(sub: string, rest: string[]): boolean {
+	if (MUTATING_GIT.has(sub)) return true;
+	const first = rest.find((w) => !w.startsWith("-"));
+	if (sub === "stash") return !["list", "show"].includes(rest[0] ?? "push");
+	if (sub === "worktree") return ["add", "remove", "move", "prune", "repair"].includes(rest[0] ?? "");
+	if (sub === "tag") return first !== undefined && !rest.some((w) => w === "-l" || w === "--list" || w.startsWith("--contains") || w.startsWith("--points-at"));
+	if (sub === "branch") return rest.some((w) => /^-(?:[dDmMcC]|-delete|-move|-copy)$/.test(w)) || (first !== undefined && !rest.some((w) => /^-(?:l|a|r|v|vv|-list|-all|-remotes)$/.test(w)));
+	return false;
+}
+
+/** The command line without its single-quoted text, where neither backticks nor `>|` act. */
+const withoutSingleQuoted = (command: string) => command.replace(/'[^']*'/g, "''");
+
+/**
+ * Whether a bash command line visibly writes files or repository state in the project at `cwd`.
+ * Read-only commands, tests, builds and writes outside the project (`/tmp`) pass.
+ */
+export function isMutatingBash(command: string, cwd?: string): boolean {
+	const active = withoutSingleQuoted(command);
+	// scanShell splits `>|` (write even with noclobber) at the pipe, and backtick commands at spaces.
+	if (/>\|\s*[^\s&]/.test(active.replace(/"(?:\\.|[^"\\])*"/g, '""'))) return true;
+	if ([...active.matchAll(/`([^`]+)`/g)].some((m) => isMutatingBash(m[1], cwd))) return true;
+	return segmentsChange(scanShell(command), cwd);
+}
+
+function segmentsChange(segments: ShellSegment[], cwd: string | undefined): boolean {
+	for (const segment of segments) {
+		if (segment.some((w) => segmentsChange(w.substitutions ?? [], cwd))) return true;
 		const words = segment.map((w) => w.text);
 		const views = segment.map(unquotedView);
 		for (let i = 0; i < words.length; i++) {
 			if (segment[i].redirect) continue;
-			const target = redirectTarget(words, views, i);
-			if (target && !/^\/dev\/(?:null|stdout|stderr|tty)$/.test(target)) return true;
+			const target = redirectTarget(segment, views, i);
+			if (target && writesProject(target, cwd)) return true;
 		}
 		let at = 0;
 		while (at < words.length && (ASSIGNMENT.test(words[at]) || PREFIXES.has(words[at]))) at++;
 		const [name = "", sub = "", ...rest] = words.slice(at);
 		const cmd = path.basename(name);
-		if (MUTATING_COMMANDS.has(cmd)) return true;
+		if (MUTATING_COMMANDS.has(cmd)) {
+			const paths = segment.slice(at + 1).filter((w) => w.text && !w.text.startsWith("-"));
+			// cp, ln, install and rsync write only their last path; the others change every path.
+			const written = COPY_COMMANDS.has(cmd) ? paths.slice(-1) : paths;
+			if (!written.length || written.some((w) => writesProject(w, cwd))) return true;
+		}
 		if ((cmd === "sed" || cmd === "perl") && [sub, ...rest].some((w) => IN_PLACE.test(w))) return true;
-		if (cmd === "git" && MUTATING_GIT.has(sub)) return true;
-		if (PACKAGE_MANAGERS.has(cmd) && MUTATING_PACKAGE.has(sub)) return true;
+		if (cmd === "git" && gitChanges(sub, rest)) return true;
+		if (MUTATING_SUBCOMMANDS[cmd]?.has(sub)) return true;
 		if (cmd === "gh" && (sub === "pr" || sub === "issue" || sub === "release" || sub === "repo") && /^(?:create|edit|comment|merge|close|delete|reopen|ready)$/.test(rest[0] ?? "")) return true;
 	}
 	return false;
 }
 
-/** Paths the team keeps its own state in; writing them needs no brief. */
+/** Paths the team keeps its own state and reports in; writing them needs no brief. */
 function isStatePath(file: unknown, cwd: string): boolean {
-	if (typeof file !== "string") return false;
+	if (typeof file !== "string" || !file) return false;
 	const rel = path.relative(cwd, path.resolve(cwd, file));
-	return rel === ".claude" || rel.startsWith(`.claude${path.sep}`);
+	return /^(?:\.claude|\.dev-team-reports)(?:[\\/]|$)/.test(rel);
 }
 
 /**
@@ -109,17 +181,32 @@ function isStatePath(file: unknown, cwd: string): boolean {
 export class BriefGate {
 	private briefed = false;
 	private flowRan = false;
-	/** The last /command or flow skill of the session: a "resume" brief may continue it. */
+	private resumed = false;
+	/** The /command or flow skill of the previous request, which a "resume" brief may continue. */
 	lastFlow: string | undefined;
 	kind: BriefKind | undefined;
 	sizeWarned = false;
 	/** The working tree when the tiny brief was posted; only changes after it count. */
 	baseline: DiffSnapshot | undefined;
 
-	newRequest(): void {
+	private readonly flowSkills: ReadonlySet<string>;
+
+	constructor(flowSkills: ReadonlySet<string> = FLOW_SKILLS) {
+		this.flowSkills = flowSkills;
+	}
+
+	/**
+	 * A new typed request. Returns whether it may continue the previous request's flow (that request
+	 * ran or resumed one); otherwise the flow is over and "resume" no longer applies.
+	 */
+	newRequest(): boolean {
+		const continues = this.flowRan || this.resumed;
+		if (!continues) this.lastFlow = undefined;
 		this.briefed = false;
 		this.flowRan = false;
+		this.resumed = false;
 		this.resetSize();
+		return continues;
 	}
 
 	/** The user typed a /command. It runs its own gates. */
@@ -129,20 +216,27 @@ export class BriefGate {
 		this.resetSize();
 	}
 
-	/** The model loaded a skill; a flow skill opens the gate. */
+	/** The model loaded a skill; a flow skill or user command opens the gate. */
 	noteSkill(name: string): void {
 		const bare = bareSkillName(name);
-		if (!FLOW_SKILLS.has(bare)) return;
+		if (!this.flowSkills.has(bare)) return;
 		this.flowRan = true;
 		this.lastFlow = bare;
 		this.resetSize();
 	}
 
-	/** Whether the brief opens the gate. "resume" does only when a flow ran in this session. */
+	/**
+	 * Records a brief and returns whether the gate is open. "resume" opens it only after a flow; a
+	 * question, vague or resume brief does not replace the kind of a brief already posted.
+	 */
 	briefPosted(kind: BriefKind): boolean {
-		this.kind = kind;
-		if (kind === "tiny" || kind === "feature" || (kind === "resume" && this.lastFlow)) this.briefed = true;
-		return this.briefed;
+		if (kind === "tiny" || kind === "feature") {
+			this.kind = kind;
+			this.briefed = true;
+		} else if (kind === "resume") {
+			if (this.lastFlow) this.resumed = true;
+		} else if (!this.open) this.kind = kind;
+		return this.open;
 	}
 
 	private resetSize(): void {
@@ -152,7 +246,7 @@ export class BriefGate {
 	}
 
 	get open(): boolean {
-		return this.briefed || this.flowRan;
+		return this.briefed || this.flowRan || this.resumed;
 	}
 
 	/** Reason to block a call that changes files before a brief, or undefined. */
@@ -161,7 +255,7 @@ export class BriefGate {
 		const changes =
 			toolName === "write" || toolName === "edit"
 				? !isStatePath(input.path ?? input.file_path, cwd)
-				: toolName === "powershell" || (toolName === "bash" && typeof input.command === "string" && isMutatingBash(input.command));
+				: toolName === "powershell" || (toolName === "bash" && typeof input.command === "string" && isMutatingBash(input.command, cwd));
 		return changes ? this.blockReason() : undefined;
 	}
 
@@ -169,7 +263,7 @@ export class BriefGate {
 		return [
 			"dev-team routing: call dev_team_brief before the first file change of this request, so the user sees what you build.",
 			"Pick kind: tiny (one sentence, at most 3 files), feature (bigger: the user approves, then /ship), vague (open decisions: /specs).",
-			this.lastFlow ? `If the user's message answers or continues /${this.lastFlow}, which is already running, pick resume.` : "",
+			this.lastFlow ? `If the user's message answers or continues /${this.lastFlow} from the previous request, pick resume.` : "",
 			"A question that changes no files needs no brief.",
 		]
 			.filter(Boolean)
@@ -177,17 +271,20 @@ export class BriefGate {
 	}
 }
 
-/** Changed lines per file in the working tree; an untracked file counts with 0 lines. */
+/** Changed lines per file in the working tree, the team's own state (.claude/) left out. */
 export type DiffSnapshot = Map<string, number>;
 
-/** A snapshot from `git diff --numstat HEAD` and `git ls-files --others --exclude-standard` output. */
-export function parseDiff(numstat: string, untracked = ""): DiffSnapshot {
+/**
+ * A snapshot from `git diff --numstat` output and the untracked files with their line counts. Paths
+ * under .claude/ and .dev-team-reports/ are left out: the team writes them itself.
+ */
+export function parseDiff(numstat: string, untracked: Record<string, number> = {}): DiffSnapshot {
 	const snapshot: DiffSnapshot = new Map();
 	for (const row of numstat.split("\n")) {
 		const [added, removed, file] = row.split("\t");
-		if (file) snapshot.set(file, (Number(added) || 0) + (Number(removed) || 0));
+		if (file && !isStatePath(file, "")) snapshot.set(file, (Number(added) || 0) + (Number(removed) || 0));
 	}
-	for (const file of untracked.split("\n")) if (file.trim() && !snapshot.has(file)) snapshot.set(file, 0);
+	for (const [file, lines] of Object.entries(untracked)) if (!snapshot.has(file) && !isStatePath(file, "")) snapshot.set(file, lines);
 	return snapshot;
 }
 
@@ -204,11 +301,29 @@ export function sizeAdvisory(before: DiffSnapshot, after: DiffSnapshot): string 
 	return `dev-team routing: this "tiny" change now touches ${files} files and ${lines} lines. Post an updated brief with dev_team_brief (kind feature), or stop and run /ship.`;
 }
 
-/** The working tree's changes, or undefined when git cannot tell. */
+function countLines(file: string): number {
+	try {
+		const stat = fs.statSync(file);
+		if (stat.size > MAX_COUNTED_BYTES) return TINY_MAX_LINES + 1;
+		const text = fs.readFileSync(file, "utf-8");
+		return text ? text.split("\n").length - (text.endsWith("\n") ? 1 : 0) : 0;
+	} catch {
+		return 0;
+	}
+}
+
+/** The working tree's changes against HEAD (or the index in a repo with no commit), or undefined when git cannot tell. */
 export function diffSnapshot(cwd: string): DiffSnapshot | undefined {
 	const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf-8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] });
 	try {
-		return parseDiff(git(["diff", "--numstat", "HEAD"]), git(["ls-files", "--others", "--exclude-standard"]));
+		let numstat: string;
+		try {
+			numstat = git(["diff", "--numstat", "HEAD"]);
+		} catch {
+			numstat = git(["diff", "--numstat"]);
+		}
+		const untracked = git(["ls-files", "--others", "--exclude-standard"]).split("\n").filter((f) => f.trim() && !isStatePath(f, ""));
+		return parseDiff(numstat, Object.fromEntries(untracked.map((f) => [f, countLines(path.join(cwd, f))])));
 	} catch {
 		return undefined;
 	}
@@ -267,13 +382,18 @@ function briefPath(cwd: string): string | undefined {
 export function saveBrief(cwd: string, b: Brief, extra: Record<string, unknown>): void {
 	const file = briefPath(cwd);
 	if (!file) return;
+	const tmp = `${file}.${randomUUID()}.tmp`;
 	try {
 		fs.mkdirSync(path.dirname(file), { recursive: true });
-		const tmp = `${file}.${process.pid}.tmp`;
 		fs.writeFileSync(tmp, `${JSON.stringify({ ...b, ...extra, text: renderBrief(b) }, null, 2)}\n`, { encoding: "utf-8", flag: "wx" });
 		fs.renameSync(tmp, file);
 	} catch {
-		/* the brief still reached the user and the model */
+		// The brief still reached the user and the model.
+		try {
+			fs.rmSync(tmp, { force: true });
+		} catch {
+			/* nothing was written */
+		}
 	}
 }
 
@@ -334,20 +454,25 @@ export function registerBriefTool(pi: ExtensionAPI, deps: BriefToolDeps): void {
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			const b = params as Brief;
 			if (b.kind === "resume") {
+				const flow = deps.gate.lastFlow;
 				const open = deps.gate.briefPosted("resume");
-				return {
-					...text(open ? `Go on with /${deps.gate.lastFlow}.` : "No /command or dev-team flow ran in this session, so there is nothing to resume. Call dev_team_brief with kind tiny, feature or vague."),
-					details: { kind: b.kind, open },
-				};
+				const reply = flow
+					? `Go on with /${flow}.`
+					: open
+						? "Go on: this request already has a brief."
+						: "No /command or dev-team flow ran in the previous request, so there is nothing to resume. Call dev_team_brief with kind tiny, feature or vague.";
+				return { ...text(reply), details: { kind: b.kind, open } };
 			}
+			// Inside a running flow, its brief stays for its PR; otherwise an older brief must not reach a later one.
+			const keepBrief = deps.gate.open || deps.gate.lastFlow !== undefined;
 			if (b.kind === "question") {
 				deps.gate.briefPosted("question");
-				clearBrief(ctx.cwd);
+				if (!keepBrief) clearBrief(ctx.cwd);
 				return { ...text("No brief needed. Answer without changing files. If the answer needs file changes, call dev_team_brief again with kind tiny or feature."), details: { kind: b.kind } };
 			}
 			if (b.kind === "vague") {
 				deps.gate.briefPosted("vague");
-				clearBrief(ctx.cwd);
+				if (!keepBrief) clearBrief(ctx.cwd);
 				return { ...text("Run /specs now (skill tool, name specs) with the user's request as args. It asks the open decisions in rounds before anything is built."), details: { kind: b.kind } };
 			}
 			if (!b.building?.trim() || !b.doneWhen?.trim()) {

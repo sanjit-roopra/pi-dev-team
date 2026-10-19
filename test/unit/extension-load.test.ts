@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -867,9 +868,10 @@ test("before a brief, dispatching an agent that can write is blocked and not cou
 	assert.equal(blocked?.block, true);
 	assert.match(blocked?.reason ?? "", ROUTING_REASON);
 	assert.deepEqual(statuses, [], "no running status for the blocked dispatch");
-	const parallel = await call("dev_team_subagent", { tasks: [{ agent: "Explore", task: "look" }, { agent: "general-purpose", task: "edit" }] });
+	const parallel = await call("dev_team_subagent", { tasks: [{ agent: "plan-review-acceptance", task: "look" }, { agent: "general-purpose", task: "edit" }] });
 	assert.equal(parallel?.block, true, "one writer among parallel tasks blocks the call");
-	assert.equal(await call("dev_team_subagent", { agent: "Explore", task: "look around" }), undefined);
+	// plan-review-acceptance has only Read, Grep and Glob.
+	assert.equal(await call("dev_team_subagent", { agent: "plan-review-acceptance", task: "look around" }), undefined);
 	assert.deepEqual(statuses, ["dev-team: 1 agent call(s) running"]);
 });
 
@@ -909,7 +911,7 @@ test("after a /command, a typed answer closes the gate, the block names resume, 
 	const { write, type, brief, command } = await routingHarness(t);
 	await command("plan", "add caching");
 	await type("the second option");
-	assert.match((await write())?.reason ?? "", /continues \/plan, which is already running, pick resume/);
+	assert.match((await write())?.reason ?? "", /answers or continues \/plan from the previous request, pick resume/);
 	const r = await brief("resume", {});
 	assert.equal(r.details.open, true);
 	assert.equal(r.content[0].text, "Go on with /plan.");
@@ -1021,4 +1023,192 @@ test("'grill me' in a typed request waits for every answer for that task, even w
 	assert.match((await guideOf(ext, ctx)).match(/^- Human gates.*$/m)?.[0] ?? "", /wait mode/);
 	await type("now fix the typo");
 	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "the next request goes back to the config");
+});
+
+// ---------------------------------------------------------------- brief gate: skills, dispatch, new work
+
+test("loading code-review, a user command, opens the gate without a brief", async (t) => {
+	const { call, write } = await routingHarness(t);
+	await call("skill", { name: "code-review" });
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("before a brief, dispatching an agent that can dispatch others (orchestrator) is blocked", async (t) => {
+	const { call } = await routingHarness(t);
+	const r = await call("dev_team_subagent", { agent: "orchestrator", task: "x" });
+	assert.equal(r?.block, true);
+	assert.match(r?.reason ?? "", ROUTING_REASON);
+});
+
+test("before a brief, agents whose only tools read or run bash (Explore, platform-engineer) run", async (t) => {
+	const { call } = await routingHarness(t);
+	for (const agent of ["Explore", "platform-engineer"]) assert.equal(await call("dev_team_subagent", { agent, task: "look around" }), undefined, agent);
+});
+
+test("an empty tasks list counts the call's own agent, so software-engineer is blocked before a brief", async (t) => {
+	const { call } = await routingHarness(t);
+	const r = await call("dev_team_subagent", { tasks: [], agent: "software-engineer", task: "change the code" });
+	assert.equal(r?.block, true);
+});
+
+test("/ship removes an older brief.json in the project; /pr keeps it", async (t) => {
+	for (const [name, kept] of [["ship", false], ["pr", true]] as const) {
+		const { cwd, command } = await routingHarness(t);
+		const file = path.join(cwd, ".claude", "memory", "brief.json");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "{}");
+		await command(name, "add caching");
+		assert.equal(fs.existsSync(file), kept, `/${name}`);
+	}
+});
+
+// ---------------------------------------------------------------- wait mode
+
+/** uiCtx without its cwd, so the harness's own temp cwd stays. */
+function uiExtra() {
+	const { cwd: _cwd, ...rest } = uiCtx([]);
+	return rest;
+}
+
+test("\"you don't need to grill me\" does not turn on wait mode", async (t) => {
+	const { ext, ctx, type } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiExtra());
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	await type("you don't need to grill me, just fix it");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined);
+});
+
+test("'grill me' in /specs keeps waiting across a plain reply; a later request after one that ran no flow drops it", async (t) => {
+	const { ext, ctx, type, command } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiExtra());
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	await command("specs", "add caching, grill me");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1");
+	await type("the second option");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1", "a reply inside the flow keeps wait mode");
+	await type("now fix the typo");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "the reply ran no flow, so this request is new work");
+});
+
+test("with githubStyle off the guide still carries the questions guide", async (t) => {
+	const ext = await loadExtension({ config: { githubStyle: "off" } });
+	t.after(ext.cleanup);
+	const guide = await guideOf(ext);
+	assert.match(guide, /Questions \(ask_user\)/);
+	assert.doesNotMatch(guide, /GitHub text style/);
+});
+
+test("/dev-team wait with askTimeoutSec 0 turns human gates on; /dev-team timeout turns them off again", async (t) => {
+	keepInteractiveEnv(t);
+	const ext = await loadExtension({ config: { askTimeoutSec: 0 } });
+	t.after(ext.cleanup);
+	const ctx = uiCtx([]);
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "after session_start");
+	await ext.commands["dev-team"].handler("wait", ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1", "after wait");
+	await ext.commands["dev-team"].handler("timeout", ctx);
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, "after timeout");
+});
+
+// ---------------------------------------------------------------- feature approval
+
+/** A routing harness with a human in rpc mode whose select and input give these answers. */
+async function featureHarness(t: TestContext, pick: (options: string[]) => string | undefined, typed?: string) {
+	const ui = {
+		notify: () => {},
+		setStatus: () => {},
+		select: async (_title: string, options: string[]) => pick(options),
+		input: async () => typed,
+	};
+	const h = await routingHarness(t, { routing: "brief" }, { hasUI: true, mode: "rpc", ui });
+	process.env.DEV_TEAM_INTERACTIVE = "1";
+	const saved = () => {
+		const file = path.join(h.cwd, ".claude", "memory", "brief.json");
+		return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf-8")) : undefined;
+	};
+	return { ...h, saved };
+}
+
+test("a feature brief the user approves opens the gate, saves the brief and says to run /ship", async (t) => {
+	const { brief, write, saved } = await featureHarness(t, (o) => o.find((x) => x.startsWith("Go")));
+	const r = await brief("feature");
+	assert.equal(r.details.answer, "go");
+	assert.match(r.content[0].text, /^Approved\. Run \/ship now/);
+	assert.equal(saved()?.approved, "user");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("Stop or Esc on a feature brief stops it: the gate stays closed and nothing is saved", async (t) => {
+	for (const [label, pick] of [["Stop", (o: string[]) => o.find((x) => x === "Stop")], ["Esc", () => undefined]] as const) {
+		const { brief, write, saved } = await featureHarness(t, pick);
+		const r = await brief("feature");
+		assert.equal(r.details.answer, "stop", label);
+		assert.match(r.content[0].text, /The user stopped this/, label);
+		assert.equal(saved(), undefined, label);
+		assert.match((await write())?.reason ?? "", ROUTING_REASON, label);
+	}
+});
+
+test("a feature brief nobody answers in time goes on alone, without a notify target", async (t) => {
+	const { brief, write, saved } = await featureHarness(t, () => undefined);
+	let calls = 0;
+	// The dialog took longer than its timeout.
+	t.mock.method(performance, "now", () => (calls++ === 0 ? 0 : 1_000_000));
+	const r = await brief("feature");
+	assert.equal(r.details.answer, "away");
+	assert.match(r.content[0].text, /Nobody answered/);
+	assert.equal(saved()?.approved, "no answer");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("Change on a feature brief returns the typed change and leaves the gate closed", async (t) => {
+	const { brief, write, saved } = await featureHarness(t, (o) => o.find((x) => x.startsWith("Change")), "only the CLI flag");
+	const r = await brief("feature");
+	assert.equal(r.details.answer, "change");
+	assert.match(r.content[0].text, /The user wants changes to the brief: only the CLI flag/);
+	assert.equal(saved(), undefined);
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+// ---------------------------------------------------------------- tiny brief size
+
+const GIT_VARS = ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_COMMON_DIR"];
+
+/** Removes git's repository variables from process.env for this test (diffSnapshot reads them). */
+function isolateGitEnv(t: TestContext) {
+	for (const key of GIT_VARS) {
+		const saved = process.env[key];
+		delete process.env[key];
+		t.after(() => {
+			if (saved !== undefined) process.env[key] = saved;
+		});
+	}
+}
+
+/** Runs git in cwd with no inherited repository variables. */
+function git(cwd: string, ...args: string[]) {
+	const env = { ...process.env };
+	for (const key of GIT_VARS) delete env[key];
+	execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, env, stdio: "ignore" });
+}
+
+test("a tiny brief that grows to 4 new files gets one size advisory; a failed call gets none", async (t) => {
+	isolateGitEnv(t);
+	const { ext, ctx, cwd, brief } = await routingHarness(t);
+	git(cwd, "init", "-q");
+	fs.writeFileSync(path.join(cwd, "README.md"), "hi\n");
+	git(cwd, "add", ".");
+	git(cwd, "commit", "-q", "-m", "init");
+	await brief("tiny");
+	for (const name of ["a", "b", "c", "d"]) fs.writeFileSync(path.join(cwd, `${name}.ts`), "x\n");
+	let n = 0;
+	const result = async (isError = false) => {
+		const r = (await ext.handlers.tool_result[0]({ toolName: "write", toolCallId: `w${n++}`, input: { path: "d.ts", content: "x\n" }, content: [{ type: "text", text: "ok" }], isError }, ctx)) as
+			| { content?: { text: string }[] }
+			| undefined;
+		return (r?.content ?? []).map((c) => c.text).join("");
+	};
+	const ADVISORY = /this "tiny" change now touches 4 files/;
+	assert.doesNotMatch(await result(true), ADVISORY, "failed call");
+	assert.match(await result(), ADVISORY, "first write past the size");
+	assert.doesNotMatch(await result(), ADVISORY, "only once");
 });

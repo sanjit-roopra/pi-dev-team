@@ -83,6 +83,10 @@ test("ask_user without a human opens no dialog and takes the non-interactive def
 	const r = await askUser().execute("1", question, undefined, undefined, ctx);
 	assert.equal(calls.length, 0);
 	assert.match(r.content[0].text, /^NON-INTERACTIVE/);
+	assert.match(r.content[0].text, /\(recommended\)/);
+	assert.match(r.content[0].text, /assumed \(no human\)/);
+	assert.match(r.content[0].text, /Decide these/);
+	assert.equal(r.details.answered, false);
 });
 
 const CAUTION = "[destructive_guard] CAUTION: Destructive command detected (File destruction: rm -rf).\nCommand: rm -rf victim";

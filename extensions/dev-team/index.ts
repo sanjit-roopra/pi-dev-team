@@ -39,7 +39,20 @@ import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwarde
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
 import { confirmCaution, dialogTimeoutMs, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { sendAway } from "./lib/away-notify.ts";
-import { type Brief, BriefGate, DEV_TEAM_BRIEF_TOOL, diffSnapshot, lintBrief, registerBriefTool, sizeAdvisory } from "./lib/brief.ts";
+import {
+	type Brief,
+	BriefGate,
+	bareSkillName,
+	clearBrief,
+	DEV_TEAM_BRIEF_TOOL,
+	diffSnapshot,
+	FLOW_SKILLS,
+	isMutatingBash,
+	lintBrief,
+	NEW_WORK_SKILLS,
+	registerBriefTool,
+	sizeAdvisory,
+} from "./lib/brief.ts";
 import { createPlainGate, lintQuestion, type PlainQuestion, questionStyleGuide } from "./lib/plain-questions.ts";
 import { pickOne, typeAnswer, type Waiter } from "./lib/question-dialog.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
@@ -66,9 +79,16 @@ function readJson(file: string): { version?: string; commit?: string } {
 
 const HOOK_NAME_PREFIX = /^\[[\w-]+\] /;
 /** A request that asks to answer every question itself: wait mode for that task. */
-const WAIT_REQUEST = /(?<!\b(?:don['’]?t|do not|no need to|never|not)\s+)\b(?:grill me|ask me everything)\b/i;
-/** Claude tool names that let a dispatched agent change files. */
-const WRITE_TOOLS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
+const WAIT_REQUEST = /\b(?:grill me|ask me everything)\b/i;
+/** A negation earlier in the same sentence: "you don't need to grill me". */
+const NEGATED_WAIT = /\b(?:don['’]?t|do not|no need|never|not|without)\b[^.!?\n]*\b(?:grill me|ask me everything)\b/i;
+const wantsWait = (text: string) => WAIT_REQUEST.test(text) && !NEGATED_WAIT.test(text);
+/** Claude tools that cannot change files. Bash counts as read-only here, so Explore and reviewers can run before a brief; the gate checks the main session's own bash. */
+const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "ls", "bash", "webfetch", "websearch", "skill", "todowrite", "todoread"]);
+const isReadOnlyTool = (tool: string) => {
+	const name = tool.trim().replace(/\(.*\)$/, "").toLowerCase();
+	return READ_ONLY_TOOLS.has(name) || name.startsWith("mcp__");
+};
 const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "startup", new: "clear", resume: "resume", fork: "resume" };
 
 export default function devTeam(pi: ExtensionAPI) {
@@ -96,7 +116,9 @@ export default function devTeam(pi: ExtensionAPI) {
 	const styleGate = createStyleGate();
 	const readTracker = new ReadTracker();
 	const plainGate = createPlainGate();
-	const briefGate = new BriefGate();
+	/** Skills that run their own gates: the flow skills, and every user command (added below). */
+	const flowSkills = new Set(FLOW_SKILLS);
+	const briefGate = new BriefGate(flowSkills);
 	/** `/dev-team wait|timeout` for this session; unset = the config's answerMode. */
 	let sessionAnswerMode: AnswerMode | undefined;
 	/** The current request asked to be grilled ("grill me"): wait for every answer. */
@@ -200,14 +222,15 @@ export default function devTeam(pi: ExtensionAPI) {
 	registerWebFetch(pi);
 	registerBriefTool(pi, { gate: briefGate, approveFeature, onAway, sessionId: (ctx) => ctx.sessionManager.getSessionId() });
 
-	/** Whether a dev_team_subagent call dispatches an agent that can write files (no tools: list = all tools). */
+	/** Whether a dev_team_subagent call dispatches an agent that can change files (no tools: list = all tools). */
 	function dispatchWrites(input: Record<string, unknown>, ctx: ExtensionContext): boolean {
-		const tasks = Array.isArray(input.tasks) ? (input.tasks as Record<string, unknown>[]) : [input];
+		// As the tool does: tasks[] when it has any, else the call itself.
+		const tasks = Array.isArray(input.tasks) && input.tasks.length ? (input.tasks as Record<string, unknown>[]) : [input];
 		const names = tasks.map((t) => t?.agent ?? t?.subagent_type).filter((n): n is string => typeof n === "string");
 		const { agents } = discoverDispatchAgents(ctx.cwd, packageRoot, ctx.isProjectTrusted(), names);
 		return names.some((name) => {
 			const tools = resolveAgentName(agents, name)?.claudeTools;
-			return !tools || tools.some((t) => WRITE_TOOLS.test(t));
+			return !tools || !tools.every(isReadOnlyTool);
 		});
 	}
 
@@ -246,6 +269,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	// Commands are registered before pi's trust decision is known, so a project skill's command is
 	// registered by name and resolved again when run, with project skills only for a trusted project.
 	const commandSkills: SkillDef[] = [...discoverSkills(cwd, packageRoot, { includeProject: true }).values()].filter((s) => s.userInvocable);
+	for (const skill of commandSkills) flowSkills.add(bareSkillName(skill.name));
 	for (const skill of commandSkills) {
 		pi.registerCommand(skill.name, {
 			description: `${skill.description.slice(0, 140)}${skill.argumentHint ? ` ${skill.argumentHint}` : ""}`,
@@ -259,7 +283,8 @@ export default function devTeam(pi: ExtensionAPI) {
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
 				void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: `/${current.name}${args ? ` ${args}` : ""}` }, ctx.cwd);
 				briefGate.commandRan(current.name);
-				taskWaits = WAIT_REQUEST.test(args ?? "");
+				if (NEW_WORK_SKILLS.has(bareSkillName(current.name))) clearBrief(ctx.cwd);
+				taskWaits = wantsWait(args ?? "");
 				applyInteractive(ctx);
 				const text = commandText(current, args ?? "");
 				const before = ctx.sessionManager.getEntries().length;
@@ -541,8 +566,9 @@ export default function devTeam(pi: ExtensionAPI) {
 			// A new request, not a steer or follow-up to the running one. pi runs extension /commands before
 			// this event, so text starting with "/" here is a pi skill, a template or a path.
 			if (!event.streamingBehavior) {
-				briefGate.newRequest();
-				taskWaits = WAIT_REQUEST.test(event.text);
+				const continuesFlow = briefGate.newRequest();
+				// A reply inside a flow keeps that task's wait mode.
+				taskWaits = wantsWait(event.text) || (continuesFlow && taskWaits);
 				applyInteractive(ctx);
 			}
 		}
@@ -622,7 +648,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		};
 		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
 		const baseline = briefGate.kind === "tiny" && !briefGate.sizeWarned ? briefGate.baseline : undefined;
-		if (baseline && !event.isError && (event.toolName === "write" || event.toolName === "edit" || event.toolName === "bash")) {
+		const changed = event.toolName === "write" || event.toolName === "edit" || (event.toolName === "bash" && typeof input.command === "string" && isMutatingBash(input.command, ctx.cwd));
+		if (baseline && changed && !event.isError) {
 			const now = diffSnapshot(ctx.cwd);
 			const grown = now && sizeAdvisory(baseline, now);
 			if (grown) {
@@ -759,7 +786,8 @@ function compatGuide(
 		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
 		...(tierModelsText ? [`- ${tierModelsText}`] : []),
-		styleGuide ? `\n${styleGuide}\n\n${questionStyleGuide(routing)}` : "",
+		styleGuide ? `\n${styleGuide}` : "",
+		`\n${questionStyleGuide(routing)}`,
 		index ? `\nDev-team skills (load with the skill tool; "(/x)" = also a user command):\n${index}` : "",
 	].join("\n");
 }

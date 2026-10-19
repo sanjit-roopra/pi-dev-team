@@ -20,7 +20,8 @@ rounds.
    prompt: a short header, a `why` line, and your recommended answer first,
    marked (recommended), so "yes" accepts it.
 4. Log every question and answer in the spec's `## Decision Log` (round,
-   question, answer, source: `user` or `assumed (timeout)`).
+   question, answer, source: `user`, `assumed (timeout)` or
+   `assumed (no human)`).
 5. Recompute the frontier from the answers and ask the next round.
 6. Stop when the frontier is empty. Then ask once: "Did I get it right?" with
    a 3-line summary. Finalize the criteria only after a yes (or a timeout).
@@ -45,9 +46,10 @@ the rest of the frontier now.
 
 ## When nobody answers
 
-`ask_user` reports a timeout. Then:
+`ask_user` reports a timeout, or that no human is attached. Then:
 
-- Take that round's recommended answers and log them `assumed (timeout)`.
+- Take that round's recommended answers and log them `assumed (timeout)` or
+  `assumed (no human)`.
 - Stop grilling. Do not build later rounds on guesses.
 - Put the open branches at the top of the spec as `## Decide these`, and at
   the top of the PR (the `/pr` note).

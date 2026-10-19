@@ -58,7 +58,7 @@ Every question asked in the grilling rounds and its answer.
 
 | Round | Question | Answer | Source |
 |-------|----------|--------|--------|
-| 1 | <question> | <answer> | `user` / `assumed (timeout)` |
+| 1 | <question> | <answer> | `user` / `assumed (timeout)` / `assumed (no human)` |
 
 ## Consistency Gate
 - [x/  ] Intent is unambiguous
