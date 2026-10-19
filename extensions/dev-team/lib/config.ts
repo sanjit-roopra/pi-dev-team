@@ -66,7 +66,7 @@ export interface DevTeamConfig {
 	allowPiSubagents: boolean;
 	/** Seconds a question or destructive-command confirm waits for the human before the run goes on without them; 0 = never ask (as if no human were attached). */
 	askTimeoutSec: number;
-	/** "timeout": a question waits askTimeoutSec, then the run goes on alone. "wait": a question waits for the human, however long. */
+	/** "timeout": a question waits askTimeoutSec, then the run goes on alone. "wait": a question waits for the human, however long. User file only. */
 	answerMode: AnswerMode;
 	/** "brief": a plain-text request gets a short "what I'm building" brief (dev_team_brief) before its first file change. */
 	routing: RoutingMode;
@@ -293,17 +293,18 @@ export function isProjectParallelLimitAllowed(value: unknown): boolean {
 /**
  * A project config file as it may apply: env limited to PROJECT_ENV_SETTINGS (an env that is not an
  * object is dropped whole), no `hooks` at all, since hooks include the guards (hooks are set in the
- * user's own config), no `allowPiSubagents` (it lifts a block), no `askTimeoutSec` (0 turns the human gates off), no `notify` (it names where briefs are sent), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
+ * user's own config), no `allowPiSubagents` (it lifts a block), no `askTimeoutSec` or `answerMode` (they decide whether and how long the human gates wait), no `notify` (it names where briefs are sent), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
  * `maxParallelAgents` only when isProjectParallelLimitAllowed. `ignored` names everything left out, as
- * `env.KEY`, `env`, `hooks`, `allowPiSubagents`, `askTimeoutSec`, `notify`, `autocompactMaxTokens` or `maxParallelAgents`.
+ * `env.KEY`, `env`, `hooks`, `allowPiSubagents`, `askTimeoutSec`, `answerMode`, `notify`, `autocompactMaxTokens` or `maxParallelAgents`.
  */
 export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
-	const { env, hooks, allowPiSubagents, askTimeoutSec, notify, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
+	const { env, hooks, allowPiSubagents, askTimeoutSec, answerMode, notify, autocompactMaxTokens, maxParallelAgents, ...rest } = data;
 	const out: Record<string, unknown> = rest;
 	if (hooks !== undefined) ignored.push("hooks");
 	if (allowPiSubagents !== undefined) ignored.push("allowPiSubagents");
 	if (askTimeoutSec !== undefined) ignored.push("askTimeoutSec");
+	if (answerMode !== undefined) ignored.push("answerMode");
 	if (notify !== undefined) ignored.push("notify");
 	if (autocompactMaxTokens !== undefined) {
 		if (isProjectAutocompactCeilingAllowed(autocompactMaxTokens)) out.autocompactMaxTokens = autocompactMaxTokens;

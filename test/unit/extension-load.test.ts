@@ -786,10 +786,14 @@ async function routingHarness(t: TestContext, config: Record<string, unknown> = 
 	const call = (toolName: string, input: Record<string, unknown>) => ext.handlers.tool_call[0]({ toolName, toolCallId: `c${n++}`, input }, ctx) as Promise<Verdict>;
 	const write = () => call("write", { path: "src/a.ts", content: "x" });
 	const type = (text: string, more: Record<string, unknown> = {}) => ext.handlers.input[0]({ text, source: "interactive", ...more }, ctx);
-	const brief = (kind: string) =>
-		(ext.tools.dev_team_brief as unknown as { execute: (...args: unknown[]) => Promise<unknown> }).execute("b", { kind, building: "Add a flag.", doneWhen: "The flag works." }, undefined, () => {}, ctx);
-	return { ext, ctx, call, write, type, brief };
+	const brief = (kind: string, params: Record<string, unknown> = { building: "Add a flag.", doneWhen: "The flag works." }) =>
+		(ext.tools.dev_team_brief as unknown as { execute: (...args: unknown[]) => Promise<BriefResult> }).execute("b", { kind, ...params }, undefined, () => {}, ctx);
+	/** Runs a registered /command the way pi does: idle, in the TUI. */
+	const command = (name: string, args = "") =>
+		ext.commands[name].handler(args, { ...ctx, isIdle: () => true, mode: "tui", ui: { notify: () => {}, setStatus: () => {}, ...(ctx as { ui?: object }).ui }, sessionManager: { ...ctx.sessionManager, getEntries: () => [] } });
+	return { ext, ctx, cwd, call, write, type, brief, command };
 }
+type BriefResult = { content: { text: string }[]; details: Record<string, unknown> };
 
 test("with routing brief, a write before any brief is blocked with a reason naming dev_team_brief, and no hook runs", async (t) => {
 	const { ext, write } = await routingHarness(t);
@@ -813,13 +817,103 @@ test("a tiny brief opens the gate; a new typed request closes it again", async (
 	assert.match((await write())?.reason ?? "", ROUTING_REASON, "a new request needs its own brief");
 });
 
-test("a steer and a /command are not new requests, so they leave the gate open", async (t) => {
+test("a steer is not a new request, so it leaves the gate open", async (t) => {
 	const { write, type, brief } = await routingHarness(t);
 	await brief("tiny");
 	await type("also do this", { streamingBehavior: "steer" });
-	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON, "after a steer");
-	await type("/dev-team status");
-	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON, "after a /command");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("typed text starting with / that reaches the input handler is a new request and closes the gate", async (t) => {
+	const { write, type, brief } = await routingHarness(t);
+	await brief("tiny");
+	await type("/tmp/notes.txt explain what this file says");
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("a /command the user runs opens the gate; a later typed request closes it again", async (t) => {
+	for (const name of ["plan", "pr"]) {
+		const { write, type, command } = await routingHarness(t);
+		await command(name, "add caching");
+		assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON, `after /${name}`);
+		await type("now do something else");
+		assert.match((await write())?.reason ?? "", ROUTING_REASON, `typed request after /${name}`);
+	}
+});
+
+test("'grill me' in a /command's args waits for every answer; the next /command without it does not", async (t) => {
+	const { ext, ctx, command } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiCtx([]));
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	await command("plan", "add caching, grill me");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, "1");
+	await command("plan", "add caching");
+	assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined);
+});
+
+test("\"don't grill me\" in a typed request does not turn on wait mode", async (t) => {
+	const { ext, ctx, type } = await routingHarness(t, { routing: "off", askTimeoutSec: 0 }, uiCtx([]));
+	for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	for (const text of ["don't grill me, fix the typo", "Do not grill me on this", "no need to ask me everything"]) {
+		await type(text);
+		assert.equal(process.env.DEV_TEAM_INTERACTIVE, undefined, text);
+	}
+});
+
+test("before a brief, dispatching an agent that can write is blocked and not counted as running; a read-only agent runs", async (t) => {
+	const statuses: string[] = [];
+	const ui = { notify: () => {}, setStatus: (_key: string, text?: string) => void statuses.push(text ?? "") };
+	const { call } = await routingHarness(t, { routing: "brief" }, { hasUI: true, ui });
+	const blocked = await call("dev_team_subagent", { agent: "software-engineer", task: "change the code" });
+	assert.equal(blocked?.block, true);
+	assert.match(blocked?.reason ?? "", ROUTING_REASON);
+	assert.deepEqual(statuses, [], "no running status for the blocked dispatch");
+	const parallel = await call("dev_team_subagent", { tasks: [{ agent: "Explore", task: "look" }, { agent: "general-purpose", task: "edit" }] });
+	assert.equal(parallel?.block, true, "one writer among parallel tasks blocks the call");
+	assert.equal(await call("dev_team_subagent", { agent: "Explore", task: "look around" }), undefined);
+	assert.deepEqual(statuses, ["dev-team: 1 agent call(s) running"]);
+});
+
+test("after a brief, dispatching an agent that can write is not blocked", async (t) => {
+	const { call, brief } = await routingHarness(t);
+	await brief("tiny");
+	assert.equal(await call("dev_team_subagent", { agent: "software-engineer", task: "change the code" }), undefined);
+});
+
+test("a tiny brief shows the brief, saves it with the session id and opens the gate", async (t) => {
+	const { cwd, write, brief } = await routingHarness(t);
+	const r = await brief("tiny");
+	assert.match(r.content[0].text, /^The user sees this brief:/);
+	assert.equal(r.details.kind, "tiny");
+	const saved = JSON.parse(fs.readFileSync(path.join(cwd, ".claude", "memory", "brief.json"), "utf-8"));
+	assert.equal(saved.sessionId, "s");
+	assert.equal(saved.approved, "tiny");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("a tiny brief without doneWhen asks again and leaves the gate closed", async (t) => {
+	const { write, brief } = await routingHarness(t);
+	const r = await brief("tiny", { building: "Add a flag." });
+	assert.match(r.content[0].text, /needs "building" and "doneWhen"/);
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("a resume brief with no /command in the session opens nothing", async (t) => {
+	const { write, brief } = await routingHarness(t);
+	const r = await brief("resume", {});
+	assert.equal(r.details.open, false);
+	assert.match(r.content[0].text, /nothing to resume/);
+	assert.match((await write())?.reason ?? "", ROUTING_REASON);
+});
+
+test("after a /command, a typed answer closes the gate, the block names resume, and a resume brief opens it again", async (t) => {
+	const { write, type, brief, command } = await routingHarness(t);
+	await command("plan", "add caching");
+	await type("the second option");
+	assert.match((await write())?.reason ?? "", /continues \/plan, which is already running, pick resume/);
+	const r = await brief("resume", {});
+	assert.equal(r.details.open, true);
+	assert.equal(r.content[0].text, "Go on with /plan.");
+	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
 });
 
 test("loading a flow skill such as ship opens the gate without a brief", async (t) => {

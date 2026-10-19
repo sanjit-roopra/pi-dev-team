@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { type TestContext, test } from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
 import { clock, modeLine, pickOne, typeAnswer, type Waiter } from "../../extensions/dev-team/lib/question-dialog.ts";
 
 const DOWN = "\x1b[B";
 const UP = "\x1b[A";
 const ENTER = "\r";
 const ESCAPE = "\x1b";
+const CTRL_C = "\x03";
+const NEWLINE = "\n";
 
 type Component = { render(width: number): string[]; handleInput(data: string): void; dispose(): void };
 
@@ -25,10 +27,12 @@ function tuiCtx() {
 	const state: { comp?: Component; renders: number } = { renders: 0 };
 	const fakeTui = { requestRender: () => void state.renders++ };
 	const fakeTheme = { fg: (_color: string, s: string) => s, bold: (s: string) => s };
+	// pi's own default keys, so the dialog sees what a user without custom bindings presses.
+	const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
 	const ui = {
 		custom: (factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (v: unknown) => void) => Component) =>
 			new Promise((resolve) => {
-				state.comp = factory(fakeTui, fakeTheme, {}, resolve);
+				state.comp = factory(fakeTui, fakeTheme, keybindings, resolve);
 			}),
 	};
 	return { ctx: { mode: "tui", ui } as never, state };
@@ -63,10 +67,9 @@ test("clock shows seconds as m:ss, rounding up and never below zero", () => {
 	assert.equal(clock(-3), "0:00");
 });
 
-test("modeLine says waiting without a time, and shows the w key only where it works", () => {
+test("modeLine says waiting without a time, and shows the live count with the w key", () => {
 	assert.equal(modeLine(undefined), "⏸ waiting for you");
 	assert.equal(modeLine(107), "⏱ 1:47 left · w = wait");
-	assert.equal(modeLine(107, false), "⏱ 1:47 left");
 });
 
 test("pickOne outside the TUI passes the timeout to pi's select and puts the mode line in the title", async () => {
@@ -79,7 +82,8 @@ test("pickOne outside the TUI passes the timeout to pi's select and puts the mod
 	assert.deepEqual(calls[0].arg, ["per API key (recommended)", "per user"]);
 	assert.match(calls[0].title, /^Q1\/2 · Rate limit/);
 	assert.match(calls[0].title, /Why it matters/);
-	assert.match(calls[0].title, /⏱ 2:00 left$/);
+	assert.match(calls[0].title, /⏱ goes on alone after 2:00$/);
+	assert.doesNotMatch(calls[0].title, /left/, "pi's select shows its own live count");
 	assert.doesNotMatch(calls[0].title, /w = wait/);
 	assert.equal(waiter.timedOut, undefined);
 });
@@ -201,15 +205,50 @@ test("typeAnswer passes the timeout to pi's input and puts the mode line in the 
 	assert.equal(answer, "Berlin");
 	assert.equal(calls[0].method, "input");
 	assert.equal(calls[0].opts?.timeout, 30_000);
-	assert.equal(calls[0].title, "Which city?\n⏱ 0:30 left");
+	assert.equal(calls[0].title, "Which city?\n⏱ goes on alone after 0:30");
 });
 
 test("typeAnswer has no timeout once the human chose to wait, and marks a real timeout", async (t) => {
 	const waiting = rpcCtx("x");
 	await typeAnswer(waiting.ctx, { title: "Q", body: [], timeoutMs: 30_000, waiter: { waiting: true } });
 	assert.equal(waiting.calls[0].opts?.timeout, undefined);
+	assert.equal(waiting.calls[0].title, "Q\n⏸ waiting for you");
 	elapse(t, 30_000);
 	const waiter: Waiter = { waiting: false };
 	assert.equal(await typeAnswer(rpcCtx(undefined).ctx, { title: "Q", body: [], timeoutMs: 30_000, waiter }), undefined);
 	assert.equal(waiter.timedOut, true);
+});
+
+test("typeAnswer says when the run goes on alone, never a time left", async () => {
+	const { ctx, calls } = rpcCtx("x");
+	await typeAnswer(ctx, { title: "Which city?", body: ["Why: shipping zone."], timeoutMs: 120_000, waiter: { waiting: false } });
+	assert.equal(calls[0].title, "Which city?\nWhy: shipping zone.\n⏱ goes on alone after 2:00");
+	assert.doesNotMatch(calls[0].title, /left/);
+});
+
+test("pickOne in the TUI skips the question on Ctrl+C, as pi's own select does", async () => {
+	const { ctx, state } = tuiCtx();
+	const waiter: Waiter = { waiting: false };
+	const answer = pickOne(ctx, request(waiter, { timeoutMs: 60_000 }));
+	state.comp!.handleInput(CTRL_C);
+	assert.equal(await answer, undefined);
+	assert.equal(waiter.timedOut, undefined);
+});
+
+test("pickOne in the TUI picks the highlighted option on a bare newline", async () => {
+	const { ctx, state } = tuiCtx();
+	const answer = pickOne(ctx, request({ waiting: false }));
+	state.comp!.handleInput(DOWN);
+	state.comp!.handleInput(NEWLINE);
+	assert.equal(await answer, "per user");
+});
+
+test("pickOne in the TUI ignores keys that are not select keys", async () => {
+	const { ctx, state } = tuiCtx();
+	const answer = pickOne(ctx, request({ waiting: false }));
+	state.comp!.handleInput("x");
+	state.comp!.handleInput("q");
+	assert.equal(await settled(answer), false);
+	state.comp!.handleInput(ENTER);
+	assert.equal(await answer, "per API key (recommended)");
 });

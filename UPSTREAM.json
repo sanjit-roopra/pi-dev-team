@@ -141,6 +141,31 @@
       "hits": 5
     },
     {
+      "file": "skills/specs/SKILL.md",
+      "reason": "grilling: one batch of questions misses the questions its answers open",
+      "hits": 1
+    },
+    {
+      "file": "skills/specs/SKILL.md",
+      "reason": "spec version: compare with the marker the template writes, not a frontmatter field that does not exist",
+      "hits": 1
+    },
+    {
+      "file": "skills/specs/SKILL.md",
+      "reason": "docs/experiments is not shipped",
+      "hits": 2
+    },
+    {
+      "file": "skills/specs/references/persistence.md",
+      "reason": "spec version: the template writes the marker /specs checks",
+      "hits": 1
+    },
+    {
+      "file": "skills/specs/references/persistence.md",
+      "reason": "grilling: log every question and answer",
+      "hits": 1
+    },
+    {
       "file": "agents/software-engineer.md",
       "reason": "lean production code: the engineer names what it skipped",
       "hits": 1
@@ -208,31 +233,6 @@
     {
       "file": "agents/plan-review-strategic.md",
       "reason": "lean production code: reinventing is a warning",
-      "hits": 1
-    },
-    {
-      "file": "skills/specs/SKILL.md",
-      "reason": "grilling: one batch of questions misses the questions its answers open",
-      "hits": 1
-    },
-    {
-      "file": "skills/specs/SKILL.md",
-      "reason": "spec version: compare with the marker the template writes, not a frontmatter field that does not exist",
-      "hits": 1
-    },
-    {
-      "file": "skills/specs/SKILL.md",
-      "reason": "docs/experiments is not shipped",
-      "hits": 2
-    },
-    {
-      "file": "skills/specs/references/persistence.md",
-      "reason": "spec version: the template writes the marker /specs checks",
-      "hits": 1
-    },
-    {
-      "file": "skills/specs/references/persistence.md",
-      "reason": "grilling: log every question and answer",
       "hits": 1
     }
   ]

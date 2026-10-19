@@ -6,7 +6,7 @@
  * Other modes (rpc) use pi's select with its timeout.
  */
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 /** Shared by the questions of one ask: once the human presses `w`, no later question times out. */
 export interface Waiter {
@@ -29,10 +29,15 @@ export function clock(seconds: number): string {
 	return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/** The line that says whether this question waits for the human. `canWait`: the `w` key works here. */
-export function modeLine(secondsLeft: number | undefined, canWait = true): string {
+/** The line that says whether this question waits for the human, with a live count and the `w` key. */
+export function modeLine(secondsLeft: number | undefined): string {
 	if (secondsLeft === undefined) return "⏸ waiting for you";
-	return `⏱ ${clock(secondsLeft)} left${canWait ? " · w = wait" : ""}`;
+	return `⏱ ${clock(secondsLeft)} left · w = wait`;
+}
+
+/** The same for pi's own dialogs, which show their own live count and take no `w`. */
+function staticModeLine(timeoutMs: number | undefined): string {
+	return timeoutMs === undefined ? "⏸ waiting for you" : `⏱ goes on alone after ${clock(timeoutMs / 1000)}`;
 }
 
 export interface PickRequest {
@@ -52,10 +57,10 @@ const HINT = "↑↓ move · enter pick · esc skip";
 export async function pickOne(ctx: ExtensionContext, req: PickRequest): Promise<string | undefined> {
 	const timeoutMs = req.waiter.waiting ? undefined : req.timeoutMs;
 	if (ctx.mode !== "tui") {
-		const title = [req.title, ...req.body, modeLine(timeoutMs === undefined ? undefined : timeoutMs / 1000, false)].join("\n");
+		const title = [req.title, ...req.body, staticModeLine(timeoutMs)].join("\n");
 		return timed(req, timeoutMs, () => ctx.ui.select(title, req.options, { signal: req.signal, timeout: timeoutMs }));
 	}
-	return ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+	return ctx.ui.custom<string | undefined>((tui, theme, keybindings, done) => {
 		let selected = 0;
 		let secondsLeft = timeoutMs === undefined ? undefined : Math.ceil(timeoutMs / 1000);
 		let timer: ReturnType<typeof setInterval> | undefined;
@@ -96,10 +101,11 @@ export async function pickOne(ctx: ExtensionContext, req: PickRequest): Promise<
 				return lines.map((line) => truncateToWidth(line, w));
 			},
 			handleInput(data: string) {
-				if (matchesKey(data, Key.up)) selected = Math.max(0, selected - 1);
-				else if (matchesKey(data, Key.down)) selected = Math.min(req.options.length - 1, selected + 1);
-				else if (matchesKey(data, Key.enter)) return finish(req.options[selected]);
-				else if (matchesKey(data, Key.escape)) return finish(undefined);
+				// The user's select keys (pi keybindings: tui.select.*), so Ctrl+C cancels as in pi's own select.
+				if (keybindings.matches(data, "tui.select.up")) selected = Math.max(0, selected - 1);
+				else if (keybindings.matches(data, "tui.select.down")) selected = Math.min(req.options.length - 1, selected + 1);
+				else if (keybindings.matches(data, "tui.select.confirm") || data === "\n") return finish(req.options[selected]);
+				else if (keybindings.matches(data, "tui.select.cancel")) return finish(undefined);
 				else if (data === "w" && secondsLeft !== undefined) {
 					stop();
 					secondsLeft = undefined;
@@ -113,12 +119,12 @@ export async function pickOne(ctx: ExtensionContext, req: PickRequest): Promise<
 	});
 }
 
-/** A typed answer. pi's input shows its own countdown; `w` cannot work while the human types. */
+/** A typed answer. pi's input shows its own live count; `w` cannot work while the human types. */
 export async function typeAnswer(
 	ctx: ExtensionContext,
 	req: Omit<PickRequest, "options">,
 ): Promise<string | undefined> {
 	const timeoutMs = req.waiter.waiting ? undefined : req.timeoutMs;
-	const title = [req.title, ...req.body, modeLine(timeoutMs === undefined ? undefined : timeoutMs / 1000, false)].join("\n");
+	const title = [req.title, ...req.body, staticModeLine(timeoutMs)].join("\n");
 	return timed(req, timeoutMs, () => ctx.ui.input(title, undefined, { signal: req.signal, timeout: timeoutMs }));
 }

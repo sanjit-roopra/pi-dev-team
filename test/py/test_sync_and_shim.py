@@ -73,6 +73,12 @@ class SyncHelpers(unittest.TestCase):
         check = subprocess.run([sys.executable, str(ROOT / "hooks" / "lib" / "build_knowledge_index.py"), "--check"], capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stderr[:2000])
 
+    def test_upstream_json_lists_patches_in_the_order_sync_applies_them(self):
+        info = json.loads((ROOT / "UPSTREAM.json").read_text())
+        recorded = [(p["file"], p["reason"]) for p in info["patches"]]
+        expected = [(pattern, why) for pattern, _regex, _repl, why in sync.PATCHES + sync.LEAN_PATCHES]
+        self.assertEqual(recorded, expected)
+
     def test_ceremony_skills_are_not_loaded_on_every_task(self):
         for rel in ("skills/context-loading-protocol/SKILL.md", "skills/performance-metrics/SKILL.md",
                     "agents/orchestrator.md", "skills/build/SKILL.md", "knowledge/telemetry-schema.md"):

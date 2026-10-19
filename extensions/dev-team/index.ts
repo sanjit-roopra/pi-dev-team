@@ -39,7 +39,7 @@ import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwarde
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
 import { confirmCaution, dialogTimeoutMs, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
 import { sendAway } from "./lib/away-notify.ts";
-import { type Brief, BriefGate, DEV_TEAM_BRIEF_TOOL, diffNumstat, lintBrief, registerBriefTool, sizeAdvisory } from "./lib/brief.ts";
+import { type Brief, BriefGate, DEV_TEAM_BRIEF_TOOL, diffSnapshot, lintBrief, registerBriefTool, sizeAdvisory } from "./lib/brief.ts";
 import { createPlainGate, lintQuestion, type PlainQuestion, questionStyleGuide } from "./lib/plain-questions.ts";
 import { pickOne, typeAnswer, type Waiter } from "./lib/question-dialog.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
@@ -66,7 +66,9 @@ function readJson(file: string): { version?: string; commit?: string } {
 
 const HOOK_NAME_PREFIX = /^\[[\w-]+\] /;
 /** A request that asks to answer every question itself: wait mode for that task. */
-const WAIT_REQUEST = /\b(?:grill me|ask me everything)\b/i;
+const WAIT_REQUEST = /(?<!\b(?:don['’]?t|do not|no need to|never|not)\s+)\b(?:grill me|ask me everything)\b/i;
+/** Claude tool names that let a dispatched agent change files. */
+const WRITE_TOOLS = /^(?:Write|Edit|MultiEdit|NotebookEdit)$/;
 const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "startup", new: "clear", resume: "resume", fork: "resume" };
 
 export default function devTeam(pi: ExtensionAPI) {
@@ -146,7 +148,7 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	/** Asks the human to approve a feature brief (dev_team_brief). */
 	async function approveFeature(ctx: ExtensionContext, glance: string, signal: AbortSignal | undefined) {
-		if (!ctx.hasUI || process.env.DEV_TEAM_INTERACTIVE !== "1") return { answer: "away" as const };
+		if (!ctx.hasUI || process.env.DEV_TEAM_INTERACTIVE !== "1") return { answer: "noHuman" as const };
 		const waiter: Waiter = { waiting: false };
 		const timeoutMs = dialogTimeoutMs(answerMode(), config.askTimeoutSec);
 		const go = "Go: build it (recommended)";
@@ -196,7 +198,18 @@ export default function devTeam(pi: ExtensionAPI) {
 	});
 	registerAskUser(pi, getConfig, { answerMode, onAway });
 	registerWebFetch(pi);
-	registerBriefTool(pi, { gate: briefGate, approveFeature, onAway });
+	registerBriefTool(pi, { gate: briefGate, approveFeature, onAway, sessionId: (ctx) => ctx.sessionManager.getSessionId() });
+
+	/** Whether a dev_team_subagent call dispatches an agent that can write files (no tools: list = all tools). */
+	function dispatchWrites(input: Record<string, unknown>, ctx: ExtensionContext): boolean {
+		const tasks = Array.isArray(input.tasks) ? (input.tasks as Record<string, unknown>[]) : [input];
+		const names = tasks.map((t) => t?.agent ?? t?.subagent_type).filter((n): n is string => typeof n === "string");
+		const { agents } = discoverDispatchAgents(ctx.cwd, packageRoot, ctx.isProjectTrusted(), names);
+		return names.some((name) => {
+			const tools = resolveAgentName(agents, name)?.claudeTools;
+			return !tools || tools.some((t) => WRITE_TOOLS.test(t));
+		});
+	}
 
 	pi.registerTool({
 		name: "skill",
@@ -245,7 +258,9 @@ export default function devTeam(pi: ExtensionAPI) {
 				}
 				// UserPromptSubmit never sees extension commands in pi; fire it so telemetry records /command usage.
 				void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: `/${current.name}${args ? ` ${args}` : ""}` }, ctx.cwd);
-				briefGate.noteSkill(current.name);
+				briefGate.commandRan(current.name);
+				taskWaits = WAIT_REQUEST.test(args ?? "");
+				applyInteractive(ctx);
 				const text = commandText(current, args ?? "");
 				const before = ctx.sessionManager.getEntries().length;
 				if (ctx.isIdle()) await pi.sendUserMessage(text);
@@ -523,8 +538,9 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("input", async (event, ctx) => {
 		if (!isSubagent && event.source !== "extension") {
 			void hooks.run("UserPromptSubmit", { ...basePayload(ctx), prompt: event.text }, ctx.cwd);
-			// A new request, not a steer or follow-up to the running one and not a /command (its handler notes the skill).
-			if (!event.streamingBehavior && !event.text.trimStart().startsWith("/")) {
+			// A new request, not a steer or follow-up to the running one. pi runs extension /commands before
+			// this event, so text starting with "/" here is a pi skill, a template or a path.
+			if (!event.streamingBehavior) {
 				briefGate.newRequest();
 				taskWaits = WAIT_REQUEST.test(event.text);
 				applyInteractive(ctx);
@@ -536,14 +552,16 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
 		if (blockedForeignTools().has(event.toolName)) return { block: true, reason: piSubagentsBlockReason(event.toolName) };
 		const input = event.input as Record<string, unknown>;
+		const routing = !isSubagent && config.routing === "brief";
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
+			if (routing && !briefGate.open && dispatchWrites(input, ctx)) return { block: true, reason: briefGate.blockReason() };
 			// PreToolUse(Agent) hooks run per dispatch inside the tool.
 			running++;
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", `dev-team: ${running} agent call(s) running`);
 			return undefined;
 		}
 		if (event.toolName === "skill" && typeof input.name === "string") briefGate.noteSkill(input.name);
-		if (!isSubagent && config.routing === "brief") {
+		if (routing) {
 			const unbriefed = briefGate.check(event.toolName, input, ctx.cwd);
 			if (unbriefed) return { block: true, reason: unbriefed };
 		}
@@ -603,8 +621,10 @@ export default function devTeam(pi: ExtensionAPI) {
 			tool_response: toolResponse,
 		};
 		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
-		if (briefGate.kind === "tiny" && !briefGate.sizeWarned && !event.isError && (event.toolName === "write" || event.toolName === "edit")) {
-			const grown = sizeAdvisory(diffNumstat(ctx.cwd));
+		const baseline = briefGate.kind === "tiny" && !briefGate.sizeWarned ? briefGate.baseline : undefined;
+		if (baseline && !event.isError && (event.toolName === "write" || event.toolName === "edit" || event.toolName === "bash")) {
+			const now = diffSnapshot(ctx.cwd);
+			const grown = now && sizeAdvisory(baseline, now);
 			if (grown) {
 				briefGate.sizeWarned = true;
 				outcomes.push({ advisories: [grown], notices: [], runs: [] });
@@ -733,7 +753,7 @@ function compatGuide(
 				: "- Human gates: no human is attached (non-interactive run, DEV_TEAM_INTERACTIVE unset). Apply each gate's documented non-interactive default and say so; do not wait.",
 		...(routing
 			? [
-					`- Plain requests: when the user types a request without a /command, call ${DEV_TEAM_BRIEF_TOOL} before you change any file, so they see what you build. You pick the kind: question, tiny, feature or vague. File changes before it are blocked.`,
+					`- Plain requests: when the user types a request without a /command, call ${DEV_TEAM_BRIEF_TOOL} before you change any file, so they see what you build. You pick the kind: question, tiny, feature or vague; resume when the message answers or continues a /command already running. File changes before it are blocked.`,
 				]
 			: []),
 		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,

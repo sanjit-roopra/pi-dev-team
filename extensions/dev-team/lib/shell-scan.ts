@@ -14,12 +14,29 @@
 export interface ShellWord {
 	text: string;
 	dynamic: boolean;
+	/** [start, end) ranges of `text` that were quoted or escaped: a `>` there is text, not an operator. */
+	quotedSpans?: [number, number][];
 	redirect?: "heredoc" | "here-string";
 	heredocBody?: string;
 }
 export type ShellSegment = ShellWord[];
 
 export const MAX_SUBSTITUTION_DEPTH = 32;
+
+/** The word's text with every quoted or escaped character replaced by "\u0001", same length. */
+export function unquotedView(word: ShellWord): string {
+	let view = word.text;
+	for (const [start, end] of word.quotedSpans ?? []) view = view.slice(0, start) + "\u0001".repeat(end - start) + view.slice(end);
+	return view;
+}
+
+/** Runs `read`, which appends to the word, and records what it appended as quoted. */
+function appendQuoted<T>(word: ShellWord, read: () => T): T {
+	const start = word.text.length;
+	const result = read();
+	if (word.text.length > start) (word.quotedSpans ??= []).push([start, word.text.length]);
+	return result;
+}
 
 interface PendingHeredoc {
 	word: ShellWord;
@@ -163,22 +180,22 @@ function scanSegments(source: string, start: number, depth: number): { segments:
 		} else if (char === "#" && !word) {
 			i = indexOrEnd(source, "\n", i);
 		} else if (char === "\\") {
-			if (source[i + 1] !== "\n") wordInProgress().text += source[i + 1] ?? "";
+			if (source[i + 1] !== "\n") appendQuoted(wordInProgress(), () => (wordInProgress().text += source[i + 1] ?? ""));
 			i += 2;
 		} else if (char === "'") {
 			const end = indexOrEnd(source, "'", i + 1);
-			wordInProgress().text += source.slice(i + 1, end);
+			appendQuoted(wordInProgress(), () => (wordInProgress().text += source.slice(i + 1, end)));
 			if (end === source.length) wordInProgress().dynamic = true;
 			i = end + 1;
 		} else if (char === "$" && source[i + 1] === "'") {
 			// ANSI-C quoting ($'a\nb'): the escapes are decoded by the shell, so the text is not taken literally.
 			let end = i + 2;
 			while (end < source.length && source[end] !== "'") end += source[end] === "\\" ? 2 : 1;
-			wordInProgress().text += source.slice(i, end + 1);
+			appendQuoted(wordInProgress(), () => (wordInProgress().text += source.slice(i, end + 1)));
 			wordInProgress().dynamic = true;
 			i = end + 1;
 		} else if (char === '"') {
-			i = readDoubleQuoted(source, i + 1, wordInProgress(), depth);
+			i = appendQuoted(wordInProgress(), () => readDoubleQuoted(source, i + 1, wordInProgress(), depth));
 		} else if (char === "$" && source[i + 1] === "(") {
 			i = readSubstitution(source, i + 2, wordInProgress(), depth + 1);
 		} else if (source.startsWith("<<<", i)) {

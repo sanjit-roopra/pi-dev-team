@@ -131,6 +131,14 @@ test("ask_user shows the recommended option first, as 'label: description', with
 	assert.match(r.content[0].text, /A: SQLite \(recommended\)$/m, "the answer is the label, not the shown line");
 });
 
+test("ask_user titles outside the TUI say when the run goes on alone, never a time left", async (t) => {
+	interactive(t);
+	const { ctx, calls } = fakeUi(t, ["Approve (recommended)"]);
+	await askUser().execute("1", { questions: [question] }, undefined, undefined, ctx);
+	assert.match(calls[0].title, /\n⏱ goes on alone after 2:00$/);
+	assert.doesNotMatch(calls[0].title, /left|w = wait/);
+});
+
 test("ask_user in wait mode passes no timeout and asks every question", async (t) => {
 	interactive(t);
 	const { ctx, calls } = fakeUi(t, ["Approve (recommended)", "Postgres"]);
@@ -138,6 +146,7 @@ test("ask_user in wait mode passes no timeout and asks every question", async (t
 	const r = await execute("1", { questions: [question, second] }, undefined, undefined, ctx);
 	assert.equal(calls.length, 2);
 	for (const c of calls) assert.equal(c.opts?.timeout, undefined);
+	for (const c of calls) assert.match(c.title, /\n⏸ waiting for you$/);
 	assert.equal(r.details.answered, true);
 });
 

@@ -16,7 +16,7 @@ rounds.
    Ask the whole frontier in one round, with one `ask_user` call and one
    question per decision. A question that depends on another question in this
    round waits for a later round.
-3. Each question follows "Questions (ask_user) and briefs" from the system
+3. Each question follows "Questions (ask_user)" from the system
    prompt: a short header, a `why` line, and your recommended answer first,
    marked (recommended), so "yes" accepts it.
 4. Log every question and answer in the spec's `## Decision Log` (round,

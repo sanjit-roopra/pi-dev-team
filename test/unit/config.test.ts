@@ -427,16 +427,26 @@ test("loadConfig: answerMode, routing and notify keep valid values and drop anyt
 	assert.equal(invalid.notify, "");
 });
 
-test("a project file may set answerMode and routing but not notify", (t) => {
+test("a project file may set routing but not answerMode or notify", (t) => {
 	assert.deepEqual(filterProjectConfig({ answerMode: "wait", routing: "off", notify: "ntfy:x" }), {
-		data: { answerMode: "wait", routing: "off" },
-		ignored: ["notify"],
+		data: { routing: "off" },
+		ignored: ["answerMode", "notify"],
 	});
 	const { project, userConfigFile } = fixture(t);
 	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ answerMode: "wait", routing: "off", notify: "ntfy:evil" }));
 	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
-	assert.equal(config.answerMode, "wait");
+	assert.equal(config.answerMode, "timeout", "a project cannot make questions wait forever");
 	assert.equal(config.routing, "off");
 	assert.equal(config.notify, "", "a project cannot choose where briefs are sent");
+	assert.ok(ignoredProjectSettings.includes("answerMode"));
 	assert.ok(ignoredProjectSettings.includes("notify"));
+});
+
+test("the user file keeps answerMode even when a project file sets it too", (t) => {
+	const { project, userConfigFile } = fixture(t);
+	fs.writeFileSync(userConfigFile, JSON.stringify({ answerMode: "wait" }));
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ answerMode: "timeout" }));
+	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
+	assert.equal(config.answerMode, "wait");
+	assert.ok(ignoredProjectSettings.includes("answerMode"));
 });
