@@ -365,6 +365,15 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "| 1 | <question> | <answer> | `user` / `assumed (timeout)` / `assumed (no human)` |\n",
         "grilling: log every question and answer",
     ),
+    (
+        "agents/spec-compliance-review.md",
+        re.escape("- For each criterion, locate the implementation that satisfies it\n"),
+        "- When the task names a source request file (the user's own request, saved when no spec exists), read it in "
+        "full: it outranks the plan. A criterion, scenario, test or output that differs from one of its output examples "
+        "is an unmet criterion (`error`), even when the plan or your task records the difference as a decision.\n"
+        "- For each criterion, locate the implementation that satisfies it\n",
+        "source request: check against the user's request, not only the plan",
+    ),
 ]
 
 

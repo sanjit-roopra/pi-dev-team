@@ -34,7 +34,7 @@ import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
-import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, resolveSkillName, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
+import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
 import { confirmCaution, dialogTimeoutMs, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
@@ -286,7 +286,9 @@ export default function devTeam(pi: ExtensionAPI) {
 				if (NEW_WORK_SKILLS.has(bareSkillName(current.name))) clearBrief(ctx.cwd);
 				taskWaits = wantsWait(args ?? "");
 				applyInteractive(ctx);
-				const text = commandText(current, args ?? "");
+				// Only a typed command saves the request: a model's own skill call may carry a summary instead.
+				const saved = saveRequest(ctx.cwd, bareSkillName(current.name), args ?? "");
+				const text = commandText(current, args ?? "") + (saved ? requestFileLine(saved) : "");
 				const before = ctx.sessionManager.getEntries().length;
 				if (ctx.isIdle()) await pi.sendUserMessage(text);
 				else await pi.sendUserMessage(text, { deliverAs: "followUp" });

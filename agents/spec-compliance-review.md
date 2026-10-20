@@ -27,6 +27,7 @@ This agent answers one question: **does the code do what the spec says?** It run
 ### Unmet acceptance criteria
 
 - Read acceptance criteria from the spec (`docs/specs/<slug>.md`), plan, and/or design doc — or, on a repo that opted into `/specs`' issue-first persistence convention, from the linked spec GitHub issue if the plan records a `--spec-issue <url>` reference instead of a `docs/specs/**` file (see `/specs`' "Persist to GitHub issue" step)
+- When the task names a source request file (the user's own request, saved when no spec exists), read it in full: it outranks the plan. A criterion, scenario, test or output that differs from one of its output examples is an unmet criterion (`error`), even when the plan or your task records the difference as a decision.
 - For each criterion, locate the implementation that satisfies it
 - For each criterion, locate the test that validates it
 - Flag criteria with no implementation or no test

@@ -241,6 +241,17 @@ const scenarios = {
 		assert(!r.out.includes("`$0`"), "raw $0 left in expansion");
 	},
 
+	"command /plan saves its request word for word and names the file"(env) {
+		const request = '--yes Print {"at":"2025-09-10T03:30:00Z"} exactly.';
+		const r = pi(env, `/plan ${request}`);
+		const named = r.out.match(/saved word for word at `([^`]+)`/)?.[1];
+		assert(named, `request file not named: ${r.out.slice(-400)} ${r.err}`);
+		const saved = fs.readFileSync(path.join(env.repo, named), "utf-8");
+		assert(saved === request, `saved request differs: ${JSON.stringify(saved)}`);
+		const viaTool = pi(env, script([{ tools: [{ tool: "skill", args: { name: "plan", args: "a summary" } }] }]));
+		assert(!viaTool.out.includes("saved word for word"), "a model's skill call saved a request");
+	},
+
 	"bash sees plugin env, shim on PATH, non-interactive"(env) {
 		const r = pi(env, script([{ tool: "bash", args: { command: 'echo "root=$CLAUDE_PLUGIN_ROOT"; command -v claude; echo "i=[$DEV_TEAM_INTERACTIVE]"; echo "sid=$CLAUDE_SESSION_ID"' } }]));
 		assert(r.out.includes(`root=${PKG}`), r.out);

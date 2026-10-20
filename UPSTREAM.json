@@ -166,6 +166,11 @@
       "hits": 1
     },
     {
+      "file": "agents/spec-compliance-review.md",
+      "reason": "source request: check against the user's request, not only the plan",
+      "hits": 1
+    },
+    {
       "file": "agents/software-engineer.md",
       "reason": "lean production code: the engineer names what it skipped",
       "hits": 1
