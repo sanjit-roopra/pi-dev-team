@@ -99,7 +99,7 @@ The dispatch tool is `dev_team_subagent`, not `subagent`, so the package coexist
 ## 5. Known differences
 
 - Hook output. In Claude Code, text a PreToolUse/PostToolUse hook prints with exit 0 is only shown in the transcript view. The plugin was written as if the model sees it. The port appends it to the tool result so the model does see it (`hookOutputToModel`, default on).
-- Parallel tool calls. Claude Code runs several `Agent` calls in one message in parallel; so does pi. The `dev_team_subagent` tool also accepts `tasks[]`. A global limit (`maxParallelAgents`, default 6; a project file may set 1 to 16) applies across both.
+- Parallel tool calls. Claude Code runs several `Agent` calls in one message in parallel; so does pi. The `dev_team_subagent` tool also accepts `tasks[]`. A global limit (`maxParallelAgents`, default 6; a project file may set 1 to 16; `DEV_TEAM_MAX_PARALLEL_AGENTS` in the process environment overrides every file, for containers whose agent dir is mounted over) applies across both.
 - Subagent transcripts are not saved as sessions (`--no-session`). Usage is captured from the JSON event stream and recorded.
 - `allowed-tools` in skills is advisory in pi (as in upstream under `bypassPermissions`).
 - Autocompact timing. Claude Code compacts at `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` between any two turns. The port compacts at that percentage when an agent run ends, because `ctx.compact()` aborts a running turn; within one long run pi's own threshold applies.
