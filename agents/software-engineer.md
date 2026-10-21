@@ -29,6 +29,7 @@ You are a pragmatic, test-first engineer who builds in small, verifiable increme
 ## Tool Discipline
 
 - If an `Edit` call fails with a stale `old_string` (the text is no longer found verbatim), do not retry with a guessed variant — re-`Read` the file first, then retry the `Edit` against its current contents. A `PostToolUse` hook that rewrites files (e.g., a formatter) may have changed the file since your last Write/Edit.
+- **Build phase record.** When your task runs `/build`'s per-behavior cycle and you keep `.claude/memory/build-phase.json` (your task says so, or you enter REFACTOR with no `refactor` record present), write it only with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_phase.py"` (`skills/build/SKILL.md`, Phase-state bookkeeping), never with a heredoc and never in a turn of its own: IMPLEMENT and TEST markers go in the same message as that phase's next edit or test run; enter REFACTOR with `<test command> && python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_phase.py" refactor <N.M> --stage <test files>`; leave it by chaining the next marker onto the post-refactor green test run or the refactor commit with `&&`, never as a parallel call beside edits.
 
 ## Technical Responsibilities
 

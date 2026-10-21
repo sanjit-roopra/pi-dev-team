@@ -97,7 +97,7 @@ class SyncHelpers(unittest.TestCase):
 class LeanCode(unittest.TestCase):
     """Lean production code: the simplify-lens override is pinned and shipped, the lean fix rule is one rule, test scope is untouched."""
 
-    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md", "skills/specs/references/grilling.md"}  # port-added (plus code-review references): no upstream file to pin
+    PORT_ONLY_FILES = {"agents/Explore.md", "agents/general-purpose.md", "skills/specs/references/grilling.md", "scripts/build_phase.py"}  # port-added (plus code-review references): no upstream file to pin
 
     def test_every_upstream_override_is_pinned_and_shipped(self):
         overrides = ROOT / "overrides"
@@ -128,6 +128,46 @@ class LeanCode(unittest.TestCase):
         skip = lens.split("## Skip", 1)[1].split("## Detect", 1)[0]
         self.assertIn("Only test files changed", skip)
 
+
+
+class SpeedUps(unittest.TestCase):
+    """Speed-ups that skip no quality step: the phase-record helper, one message for final verification and Farley, medium-effort lenses."""
+
+    @staticmethod
+    def effort(name):
+        fm = sync.split_frontmatter((ROOT / "agents" / f"{name}.md").read_text())
+        return dict(sync.fm_blocks(fm[0])).get("effort", [""])[0].split(":", 1)[1].strip()
+
+    def test_lenses_and_plan_critics_think_at_medium_and_the_kept_agents_do_not_drop(self):
+        for name in sync.MEDIUM_EFFORT_AGENTS + ("refactor-opportunity-review",):
+            with self.subTest(name=name):
+                self.assertEqual(self.effort(name), "medium")
+        for name in ("correctness-review", "plan-review-acceptance", "software-engineer", "qa-engineer"):
+            with self.subTest(name=name):
+                self.assertEqual(self.effort(name), "high")
+        self.assertEqual(self.effort("spec-compliance-review"), "medium", "medium upstream; not raised or lowered here")
+
+    def test_build_writes_the_phase_record_with_the_helper_in_a_shared_message(self):
+        build = (ROOT / "skills" / "build" / "SKILL.md").read_text()
+        engineer = (ROOT / "agents" / "software-engineer.md").read_text()
+        self.assertTrue((ROOT / "scripts" / "build_phase.py").is_file())
+        self.assertEqual(build.count(sync.BUILD_PHASE_RULE), 1)
+        self.assertLess(build.index("at **each** phase transition"), build.index(sync.BUILD_PHASE_RULE))
+        self.assertIn("refactor <N.M> --stage", sync.BUILD_PHASE_RULE)
+        self.assertIn("Never send it as a parallel call beside edits", sync.BUILD_PHASE_RULE)
+        self.assertEqual(engineer.count(sync.ENGINEER_BUILD_PHASE_RULE), 1)
+        # Phrases tests/hooks/test_build_state_contract.py pins stay as upstream wrote them.
+        for phrase in ("do **not** delete the file", "Clear the file only when the plan's last step completes",
+                       "delete it instead when this was the plan's last step"):
+            self.assertIn(phrase, build)
+
+    def test_final_verification_and_farley_share_one_message(self):
+        build = (ROOT / "skills" / "build" / "SKILL.md").read_text()
+        self.assertEqual(build.count(sync.FINAL_VERIFY_RULE), 1)
+        step5, step6 = build.index("### 5. Run full test suite"), build.index("### 6. Run code review")
+        self.assertTrue(step5 < build.index(sync.FINAL_VERIFY_RULE) < step6)
+        self.assertIn("`qa-engineer`", sync.FINAL_VERIFY_RULE)
+        self.assertIn("when the suite is red", sync.FINAL_VERIFY_RULE)
 
 class Shim(unittest.TestCase):
     def test_model_args(self):

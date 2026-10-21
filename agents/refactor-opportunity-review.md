@@ -4,7 +4,7 @@ name: refactor-opportunity-review
 description: Simplify lens after tests pass (TDD REFACTOR phase) — finds production code the slice can delete, merge or replace with something that already exists, without changing behavior
 tools: Read, Grep, Glob, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__get_dead_code, mcp__plugin_repowise_repowise__get_health
 model: haiku
-effort: high
+effort: medium
 color: green
 ---
 

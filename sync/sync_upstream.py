@@ -211,6 +211,82 @@ LEAN_PATCHES: list[tuple[str, str, str, str]] = [
     ),
 ]
 
+# Speed-ups that skip no quality step (PORTING.md section 5): the build phase record is written by one helper
+# command that shares a message with real work, the final verification and the Farley Score go out in one message,
+# and review lenses and plan critics think at medium effort.
+BUILD_PHASE_CMD = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_phase.py"'
+BUILD_PHASE_ANCHOR = 'treats an absent/non-`refactor` record as "nothing to enforce").\n'
+BUILD_PHASE_RULE = (
+    "**Write the record with one command, never in a turn of its own (pi port).** `" + BUILD_PHASE_CMD + " "
+    "<implement|test|refactor|between-steps> <N.M> [--plan <plan path>] [--stage <test file>...]` writes the record "
+    "above (a fresh `written_at`; `plan_path` carried over from the current record when `--plan` is left out; "
+    "`test_files_staged` only for `refactor`), and `build_phase.py clear` deletes it. Do not write the record with a "
+    "heredoc or the Write tool, and never spend a model turn on it alone:\n\n"
+    "- **IMPLEMENT, TEST, `between-steps`.** No guard reads these, so send the call in the same message as the "
+    "phase's next edit or test run (a parallel tool call, or chained into that bash command).\n"
+    "- **Entering REFACTOR.** Chain it onto the green test run: `<test command> && " + BUILD_PHASE_CMD + " refactor "
+    "<N.M> --stage <the step's test files>`. `--stage` runs `git add` on those files (new and untracked ones too) and "
+    "records them in `test_files_staged`, so the record is written only on green and always matches the index "
+    "baseline.\n"
+    "- **Leaving REFACTOR.** Chain the next marker onto the command that ends the refactor, the post-refactor green "
+    "test run or the refactor commit: `<test command> && " + BUILD_PHASE_CMD + " implement <N.M>` (or "
+    "`between-steps <next N.M>`). Never send it as a parallel call beside edits: until it has run the record still "
+    "says `refactor`, so `refactor_test_freeze_guard.py` blocks a test edit and `refactor_test_revert_guard.py` "
+    "restores test files after every bash call.\n"
+)
+BUILD_PHASE_HANDOFF_ANCHOR = "delete it instead when this was the plan's last step.\n"
+FINAL_VERIFY_ANCHOR = (
+    "After all steps are complete, delete `.claude/memory/build-phase.json` if a `between-steps` record remains, then "
+    "run the full test suite. Paste the output as final verification evidence.\n"
+)
+FINAL_VERIFY_RULE = (
+    "**One message for the final verification and the Farley Score (pi port).** First resolve Step 7 sub-steps 1–3 "
+    "(the branch base and the branch's changed test files: cheap git reads). Then send one assistant message with "
+    "both calls, so they run at the same time:\n\n"
+    "1. One bash call: `" + BUILD_PHASE_CMD + " clear`, then the full test suite and the lint, type-check and "
+    "complexity tools the build ran (for example `ruff`, `python -m compileall`, `lizard`), joined with `;` so one "
+    "failure does not hide the next result.\n"
+    "2. When Step 7 found changed test files, the Step 7 Farley Score as a `dev_team_subagent` dispatch of "
+    "`qa-engineer`: load the `farley-score` skill, score exactly those files, change no file, and return the "
+    "suite-level Farley Score, rating and distribution.\n\n"
+    "Step 7 sub-step 4 then presents that result instead of scoring again. Dispatch the Farley Score once more, after "
+    "the fix, when the suite is red, or when Step 6 or any later fix changes or adds a test file on the branch; "
+    "otherwise the first result stands.\n"
+)
+ENGINEER_TOOL_ANCHOR = (
+    "A `PostToolUse` hook that rewrites files (e.g., a formatter) may have changed the file since your last Write/Edit.\n"
+)
+ENGINEER_BUILD_PHASE_RULE = (
+    "- **Build phase record.** When your task runs `/build`'s per-behavior cycle and you keep "
+    "`.claude/memory/build-phase.json` (your task says so, or you enter REFACTOR with no `refactor` record present), "
+    "write it only with `" + BUILD_PHASE_CMD + "` (`skills/build/SKILL.md`, Phase-state bookkeeping), never with a "
+    "heredoc and never in a turn of its own: IMPLEMENT and TEST markers go in the same message as that phase's next "
+    "edit or test run; enter REFACTOR with `<test command> && " + BUILD_PHASE_CMD + " refactor <N.M> --stage <test "
+    "files>`; leave it by chaining the next marker onto the post-refactor green test run or the refactor commit with "
+    "`&&`, never as a parallel call beside edits.\n"
+)
+# Review lenses and plan critics that think at medium effort. Kept at high: correctness-review,
+# plan-review-acceptance, software-engineer and qa-engineer (which runs /build's Farley Score);
+# spec-compliance-review is medium upstream. refactor-opportunity-review is an override: its file says medium itself.
+MEDIUM_EFFORT_AGENTS = (
+    "ai-provenance-review",
+    "arch-review",
+    "component-architecture-review",
+    "concurrency-review",
+    "domain-review",
+    "naming-review",
+    "performance-review",
+    "security-review",
+    "structure-review",
+    "test-review",
+    "test-smell-review",
+    "token-efficiency-review",
+    "plan-review-design",
+    "plan-review-parallelization",
+    "plan-review-strategic",
+    "plan-review-ux",
+)
+
 # (glob relative to package root, regex, replacement, description)
 PATCHES: list[tuple[str, str, str, str]] = [
     (
@@ -389,6 +465,35 @@ PATCHES: list[tuple[str, str, str, str]] = [
         "- For each criterion, locate the implementation that satisfies it\n",
         "source request: open plan choices are checked against the request, on explicit evidence only",
     ),
+    (
+        "skills/build/SKILL.md",
+        re.escape(BUILD_PHASE_ANCHOR),
+        BUILD_PHASE_ANCHOR + "\n" + BUILD_PHASE_RULE,
+        "speed: the build phase record is one helper command that shares a message with real work",
+    ),
+    (
+        "skills/build/SKILL.md",
+        re.escape(BUILD_PHASE_HANDOFF_ANCHOR),
+        "delete it instead when this was the plan's last step. Send `build_phase.py between-steps <next N.M>` (or "
+        "`build_phase.py clear`) in the same message as the plan Edit above; the plan is not a test file, so no guard "
+        "affects that Edit.\n",
+        "speed: the step handoff record shares a message with the plan update",
+    ),
+    (
+        "skills/build/SKILL.md",
+        re.escape(FINAL_VERIFY_ANCHOR),
+        FINAL_VERIFY_ANCHOR + "\n" + FINAL_VERIFY_RULE,
+        "speed: the final verification and the Farley Score run in one message",
+    ),
+    (
+        "agents/software-engineer.md",
+        re.escape(ENGINEER_TOOL_ANCHOR),
+        ENGINEER_TOOL_ANCHOR + ENGINEER_BUILD_PHASE_RULE,
+        "speed: the engineer writes the build phase record with the helper, never in a turn of its own",
+    ),
+] + [
+    (f"agents/{name}.md", r"(?m)^effort: high$", "effort: medium", "speed: review lenses and plan critics at medium effort")
+    for name in MEDIUM_EFFORT_AGENTS
 ]
 
 

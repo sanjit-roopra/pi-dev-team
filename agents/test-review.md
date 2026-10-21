@@ -4,7 +4,7 @@ name: test-review
 description: Test quality, coverage gaps, assertion quality, and test hygiene
 tools: Read, Grep, Glob, Skill, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__search_codebase, mcp__plugin_repowise_repowise__get_risk
 model: sonnet
-effort: high
+effort: medium
 color: green
 skills:
   - feature-file-validation
