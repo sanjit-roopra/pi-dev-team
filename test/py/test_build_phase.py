@@ -90,11 +90,28 @@ class BuildPhase(unittest.TestCase):
         revert.evaluate(self.repo)
         self.assertEqual((self.repo / "tests" / "test_a.py").read_text(), "changed in the next TEST phase\n")
 
-    def test_failed_staging_writes_nothing(self):
+    def test_failed_staging_still_writes_the_refactor_record_so_the_freeze_holds(self):
         self.run_helper("test", "1.1", "--plan", "plans/p.md")
-        out = self.run_helper("refactor", "1.1", "--stage", "tests/missing.py")
+        out = self.run_helper("refactor", "1.1", "--stage", "tests/test_a.py", "tests/missing.py")
         self.assertEqual(out.returncode, 1)
-        self.assertEqual(self.record()["phase"], "test")
+        self.assertIn("git add failed", out.stderr)
+        self.assertEqual(self.record()["phase"], "refactor")
+        self.assertEqual(self.record()["test_files_staged"], ["tests/test_a.py", "tests/missing.py"])
+        self.assertEqual(freeze.evaluate(str(self.repo / "tests" / "test_a.py"), self.repo)[0], 2)
+        self.assertEqual(bash_guard.evaluate("echo x > tests/test_a.py", self.repo)[0], 2)
+
+    def test_the_documented_chains_pass_the_bash_guard_and_pipefail_gates_the_marker(self):
+        helper = f"{sys.executable} {SCRIPT}"
+        self.run_helper("refactor", "1.1", "--plan", "plans/p.md", "--stage", "tests/test_a.py")
+        red = f"set -o pipefail; false | tail -1 && {helper} implement 1.2"
+        green = f"set -o pipefail; true | tail -1 && {helper} implement 1.2"
+        for command in (red, green):
+            self.assertEqual(bash_guard.evaluate(command, self.repo)[0], 0, command)
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        subprocess.run(["bash", "-c", red], cwd=self.repo, env=env, capture_output=True)
+        self.assertEqual(self.record()["phase"], "refactor", "a red piped run must not leave REFACTOR")
+        subprocess.run(["bash", "-c", green], cwd=self.repo, env=env, capture_output=True)
+        self.assertEqual(self.record()["phase"], "implement")
 
     def test_between_steps_and_clear(self):
         self.run_helper("refactor", "1.1", "--plan", "plans/p.md", "--stage", "tests/test_a.py")

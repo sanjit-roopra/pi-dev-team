@@ -193,6 +193,11 @@
       "hits": 1
     },
     {
+      "file": "skills/build/SKILL.md",
+      "reason": "speed: Step 7 presents Step 5's Farley Score instead of scoring again",
+      "hits": 1
+    },
+    {
       "file": "agents/software-engineer.md",
       "reason": "speed: the engineer writes the build phase record with the helper, never in a turn of its own",
       "hits": 1

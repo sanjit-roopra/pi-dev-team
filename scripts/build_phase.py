@@ -14,7 +14,8 @@ chained onto a test command with `&&`.
 - `written_at` is now (UTC). `plan_path` comes from `--plan`, else from the current record.
 - `--stage` (refactor only) runs `git add` on the files, then records them, repo-relative,
   in `test_files_staged`: the index is the baseline the tests-frozen guards enforce.
-  Nothing is written when `git add` fails.
+  When `git add` fails the record is still written (the freeze guards need no git) and the
+  exit code is 1.
 - `clear` deletes the record (the plan's last step is done).
 
 The record lands at `<git root of the cwd>/.claude/memory/build-phase.json`, the path the
@@ -95,11 +96,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     staged = [repo_relative(root, f) for f in args.stage]
+    stage_failed = False
     if staged:
         added = subprocess.run(["git", "add", "--", *staged], cwd=str(root), capture_output=True, text=True, check=False)
         if added.returncode != 0:
-            print(f"build-phase: git add failed, record not written: {added.stderr.strip()}", file=sys.stderr)
-            return 1
+            # Still write the refactor record: the Write/Edit and bash freeze guards need no git, so the freeze holds.
+            stage_failed = True
+            print(f"build-phase: git add failed, refactor record written anyway: {added.stderr.strip()}", file=sys.stderr)
 
     plan_path = args.plan if args.plan is not None else current_plan_path(state_file)
     if not plan_path:
@@ -109,6 +112,8 @@ def main(argv: list[str] | None = None) -> int:
         atomic_write(state_file, json.dumps(record) + "\n", fail_open=False)
     except OSError as exc:
         print(f"build-phase: could not write {state_file}: {exc}", file=sys.stderr)
+        return 1
+    if stage_failed:
         return 1
     detail = f", {len(staged)} test file(s) staged" if staged else ""
     print(f"build-phase: {record['phase']} step {record['step']}{detail}")

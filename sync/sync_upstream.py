@@ -224,15 +224,17 @@ BUILD_PHASE_RULE = (
     "heredoc or the Write tool, and never spend a model turn on it alone:\n\n"
     "- **IMPLEMENT, TEST, `between-steps`.** No guard reads these, so send the call in the same message as the "
     "phase's next edit or test run (a parallel tool call, or chained into that bash command).\n"
-    "- **Entering REFACTOR.** Chain it onto the green test run: `<test command> && " + BUILD_PHASE_CMD + " refactor "
-    "<N.M> --stage <the step's test files>`. `--stage` runs `git add` on those files (new and untracked ones too) and "
-    "records them in `test_files_staged`, so the record is written only on green and always matches the index "
-    "baseline.\n"
-    "- **Leaving REFACTOR.** Chain the next marker onto the command that ends the refactor, the post-refactor green "
-    "test run or the refactor commit: `<test command> && " + BUILD_PHASE_CMD + " implement <N.M>` (or "
-    "`between-steps <next N.M>`). Never send it as a parallel call beside edits: until it has run the record still "
-    "says `refactor`, so `refactor_test_freeze_guard.py` blocks a test edit and `refactor_test_revert_guard.py` "
-    "restores test files after every bash call.\n"
+    "- **Entering REFACTOR.** Chain it onto the green test run: `set -o pipefail; <test command> && " + BUILD_PHASE_CMD
+    + " refactor <N.M> --stage <the step's test files>`. `--stage` runs `git add` on those files (new and untracked "
+    "ones too) and records them in `test_files_staged`, so the record always matches the index baseline.\n"
+    "- **Leaving REFACTOR.** Chain the next marker onto the post-refactor green test run: `set -o pipefail; <test "
+    "command> && " + BUILD_PHASE_CMD + " implement <N.M>` (or `between-steps <next N.M>`). Never chain it onto a "
+    "command that runs no tests (a commit alone), and never send it as a parallel call beside edits: until it has run "
+    "the record still says `refactor`, so `refactor_test_freeze_guard.py` blocks a test edit and "
+    "`refactor_test_revert_guard.py` restores test files after every bash call.\n"
+    "- **`set -o pipefail` is required in both chains.** `&&` sees only the exit status of a pipeline's last "
+    "command, so without it a red run piped into `tail` or `head` counts as green and the marker is written anyway. "
+    "With it, the marker runs only when the tests passed.\n"
 )
 BUILD_PHASE_HANDOFF_ANCHOR = "delete it instead when this was the plan's last step.\n"
 FINAL_VERIFY_ANCHOR = (
@@ -240,18 +242,27 @@ FINAL_VERIFY_ANCHOR = (
     "run the full test suite. Paste the output as final verification evidence.\n"
 )
 FINAL_VERIFY_RULE = (
-    "**One message for the final verification and the Farley Score (pi port).** First resolve Step 7 sub-steps 1–3 "
-    "(the branch base and the branch's changed test files: cheap git reads). Then send one assistant message with "
-    "both calls, so they run at the same time:\n\n"
+    "**One message for the final verification and the Farley Score (pi port).** First resolve only Step 7 sub-steps "
+    "1–2 (the branch base and the branch's changed test files: cheap git reads). Do not act on sub-step 3 here: its "
+    "skip line and its \"continue to Step 8\" belong to Step 7, after Step 6 has run. Then send one assistant message "
+    "with both calls, so they run at the same time:\n\n"
     "1. One bash call: `" + BUILD_PHASE_CMD + " clear`, then the full test suite and the lint, type-check and "
-    "complexity tools the build ran (for example `ruff`, `python -m compileall`, `lizard`), joined with `;` so one "
-    "failure does not hide the next result.\n"
+    "complexity tools the build ran (for example `ruff`, `python -m compileall`, `lizard`), each followed by its own "
+    "exit code and joined with `;` so one failure does not hide the next result, for example `<suite>; echo "
+    "\"SUITE_EXIT=$?\"; ruff check <files>; echo \"RUFF_EXIT=$?\"; ...`. The call's own exit status is only the last "
+    "tool's, so read the tags: the suite is red when `SUITE_EXIT` is not 0, and a tool failed when its tag is not 0.\n"
     "2. When Step 7 found changed test files, the Step 7 Farley Score as a `dev_team_subagent` dispatch of "
     "`qa-engineer`: load the `farley-score` skill, score exactly those files, change no file, and return the "
     "suite-level Farley Score, rating and distribution.\n\n"
     "Step 7 sub-step 4 then presents that result instead of scoring again. Dispatch the Farley Score once more, after "
     "the fix, when the suite is red, or when Step 6 or any later fix changes or adds a test file on the branch; "
     "otherwise the first result stands.\n"
+)
+FARLEY_STEP7_ANCHOR = "4. Otherwise invoke the `farley-score` skill scoped to those files. "
+FARLEY_STEP7_RULE = (
+    "4. Otherwise present the Farley Score from Step 5's `qa-engineer` dispatch, or from its re-run when Step 5 says "
+    "to dispatch it again (pi port); invoke the `farley-score` skill scoped to those files here only when Step 5 did "
+    "not dispatch it. "
 )
 ENGINEER_TOOL_ANCHOR = (
     "A `PostToolUse` hook that rewrites files (e.g., a formatter) may have changed the file since your last Write/Edit.\n"
@@ -261,9 +272,10 @@ ENGINEER_BUILD_PHASE_RULE = (
     "`.claude/memory/build-phase.json` (your task says so, or you enter REFACTOR with no `refactor` record present), "
     "write it only with `" + BUILD_PHASE_CMD + "` (`skills/build/SKILL.md`, Phase-state bookkeeping), never with a "
     "heredoc and never in a turn of its own: IMPLEMENT and TEST markers go in the same message as that phase's next "
-    "edit or test run; enter REFACTOR with `<test command> && " + BUILD_PHASE_CMD + " refactor <N.M> --stage <test "
-    "files>`; leave it by chaining the next marker onto the post-refactor green test run or the refactor commit with "
-    "`&&`, never as a parallel call beside edits.\n"
+    "edit or test run; enter REFACTOR with `set -o pipefail; <test command> && " + BUILD_PHASE_CMD + " refactor <N.M> "
+    "--stage <test files>`; leave it by chaining the next marker onto the post-refactor green test run the same way "
+    "(`set -o pipefail; <test command> && ...`), never onto a command that runs no tests and never as a parallel call "
+    "beside edits. Without `set -o pipefail`, a red run piped into `tail` or `head` still lets the marker run.\n"
 )
 # Review lenses and plan critics that think at medium effort. Kept at high: correctness-review,
 # plan-review-acceptance, software-engineer and qa-engineer (which runs /build's Farley Score);
@@ -484,6 +496,12 @@ PATCHES: list[tuple[str, str, str, str]] = [
         re.escape(FINAL_VERIFY_ANCHOR),
         FINAL_VERIFY_ANCHOR + "\n" + FINAL_VERIFY_RULE,
         "speed: the final verification and the Farley Score run in one message",
+    ),
+    (
+        "skills/build/SKILL.md",
+        re.escape(FARLEY_STEP7_ANCHOR),
+        FARLEY_STEP7_RULE,
+        "speed: Step 7 presents Step 5's Farley Score instead of scoring again",
     ),
     (
         "agents/software-engineer.md",

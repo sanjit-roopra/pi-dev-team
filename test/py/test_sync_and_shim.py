@@ -154,7 +154,11 @@ class SpeedUps(unittest.TestCase):
         self.assertEqual(build.count(sync.BUILD_PHASE_RULE), 1)
         self.assertLess(build.index("at **each** phase transition"), build.index(sync.BUILD_PHASE_RULE))
         self.assertIn("refactor <N.M> --stage", sync.BUILD_PHASE_RULE)
-        self.assertIn("Never send it as a parallel call beside edits", sync.BUILD_PHASE_RULE)
+        self.assertIn("never send it as a parallel call beside edits", sync.BUILD_PHASE_RULE)
+        self.assertNotIn("refactor commit", sync.BUILD_PHASE_RULE + sync.ENGINEER_BUILD_PHASE_RULE)
+        for rule in (sync.BUILD_PHASE_RULE, sync.ENGINEER_BUILD_PHASE_RULE):
+            with self.subTest(rule=rule[:40]):
+                self.assertEqual(rule.count("set -o pipefail; <test command> &&"), 2)
         self.assertEqual(engineer.count(sync.ENGINEER_BUILD_PHASE_RULE), 1)
         # Phrases tests/hooks/test_build_state_contract.py pins stay as upstream wrote them.
         for phrase in ("do **not** delete the file", "Clear the file only when the plan's last step completes",
@@ -168,6 +172,11 @@ class SpeedUps(unittest.TestCase):
         self.assertTrue(step5 < build.index(sync.FINAL_VERIFY_RULE) < step6)
         self.assertIn("`qa-engineer`", sync.FINAL_VERIFY_RULE)
         self.assertIn("when the suite is red", sync.FINAL_VERIFY_RULE)
+        self.assertIn("resolve only Step 7 sub-steps 1–2", sync.FINAL_VERIFY_RULE)
+        self.assertIn('echo "SUITE_EXIT=$?"', sync.FINAL_VERIFY_RULE)
+        step7 = build[build.index("### 7. Final test quality score"):build.index("### 7.5.")]
+        self.assertIn(sync.FARLEY_STEP7_RULE, step7)
+        self.assertNotIn(sync.FARLEY_STEP7_ANCHOR, build)
 
 class Shim(unittest.TestCase):
     def test_model_args(self):
