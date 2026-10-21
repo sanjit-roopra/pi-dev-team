@@ -34,7 +34,7 @@ import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
-import { applyReviewProfileEnv, reviewProfileArgs, reviewProfileFromEnv, reviewProfileGuideLine, reviewProfileNote, reviewProfileSkippedSkill } from "./lib/review-profile.ts";
+import { applyReviewProfileEnv, reviewProfileArgs, reviewProfileFromEnv, reviewProfileGuideLine, reviewProfileNote } from "./lib/review-profile.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
@@ -269,8 +269,6 @@ export default function devTeam(pi: ExtensionAPI) {
 						: `Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`,
 				);
 			}
-			const skipped = skill.source === "package" ? reviewProfileSkippedSkill(review.profile, skill.name) : undefined;
-			if (skipped) return { content: [{ type: "text", text: skipped }], details: { skill: skill.name, path: skill.filePath } };
 			return { content: [{ type: "text", text: expandSkill(skill, profileArgsFor(skill, params.args ?? ""), profileNoteFor(skill)) }], details: { skill: skill.name, path: skill.filePath } };
 		},
 	});

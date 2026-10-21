@@ -3,7 +3,7 @@
  *
  * `full` (the default) is upstream's flow, and its prompt text stays byte for byte what it was: nothing
  * here adds text unless the profile is `lean`. `lean` cuts the review layers that measured runs showed
- * cost the most and changed the least (the Farley Score, extra fix rounds, the second review panel,
+ * cost the most and changed the least (extra fix rounds, the second review panel,
  * complex-tier plan critics, per-step implementer dispatches). It weakens a review gate, so only the
  * user's own process environment can turn it on: the value is read once, when the extension loads,
  * before any config file's `env` is applied, and a project's config may not set it either
@@ -77,7 +77,7 @@ export function insertReviewProfileNote(body: string, note: string | undefined):
 /** The dev-team guide line for the lean profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile): string {
 	if (profile !== "lean") return "";
-	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice, only \`error\` findings fixed in one round, no Farley Score, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip and the skill tool skips farley-score. An implementer runs only the tests for the behavior it changes while it works, and the full suite once at the end of its task.`;
+	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice, only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer runs only the tests for the behavior it changes while it works, and the full suite once at the end of its task.`;
 }
 
 const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
@@ -91,15 +91,6 @@ export function reviewProfileArgs(profile: ReviewProfile, skillName: string, arg
 	if (profile !== "lean" || skillName !== "build") return args;
 	if (args.split(/\s+/).includes(BACKSTOP_SKIP_FLAG)) return args;
 	return args.trim() ? `${args.trim()} ${BACKSTOP_SKIP_FLAG}` : BACKSTOP_SKIP_FLAG;
-}
-
-/** Skills the lean profile skips when a model loads them with the skill tool (a typed command still runs them). */
-const LEAN_SKIPPED_SKILLS: ReadonlySet<string> = new Set(["farley-score"]);
-
-/** The skill tool's result for a skill lean skips, or undefined (run it). */
-export function reviewProfileSkippedSkill(profile: ReviewProfile, skillName: string): string | undefined {
-	if (profile !== "lean" || !LEAN_SKIPPED_SKILLS.has(skillName)) return undefined;
-	return `${skillName} skipped (${REVIEW_PROFILE_ENV}=lean): the lean review profile does not score tests. Do not score them another way; print \`Farley Score skipped (${REVIEW_PROFILE_ENV}=lean).\` where the score would go and continue. The user can still run /${skillName} directly.`;
 }
 
 /**

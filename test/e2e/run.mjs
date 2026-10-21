@@ -260,10 +260,10 @@ const scenarios = {
 		let r = pi(env, "/build --yes");
 		assert(r.code === 0 && r.out.includes("# Build") && !r.out.includes("Review profile: lean") && !r.out.includes("Arguments: --yes --backstop-review=skip"), `full /build changed: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, "/build --yes", { vars: { DEV_TEAM_REVIEW: "lean" } });
-		assert(r.out.includes("## Review profile: lean") && r.out.includes("Farley Score skipped (DEV_TEAM_REVIEW=lean)"), `lean section missing: ${r.out.slice(-300)} ${r.err}`);
+		assert(r.out.includes("## Review profile: lean") && !r.out.includes("Farley Score skipped"), `lean section missing: ${r.out.slice(-300)} ${r.err}`);
 		assert(r.out.includes("Arguments: --yes --backstop-review=skip"), `lean /build did not get --backstop-review=skip: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, script([{ tool: "skill", args: { name: "farley-score", args: "" } }]), { vars: { DEV_TEAM_REVIEW: "lean" } });
-		assert(r.out.includes("farley-score skipped (DEV_TEAM_REVIEW=lean)"), `lean did not skip farley-score: ${r.out.slice(-300)} ${r.err}`);
+		assert(!r.out.includes("skipped (DEV_TEAM_REVIEW=lean)") && /farley/i.test(r.out), `lean did not load farley-score: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, childProbe, { vars: { DEV_TEAM_REVIEW: "lean" } });
 		assert(r.out.includes("CHILD_REVIEW=[lean]"), `child did not get the lean profile: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, probe, { vars: { DEV_TEAM_REVIEW: "bogus" } });

@@ -14,7 +14,6 @@ import {
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
 	reviewProfileNote,
-	reviewProfileSkippedSkill,
 } from "../../extensions/dev-team/lib/review-profile.ts";
 import { commandText, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
 
@@ -95,7 +94,8 @@ test("lean profile: plan, build, code-review and ship get their section after th
 test("lean sections name each agreed cut and keep the agreed gates", () => {
 	const note = (name: string) => reviewProfileNote(ROOT, "lean", name) ?? "";
 	const build = note("build");
-	assert.match(build, /Skip step 7/);
+	assert.match(build, /the step 7 Farley Score/);
+	assert.doesNotMatch(build, /Skip step 7/);
 	assert.match(build, /fix only `error` findings/);
 	assert.match(build, /Do not start a second round/);
 	assert.match(build, /--backstop-review=skip/);
@@ -124,10 +124,7 @@ test("lean /build gets --backstop-review=skip once; other skills and full keep t
 	assert.match(expandSkill(build, reviewProfileArgs("lean", "build", "--yes")), /Arguments: --yes --backstop-review=skip/);
 });
 
-test("lean skips farley-score in the skill tool and adds a software-engineer override; full adds nothing", () => {
-	assert.match(reviewProfileSkippedSkill("lean", "farley-score") ?? "", /^farley-score skipped \(DEV_TEAM_REVIEW=lean\)/);
-	assert.equal(reviewProfileSkippedSkill("lean", "build"), undefined);
-	assert.equal(reviewProfileSkippedSkill("full", "farley-score"), undefined);
+test("lean adds a software-engineer override; full adds nothing", () => {
 	assert.match(reviewProfileAgentNote("lean", "software-engineer"), /full test suite once/);
 	assert.equal(reviewProfileAgentNote("lean", "structure-review"), "");
 	assert.equal(reviewProfileAgentNote("full", "software-engineer"), "");
