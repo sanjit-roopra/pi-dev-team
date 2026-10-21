@@ -195,17 +195,35 @@ export function commandText(skill: SkillDef, args: string): string {
 }
 
 /**
- * Where /plan keeps the user's request word for word. With no spec artifact, upstream /plan writes its own
- * criteria and every later gate checks against them, so a requirement the plan rewords passes every review.
- * The saved file gives the plan and its reviewers the user's own text. Code writes it, not the model:
- * a model copy can shorten it, and a model may invoke the skill again with a summary as its arguments.
+ * Where /plan, /specs and /ship keep the user's request word for word. With no spec artifact, upstream /plan
+ * writes its own criteria and every later gate checks against them, so a requirement the plan rewords passes
+ * every review; /specs and /ship hand later phases a model's summary. The saved file gives every phase and its
+ * reviewers the user's own text. Code writes it, not the model: a model copy can shorten it, and a model may
+ * invoke a skill again with a summary as its arguments. The directory sits under .claude/memory/, which /setup
+ * already git-ignores in user projects, like the plans that name it.
  */
 export const REQUEST_DIR = path.join(".claude", "memory", "requests");
-const SAVE_REQUEST_SKILLS: ReadonlySet<string> = new Set(["plan"]);
+const SAVE_REQUEST_SKILLS: ReadonlySet<string> = new Set(["plan", "specs", "ship"]);
+
+/** An issue number or list (`12`, `#12`, `4,5`), a URL or a file path: names a source, is not request text. */
+const REFERENCE_TOKEN = /^(#?\d+(,#?\d+)*,?|[a-z][a-z0-9+.-]*:\/\/\S+|\S*[\\/]\S*|\S+\.(md|txt|pdf))$/i;
+
+/**
+ * True when the arguments hold words beyond flags, issue references, URLs and paths. `/ship 123`,
+ * `/ship --issues 4,5 --no-auto-merge`, `/plan --spec-issue <url>` and `/specs docs/spec.md` point at a
+ * request that lives elsewhere (the issue body, the document); saving them would make a bare reference
+ * the user's "request" and outrank the real one.
+ */
+export function hasRequestText(args: string): boolean {
+	return args
+		.trim()
+		.split(/\s+/)
+		.some((token) => token !== "" && !token.startsWith("--") && !REFERENCE_TOKEN.test(token));
+}
 
 /** Saves a command's arguments to REQUEST_DIR and returns the path relative to cwd; undefined when not saved. Never throws. */
 export function saveRequest(cwd: string, bareName: string, args: string, now = new Date()): string | undefined {
-	if (!SAVE_REQUEST_SKILLS.has(bareName) || !args.trim()) return undefined;
+	if (!SAVE_REQUEST_SKILLS.has(bareName) || !hasRequestText(args)) return undefined;
 	const rel = path.join(REQUEST_DIR, `${bareName}-${now.toISOString().replace(/[:.]/g, "-")}.md`);
 	let at = cwd;
 	for (const part of REQUEST_DIR.split(path.sep)) {

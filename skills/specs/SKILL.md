@@ -11,6 +11,7 @@ user-invocable: true
 ## pi port notes (read first)
 
 - Issue and comment text follows the "GitHub text style" from the system prompt. Keep every heading, section and marker that this skill's template requires, because later steps read them. Write the prose inside them plainly and briefly. If the template itself breaks a rule (for example a required list that is longer than the limit), send the same `gh` command again unchanged: the extension blocks it only once.
+- **The saved request is the primary input.** When the invocation names a saved request file (`.claude/memory/requests/*.md`, typed with the command or passed on by `/ship`), read it in full. The spec records it in a metadata line `**Source request**: <path>` and copies each example of exact output in it into the acceptance criteria character for character. Flags in it are command options, not requirements. An answer logged with source `user` is settled. An answer logged `assumed (timeout)` or `assumed (no human)` is not settled: the criterion built on it names its Ambiguity Log row, so `/plan` lists it under `## Risks & Open Questions`.
 <!-- pi-port-notes -->
 
 

@@ -67,6 +67,8 @@ class SyncHelpers(unittest.TestCase):
         self.assertNotIn("build_worktree_baseref.py", (ROOT / "skills" / "build" / "SKILL.md").read_text())
         compliance = (ROOT / "agents" / "spec-compliance-review.md").read_text()
         self.assertEqual(compliance.count("When the task names a source request file"), 1)
+        self.assertEqual(compliance.count("A plan choice on a point the source request leaves unclear"), 1)
+        self.assertLess(compliance.index("When the task names a source request file"), compliance.index("A plan choice on a point the source request leaves unclear"))
         self.assertIn("- For each criterion, locate the implementation that satisfies it\n", compliance)
         for doc in ("agents/orchestrator.md", "knowledge/three-phase-workflow.md", "knowledge/request-processing-flow.md"):
             self.assertNotIn("worktree.baseRef", (ROOT / doc).read_text(), doc)

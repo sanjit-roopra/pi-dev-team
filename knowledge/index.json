@@ -5576,6 +5576,10 @@
     }
   },
   "plugins/dev-team/skills/ship/SKILL.md": {
+    "pi port notes (read first)": {
+      "summary": "**Pass the saved request on.** The extension saves the text after `/ship` only when it holds a feature description, not just issue numbers, URLs or flags.",
+      "anchor": "pi-port-notes-read-first"
+    },
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"

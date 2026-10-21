@@ -49,6 +49,7 @@
     "pr",
     "project-init",
     "setup",
+    "ship",
     "specs"
   ],
   "normalisedFrontmatter": [
@@ -168,6 +169,11 @@
     {
       "file": "agents/spec-compliance-review.md",
       "reason": "source request: check against the user's request, not only the plan",
+      "hits": 1
+    },
+    {
+      "file": "agents/spec-compliance-review.md",
+      "reason": "source request: open plan choices are checked against the request, on explicit evidence only",
       "hits": 1
     },
     {

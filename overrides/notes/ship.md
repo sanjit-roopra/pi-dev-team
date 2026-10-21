@@ -1,0 +1,3 @@
+## pi port notes (read first)
+
+**Pass the saved request on.** The extension saves the text after `/ship` only when it holds a feature description, not just issue numbers, URLs or flags. When the invocation names a saved request file (`.claude/memory/requests/ship-*.md`), add `Source request: <path>` to the arguments of every `/specs` and `/plan` call, so each phase reads the user's own words, not a summary of them. Flags in that file are command options, not requirements. When the invocation also names issues, their bodies are part of the request as well; the saved file does not replace them. With no saved file (the input is an issue reference), the issue body is the request and no `Source request:` is passed.

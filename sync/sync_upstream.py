@@ -368,11 +368,26 @@ PATCHES: list[tuple[str, str, str, str]] = [
     (
         "agents/spec-compliance-review.md",
         re.escape("- For each criterion, locate the implementation that satisfies it\n"),
-        "- When the task names a source request file (the user's own request, saved when no spec exists), read it in "
+        "- When the task names a source request file (the user's own request, saved word for word), read it in "
         "full: it outranks the plan. A criterion, scenario, test or output that differs from one of its output examples "
         "is an unmet criterion (`error`), even when the plan or your task records the difference as a decision.\n"
         "- For each criterion, locate the implementation that satisfies it\n",
         "source request: check against the user's request, not only the plan",
+    ),
+    (
+        "agents/spec-compliance-review.md",
+        re.escape("- For each criterion, locate the implementation that satisfies it\n"),
+        "- A plan choice on a point the source request leaves unclear (an item under `## Risks & Open Questions`, or a "
+        "criterion marked open question, assumption or plan decision) is checked against the request, not honoured as "
+        "settled. Report it as `unmet-criterion` `error` only on explicit evidence: a request example whose output "
+        "differs between the planned reading and another, or, when no example decides, a request sentence that states "
+        "the behaviour outright. A reading inferred from wording (a loop phrase, a field name, a sort rule) is a "
+        "`suggestion` that names both readings and an input on which they differ; it never overturns the plan. Choices "
+        "the request does not touch (internal structure, names, text it never shows) are not findings. A choice backed "
+        "by an Ambiguity Log row with source `user`, or by the user's answer at plan approval, is settled: do not report "
+        "it. Check open choices even when your task calls recorded choices settled.\n"
+        "- For each criterion, locate the implementation that satisfies it\n",
+        "source request: open plan choices are checked against the request, on explicit evidence only",
     ),
 ]
 
