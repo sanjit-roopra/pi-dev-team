@@ -42,6 +42,7 @@ import {
 	type UsageTotals,
 	type WorktreeInfo,
 } from "./subagent-types.ts";
+import { applyReviewProfileEnv } from "./review-profile.ts";
 import { saveFullOutput } from "./session-files.ts";
 import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
@@ -431,6 +432,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				DEV_TEAM_PARENT_SESSION_ID: sessionId,
 			};
 			delete env.DEV_TEAM_INTERACTIVE;
+			// The parent's profile, never a config file's (review-profile.ts): applyEnv normalized process.env.
+			applyReviewProfileEnv(env, process.env.DEV_TEAM_REVIEW === "lean" ? "lean" : "full");
 
 			const run = newChildRunState(choice.model);
 			let stderr = "";

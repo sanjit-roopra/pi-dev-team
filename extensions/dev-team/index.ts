@@ -34,6 +34,7 @@ import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
+import { applyReviewProfileEnv, reviewProfileFromEnv, reviewProfileGuideLine, reviewProfileNote } from "./lib/review-profile.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
@@ -97,6 +98,11 @@ export default function devTeam(pi: ExtensionAPI) {
 	const isSubagent = process.env.DEV_TEAM_SUBAGENT === "1";
 	const depth = Number(process.env.DEV_TEAM_SUBAGENT_DEPTH || 0) || 0;
 	let cwd = process.cwd();
+	// Read before any config file's env is applied (applyEnv): only the user's own environment sets it.
+	const review = reviewProfileFromEnv(process.env);
+	let reviewWarned = false;
+	/** The lean section for a package skill, or undefined (full profile: skill text unchanged). */
+	const profileNoteFor = (skill: SkillDef) => (skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name) : undefined);
 	// Project config is read again at session start, once pi's trust decision is known.
 	let config: DevTeamConfig = loadConfig(cwd, { includeProject: false }).config;
 	const getConfig = () => config;
@@ -141,6 +147,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		// (allow-listed env settings, no hooks; see filterProjectConfig).
 		config = loadConfig(cwd, projectConfigOpts(ctx)).config;
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
+		applyReviewProfileEnv(process.env, review.profile);
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
@@ -260,7 +267,7 @@ export default function devTeam(pi: ExtensionAPI) {
 						: `Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`,
 				);
 			}
-			return { content: [{ type: "text", text: expandSkill(skill, params.args ?? "") }], details: { skill: skill.name, path: skill.filePath } };
+			return { content: [{ type: "text", text: expandSkill(skill, params.args ?? "", profileNoteFor(skill)) }], details: { skill: skill.name, path: skill.filePath } };
 		},
 	});
 
@@ -288,7 +295,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				applyInteractive(ctx);
 				// Only a typed command saves the request: a model's own skill call may carry a summary instead.
 				const saved = saveRequest(ctx.cwd, bareSkillName(current.name), args ?? "");
-				const text = commandText(current, args ?? "") + (saved ? requestFileLine(saved) : "");
+				const text = commandText(current, args ?? "", profileNoteFor(current)) + (saved ? requestFileLine(saved) : "");
 				const before = ctx.sessionManager.getEntries().length;
 				if (ctx.isIdle()) await pi.sendUserMessage(text);
 				else await pi.sendUserMessage(text, { deliverAs: "followUp" });
@@ -514,6 +521,10 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (blocked.size && !isSubagent && piSubagentsLoadsLater(pi.getAllTools(), DEV_TEAM_SUBAGENT_TOOL)) {
 			notify(ctx, ["dev-team: pi-subagents loads after dev-team, so its tools can reappear in the prompt (calls stay blocked). List npm:pi-subagents before pi-dev-team in the packages of pi's settings.json."]);
 		}
+		if (review.warning && !reviewWarned && !isSubagent) {
+			reviewWarned = true;
+			warn(review.warning);
+		}
 		if (!hooks.python && !pythonWarned) {
 			pythonWarned = true;
 			warn("dev-team: python >= 3.10 not found — hook guards are disabled.");
@@ -543,7 +554,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const tierModelsText = hasAgentPrompt
 			? ""
 			: tierModelsLine(config.models, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, (id) => !!findModel(ctx, id));
-		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief");
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief", reviewProfileGuideLine(review.profile));
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
 			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
@@ -766,6 +777,7 @@ function compatGuide(
 	tierModelsText: string,
 	piSubagentsBlocked: boolean,
 	routing: boolean,
+	reviewProfileLine: string,
 ): string {
 	return [
 		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
@@ -788,6 +800,7 @@ function compatGuide(
 		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
 		...(tierModelsText ? [`- ${tierModelsText}`] : []),
+		...(reviewProfileLine ? [reviewProfileLine] : []),
 		styleGuide ? `\n${styleGuide}` : "",
 		`\n${questionStyleGuide(routing)}`,
 		index ? `\nDev-team skills (load with the skill tool; "(/x)" = also a user command):\n${index}` : "",

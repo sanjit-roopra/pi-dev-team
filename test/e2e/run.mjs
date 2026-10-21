@@ -254,6 +254,29 @@ const scenarios = {
 		assert(!viaTool.out.includes("saved word for word"), "a model's skill call saved a request");
 	},
 
+	"DEV_TEAM_REVIEW=lean comes only from the process env and adds the lean sections; full leaves /build unchanged"(env) {
+		const probe = script([{ tool: "bash", args: { command: 'echo "REVIEW=[$DEV_TEAM_REVIEW]"' } }]);
+		const childProbe = script([{ tool: "dev_team_subagent", args: { agent: "general-purpose", task: script([{ tool: "bash", args: { command: 'echo "CHILD_REVIEW=[$DEV_TEAM_REVIEW]"' } }]) } }]);
+		let r = pi(env, "/build --yes");
+		assert(r.code === 0 && r.out.includes("# Build") && !r.out.includes("Review profile: lean"), `full /build changed: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, "/build --yes", { vars: { DEV_TEAM_REVIEW: "lean" } });
+		assert(r.out.includes("## Review profile: lean") && r.out.includes("Farley Score skipped (DEV_TEAM_REVIEW=lean)"), `lean section missing: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, childProbe, { vars: { DEV_TEAM_REVIEW: "lean" } });
+		assert(r.out.includes("CHILD_REVIEW=[lean]"), `child did not get the lean profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, probe, { vars: { DEV_TEAM_REVIEW: "bogus" } });
+		assert(r.out.includes("REVIEW=[]") && r.err.includes("is not full or lean; using full"), `unknown value not warned and dropped: ${r.out.slice(-300)} ${r.err}`);
+		// Neither the project's nor the user's config file may turn lean on.
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "lean" } }));
+		writeUserConfig(env.home, { env: { DEV_TEAM_REVIEW: "lean" } });
+		r = pi(env, probe);
+		assert(r.out.includes("REVIEW=[]"), `a config file set the review profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, childProbe);
+		assert(r.out.includes("CHILD_REVIEW=[]"), `a config file set the child's review profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, "/build --yes");
+		assert(!r.out.includes("Review profile: lean"), "a config file added the lean section");
+	},
+
 	"bash sees plugin env, shim on PATH, non-interactive"(env) {
 		const r = pi(env, script([{ tool: "bash", args: { command: 'echo "root=$CLAUDE_PLUGIN_ROOT"; command -v claude; echo "i=[$DEV_TEAM_INTERACTIVE]"; echo "sid=$CLAUDE_SESSION_ID"' } }]));
 		assert(r.out.includes(`root=${PKG}`), r.out);

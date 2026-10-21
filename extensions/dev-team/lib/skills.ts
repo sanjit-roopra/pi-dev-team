@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { DevTeamConfig } from "./config.ts";
+import { insertReviewProfileNote } from "./review-profile.ts";
 import { readSmallFile } from "./safe-read.ts";
 
 export interface SkillDef {
@@ -178,20 +179,23 @@ export function substituteArguments(body: string, args: string): string {
 	return out;
 }
 
-/** The text a model sees when a skill is invoked (same wrapper pi uses for /skill:name). */
-export function expandSkill(skill: SkillDef, args: string): string {
+/**
+ * The text a model sees when a skill is invoked (same wrapper pi uses for /skill:name). `profileNote` is the
+ * lean review-profile section (review-profile.ts), inserted only when that profile is active.
+ */
+export function expandSkill(skill: SkillDef, args: string, profileNote?: string): string {
 	// Read again with the same guard: the file may have changed since discovery.
 	const raw = readSmallFile(skill.filePath);
 	if (raw === undefined) throw new Error(`Skill "${skill.name}" can no longer be read: ${skill.filePath}`);
-	const body = stripFrontmatter(raw).trim();
+	const body = insertReviewProfileNote(stripFrontmatter(raw).trim(), profileNote);
 	const substituted = substituteArguments(body, args);
 	const header = `References are relative to ${skill.baseDir}. \${CLAUDE_PLUGIN_ROOT} is set in the shell environment.`;
 	return `<skill name="${skill.name}" location="${skill.filePath}">\n${header}\n\n${substituted}\n</skill>`;
 }
 
-export function commandText(skill: SkillDef, args: string): string {
+export function commandText(skill: SkillDef, args: string, profileNote?: string): string {
 	const invocation = `/${skill.name}${args.trim() ? ` ${args.trim()}` : ""}`;
-	return `${expandSkill(skill, args)}\n\nThe user invoked \`${invocation}\`. Follow the skill above.`;
+	return `${expandSkill(skill, args, profileNote)}\n\nThe user invoked \`${invocation}\`. Follow the skill above.`;
 }
 
 /**
