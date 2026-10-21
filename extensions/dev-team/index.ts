@@ -34,7 +34,7 @@ import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
-import { applyReviewProfileEnv, reviewProfileFromEnv, reviewProfileGuideLine, reviewProfileNote } from "./lib/review-profile.ts";
+import { applyReviewProfileEnv, reviewProfileArgs, reviewProfileFromEnv, reviewProfileGuideLine, reviewProfileNote, reviewProfileSkippedSkill } from "./lib/review-profile.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
@@ -103,6 +103,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	let reviewWarned = false;
 	/** The lean section for a package skill, or undefined (full profile: skill text unchanged). */
 	const profileNoteFor = (skill: SkillDef) => (skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name) : undefined);
+	/** The args a package skill expands with (lean /build gets --backstop-review=skip); full: unchanged. */
+	const profileArgsFor = (skill: SkillDef, args: string) => (skill.source === "package" ? reviewProfileArgs(review.profile, skill.name, args) : args);
 	// Project config is read again at session start, once pi's trust decision is known.
 	let config: DevTeamConfig = loadConfig(cwd, { includeProject: false }).config;
 	const getConfig = () => config;
@@ -267,7 +269,9 @@ export default function devTeam(pi: ExtensionAPI) {
 						: `Unknown skill "${params.name}". Available: ${[...skills.keys()].sort().join(", ")}`,
 				);
 			}
-			return { content: [{ type: "text", text: expandSkill(skill, params.args ?? "", profileNoteFor(skill)) }], details: { skill: skill.name, path: skill.filePath } };
+			const skipped = skill.source === "package" ? reviewProfileSkippedSkill(review.profile, skill.name) : undefined;
+			if (skipped) return { content: [{ type: "text", text: skipped }], details: { skill: skill.name, path: skill.filePath } };
+			return { content: [{ type: "text", text: expandSkill(skill, profileArgsFor(skill, params.args ?? ""), profileNoteFor(skill)) }], details: { skill: skill.name, path: skill.filePath } };
 		},
 	});
 
@@ -295,7 +299,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				applyInteractive(ctx);
 				// Only a typed command saves the request: a model's own skill call may carry a summary instead.
 				const saved = saveRequest(ctx.cwd, bareSkillName(current.name), args ?? "");
-				const text = commandText(current, args ?? "", profileNoteFor(current)) + (saved ? requestFileLine(saved) : "");
+				const text = commandText(current, profileArgsFor(current, args ?? ""), profileNoteFor(current)) + (saved ? requestFileLine(saved) : "");
 				const before = ctx.sessionManager.getEntries().length;
 				if (ctx.isIdle()) await pi.sendUserMessage(text);
 				else await pi.sendUserMessage(text, { deliverAs: "followUp" });

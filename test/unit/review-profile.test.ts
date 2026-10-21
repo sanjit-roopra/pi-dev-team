@@ -9,9 +9,12 @@ import {
 	insertReviewProfileNote,
 	LEAN_SKILLS,
 	parseReviewProfile,
+	reviewProfileAgentNote,
+	reviewProfileArgs,
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
 	reviewProfileNote,
+	reviewProfileSkippedSkill,
 } from "../../extensions/dev-team/lib/review-profile.ts";
 import { commandText, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
 
@@ -99,6 +102,8 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /once per slice, not once per step/);
 	assert.match(build, /run the full test suite once, after the slice's last step/);
 	assert.match(build, /static self-heal pass/);
+	assert.match(build, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
+	assert.match(build, /overrides the per-behavior cycle's "Run the full test suite" gate/);
 	assert.match(build, /structure-review/);
 	const plan = note("plan");
 	assert.match(plan, /at most the `standard` reviewer set/);
@@ -106,4 +111,24 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	const review = note("code-review");
 	assert.match(review, /fix only `error` findings/);
 	assert.match(review, /step 2b static-analysis pre-pass/);
+});
+
+test("lean /build gets --backstop-review=skip once; other skills and full keep their args", () => {
+	assert.equal(reviewProfileArgs("lean", "build", ""), "--backstop-review=skip");
+	assert.equal(reviewProfileArgs("lean", "build", " --yes "), "--yes --backstop-review=skip");
+	assert.equal(reviewProfileArgs("lean", "build", "--backstop-review=skip --yes"), "--backstop-review=skip --yes");
+	assert.equal(reviewProfileArgs("lean", "plan", "--yes"), "--yes");
+	assert.equal(reviewProfileArgs("full", "build", "--yes"), "--yes");
+	const build = discoverSkills(ROOT, ROOT, { includeProject: false }).get("build");
+	assert.ok(build);
+	assert.match(expandSkill(build, reviewProfileArgs("lean", "build", "--yes")), /Arguments: --yes --backstop-review=skip/);
+});
+
+test("lean skips farley-score in the skill tool and adds a software-engineer override; full adds nothing", () => {
+	assert.match(reviewProfileSkippedSkill("lean", "farley-score") ?? "", /^farley-score skipped \(DEV_TEAM_REVIEW=lean\)/);
+	assert.equal(reviewProfileSkippedSkill("lean", "build"), undefined);
+	assert.equal(reviewProfileSkippedSkill("full", "farley-score"), undefined);
+	assert.match(reviewProfileAgentNote("lean", "software-engineer"), /full test suite once/);
+	assert.equal(reviewProfileAgentNote("lean", "structure-review"), "");
+	assert.equal(reviewProfileAgentNote("full", "software-engineer"), "");
 });

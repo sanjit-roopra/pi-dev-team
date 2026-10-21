@@ -77,5 +77,39 @@ export function insertReviewProfileNote(body: string, note: string | undefined):
 /** The dev-team guide line for the lean profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile): string {
 	if (profile !== "lean") return "";
-	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice, only \`error\` findings fixed in one round, no Farley Score, plan critics at most the standard tier. Spec-compliance review, the static-analysis pre-pass and structure-review still run, and lint and complexity errors are still fixed. An implementer runs only the tests for the behavior it changes while it works, and the full suite once at the end of its task.`;
+	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice, only \`error\` findings fixed in one round, no Farley Score, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip and the skill tool skips farley-score. An implementer runs only the tests for the behavior it changes while it works, and the full suite once at the end of its task.`;
+}
+
+const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
+
+/**
+ * The arguments a skill expands with. Under lean, `/build` gets upstream's `--backstop-review=skip`, so the
+ * skill's own flag logic (Parse Arguments, step 6) engages: DEV_TEAM_REVIEW=lean is the enclosing caller's
+ * assertion that flag requires, the lean slice checkpoints being the enclosing review. Full: args unchanged.
+ */
+export function reviewProfileArgs(profile: ReviewProfile, skillName: string, args: string): string {
+	if (profile !== "lean" || skillName !== "build") return args;
+	if (args.split(/\s+/).includes(BACKSTOP_SKIP_FLAG)) return args;
+	return args.trim() ? `${args.trim()} ${BACKSTOP_SKIP_FLAG}` : BACKSTOP_SKIP_FLAG;
+}
+
+/** Skills the lean profile skips when a model loads them with the skill tool (a typed command still runs them). */
+const LEAN_SKIPPED_SKILLS: ReadonlySet<string> = new Set(["farley-score"]);
+
+/** The skill tool's result for a skill lean skips, or undefined (run it). */
+export function reviewProfileSkippedSkill(profile: ReviewProfile, skillName: string): string | undefined {
+	if (profile !== "lean" || !LEAN_SKIPPED_SKILLS.has(skillName)) return undefined;
+	return `${skillName} skipped (${REVIEW_PROFILE_ENV}=lean): the lean review profile does not score tests. Do not score them another way; print \`Farley Score skipped (${REVIEW_PROFILE_ENV}=lean).\` where the score would go and continue. The user can still run /${skillName} directly.`;
+}
+
+/**
+ * A lean override appended to a dispatched agent's system prompt, or "" (full profile, or an agent lean leaves alone).
+ * software-engineer's per-step self-verification and the per-behavior cycle's full-suite gate run the full suite
+ * per step; lean runs it once per task.
+ */
+export function reviewProfileAgentNote(profile: ReviewProfile, agentName: string): string {
+	if (profile !== "lean" || agentName !== "software-engineer") return "";
+	return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
+
+This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate. While you work, after each behavior and each step, run only the tests for the behavior you are changing, plus lint and type-check on the files you changed, and paste that output. Run the project's full test suite once, after the last step or fix of your task, and paste that run in your report. Everything else in your instructions still applies.`;
 }
