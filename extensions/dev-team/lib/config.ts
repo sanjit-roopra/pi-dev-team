@@ -6,6 +6,7 @@
  *   2. ~/.pi/agent/dev-team.json          (user)
  *   3. <project>/.pi/dev-team.json        (project, committed)
  *   4. <project>/.pi/dev-team.local.json  (project, personal, git-ignored)
+ *   5. DEV_TEAM_MAX_PARALLEL_AGENTS          (process environment; maxParallelAgents only)
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -328,7 +329,7 @@ export function filterProjectConfig(data: Record<string, unknown>): { data: Reco
  */
 export function loadConfig(
 	cwd: string,
-	opts: { includeProject: boolean; userConfigFile?: string },
+	opts: { includeProject: boolean; userConfigFile?: string; env?: NodeJS.ProcessEnv },
 ): { config: DevTeamConfig; sources: string[]; ignoredProjectSettings: string[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
@@ -350,7 +351,26 @@ export function loadConfig(
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);
 	}
+	const envParallel = parallelAgentsFromEnv(opts.env ?? process.env);
+	if (envParallel !== undefined) {
+		config = { ...config, maxParallelAgents: envParallel };
+		sources.push(`env ${PARALLEL_AGENTS_ENV}`);
+	}
 	return { config, sources, ignoredProjectSettings };
+}
+
+/**
+ * Sets maxParallelAgents from the process environment, over every config file, so a container can raise
+ * the limit without a file under the agent dir (SlopCodeBench bind-mounts that dir). A whole number of at
+ * least 1; anything else is ignored.
+ */
+export const PARALLEL_AGENTS_ENV = "DEV_TEAM_MAX_PARALLEL_AGENTS";
+
+function parallelAgentsFromEnv(env: NodeJS.ProcessEnv): number | undefined {
+	const raw = env[PARALLEL_AGENTS_ENV]?.trim();
+	if (!raw || !/^[0-9]+$/.test(raw)) return undefined;
+	const n = Number(raw);
+	return n >= 1 ? n : undefined;
 }
 
 /** The project's config files loadConfig reads, in the order it merges them (later wins); none when untrusted. */

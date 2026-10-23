@@ -42,6 +42,7 @@ import {
 	type UsageTotals,
 	type WorktreeInfo,
 } from "./subagent-types.ts";
+import { applyReviewProfileEnv, reviewProfileAgentNote, reviewProfileFromEnv } from "./review-profile.ts";
 import { saveFullOutput } from "./session-files.ts";
 import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
@@ -409,7 +410,10 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 
 			// Project skills only from a directory the child itself is trusted in.
 			const skillPool = discoverSkillPool(config, runCwd, packageRoot, childTrusted(trust, runCwd, wt?.repoRoot));
-			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? [], skillPool, config.skillIndexChars);
+			// applyEnv normalized DEV_TEAM_REVIEW in process.env to the profile the user's own environment set.
+			const profile = reviewProfileFromEnv(process.env).profile;
+			const leanNote = reviewProfileAgentNote(profile, def.name);
+			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? [], skillPool, config.skillIndexChars) + (leanNote ? `\n${leanNote}\n` : "");
 			const promptFile = path.join(tmpDir, `agent-${def.name}.md`);
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
@@ -431,6 +435,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 				DEV_TEAM_PARENT_SESSION_ID: sessionId,
 			};
 			delete env.DEV_TEAM_INTERACTIVE;
+			// The parent's profile, never a config file's (review-profile.ts): applyEnv normalized process.env.
+			applyReviewProfileEnv(env, profile);
 
 			const run = newChildRunState(choice.model);
 			let stderr = "";

@@ -51,3 +51,21 @@ for (const c of CASES) {
 		} else assert.deepEqual(warnings, []);
 	});
 }
+
+test("hook run: DEV_TEAM_REVIEW from a config file's env never reaches a hook", async (t) => {
+	const python = resolvePython();
+	if (!python) return t.skip("python >= 3.10 not found");
+	const root = hookRoot(t);
+	fs.writeFileSync(path.join(root, "hooks", "env.py"), "import os; print('REVIEW=[' + os.environ.get('DEV_TEAM_REVIEW', '') + ']')");
+	const before = process.env.DEV_TEAM_REVIEW;
+	t.after(() => {
+		if (before === undefined) delete process.env.DEV_TEAM_REVIEW;
+		else process.env.DEV_TEAM_REVIEW = before;
+	});
+	const fromConfig = (): DevTeamConfig => ({ ...withTimeout(60), env: { DEV_TEAM_REVIEW: "lean" } });
+	const bridge = new HookBridge(root, fromConfig, () => python, () => {});
+	delete process.env.DEV_TEAM_REVIEW;
+	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /REVIEW=\[\]/);
+	process.env.DEV_TEAM_REVIEW = "lean";
+	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /REVIEW=\[lean\]/);
+});

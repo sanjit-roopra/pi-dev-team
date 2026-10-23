@@ -12,6 +12,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { DevTeamConfig } from "./config.ts";
+import { insertReviewProfileNote } from "./review-profile.ts";
 import { readSmallFile } from "./safe-read.ts";
 
 export interface SkillDef {
@@ -178,20 +179,77 @@ export function substituteArguments(body: string, args: string): string {
 	return out;
 }
 
-/** The text a model sees when a skill is invoked (same wrapper pi uses for /skill:name). */
-export function expandSkill(skill: SkillDef, args: string): string {
+/**
+ * The text a model sees when a skill is invoked (same wrapper pi uses for /skill:name). `profileNote` is the
+ * lean review-profile section (review-profile.ts), inserted only when that profile is active.
+ */
+export function expandSkill(skill: SkillDef, args: string, profileNote?: string): string {
 	// Read again with the same guard: the file may have changed since discovery.
 	const raw = readSmallFile(skill.filePath);
 	if (raw === undefined) throw new Error(`Skill "${skill.name}" can no longer be read: ${skill.filePath}`);
-	const body = stripFrontmatter(raw).trim();
+	const body = insertReviewProfileNote(stripFrontmatter(raw).trim(), profileNote);
 	const substituted = substituteArguments(body, args);
 	const header = `References are relative to ${skill.baseDir}. \${CLAUDE_PLUGIN_ROOT} is set in the shell environment.`;
 	return `<skill name="${skill.name}" location="${skill.filePath}">\n${header}\n\n${substituted}\n</skill>`;
 }
 
-export function commandText(skill: SkillDef, args: string): string {
+export function commandText(skill: SkillDef, args: string, profileNote?: string): string {
 	const invocation = `/${skill.name}${args.trim() ? ` ${args.trim()}` : ""}`;
-	return `${expandSkill(skill, args)}\n\nThe user invoked \`${invocation}\`. Follow the skill above.`;
+	return `${expandSkill(skill, args, profileNote)}\n\nThe user invoked \`${invocation}\`. Follow the skill above.`;
+}
+
+/**
+ * Where /plan, /specs and /ship keep the user's request word for word. With no spec artifact, upstream /plan
+ * writes its own criteria and every later gate checks against them, so a requirement the plan rewords passes
+ * every review; /specs and /ship hand later phases a model's summary. The saved file gives every phase and its
+ * reviewers the user's own text. Code writes it, not the model: a model copy can shorten it, and a model may
+ * invoke a skill again with a summary as its arguments. The directory sits under .claude/memory/, which /setup
+ * already git-ignores in user projects, like the plans that name it.
+ */
+export const REQUEST_DIR = path.join(".claude", "memory", "requests");
+const SAVE_REQUEST_SKILLS: ReadonlySet<string> = new Set(["plan", "specs", "ship"]);
+
+/** An issue number or list (`12`, `#12`, `4,5`), a URL or a file path: names a source, is not request text. */
+const REFERENCE_TOKEN = /^(#?\d+(,#?\d+)*,?|[a-z][a-z0-9+.-]*:\/\/\S+|\S*[\\/]\S*|\S+\.(md|txt|pdf))$/i;
+
+/**
+ * True when the arguments hold words beyond flags, issue references, URLs and paths. `/ship 123`,
+ * `/ship --issues 4,5 --no-auto-merge`, `/plan --spec-issue <url>` and `/specs docs/spec.md` point at a
+ * request that lives elsewhere (the issue body, the document); saving them would make a bare reference
+ * the user's "request" and outrank the real one.
+ */
+export function hasRequestText(args: string): boolean {
+	return args
+		.trim()
+		.split(/\s+/)
+		.some((token) => token !== "" && !token.startsWith("--") && !REFERENCE_TOKEN.test(token));
+}
+
+/** Saves a command's arguments to REQUEST_DIR and returns the path relative to cwd; undefined when not saved. Never throws. */
+export function saveRequest(cwd: string, bareName: string, args: string, now = new Date()): string | undefined {
+	if (!SAVE_REQUEST_SKILLS.has(bareName) || !hasRequestText(args)) return undefined;
+	const rel = path.join(REQUEST_DIR, `${bareName}-${now.toISOString().replace(/[:.]/g, "-")}.md`);
+	let at = cwd;
+	for (const part of REQUEST_DIR.split(path.sep)) {
+		at = path.join(at, part);
+		try {
+			if (fs.lstatSync(at).isSymbolicLink()) return undefined;
+		} catch {
+			break; // does not exist yet
+		}
+	}
+	try {
+		fs.mkdirSync(path.join(cwd, REQUEST_DIR), { recursive: true });
+		fs.writeFileSync(path.join(cwd, rel), args, { encoding: "utf-8", flag: "wx" });
+		return rel;
+	} catch {
+		// The request still reaches the model in the command text.
+		return undefined;
+	}
+}
+
+export function requestFileLine(rel: string): string {
+	return `\n\nThe request text after the command is saved word for word at \`${rel}\`.`;
 }
 
 function truncate(text: string, max: number): string {

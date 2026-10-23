@@ -17,6 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { DEV_TEAM_SUBAGENT_TOOL } from "./agents.ts";
 import { DEFAULT_CONFIG, type DevTeamConfig, isHookEnabled } from "./config.ts";
+import { applyReviewProfileEnv, reviewProfileFromEnv } from "./review-profile.ts";
 
 export type ClaudeEvent =
 	| "SessionStart"
@@ -246,16 +247,19 @@ export class HookBridge {
 		return new Promise((resolve) => {
 			const run: HookRun = { name: spec.name, code: null, stdout: "", stderr: "", timedOut: false };
 			let proc: ReturnType<typeof spawn>;
+			const env: NodeJS.ProcessEnv = {
+				...process.env,
+				...config.env,
+				CLAUDE_PLUGIN_ROOT: this.packageRoot,
+				CLAUDE_PROJECT_DIR: cwd,
+				...extraEnv,
+			};
+			// The user's own profile, never a config file's (review-profile.ts): applyEnv normalized process.env.
+			applyReviewProfileEnv(env, reviewProfileFromEnv(process.env).profile);
 			try {
 				proc = spawn(this.python as string, [spec.script], {
 					cwd: fs.existsSync(cwd) ? cwd : undefined,
-					env: {
-						...process.env,
-						...config.env,
-						CLAUDE_PLUGIN_ROOT: this.packageRoot,
-						CLAUDE_PROJECT_DIR: cwd,
-						...extraEnv,
-					},
+					env,
 					stdio: ["pipe", "pipe", "pipe"],
 				});
 			} catch (e) {

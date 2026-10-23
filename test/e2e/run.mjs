@@ -241,6 +241,45 @@ const scenarios = {
 		assert(!r.out.includes("`$0`"), "raw $0 left in expansion");
 	},
 
+	"commands /plan, /specs and /ship save their request word for word and name the file"(env) {
+		const request = '--yes Print {"at":"2025-09-10T03:30:00Z"} exactly.';
+		for (const command of ["plan", "specs", "ship"]) {
+			const r = pi(env, `/${command} ${request}`);
+			const named = r.out.match(/saved word for word at `([^`]+)`/)?.[1];
+			assert(named?.includes(`${command}-`), `/${command} request file not named: ${r.out.slice(-400)} ${r.err}`);
+			const saved = fs.readFileSync(path.join(env.repo, named), "utf-8");
+			assert(saved === request, `/${command} saved request differs: ${JSON.stringify(saved)}`);
+		}
+		const viaTool = pi(env, script([{ tools: [{ tool: "skill", args: { name: "plan", args: "a summary" } }] }]));
+		assert(!viaTool.out.includes("saved word for word"), "a model's skill call saved a request");
+	},
+
+	"DEV_TEAM_REVIEW=lean comes only from the process env and adds the lean sections; full leaves /build unchanged"(env) {
+		const probe = script([{ tool: "bash", args: { command: 'echo "REVIEW=[$DEV_TEAM_REVIEW]"' } }]);
+		const childProbe = script([{ tool: "dev_team_subagent", args: { agent: "general-purpose", task: script([{ tool: "bash", args: { command: 'echo "CHILD_REVIEW=[$DEV_TEAM_REVIEW]"' } }]) } }]);
+		let r = pi(env, "/build --yes");
+		assert(r.code === 0 && r.out.includes("# Build") && !r.out.includes("Review profile: lean") && !r.out.includes("Arguments: --yes --backstop-review=skip"), `full /build changed: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, "/build --yes", { vars: { DEV_TEAM_REVIEW: "lean" } });
+		assert(r.out.includes("## Review profile: lean") && !r.out.includes("Farley Score skipped"), `lean section missing: ${r.out.slice(-300)} ${r.err}`);
+		assert(r.out.includes("Arguments: --yes --backstop-review=skip"), `lean /build did not get --backstop-review=skip: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, script([{ tool: "skill", args: { name: "farley-score", args: "" } }]), { vars: { DEV_TEAM_REVIEW: "lean" } });
+		assert(!r.out.includes("skipped (DEV_TEAM_REVIEW=lean)") && /farley/i.test(r.out), `lean did not load farley-score: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, childProbe, { vars: { DEV_TEAM_REVIEW: "lean" } });
+		assert(r.out.includes("CHILD_REVIEW=[lean]"), `child did not get the lean profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, probe, { vars: { DEV_TEAM_REVIEW: "bogus" } });
+		assert(r.out.includes("REVIEW=[]") && r.err.includes("is not full or lean; using full"), `unknown value not warned and dropped: ${r.out.slice(-300)} ${r.err}`);
+		// Neither the project's nor the user's config file may turn lean on.
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "lean" } }));
+		writeUserConfig(env.home, { env: { DEV_TEAM_REVIEW: "lean" } });
+		r = pi(env, probe);
+		assert(r.out.includes("REVIEW=[]"), `a config file set the review profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, childProbe);
+		assert(r.out.includes("CHILD_REVIEW=[]"), `a config file set the child's review profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, "/build --yes");
+		assert(!r.out.includes("Review profile: lean"), "a config file added the lean section");
+	},
+
 	"bash sees plugin env, shim on PATH, non-interactive"(env) {
 		const r = pi(env, script([{ tool: "bash", args: { command: 'echo "root=$CLAUDE_PLUGIN_ROOT"; command -v claude; echo "i=[$DEV_TEAM_INTERACTIVE]"; echo "sid=$CLAUDE_SESSION_ID"' } }]));
 		assert(r.out.includes(`root=${PKG}`), r.out);

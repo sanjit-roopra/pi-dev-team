@@ -11,6 +11,7 @@ import {
 	loadConfig,
 	MAX_PROJECT_PARALLEL_AGENTS,
 	MODEL_PRESETS,
+	PARALLEL_AGENTS_ENV,
 	type ModelStatus,
 	presetAdvice,
 	fileTierModels,
@@ -112,6 +113,16 @@ test("loadConfig: an oversized project config file is skipped", (t) => {
 	fs.writeFileSync(path.join(project, ".pi", "dev-team.json"), JSON.stringify({ maxParallelAgents: 9, pad: "x".repeat(MAX_REPO_FILE_BYTES) }));
 	const userOnly = loadConfig(project, { includeProject: false, userConfigFile }).config.maxParallelAgents;
 	assert.equal(loadConfig(project, { includeProject: true, userConfigFile }).config.maxParallelAgents, userOnly);
+});
+
+test("loadConfig: DEV_TEAM_MAX_PARALLEL_AGENTS overrides every config file; invalid values are ignored", (t) => {
+	const { project, userConfigFile } = fixture(t);
+	const load = (value: string) =>
+		loadConfig(project, { includeProject: true, userConfigFile, env: { [PARALLEL_AGENTS_ENV]: value } });
+	const fromFiles = loadConfig(project, { includeProject: true, userConfigFile, env: {} }).config.maxParallelAgents;
+	assert.equal(load("12").config.maxParallelAgents, 12);
+	assert.ok(load("12").sources.includes(`env ${PARALLEL_AGENTS_ENV}`));
+	for (const bad of ["", "0", "-3", "2.5", "many"]) assert.equal(load(bad).config.maxParallelAgents, fromFiles, bad);
 });
 
 test("allowPiSubagents: only the user's own file lifts the pi-subagents block", (t) => {

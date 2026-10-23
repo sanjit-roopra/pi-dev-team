@@ -18,7 +18,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, resolveSkillName, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, hasRequestText, REQUEST_DIR, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -187,6 +187,55 @@ test("project agents override package agents", (t) => {
 	fs.writeFileSync(path.join(dir, ".claude", "agents", "security-review.md"), "---\nname: security-review\ndescription: local\n---\nlocal body\n");
 	assert.equal(discoverAgents(dir, ROOT, { includeProject: true }).get("security-review")?.description, "local");
 	assert.equal(discoverAgents(dir, ROOT, { includeProject: false }).get("security-review")?.source, "package");
+});
+
+test("saveRequest keeps a /plan request word for word and names the file", (t) => {
+	const cwd = tempDir(t, "dt-request-");
+	const args = `--yes Build it.\n\n\`\`\`jsonl\n{"event":"X","at":"2025-09-10T03:30:00Z"}\n\`\`\`\n${"'quoted' \"text\" ".repeat(3000)}`;
+	const rel = saveRequest(cwd, "plan", args, new Date("2026-10-20T12:00:00.123Z"));
+	assert.equal(rel, path.join(REQUEST_DIR, "plan-2026-10-20T12-00-00-123Z.md"));
+	assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), args);
+	assert.match(requestFileLine(rel!), new RegExp(rel!.replace(/[.]/g, "\\.")));
+});
+
+test("saveRequest also keeps /specs and /ship requests, one file per command", (t) => {
+	const cwd = tempDir(t, "dt-request-pipeline-");
+	const now = new Date("2026-10-21T08:00:00.000Z");
+	for (const skill of ["specs", "ship"]) {
+		const rel = saveRequest(cwd, skill, `Build it; print "Z" times.`, now);
+		assert.equal(rel, path.join(REQUEST_DIR, `${skill}-2026-10-21T08-00-00-000Z.md`));
+		assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), `Build it; print "Z" times.`);
+	}
+	assert.equal(saveRequest(cwd, "ship", "again", now), undefined, "an existing file is never overwritten");
+});
+
+test("saveRequest saves nothing for other skills, empty arguments or a symlinked memory dir", (t) => {
+	const cwd = tempDir(t, "dt-request-none-");
+	for (const skill of ["build", "autoship", "code-review"]) assert.equal(saveRequest(cwd, skill, "--yes"), undefined);
+	assert.equal(saveRequest(cwd, "plan", "   "), undefined);
+	assert.equal(fs.existsSync(path.join(cwd, REQUEST_DIR)), false);
+	const elsewhere = tempDir(t, "dt-request-target-");
+	fs.mkdirSync(path.join(cwd, ".claude"));
+	fs.symlinkSync(elsewhere, path.join(cwd, ".claude", "memory"));
+	assert.equal(saveRequest(cwd, "plan", "do it"), undefined);
+	assert.deepEqual(fs.readdirSync(elsewhere), []);
+});
+
+test("saveRequest saves nothing when the arguments only point at issues, URLs or files", (t) => {
+	const cwd = tempDir(t, "dt-request-refs-");
+	const refsOnly = ["123", "#123", "https://github.com/o/r/issues/123", "--issues 4,5 --no-auto-merge", "--spec-issue https://github.com/o/r/issues/9 --yes", "docs/specs/login.md", "--output plans/x.md --yes"];
+	for (const args of refsOnly) {
+		assert.equal(hasRequestText(args), false, args);
+		assert.equal(saveRequest(cwd, "ship", args), undefined, args);
+	}
+	assert.equal(fs.existsSync(path.join(cwd, REQUEST_DIR)), false);
+	for (const args of ["--issues 4,5 add a/b testing to login", "fix #12", "--yes Print 3 lines."]) assert.equal(hasRequestText(args), true, args);
+});
+
+test("saveRequest returns undefined instead of throwing when it cannot write", (t) => {
+	const cwd = tempDir(t, "dt-request-ro-");
+	fs.writeFileSync(path.join(cwd, ".claude"), "a file, not a dir");
+	assert.equal(saveRequest(cwd, "plan", "do it"), undefined);
 });
 
 test("splitArgs and Claude argument substitution", () => {

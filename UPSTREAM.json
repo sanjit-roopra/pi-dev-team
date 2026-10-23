@@ -19,6 +19,7 @@
     "agents/refactor-opportunity-review.md",
     "hooks/guards.json",
     "hooks/pre_tool_guard.py",
+    "scripts/build_phase.py",
     "skills/code-review/SKILL.md",
     "skills/code-review/references/00-overview.md",
     "skills/code-review/references/01-target-files.md",
@@ -49,6 +50,7 @@
     "pr",
     "project-init",
     "setup",
+    "ship",
     "specs"
   ],
   "normalisedFrontmatter": [
@@ -163,6 +165,121 @@
     {
       "file": "skills/specs/references/persistence.md",
       "reason": "grilling: log every question and answer",
+      "hits": 1
+    },
+    {
+      "file": "agents/spec-compliance-review.md",
+      "reason": "source request: check against the user's request, not only the plan",
+      "hits": 1
+    },
+    {
+      "file": "agents/spec-compliance-review.md",
+      "reason": "source request: open plan choices are checked against the request, on explicit evidence only",
+      "hits": 1
+    },
+    {
+      "file": "skills/build/SKILL.md",
+      "reason": "speed: the build phase record is one helper command that shares a message with real work",
+      "hits": 1
+    },
+    {
+      "file": "skills/build/SKILL.md",
+      "reason": "speed: the step handoff record shares a message with the plan update",
+      "hits": 1
+    },
+    {
+      "file": "skills/build/SKILL.md",
+      "reason": "speed: the final verification and the Farley Score run in one message",
+      "hits": 1
+    },
+    {
+      "file": "skills/build/SKILL.md",
+      "reason": "speed: Step 7 presents Step 5's Farley Score instead of scoring again",
+      "hits": 1
+    },
+    {
+      "file": "agents/software-engineer.md",
+      "reason": "speed: the engineer writes the build phase record with the helper, never in a turn of its own",
+      "hits": 1
+    },
+    {
+      "file": "agents/ai-provenance-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/arch-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/component-architecture-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/concurrency-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/domain-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/naming-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/performance-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/security-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/structure-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/test-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/test-smell-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/token-efficiency-review.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-design.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-parallelization.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-strategic.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
+      "hits": 1
+    },
+    {
+      "file": "agents/plan-review-ux.md",
+      "reason": "speed: review lenses and plan critics at medium effort",
       "hits": 1
     },
     {
