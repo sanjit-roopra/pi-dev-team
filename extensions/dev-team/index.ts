@@ -34,7 +34,14 @@ import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
-import { applyReviewProfileEnv, reviewProfileArgs, reviewProfileFromEnv, reviewProfileGuideLine, reviewProfileNote } from "./lib/review-profile.ts";
+import {
+	applyReviewProfileEnv,
+	farleyEnabled,
+	reviewProfileArgs,
+	reviewProfileFromEnv,
+	reviewProfileGuideLine,
+	reviewProfileNote,
+} from "./lib/review-profile.ts";
 import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
@@ -100,9 +107,11 @@ export default function devTeam(pi: ExtensionAPI) {
 	let cwd = process.cwd();
 	// Read before any config file's env is applied (applyEnv): only the user's own environment sets it.
 	const review = reviewProfileFromEnv(process.env);
+	const farley = farleyEnabled(process.env);
 	let reviewWarned = false;
 	/** The lean section for a package skill, or undefined (full profile: skill text unchanged). */
-	const profileNoteFor = (skill: SkillDef) => (skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name) : undefined);
+	const profileNoteFor = (skill: SkillDef) =>
+		skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name, farley) : undefined;
 	/** The args a package skill expands with (lean /build gets --backstop-review=skip); full: unchanged. */
 	const profileArgsFor = (skill: SkillDef, args: string) => (skill.source === "package" ? reviewProfileArgs(review.profile, skill.name, args) : args);
 	// Project config is read again at session start, once pi's trust decision is known.
