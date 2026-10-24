@@ -110,8 +110,8 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /fix only `error` findings/);
 	assert.match(build, /Do not start a second round/);
 	assert.match(build, /--backstop-review=skip/);
-	assert.match(build, /once per slice, not once per step/);
-	assert.match(build, /run the full test suite once, after the slice's last step/);
+	assert.match(build, /Build each slice in this session\. Do not dispatch `software-engineer`/);
+	assert.match(build, /After the slice's last step, run the full suite, lint, type-check and `lizard -w -C 10 -L 60 -a 5`/);
 	assert.match(build, /static self-heal pass/);
 	assert.match(build, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
 	assert.match(build, /overrides the per-behavior cycle's "Run the full test suite" gate/);
@@ -131,7 +131,6 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.doesNotMatch(buildFarley, /no Farley Score|farley:/);
 	assert.match(build, /Work one step at a time/);
 	assert.match(build, /Refactor once per step/);
-	assert.match(build, /Run lint, type-check and the lizard complexity check once per slice/);
 	assert.match(build, /Test budget: one test per Gherkin scenario of the step/);
 	assert.match(build, /Keep the test budget through review/);
 	const plan = note("plan");
@@ -190,8 +189,7 @@ test("lean software-engineer runs lizard, chains markers, commits once and gets 
 	assert.equal(preloadedSkillText(pool, ["no-such-skill"]), "");
 	assert.equal(preloadedSkillText(undefined, ["quality-gate-pipeline"]), "");
 	const build = reviewProfileNote(ROOT, "lean", "build") ?? "";
-	assert.match(build, /lizard complexity check once per slice/);
-	assert.match(build, /Commit once per slice/);
+	assert.match(build, /then commit once/);
 	assert.match(build, /Short dispatch tasks/);
 	assert.match(reviewProfileNote(ROOT, "lean", "plan") ?? "", /\*\*Short plan\.\*\*/);
 });
