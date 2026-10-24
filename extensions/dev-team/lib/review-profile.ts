@@ -1,13 +1,12 @@
 /**
  * DEV_TEAM_REVIEW=full|lean: how much review ceremony /plan, /build, /code-review and /ship run.
  *
- * `full` (the default) is upstream's flow, and its prompt text stays byte for byte what it was: nothing
- * here adds text unless the profile is `lean`. `lean` cuts the review layers that measured runs showed
- * cost the most and changed the least (extra fix rounds, the second review panel,
- * complex-tier plan critics, per-step implementer dispatches). It weakens a review gate, so only the
- * user's own process environment can turn it on: the value is read once, when the extension loads,
- * before any config file's `env` is applied, and a project's config may not set it either
- * (it is not in PROJECT_ENV_SETTINGS). The lean instructions live in extensions/dev-team/lean/<skill>.md
+ * `lean` (the default) cuts the review layers that measured runs showed cost the most and changed the
+ * least (extra fix rounds, the second review panel, complex-tier plan critics, per-step implementer
+ * dispatches). `full` is upstream's flow, and its prompt text stays byte for byte what it was: nothing
+ * here adds text unless the profile is `lean`. Only the user's own process environment chooses the
+ * profile: the value is read once, when the extension loads, before any config file's `env` is applied,
+ * and a project's config may not set it either (it is not in PROJECT_ENV_SETTINGS). The lean instructions live in extensions/dev-team/lean/<skill>.md
  * and are inserted into the skill text only while lean is active.
  */
 import * as fs from "node:fs";
@@ -20,12 +19,12 @@ export const REVIEW_PROFILE_ENV = "DEV_TEAM_REVIEW";
 /** Skills with a lean section in extensions/dev-team/lean/. */
 export const LEAN_SKILLS: ReadonlySet<string> = new Set(["plan", "build", "code-review", "ship"]);
 
-/** Unset, empty or `full` is full; `lean` is lean; anything else is full with a warning. Case and spaces are ignored. */
+/** Unset, empty or `lean` is lean; `full` is full; anything else is lean with a warning. Case and spaces are ignored. */
 export function parseReviewProfile(value: string | undefined): { profile: ReviewProfile; warning?: string } {
 	const v = (value ?? "").trim().toLowerCase();
-	if (v === "" || v === "full") return { profile: "full" };
-	if (v === "lean") return { profile: "lean" };
-	return { profile: "full", warning: `dev-team: ${REVIEW_PROFILE_ENV}=${JSON.stringify(value)} is not full or lean; using full.` };
+	if (v === "" || v === "lean") return { profile: "lean" };
+	if (v === "full") return { profile: "full" };
+	return { profile: "lean", warning: `dev-team: ${REVIEW_PROFILE_ENV}=${JSON.stringify(value)} is not full or lean; using lean.` };
 }
 
 /** The profile from a process environment. Pass the environment as it was before any config `env` is applied. */
@@ -35,12 +34,11 @@ export function reviewProfileFromEnv(env: NodeJS.ProcessEnv): { profile: ReviewP
 
 /**
  * Sets DEV_TEAM_REVIEW in an environment that tools, hooks and child agents inherit, after config `env`
- * entries were merged into it: `lean` when the profile is lean, removed otherwise, so a config file's
- * value never reaches a child, and a child reads the same profile as its parent.
+ * entries were merged into it: always the profile itself, never removed, because an unset value means lean.
+ * So a config file's value never reaches a child, and a child reads the same profile as its parent.
  */
 export function applyReviewProfileEnv(env: NodeJS.ProcessEnv, profile: ReviewProfile): void {
-	if (profile === "lean") env[REVIEW_PROFILE_ENV] = "lean";
-	else delete env[REVIEW_PROFILE_ENV];
+	env[REVIEW_PROFILE_ENV] = profile;
 }
 
 /**
@@ -96,14 +94,14 @@ export function insertReviewProfileNote(body: string, note: string | undefined):
 /** The dev-team guide line for the lean profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile): string {
 	if (profile !== "lean") return "";
-	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
+	return `- Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full in the user's environment selects the full profile). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
 }
 
 const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
 
 /**
  * The arguments a skill expands with. Under lean, `/build` gets upstream's `--backstop-review=skip`, so the
- * skill's own flag logic (Parse Arguments, step 6) engages: DEV_TEAM_REVIEW=lean is the enclosing caller's
+ * skill's own flag logic (Parse Arguments, step 6) engages: the lean profile is the enclosing caller's
  * assertion that flag requires, the lean slice checkpoints being the enclosing review. Full: args unchanged.
  */
 export function reviewProfileArgs(profile: ReviewProfile, skillName: string, args: string): string {
@@ -142,7 +140,7 @@ const LIZARD_COMMAND = "lizard --csv <files> | python3 ${CLAUDE_PLUGIN_ROOT}/ski
 export function reviewProfileAgentNote(profile: ReviewProfile, agentName: string): string {
 	if (profile !== "lean") return "";
 	if (agentName === "software-engineer") {
-		return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
+		return `## Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full turns it off)
 
 This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate and one-behavior batches. Work one step at a time: implement the whole step, write its tests, then run only that step's tests and paste the output. Refactor once per step, after that green run: when the refactor changes nothing, say so in one line, write no refactor phase marker and do not re-run the tests; when it changes code, re-run the step's tests once. Run the project's full test suite once, after the last step or fix of your task, in the same bash call as lint, type-check and the complexity check on the files you changed (run those only there), and paste that run in your report. The complexity check is \`${LIZARD_COMMAND}\` when \`lizard\` is installed; fix every threshold it reports before you report, because the review checkpoint treats each one as an error.
 
@@ -151,7 +149,7 @@ Fewer turns: never spend a turn on a \`build_phase.py\` marker alone; chain it w
 ${TEST_BUDGET} Everything else in your instructions still applies.`;
 	}
 	if (agentName === "test-review" || agentName === "test-smell-review") {
-		return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
+		return `## Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full turns it off)
 
 The implementer works to this test budget. ${TEST_BUDGET} A missing test is an \`error\` only when a Gherkin scenario or a rule the request states has no test. A request for more cases, permutations or any of the excluded kinds of test is at most a \`suggestion\`, unless the request asks for that behavior. Everything else in your instructions still applies.`;
 	}
