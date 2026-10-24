@@ -78,6 +78,9 @@ test("full profile: no note, no guide line, and every package skill expands byte
 
 test("lean profile: plan, build, code-review and ship get their section after the port notes or the title", () => {
 	assert.match(reviewProfileGuideLine("lean"), /^- Review profile: lean \(the default; DEV_TEAM_REVIEW=full/);
+	assert.match(reviewProfileGuideLine("lean"), /no plan critics/);
+	assert.match(reviewProfileGuideLine("lean"), /- Code quality bar \(lean\): every function .* cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters/);
+	assert.match(reviewProfileGuideLine("lean"), /lizard -w -C 10 -L 60 -a 5/);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
 		const skill = skills.get(name);
@@ -111,9 +114,12 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /static self-heal pass/);
 	assert.match(build, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
 	assert.match(build, /overrides the per-behavior cycle's "Run the full test suite" gate/);
-	assert.match(build, /structure-review/);
-	assert.match(build, /Core lenses until the last slice/);
-	assert.match(build, /every production and test file this build changed/);
+	assert.match(build, /Three lenses, plus security when selected/);
+	assert.match(build, /At every checkpoint dispatch only `spec-compliance-review` and `correctness-review`/);
+	assert.match(build, /also dispatch `refactor-opportunity-review`/);
+	assert.match(build, /Dispatch no other lens/);
+	assert.match(build, /skip the Feedback & Learning step/);
+	assert.match(build, /Do not ask an agent for a report file/);
 	assert.match(build, /Lenses have no shell and cannot run `git diff`/);
 	assert.match(build, /Final verification, no Farley Score/);
 	assert.match(build, /Do not dispatch `qa-engineer`/);
@@ -128,8 +134,8 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /Test budget: one test per Gherkin scenario of the step/);
 	assert.match(build, /Keep the test budget through review/);
 	const plan = note("plan");
-	assert.match(plan, /at most the `standard` reviewer set/);
-	assert.match(plan, /once/);
+	assert.match(plan, /\*\*No plan critics\.\*\* Skip step 5's reviewer dispatch/);
+	assert.match(plan, /Plan review: skipped \(lean profile\)/);
 	assert.match(plan, /\*\*Test budget\.\*\*/);
 	assert.match(plan, /one test per scenario plus one per such rule/);
 	const review = note("code-review");
@@ -168,6 +174,7 @@ test("lean software-engineer runs lizard, chains markers, commits once and gets 
 	assert.match(engineer, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
 	assert.match(engineer, /never spend a turn on a `build_phase\.py` marker alone/);
 	assert.match(engineer, /Commit once, after the final full-suite run/);
+	assert.match(engineer, /Do not write a report file; your final message is your report, at most 300 words/);
 	assert.match(engineer, /inlined below; do not load or read them again/);
 	assert.deepEqual(reviewProfilePreloadedSkills("lean", "software-engineer"), ["quality-gate-pipeline", "systematic-debugging"]);
 	assert.deepEqual(reviewProfilePreloadedSkills("full", "software-engineer"), []);

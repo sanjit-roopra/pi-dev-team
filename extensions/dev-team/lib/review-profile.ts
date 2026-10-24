@@ -91,10 +91,19 @@ export function insertReviewProfileNote(body: string, note: string | undefined):
 	return `${note}\n\n${body}`;
 }
 
-/** The dev-team guide line for the lean profile; empty for full, so the full guide is unchanged. */
+/**
+ * The code-quality bar lean puts in the guide, so it binds the session itself (plain requests, /fix, fix rounds)
+ * as well as /build's implementer. In SlopCodeBench runs this bar alone, given to plain pi, matched the lean
+ * profile's code-shape metrics (erosion 0, max cyclomatic complexity 10): the review layers added none.
+ */
+export const QUALITY_BAR =
+	"- Code quality bar (lean): every function you or an agent writes has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters, and the project's linter (`ruff check` for Python) reports nothing on changed files. Before you report code work done, run the linter and `lizard -w -C 10 -L 60 -a 5 <changed source files>` (install `lizard` into the project's environment if it is missing), fix every finding and re-run until both are clean. Write the least code that works: use what the codebase, the standard library or an installed dependency already has; no speculative options, no wrapper, factory or layer used once, no duplicated logic; fewer lines, never denser lines. Never cut input validation or error handling at a real boundary to save lines.";
+
+/** The dev-team guide lines for the lean profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile): string {
 	if (profile !== "lean") return "";
-	return `- Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full in the user's environment selects the full profile). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
+	return `- Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full in the user's environment selects the full profile). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: no plan critics, one implementer dispatch and one review panel per slice (spec-compliance and correctness at every slice; the simplify lens, and security when selected, at the last slice), only \`error\` findings fixed in one round. The static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still runs, and its errors are fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.
+${QUALITY_BAR}`;
 }
 
 const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
@@ -144,7 +153,7 @@ export function reviewProfileAgentNote(profile: ReviewProfile, agentName: string
 
 This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate and one-behavior batches. Work one step at a time: implement the whole step, write its tests, then run only that step's tests and paste the output. Refactor once per step, after that green run: when the refactor changes nothing, say so in one line, write no refactor phase marker and do not re-run the tests; when it changes code, re-run the step's tests once. Run the project's full test suite once, after the last step or fix of your task, in the same bash call as lint, type-check and the complexity check on the files you changed (run those only there), and paste that run in your report. The complexity check is \`${LIZARD_COMMAND}\` when \`lizard\` is installed; fix every threshold it reports before you report, because the review checkpoint treats each one as an error.
 
-Fewer turns: never spend a turn on a \`build_phase.py\` marker alone; chain it with \`&&\` onto the bash call before or after it, such as the previous step's test run or this step's test run. Commit once, after the final full-suite run, not after each step. The quality-gate-pipeline and systematic-debugging skills are inlined below; do not load or read them again.
+Fewer turns: never spend a turn on a \`build_phase.py\` marker alone; chain it with \`&&\` onto the bash call before or after it, such as the previous step's test run or this step's test run. Commit once, after the final full-suite run, not after each step. Do not write a report file; your final message is your report, at most 300 words. The quality-gate-pipeline and systematic-debugging skills are inlined below; do not load or read them again.
 
 ${TEST_BUDGET} Everything else in your instructions still applies.`;
 	}
