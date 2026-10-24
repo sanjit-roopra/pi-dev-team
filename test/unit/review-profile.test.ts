@@ -6,6 +6,7 @@ import { test } from "node:test";
 import { filterProjectConfig, loadConfig, PROJECT_ENV_SETTINGS } from "../../extensions/dev-team/lib/config.ts";
 import {
 	applyReviewProfileEnv,
+	farleyEnabled,
 	insertReviewProfileNote,
 	LEAN_SKILLS,
 	parseReviewProfile,
@@ -14,6 +15,7 @@ import {
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
 	reviewProfileNote,
+	selectFarleyBlock,
 } from "../../extensions/dev-team/lib/review-profile.ts";
 import { commandText, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
 
@@ -108,11 +110,23 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /Core lenses until the last slice/);
 	assert.match(build, /every production and test file this build changed/);
 	assert.match(build, /Lenses have no shell and cannot run `git diff`/);
-	assert.match(build, /Final verification and Farley Score in one message/);
-	assert.match(build, /`qa-engineer` Farley Score dispatch goes out in the same message/);
+	assert.match(build, /Final verification, no Farley Score/);
+	assert.match(build, /Do not dispatch `qa-engineer`/);
+	assert.doesNotMatch(build, /Farley Score in one message|farley:/);
+	const buildFarley = reviewProfileNote(ROOT, "lean", "build", true) ?? "";
+	assert.match(buildFarley, /Final verification and Farley Score in one message/);
+	assert.match(buildFarley, /`qa-engineer` Farley Score dispatch goes out in the same message/);
+	assert.doesNotMatch(buildFarley, /no Farley Score|farley:/);
+	assert.match(build, /Work one step at a time/);
+	assert.match(build, /Refactor once per step/);
+	assert.match(build, /Run lint and type-check once per slice/);
+	assert.match(build, /Test budget: one test per Gherkin scenario of the step/);
+	assert.match(build, /Keep the test budget through review/);
 	const plan = note("plan");
 	assert.match(plan, /at most the `standard` reviewer set/);
 	assert.match(plan, /once/);
+	assert.match(plan, /\*\*Test budget\.\*\*/);
+	assert.match(plan, /one test per scenario plus one per such rule/);
 	const review = note("code-review");
 	assert.match(review, /fix only `error` findings/);
 	assert.match(review, /step 2b static-analysis pre-pass/);
@@ -129,8 +143,27 @@ test("lean /build gets --backstop-review=skip once; other skills and full keep t
 	assert.match(expandSkill(build, reviewProfileArgs("lean", "build", "--yes")), /Arguments: --yes --backstop-review=skip/);
 });
 
-test("lean adds a software-engineer override; full adds nothing", () => {
-	assert.match(reviewProfileAgentNote("lean", "software-engineer"), /full test suite once/);
+test("lean adds software-engineer and test-lens overrides; full adds nothing", () => {
+	const engineer = reviewProfileAgentNote("lean", "software-engineer");
+	assert.match(engineer, /full test suite once/);
+	assert.match(engineer, /Work one step at a time/);
+	assert.match(engineer, /Test budget: one test per Gherkin scenario/);
+	for (const lens of ["test-review", "test-smell-review"]) {
+		const note = reviewProfileAgentNote("lean", lens);
+		assert.match(note, /Test budget: one test per Gherkin scenario/, lens);
+		assert.match(note, /A missing test is an `error` only when/, lens);
+		assert.equal(reviewProfileAgentNote("full", lens), "", lens);
+	}
 	assert.equal(reviewProfileAgentNote("lean", "structure-review"), "");
 	assert.equal(reviewProfileAgentNote("full", "software-engineer"), "");
+});
+
+test("DEV_TEAM_FARLEY: only on turns the lean Farley Score on; blocks select cleanly", () => {
+	for (const v of ["on", "ON", " on\n"]) assert.equal(farleyEnabled({ DEV_TEAM_FARLEY: v }), true, v);
+	for (const v of [undefined, "", "off", "1", "true"]) assert.equal(farleyEnabled({ DEV_TEAM_FARLEY: v }), false, String(v));
+	const text = "a\n<!-- farley:on -->\nON\n<!-- /farley:on -->\n<!-- farley:off -->\nOFF\n<!-- /farley:off -->\nb\n";
+	assert.equal(selectFarleyBlock(text, true), "a\nON\nb\n");
+	assert.equal(selectFarleyBlock(text, false), "a\nOFF\nb\n");
+	assert.equal(reviewProfileNote(ROOT, "full", "build", true), undefined);
+	assert.match(reviewProfileGuideLine("lean"), /skips the Farley Score .* unless DEV_TEAM_FARLEY=on/);
 });

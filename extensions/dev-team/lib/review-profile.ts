@@ -43,11 +43,30 @@ export function applyReviewProfileEnv(env: NodeJS.ProcessEnv, profile: ReviewPro
 	else delete env[REVIEW_PROFILE_ENV];
 }
 
+/**
+ * DEV_TEAM_FARLEY=on|off: whether lean /build runs the step 7 Farley Score (a `qa-engineer` dispatch). Off by
+ * default: the score is informational, never gates /pr, and in measured runs changed no file while adding
+ * minutes per build. Only `on` (case and spaces ignored) turns it on. The full profile always runs it.
+ */
+export const FARLEY_ENV = "DEV_TEAM_FARLEY";
+
+export function farleyEnabled(env: NodeJS.ProcessEnv): boolean {
+	return (env[FARLEY_ENV] ?? "").trim().toLowerCase() === "on";
+}
+
+const FARLEY_BLOCK = /<!-- farley:(on|off) -->\n([\s\S]*?)<!-- \/farley:\1 -->\n?/g;
+
+/** Keeps the `<!-- farley:on|off -->` block that matches `farley` (without its markers) and drops the other. */
+export function selectFarleyBlock(text: string, farley: boolean): string {
+	return text.replace(FARLEY_BLOCK, (_, state: string, body: string) => ((state === "on") === farley ? body : ""));
+}
+
 /** The lean section for a package skill, or undefined (full profile, another skill, or no file). */
-export function reviewProfileNote(packageRoot: string, profile: ReviewProfile, skillName: string): string | undefined {
+export function reviewProfileNote(packageRoot: string, profile: ReviewProfile, skillName: string, farley = false): string | undefined {
 	if (profile !== "lean" || !LEAN_SKILLS.has(skillName)) return undefined;
 	try {
-		return fs.readFileSync(path.join(packageRoot, "extensions", "dev-team", "lean", `${skillName}.md`), "utf-8").trim();
+		const text = fs.readFileSync(path.join(packageRoot, "extensions", "dev-team", "lean", `${skillName}.md`), "utf-8");
+		return selectFarleyBlock(text, farley).trim();
 	} catch {
 		return undefined;
 	}
@@ -77,7 +96,7 @@ export function insertReviewProfileNote(body: string, note: string | undefined):
 /** The dev-team guide line for the lean profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile): string {
 	if (profile !== "lean") return "";
-	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer runs only the tests for the behavior it changes while it works, and the full suite once at the end of its task.`;
+	return `- Review profile: lean (${REVIEW_PROFILE_ENV}=lean in the user's environment). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
 }
 
 const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
@@ -93,14 +112,29 @@ export function reviewProfileArgs(profile: ReviewProfile, skillName: string, arg
 	return args.trim() ? `${args.trim()} ${BACKSTOP_SKIP_FLAG}` : BACKSTOP_SKIP_FLAG;
 }
 
+const TEST_BUDGET =
+	"Test budget: one test per Gherkin scenario, plus one per rule the request states that no scenario covers; add a case to an existing test's table rather than a new test where you can. Do not write tests for internal helpers, resource or memory bounds (tracemalloc, RSS, open-file counts), signals or KeyboardInterrupt, injected filesystem failures (fsync, rename, inode, permission) or exhaustive permutation matrices, unless the request asks for that behavior.";
+
 /**
  * A lean override appended to a dispatched agent's system prompt, or "" (full profile, or an agent lean leaves alone).
  * software-engineer's per-step self-verification and the per-behavior cycle's full-suite gate run the full suite
- * per step; lean runs it once per task.
+ * per step; lean runs it once per task, tests once per step and lint once per task, and caps the tests it writes.
+ * test-review and test-smell-review get the same test budget, so their findings do not grow the tests back.
  */
 export function reviewProfileAgentNote(profile: ReviewProfile, agentName: string): string {
-	if (profile !== "lean" || agentName !== "software-engineer") return "";
-	return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
+	if (profile !== "lean") return "";
+	if (agentName === "software-engineer") {
+		return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
 
-This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate. While you work, after each behavior and each step, run only the tests for the behavior you are changing, plus lint and type-check on the files you changed, and paste that output. Run the project's full test suite once, after the last step or fix of your task, and paste that run in your report. Everything else in your instructions still applies.`;
+This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate and one-behavior batches. Work one step at a time: implement the whole step, write its tests, then run only that step's tests and paste the output. Refactor once per step, after that green run: when the refactor changes nothing, say so in one line, write no refactor phase marker and do not re-run the tests; when it changes code, re-run the step's tests once. Run the project's full test suite once, after the last step or fix of your task, in the same bash call as lint and type-check on the files you changed (run those only there), and paste that run in your report.
+
+${TEST_BUDGET} Everything else in your instructions still applies.`;
+	}
+	if (agentName === "test-review" || agentName === "test-smell-review") {
+		return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
+
+The implementer works to this test budget. ${TEST_BUDGET} A missing test is an \`error\` only when a Gherkin scenario or a rule the request states has no test. A request for more cases, permutations or any of the excluded kinds of test is at most a \`suggestion\`, unless the request asks for that behavior. Everything else in your instructions still applies.`;
+	}
+	return "";
 }
+
