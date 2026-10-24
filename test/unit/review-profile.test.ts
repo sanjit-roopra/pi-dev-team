@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { filterProjectConfig, loadConfig, PROJECT_ENV_SETTINGS } from "../../extensions/dev-team/lib/config.ts";
+import { DEFAULT_CONFIG, filterProjectConfig, loadConfig, PROJECT_ENV_SETTINGS } from "../../extensions/dev-team/lib/config.ts";
 import {
 	applyReviewProfileEnv,
 	farleyEnabled,
@@ -15,9 +15,11 @@ import {
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
 	reviewProfileNote,
+	reviewProfilePreloadedSkills,
 	selectFarleyBlock,
 } from "../../extensions/dev-team/lib/review-profile.ts";
-import { commandText, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
+import { commandText, discoverSkillPool, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
+import { preloadedSkillText } from "../../extensions/dev-team/lib/subagent.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
@@ -119,7 +121,7 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.doesNotMatch(buildFarley, /no Farley Score|farley:/);
 	assert.match(build, /Work one step at a time/);
 	assert.match(build, /Refactor once per step/);
-	assert.match(build, /Run lint and type-check once per slice/);
+	assert.match(build, /Run lint, type-check and the lizard complexity check once per slice/);
 	assert.match(build, /Test budget: one test per Gherkin scenario of the step/);
 	assert.match(build, /Keep the test budget through review/);
 	const plan = note("plan");
@@ -156,6 +158,30 @@ test("lean adds software-engineer and test-lens overrides; full adds nothing", (
 	}
 	assert.equal(reviewProfileAgentNote("lean", "structure-review"), "");
 	assert.equal(reviewProfileAgentNote("full", "software-engineer"), "");
+});
+
+test("lean software-engineer runs lizard, chains markers, commits once and gets its skills inlined", () => {
+	const engineer = reviewProfileAgentNote("lean", "software-engineer");
+	assert.match(engineer, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
+	assert.match(engineer, /never spend a turn on a `build_phase\.py` marker alone/);
+	assert.match(engineer, /Commit once, after the final full-suite run/);
+	assert.match(engineer, /inlined below; do not load or read them again/);
+	assert.deepEqual(reviewProfilePreloadedSkills("lean", "software-engineer"), ["quality-gate-pipeline", "systematic-debugging"]);
+	assert.deepEqual(reviewProfilePreloadedSkills("full", "software-engineer"), []);
+	assert.deepEqual(reviewProfilePreloadedSkills("lean", "test-review"), []);
+	const pool = discoverSkillPool(DEFAULT_CONFIG, ROOT, ROOT, false);
+	const text = preloadedSkillText(pool, reviewProfilePreloadedSkills("lean", "software-engineer"));
+	assert.ok(text.startsWith("## Preloaded skills\n\n"));
+	assert.match(text, /<skill name="quality-gate-pipeline"/);
+	assert.match(text, /<skill name="systematic-debugging"/);
+	assert.equal(preloadedSkillText(pool, []), "");
+	assert.equal(preloadedSkillText(pool, ["no-such-skill"]), "");
+	assert.equal(preloadedSkillText(undefined, ["quality-gate-pipeline"]), "");
+	const build = reviewProfileNote(ROOT, "lean", "build") ?? "";
+	assert.match(build, /lizard complexity check once per slice/);
+	assert.match(build, /Commit once per slice/);
+	assert.match(build, /Short dispatch tasks/);
+	assert.match(reviewProfileNote(ROOT, "lean", "plan") ?? "", /\*\*Short plan\.\*\*/);
 });
 
 test("DEV_TEAM_FARLEY: only on turns the lean Farley Score on; blocks select cleanly", () => {

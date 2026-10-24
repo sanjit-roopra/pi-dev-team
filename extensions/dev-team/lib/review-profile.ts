@@ -116,9 +116,27 @@ const TEST_BUDGET =
 	"Test budget: one test per Gherkin scenario, plus one per rule the request states that no scenario covers; add a case to an existing test's table rather than a new test where you can. Do not write tests for internal helpers, resource or memory bounds (tracemalloc, RSS, open-file counts), signals or KeyboardInterrupt, injected filesystem failures (fsync, rename, inode, permission) or exhaustive permutation matrices, unless the request asks for that behavior.";
 
 /**
+ * Skills lean inlines into a dispatched agent's system prompt, by agent. A dispatch starts with an empty context,
+ * so software-engineer otherwise spends a turn per dispatch reading the skills its instructions say to invoke
+ * before delivery and on a failing test; upstream Claude Code preloads frontmatter skills the same way.
+ */
+const LEAN_PRELOADED_SKILLS: Readonly<Record<string, readonly string[]>> = {
+	"software-engineer": ["quality-gate-pipeline", "systematic-debugging"],
+};
+
+/** The skill names to inline into `agentName`'s system prompt; empty for the full profile or another agent. */
+export function reviewProfilePreloadedSkills(profile: ReviewProfile, agentName: string): readonly string[] {
+	if (profile !== "lean") return [];
+	return LEAN_PRELOADED_SKILLS[agentName] ?? [];
+}
+
+const LIZARD_COMMAND = "lizard --csv <files> | python3 ${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/adapters/lizard-adapter.py";
+
+/**
  * A lean override appended to a dispatched agent's system prompt, or "" (full profile, or an agent lean leaves alone).
  * software-engineer's per-step self-verification and the per-behavior cycle's full-suite gate run the full suite
- * per step; lean runs it once per task, tests once per step and lint once per task, and caps the tests it writes.
+ * per step; lean runs it once per task, tests once per step and lint (with lizard, so the checkpoint's complexity
+ * pre-pass finds nothing to send back) once per task, commits once per task, and caps the tests it writes.
  * test-review and test-smell-review get the same test budget, so their findings do not grow the tests back.
  */
 export function reviewProfileAgentNote(profile: ReviewProfile, agentName: string): string {
@@ -126,7 +144,9 @@ export function reviewProfileAgentNote(profile: ReviewProfile, agentName: string
 	if (agentName === "software-engineer") {
 		return `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean)
 
-This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate and one-behavior batches. Work one step at a time: implement the whole step, write its tests, then run only that step's tests and paste the output. Refactor once per step, after that green run: when the refactor changes nothing, say so in one line, write no refactor phase marker and do not re-run the tests; when it changes code, re-run the step's tests once. Run the project's full test suite once, after the last step or fix of your task, in the same bash call as lint and type-check on the files you changed (run those only there), and paste that run in your report.
+This overrides the self-verification constraint above and the /build per-behavior cycle's "Run the full test suite" gate and one-behavior batches. Work one step at a time: implement the whole step, write its tests, then run only that step's tests and paste the output. Refactor once per step, after that green run: when the refactor changes nothing, say so in one line, write no refactor phase marker and do not re-run the tests; when it changes code, re-run the step's tests once. Run the project's full test suite once, after the last step or fix of your task, in the same bash call as lint, type-check and the complexity check on the files you changed (run those only there), and paste that run in your report. The complexity check is \`${LIZARD_COMMAND}\` when \`lizard\` is installed; fix every threshold it reports before you report, because the review checkpoint treats each one as an error.
+
+Fewer turns: never spend a turn on a \`build_phase.py\` marker alone; chain it with \`&&\` onto the bash call before or after it, such as the previous step's test run or this step's test run. Commit once, after the final full-suite run, not after each step. The quality-gate-pipeline and systematic-debugging skills are inlined below; do not load or read them again.
 
 ${TEST_BUDGET} Everything else in your instructions still applies.`;
 	}
