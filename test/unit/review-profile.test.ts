@@ -81,6 +81,7 @@ test("lean profile: plan, build, code-review and ship get their section after th
 	assert.match(reviewProfileGuideLine("lean"), /no plan critics/);
 	assert.match(reviewProfileGuideLine("lean"), /- Code quality bar \(lean\): every function .* cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters/);
 	assert.match(reviewProfileGuideLine("lean"), /lizard -w -C 10 -L 60 -a 5/);
+	assert.match(reviewProfileGuideLine("lean"), /Run every test command under `timeout 600`/);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
 		const skill = skills.get(name);
@@ -175,6 +176,7 @@ test("lean software-engineer runs lizard, chains markers, commits once and gets 
 	assert.match(engineer, /never spend a turn on a `build_phase\.py` marker alone/);
 	assert.match(engineer, /Commit once, after the final full-suite run/);
 	assert.match(engineer, /Do not write a report file; your final message is your report, at most 300 words/);
+	assert.match(engineer, /Run every test command under `timeout 600`/);
 	assert.match(engineer, /inlined below; do not load or read them again/);
 	assert.deepEqual(reviewProfilePreloadedSkills("lean", "software-engineer"), ["quality-gate-pipeline", "systematic-debugging"]);
 	assert.deepEqual(reviewProfilePreloadedSkills("full", "software-engineer"), []);
