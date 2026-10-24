@@ -110,7 +110,7 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /fix only `error` findings/);
 	assert.match(build, /Do not start a second round/);
 	assert.match(build, /--backstop-review=skip/);
-	assert.match(build, /Build each slice in this session\. Do not dispatch `software-engineer`/);
+	assert.match(build, /Build each slice in this session\.\*\* Do not dispatch `software-engineer`/);
 	assert.match(build, /After the slice's last step, run the full suite, lint, type-check and `lizard -w -C 10 -L 60 -a 5`/);
 	assert.match(build, /static self-heal pass/);
 	assert.match(build, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
