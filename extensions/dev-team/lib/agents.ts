@@ -303,13 +303,24 @@ export function tierModelsLine(tiers: unknown, sessionModel: string | undefined,
 	return tierModelPairs.length ? `Agent tiers (the model a dispatch with \`model: "<tier>"\` runs on): ${tierModelPairs.join(", ")}.` : "";
 }
 
+/** Effort levels from least to most thinking, for comparing a dispatch override with an agent's own `effort`. */
+const EFFORT_ORDER = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+/**
+ * The thinking level a child runs at. A dispatch `override` may lower the agent's frontmatter `effort`
+ * but never raise it: the main session otherwise passes its own level on every call, and a lens set
+ * to `medium` ran at `high`. With no `effort`, or a level outside EFFORT_ORDER, the override applies as given.
+ */
 export function resolveThinking(
 	effort: string | undefined,
 	override: string | undefined,
 	table: Record<string, string>,
 	parentThinking: string | undefined,
 ): string | undefined {
-	const wanted = (override || effort || "").trim().toLowerCase();
+	const own = (effort || "").trim().toLowerCase();
+	const asked = (override || "").trim().toLowerCase();
+	const raises = own && asked && EFFORT_ORDER.includes(own) && EFFORT_ORDER.indexOf(asked) > EFFORT_ORDER.indexOf(own);
+	const wanted = raises ? own : asked || own;
 	if (!wanted) return parentThinking;
 	return table[wanted] ?? parentThinking;
 }

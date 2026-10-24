@@ -310,7 +310,7 @@ const TaskFields = {
 	model: Type.Optional(
 		Type.String({ description: "Override model: a tier (opus|sonnet|haiku|fable|inherit) or provider/model-id" }),
 	),
-	thinking: Type.Optional(Type.String({ description: "Override thinking/effort level (low|medium|high|xhigh)" })),
+	thinking: Type.Optional(Type.String({ description: "Lower the thinking/effort level (low|medium|high|xhigh); never raises it above the agent's own effort" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent" })),
 	isolation: Type.Optional(
 		Type.String({ description: 'Set "worktree" to run the agent in a new git worktree branched from HEAD' }),

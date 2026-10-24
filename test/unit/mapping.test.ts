@@ -156,6 +156,15 @@ test("resolveThinking maps effort", () => {
 	assert.equal(resolveThinking("max", undefined, DEFAULT_CONFIG.thinking, undefined), "max");
 });
 
+test("resolveThinking lets a dispatch lower an agent's effort but not raise it", () => {
+	assert.equal(resolveThinking("medium", "high", DEFAULT_CONFIG.thinking, "high"), "medium");
+	assert.equal(resolveThinking("medium", "XHIGH ", DEFAULT_CONFIG.thinking, undefined), "medium");
+	assert.equal(resolveThinking("high", "low", DEFAULT_CONFIG.thinking, undefined), "low");
+	assert.equal(resolveThinking("medium", "medium", DEFAULT_CONFIG.thinking, undefined), "medium");
+	assert.equal(resolveThinking(undefined, "high", DEFAULT_CONFIG.thinking, "low"), "high");
+	assert.equal(resolveThinking("medium", "turbo", DEFAULT_CONFIG.thinking, "high"), "high");
+});
+
 test("every upstream agent parses and maps to at least one pi tool", () => {
 	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
 	assert.ok(agents.size >= 48, `expected >= 48 agents, got ${agents.size}`);
