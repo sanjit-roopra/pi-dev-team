@@ -42,9 +42,9 @@ import {
 	type UsageTotals,
 	type WorktreeInfo,
 } from "./subagent-types.ts";
-import { applyReviewProfileEnv, reviewProfileAgentNote, reviewProfileFromEnv } from "./review-profile.ts";
+import { applyReviewProfileEnv, reviewProfileAgentNote, reviewProfileFromEnv, reviewProfilePreloadedSkills } from "./review-profile.ts";
 import { saveFullOutput } from "./session-files.ts";
-import { discoverSkillPool, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
+import { discoverSkillPool, expandSkill, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
 import { toSpacedSingleLine } from "../../shared/terminal-text.ts";
 import { type ChildTrust, childTrusted, childTrustOf, trustArgs } from "./trust.ts";
@@ -413,7 +413,11 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			// applyEnv normalized DEV_TEAM_REVIEW in process.env to the profile the user's own environment set.
 			const profile = reviewProfileFromEnv(process.env).profile;
 			const leanNote = reviewProfileAgentNote(profile, def.name);
-			const prompt = buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? [], skillPool, config.skillIndexChars) + (leanNote ? `\n${leanNote}\n` : "");
+			const preloaded = preloadedSkillText(skillPool, reviewProfilePreloadedSkills(profile, def.name));
+			const prompt =
+				buildSystemPrompt(def, packageRoot, mapping?.scopedBash ?? [], mapping?.unmapped ?? [], skillPool, config.skillIndexChars) +
+				(leanNote ? `\n${leanNote}\n` : "") +
+				(preloaded ? `\n${preloaded}\n` : "");
 			const promptFile = path.join(tmpDir, `agent-${def.name}.md`);
 			fs.writeFileSync(promptFile, prompt, { encoding: "utf-8", mode: 0o600 });
 
@@ -762,6 +766,25 @@ export function formatResultText(results: SubagentRunResult[], skippedProjectAge
 		return `${head}\n\n${body}${wt}`;
 	};
 	return `${results.filter((r) => r.ok).length}/${results.length} agents succeeded\n\n${results.map(section).join("\n\n---\n\n")}${skipped}`;
+}
+
+/**
+ * The full text of the named skills from the pool, for inlining into a child's system prompt, or "" when none
+ * is given or found. A skill that cannot be read is left out: the child can still load it with the skill tool.
+ */
+export function preloadedSkillText(skillPool: Map<string, SkillDef> | undefined, names: readonly string[]): string {
+	if (!skillPool) return "";
+	const texts: string[] = [];
+	for (const name of names) {
+		const skill = skillPool.get(name);
+		if (!skill) continue;
+		try {
+			texts.push(expandSkill(skill, ""));
+		} catch {
+			// unreadable since discovery; the child loads it on demand instead
+		}
+	}
+	return texts.length ? `## Preloaded skills\n\n${texts.join("\n\n")}` : "";
 }
 
 /** Flag on a dispatched child: its appended prompt is an agent prompt (own skill list, placed after the shared guide). */

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
-import { filterProjectConfig, loadConfig, PROJECT_ENV_SETTINGS } from "../../extensions/dev-team/lib/config.ts";
+import { DEFAULT_CONFIG, filterProjectConfig, loadConfig, PROJECT_ENV_SETTINGS } from "../../extensions/dev-team/lib/config.ts";
 import {
 	applyReviewProfileEnv,
 	farleyEnabled,
@@ -15,34 +15,36 @@ import {
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
 	reviewProfileNote,
+	reviewProfilePreloadedSkills,
 	selectFarleyBlock,
 } from "../../extensions/dev-team/lib/review-profile.ts";
-import { commandText, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
+import { commandText, discoverSkillPool, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
+import { preloadedSkillText } from "../../extensions/dev-team/lib/subagent.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
-test("parseReviewProfile: unset, empty and full are full; lean is lean; anything else is full with a warning", () => {
-	for (const v of [undefined, "", "  ", "full", "FULL", " Full "]) assert.deepEqual(parseReviewProfile(v), { profile: "full" }, String(v));
-	for (const v of ["lean", "LEAN", " lean\n"]) assert.deepEqual(parseReviewProfile(v), { profile: "lean" }, v);
+test("parseReviewProfile: unset, empty and lean are lean; full is full; anything else is lean with a warning", () => {
+	for (const v of [undefined, "", "  ", "lean", "LEAN", " lean\n"]) assert.deepEqual(parseReviewProfile(v), { profile: "lean" }, String(v));
+	for (const v of ["full", "FULL", " Full "]) assert.deepEqual(parseReviewProfile(v), { profile: "full" }, v);
 	for (const v of ["leaner", "off", "1", "true", "lean,full"]) {
 		const r = parseReviewProfile(v);
-		assert.equal(r.profile, "full", v);
-		assert.match(r.warning ?? "", /DEV_TEAM_REVIEW=.* is not full or lean; using full/, v);
+		assert.equal(r.profile, "lean", v);
+		assert.match(r.warning ?? "", /DEV_TEAM_REVIEW=.* is not full or lean; using lean/, v);
 	}
-	assert.deepEqual(reviewProfileFromEnv({ DEV_TEAM_REVIEW: "lean" }), { profile: "lean" });
-	assert.deepEqual(reviewProfileFromEnv({}), { profile: "full" });
+	assert.deepEqual(reviewProfileFromEnv({ DEV_TEAM_REVIEW: "full" }), { profile: "full" });
+	assert.deepEqual(reviewProfileFromEnv({}), { profile: "lean" });
 });
 
 test("DEV_TEAM_REVIEW cannot come from a project config file", (t) => {
 	assert.equal(PROJECT_ENV_SETTINGS.has("DEV_TEAM_REVIEW"), false);
-	const { data, ignored } = filterProjectConfig({ env: { DEV_TEAM_REVIEW: "lean" } });
+	const { data, ignored } = filterProjectConfig({ env: { DEV_TEAM_REVIEW: "full" } });
 	assert.deepEqual(data.env, {});
 	assert.deepEqual(ignored, ["env.DEV_TEAM_REVIEW"]);
 
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-review-"));
 	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 	fs.mkdirSync(path.join(dir, ".pi"));
-	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "lean" } }));
+	fs.writeFileSync(path.join(dir, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "full" } }));
 	const userConfigFile = path.join(dir, "user.json");
 	fs.writeFileSync(userConfigFile, "{}");
 	const { config } = loadConfig(dir, { includeProject: true, userConfigFile });
@@ -52,7 +54,10 @@ test("DEV_TEAM_REVIEW cannot come from a project config file", (t) => {
 test("applyReviewProfileEnv: a config file's value never outlives the process env's profile", () => {
 	const fromUserConfig: NodeJS.ProcessEnv = { DEV_TEAM_REVIEW: "lean", OTHER: "1" };
 	applyReviewProfileEnv(fromUserConfig, "full");
-	assert.deepEqual(fromUserConfig, { OTHER: "1" });
+	assert.deepEqual(fromUserConfig, { DEV_TEAM_REVIEW: "full", OTHER: "1" });
+	const unset: NodeJS.ProcessEnv = { DEV_TEAM_REVIEW: "full" };
+	applyReviewProfileEnv(unset, "lean");
+	assert.deepEqual(unset, { DEV_TEAM_REVIEW: "lean" });
 	const lean: NodeJS.ProcessEnv = { DEV_TEAM_REVIEW: "bogus" };
 	applyReviewProfileEnv(lean, "lean");
 	assert.deepEqual(lean, { DEV_TEAM_REVIEW: "lean" });
@@ -72,7 +77,7 @@ test("full profile: no note, no guide line, and every package skill expands byte
 });
 
 test("lean profile: plan, build, code-review and ship get their section after the port notes or the title", () => {
-	assert.match(reviewProfileGuideLine("lean"), /^- Review profile: lean \(DEV_TEAM_REVIEW=lean/);
+	assert.match(reviewProfileGuideLine("lean"), /^- Review profile: lean \(the default; DEV_TEAM_REVIEW=full/);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
 		const skill = skills.get(name);
@@ -119,7 +124,7 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.doesNotMatch(buildFarley, /no Farley Score|farley:/);
 	assert.match(build, /Work one step at a time/);
 	assert.match(build, /Refactor once per step/);
-	assert.match(build, /Run lint and type-check once per slice/);
+	assert.match(build, /Run lint, type-check and the lizard complexity check once per slice/);
 	assert.match(build, /Test budget: one test per Gherkin scenario of the step/);
 	assert.match(build, /Keep the test budget through review/);
 	const plan = note("plan");
@@ -156,6 +161,30 @@ test("lean adds software-engineer and test-lens overrides; full adds nothing", (
 	}
 	assert.equal(reviewProfileAgentNote("lean", "structure-review"), "");
 	assert.equal(reviewProfileAgentNote("full", "software-engineer"), "");
+});
+
+test("lean software-engineer runs lizard, chains markers, commits once and gets its skills inlined", () => {
+	const engineer = reviewProfileAgentNote("lean", "software-engineer");
+	assert.match(engineer, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
+	assert.match(engineer, /never spend a turn on a `build_phase\.py` marker alone/);
+	assert.match(engineer, /Commit once, after the final full-suite run/);
+	assert.match(engineer, /inlined below; do not load or read them again/);
+	assert.deepEqual(reviewProfilePreloadedSkills("lean", "software-engineer"), ["quality-gate-pipeline", "systematic-debugging"]);
+	assert.deepEqual(reviewProfilePreloadedSkills("full", "software-engineer"), []);
+	assert.deepEqual(reviewProfilePreloadedSkills("lean", "test-review"), []);
+	const pool = discoverSkillPool(DEFAULT_CONFIG, ROOT, ROOT, false);
+	const text = preloadedSkillText(pool, reviewProfilePreloadedSkills("lean", "software-engineer"));
+	assert.ok(text.startsWith("## Preloaded skills\n\n"));
+	assert.match(text, /<skill name="quality-gate-pipeline"/);
+	assert.match(text, /<skill name="systematic-debugging"/);
+	assert.equal(preloadedSkillText(pool, []), "");
+	assert.equal(preloadedSkillText(pool, ["no-such-skill"]), "");
+	assert.equal(preloadedSkillText(undefined, ["quality-gate-pipeline"]), "");
+	const build = reviewProfileNote(ROOT, "lean", "build") ?? "";
+	assert.match(build, /lizard complexity check once per slice/);
+	assert.match(build, /Commit once per slice/);
+	assert.match(build, /Short dispatch tasks/);
+	assert.match(reviewProfileNote(ROOT, "lean", "plan") ?? "", /\*\*Short plan\.\*\*/);
 });
 
 test("DEV_TEAM_FARLEY: only on turns the lean Farley Score on; blocks select cleanly", () => {

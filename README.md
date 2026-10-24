@@ -114,6 +114,36 @@ The month starts on the 1st at 00:00 UTC.
 
 `/spend` also works without the team: switch off `extensions/dev-team/index.ts` with `pi config` (or `pi config --local`).
 
+## Review profile: lean by default, full on request
+
+By default the team runs the lean review profile. It cuts the review steps that cost the most time and changed the least. To run every review step of the upstream plugin, start pi with the full profile:
+
+```bash
+DEV_TEAM_REVIEW=full pi
+```
+
+| Setting | Values | What it does |
+|---|---|---|
+| `DEV_TEAM_REVIEW` | `lean` (default), `full` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
+| `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `lean`: run the Farley test score at the end of `/build` |
+| `DEV_TEAM_MAX_PARALLEL_AGENTS` | a number, 1 or more | Max agents at once; wins over every config file |
+
+What `lean` changes, compared with `full`:
+
+- `/plan`: at most the standard set of plan critics, one revision round, short plans.
+- `/plan`: Gherkin scenarios only for behavior the request states or shows.
+- `/build`: one implementer per slice, not one per step; short tasks that point to the plan.
+- `/build`: one test per scenario, plus one per request rule no scenario covers.
+- `/build`: the implementer runs a step's tests while it works, and lint, type-check, `lizard` and the full suite once at the end. It commits once.
+- Reviews: four core lenses per slice; every lens at the last slice. Only `error` findings get fixed, in one round.
+- No step 6 backstop review and no Farley score, unless `DEV_TEAM_FARLEY=on`.
+
+Spec-compliance review, structure review, lint, type-check and the complexity check still run at every checkpoint. Their errors are still fixed.
+
+Only your shell can set these. A config file's `env` cannot, so a cloned repository cannot change your review profile. An unknown `DEV_TEAM_REVIEW` value means `lean`, with a warning. Details and measured effects: [PORTING.md](PORTING.md).
+
+Most review lenses and plan critics think at `medium` effort (all profiles). A dispatch can lower an agent's effort, but never raise it.
+
 ## Pull request and issue text
 
 The team writes for a reader who skims ([SimpleEnglish](https://github.com/AminBlg/SimpleEnglish), [i-have-adhd](https://github.com/ayghri/i-have-adhd)):
@@ -157,6 +187,8 @@ All settings, with defaults:
   "hooks": { "enabled": true, "disabled": ["cost_meter", "..."], "enable": [], "outputToModel": true, "timeoutSec": 60 }
 }
 ```
+
+The process environment comes last: `DEV_TEAM_MAX_PARALLEL_AGENTS` overrides `maxParallelAgents`, and `DEV_TEAM_REVIEW` and `DEV_TEAM_FARLEY` are read only from there (see [Review profile](#review-profile-lean-by-default-full-on-request)).
 
 A project file cannot change `hooks`, so a cloned repository cannot turn off your guards. `/dev-team hooks` shows which guards are on.
 

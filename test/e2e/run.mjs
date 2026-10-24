@@ -254,32 +254,34 @@ const scenarios = {
 		assert(!viaTool.out.includes("saved word for word"), "a model's skill call saved a request");
 	},
 
-	"DEV_TEAM_REVIEW=lean comes only from the process env and adds the lean sections; full leaves /build unchanged"(env) {
+	"lean is the default review profile; DEV_TEAM_REVIEW=full comes only from the process env and leaves /build unchanged"(env) {
 		const probe = script([{ tool: "bash", args: { command: 'echo "REVIEW=[$DEV_TEAM_REVIEW]"' } }]);
 		const childProbe = script([{ tool: "dev_team_subagent", args: { agent: "general-purpose", task: script([{ tool: "bash", args: { command: 'echo "CHILD_REVIEW=[$DEV_TEAM_REVIEW]"' } }]) } }]);
-		let r = pi(env, "/build --yes");
+		let r = pi(env, "/build --yes", { vars: { DEV_TEAM_REVIEW: "full" } });
 		assert(r.code === 0 && r.out.includes("# Build") && !r.out.includes("Review profile: lean") && !r.out.includes("Arguments: --yes --backstop-review=skip"), `full /build changed: ${r.out.slice(-300)} ${r.err}`);
-		r = pi(env, "/build --yes", { vars: { DEV_TEAM_REVIEW: "lean" } });
-		assert(r.out.includes("## Review profile: lean") && r.out.includes("Final verification, no Farley Score") && !r.out.includes("Farley Score in one message"), `lean section missing or Farley not off by default: ${r.out.slice(-300)} ${r.err}`);
-		const farleyOn = pi(env, "/build --yes", { vars: { DEV_TEAM_REVIEW: "lean", DEV_TEAM_FARLEY: "on" } });
+		r = pi(env, "/build --yes");
+		assert(r.out.includes("## Review profile: lean") && r.out.includes("Final verification, no Farley Score") && !r.out.includes("Farley Score in one message"), `lean section missing by default or Farley not off: ${r.out.slice(-300)} ${r.err}`);
+		const farleyOn = pi(env, "/build --yes", { vars: { DEV_TEAM_FARLEY: "on" } });
 		assert(farleyOn.out.includes("Final verification and Farley Score in one message") && !farleyOn.out.includes("no Farley Score"), `DEV_TEAM_FARLEY=on did not restore the Farley Score: ${farleyOn.out.slice(-300)} ${farleyOn.err}`);
 		assert(r.out.includes("Arguments: --yes --backstop-review=skip"), `lean /build did not get --backstop-review=skip: ${r.out.slice(-300)} ${r.err}`);
-		r = pi(env, script([{ tool: "skill", args: { name: "farley-score", args: "" } }]), { vars: { DEV_TEAM_REVIEW: "lean" } });
+		r = pi(env, script([{ tool: "skill", args: { name: "farley-score", args: "" } }]));
 		assert(!r.out.includes("skipped (DEV_TEAM_REVIEW=lean)") && /farley/i.test(r.out), `lean did not load farley-score: ${r.out.slice(-300)} ${r.err}`);
-		r = pi(env, childProbe, { vars: { DEV_TEAM_REVIEW: "lean" } });
-		assert(r.out.includes("CHILD_REVIEW=[lean]"), `child did not get the lean profile: ${r.out.slice(-300)} ${r.err}`);
-		r = pi(env, probe, { vars: { DEV_TEAM_REVIEW: "bogus" } });
-		assert(r.out.includes("REVIEW=[]") && r.err.includes("is not full or lean; using full"), `unknown value not warned and dropped: ${r.out.slice(-300)} ${r.err}`);
-		// Neither the project's nor the user's config file may turn lean on.
-		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
-		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "lean" } }));
-		writeUserConfig(env.home, { env: { DEV_TEAM_REVIEW: "lean" } });
-		r = pi(env, probe);
-		assert(r.out.includes("REVIEW=[]"), `a config file set the review profile: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, childProbe);
-		assert(r.out.includes("CHILD_REVIEW=[]"), `a config file set the child's review profile: ${r.out.slice(-300)} ${r.err}`);
+		assert(r.out.includes("CHILD_REVIEW=[lean]"), `child did not get the lean default: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, childProbe, { vars: { DEV_TEAM_REVIEW: "full" } });
+		assert(r.out.includes("CHILD_REVIEW=[full]"), `child did not get the full profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, probe, { vars: { DEV_TEAM_REVIEW: "bogus" } });
+		assert(r.out.includes("REVIEW=[lean]") && r.err.includes("is not full or lean; using lean"), `unknown value not warned and replaced: ${r.out.slice(-300)} ${r.err}`);
+		// Neither the project's nor the user's config file may choose the profile.
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "full" } }));
+		writeUserConfig(env.home, { env: { DEV_TEAM_REVIEW: "full" } });
+		r = pi(env, probe);
+		assert(r.out.includes("REVIEW=[lean]"), `a config file set the review profile: ${r.out.slice(-300)} ${r.err}`);
+		r = pi(env, childProbe);
+		assert(r.out.includes("CHILD_REVIEW=[lean]"), `a config file set the child's review profile: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, "/build --yes");
-		assert(!r.out.includes("Review profile: lean"), "a config file added the lean section");
+		assert(r.out.includes("Review profile: lean"), "a config file removed the lean section");
 	},
 
 	"bash sees plugin env, shim on PATH, non-interactive"(env) {
