@@ -105,6 +105,9 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
 	assert.match(build, /overrides the per-behavior cycle's "Run the full test suite" gate/);
 	assert.match(build, /structure-review/);
+	assert.match(build, /Core lenses until the last slice/);
+	assert.match(build, /every production and test file this build changed/);
+	assert.match(build, /Lenses have no shell and cannot run `git diff`/);
 	assert.match(build, /Final verification and Farley Score in one message/);
 	assert.match(build, /`qa-engineer` Farley Score dispatch goes out in the same message/);
 	const plan = note("plan");
