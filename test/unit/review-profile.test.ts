@@ -23,17 +23,17 @@ import { preloadedSkillText } from "../../extensions/dev-team/lib/subagent.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..");
 
-test("parseReviewProfile: unset, empty and lean are lean; full is full; gate is gate; anything else is lean with a warning", () => {
-	for (const v of [undefined, "", "  ", "lean", "LEAN", " lean\n"]) assert.deepEqual(parseReviewProfile(v), { profile: "lean" }, String(v));
+test("parseReviewProfile: unset, empty and gate are gate; lean is lean; full is full; anything else is gate with a warning", () => {
+	for (const v of ["lean", "LEAN", " lean\n"]) assert.deepEqual(parseReviewProfile(v), { profile: "lean" }, String(v));
 	for (const v of ["full", "FULL", " Full "]) assert.deepEqual(parseReviewProfile(v), { profile: "full" }, v);
-	for (const v of ["gate", "GATE", " Gate "]) assert.deepEqual(parseReviewProfile(v), { profile: "gate" }, v);
+	for (const v of [undefined, "", "  ", "gate", "GATE", " Gate "]) assert.deepEqual(parseReviewProfile(v), { profile: "gate" }, String(v));
 	for (const v of ["leaner", "off", "1", "true", "lean,full"]) {
 		const r = parseReviewProfile(v);
-		assert.equal(r.profile, "lean", v);
-		assert.match(r.warning ?? "", /DEV_TEAM_REVIEW=.* is not full, lean or gate; using lean/, v);
+		assert.equal(r.profile, "gate", v);
+		assert.match(r.warning ?? "", /DEV_TEAM_REVIEW=.* is not gate, lean or full; using gate/, v);
 	}
 	assert.deepEqual(reviewProfileFromEnv({ DEV_TEAM_REVIEW: "full" }), { profile: "full" });
-	assert.deepEqual(reviewProfileFromEnv({}), { profile: "lean" });
+	assert.deepEqual(reviewProfileFromEnv({}), { profile: "gate" });
 });
 
 test("DEV_TEAM_REVIEW cannot come from a project config file", (t) => {
@@ -78,7 +78,7 @@ test("full profile: no note, no guide line, and every package skill expands byte
 });
 
 test("lean profile: plan, build, code-review and ship get their section after the port notes or the title", () => {
-	assert.match(reviewProfileGuideLine("lean"), /^- Review profile: lean \(the default; DEV_TEAM_REVIEW=full/);
+	assert.match(reviewProfileGuideLine("lean"), /^- Review profile: lean \(the user set DEV_TEAM_REVIEW=lean/);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
 		const skill = skills.get(name);
@@ -200,15 +200,16 @@ test("DEV_TEAM_FARLEY: only on turns the lean Farley Score on; blocks select cle
 
 test("gate profile: its own sections, the quality bar in the guide, lean's text untouched", () => {
 	const guide = reviewProfileGuideLine("gate");
-	assert.match(guide, /^- Review profile: gate \(DEV_TEAM_REVIEW=gate/);
+	assert.match(guide, /^- Review profile: gate \(the default; DEV_TEAM_REVIEW=lean/);
 	assert.match(guide, /no plan critics/);
 	assert.match(guide, /\n- Code quality bar \(gate\): .*cyclomatic complexity of at most 10.*lizard -w -C 10 -L 60 -a 5.*timeout 600/);
 	assert.doesNotMatch(reviewProfileGuideLine("lean"), /Code quality bar/);
+	assert.match(guide, /Where the spec is silent, follow the established standard .*the spec wins, even against the standard\./);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
 		const note = reviewProfileNote(ROOT, "gate", name) ?? "";
 		assert.ok(note.startsWith("## Review profile: gate (read first)"), name);
-		assert.doesNotMatch(note, /\blean\b/i, `${name}: no lean wording`);
+		assert.doesNotMatch(note, /\blean (review )?(profile|section|slice|fix|line|note)/i, `${name}: no lean wording`);
 		assert.notEqual(note, reviewProfileNote(ROOT, "lean", name)?.replace(/lean/g, "gate"), `${name}: differs from lean`);
 		assert.ok(skills.get(name), name);
 	}
@@ -220,7 +221,7 @@ test("gate profile: its own sections, the quality bar in the guide, lean's text 
 	assert.equal(reviewProfileArgs("gate", "build", ""), "--backstop-review=skip");
 	assert.deepEqual(reviewProfilePreloadedSkills("gate", "software-engineer"), reviewProfilePreloadedSkills("lean", "software-engineer"));
 	const engineer = reviewProfileAgentNote("gate", "software-engineer");
-	assert.ok(engineer.startsWith("## Review profile: gate (DEV_TEAM_REVIEW=gate; unset it for lean)"));
+	assert.ok(engineer.startsWith("## Review profile: gate (the default; DEV_TEAM_REVIEW=lean or full turns it off)"));
 	assert.match(engineer, /Do not write a report file/);
 	assert.match(engineer, /timeout 600/);
 	assert.doesNotMatch(reviewProfileAgentNote("lean", "software-engineer"), /report file|timeout 600/);

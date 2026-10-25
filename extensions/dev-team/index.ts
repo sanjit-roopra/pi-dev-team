@@ -109,10 +109,10 @@ export default function devTeam(pi: ExtensionAPI) {
 	const review = reviewProfileFromEnv(process.env);
 	const farley = farleyEnabled(process.env);
 	let reviewWarned = false;
-	/** The lean section for a package skill, or undefined (full profile: skill text unchanged). */
+	/** The gate or lean section for a package skill, or undefined (full profile: skill text unchanged). */
 	const profileNoteFor = (skill: SkillDef) =>
 		skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name, farley) : undefined;
-	/** The args a package skill expands with (lean /build gets --backstop-review=skip); full: unchanged. */
+	/** The args a package skill expands with (gate and lean /build get --backstop-review=skip); full: unchanged. */
 	const profileArgsFor = (skill: SkillDef, args: string) => (skill.source === "package" ? reviewProfileArgs(review.profile, skill.name, args) : args);
 	// Project config is read again at session start, once pi's trust decision is known.
 	let config: DevTeamConfig = loadConfig(cwd, { includeProject: false }).config;

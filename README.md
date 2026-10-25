@@ -114,19 +114,35 @@ The month starts on the 1st at 00:00 UTC.
 
 `/spend` also works without the team: switch off `extensions/dev-team/index.ts` with `pi config` (or `pi config --local`).
 
-## Review profile: lean by default, full on request
+## Review profile: gate by default, lean and full on request
 
-By default the team runs the lean review profile. It cuts the review steps that cost the most time and changed the least. To run every review step of the upstream plugin, start pi with the full profile:
+> **Changed:** `gate` is now the default review profile. Before, the default was `lean`. To keep the old behavior, start pi with `DEV_TEAM_REVIEW=lean`.
+
+By default the team runs the gate review profile: a code-quality bar in every session, and little review process. To run more review, start pi with another profile:
 
 ```bash
-DEV_TEAM_REVIEW=full pi
+DEV_TEAM_REVIEW=lean pi   # the previous default: more review lenses and plan critics
+DEV_TEAM_REVIEW=full pi   # every review step of the upstream plugin
 ```
 
 | Setting | Values | What it does |
 |---|---|---|
-| `DEV_TEAM_REVIEW` | `lean` (default), `full`, `gate` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
-| `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `lean`: run the Farley test score at the end of `/build` |
+| `DEV_TEAM_REVIEW` | `gate` (default), `lean`, `full` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
+| `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `gate` and `lean`: run the Farley test score at the end of `/build` |
 | `DEV_TEAM_MAX_PARALLEL_AGENTS` | a number, 1 or more | Max agents at once; wins over every config file |
+
+### Gate profile (default)
+
+- A quality bar in every session, not only in `/build`: each function has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters. The agent runs the linter and `lizard -w -C 10 -L 60 -a 5`, and fixes every finding before it reports.
+- Where the spec is silent, the agent follows the established standard for the interface: JSON Pointer error locations, RFC 9457 error bodies, RFC 9110 status codes, ISO 8601 times. Where the spec is explicit, the spec wins. **New and experimental:** its first benchmark test showed no effect yet.
+- `/plan`: no plan critics.
+- `/build`: spec-compliance and correctness review at each slice. The simplify lens and, when selected, security review run at the last slice. No other lens runs.
+- Agents write no report files. Every test command runs under `timeout 600`.
+- With no human attached, `/build` skips the Feedback & Learning step.
+
+Why gate: on SlopCodeBench, plain pi with only this quality bar matched the lean profile on hidden tests and code shape (no function above complexity 10), at a quarter to half of the time and cost. Plan critics and the larger review panels changed no test result.
+
+### Lean profile (`DEV_TEAM_REVIEW=lean`)
 
 What `lean` changes, compared with `full`:
 
@@ -138,19 +154,9 @@ What `lean` changes, compared with `full`:
 - Reviews: four core lenses per slice; every lens at the last slice. Only `error` findings get fixed, in one round.
 - No step 6 backstop review and no Farley score, unless `DEV_TEAM_FARLEY=on`.
 
-Spec-compliance review, structure review, lint, type-check and the complexity check still run at every checkpoint. Their errors are still fixed.
+Spec-compliance review, structure review, lint, type-check and the complexity check still run at every checkpoint. Their errors are still fixed. Lean has no session-wide quality bar.
 
-### Gate profile (opt-in)
-
-`DEV_TEAM_REVIEW=gate pi` runs less process than `lean` and adds a code-quality bar. In benchmark runs the bar alone gave the same code shape and hidden-test results as `lean`, at a fraction of the time and cost.
-
-- A quality bar in every session, not only in `/build`: each function has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters. The agent runs the linter and `lizard -w -C 10 -L 60 -a 5`, and fixes every finding before it reports.
-- `/plan`: no plan critics.
-- `/build`: spec-compliance and correctness review at each slice. The simplify lens and, when selected, security review run at the last slice. No other lens runs.
-- Agents write no report files. Every test command runs under `timeout 600`.
-- With no human attached, `/build` skips the Feedback & Learning step.
-
-Only your shell can set these. A config file's `env` cannot, so a cloned repository cannot change your review profile. An unknown `DEV_TEAM_REVIEW` value means `lean`, with a warning. Details and measured effects: [PORTING.md](PORTING.md).
+Only your shell can set these. A config file's `env` cannot, so a cloned repository cannot change your review profile. An unknown `DEV_TEAM_REVIEW` value means `gate`, with a warning. Details and measured effects: [PORTING.md](PORTING.md).
 
 Most review lenses and plan critics think at `medium` effort (all profiles). A dispatch can lower an agent's effort, but never raise it.
 
@@ -198,7 +204,7 @@ All settings, with defaults:
 }
 ```
 
-The process environment comes last: `DEV_TEAM_MAX_PARALLEL_AGENTS` overrides `maxParallelAgents`, and `DEV_TEAM_REVIEW` and `DEV_TEAM_FARLEY` are read only from there (see [Review profile](#review-profile-lean-by-default-full-on-request)).
+The process environment comes last: `DEV_TEAM_MAX_PARALLEL_AGENTS` overrides `maxParallelAgents`, and `DEV_TEAM_REVIEW` and `DEV_TEAM_FARLEY` are read only from there (see [Review profile](#review-profile-gate-by-default-lean-and-full-on-request)).
 
 A project file cannot change `hooks`, so a cloned repository cannot turn off your guards. `/dev-team hooks` shows which guards are on.
 

@@ -1,7 +1,7 @@
 /**
  * DEV_TEAM_REVIEW=full|lean|gate: how much review ceremony /plan, /build, /code-review and /ship run.
  *
- * `lean` (the default) cuts the review layers that measured runs showed cost the most and changed the
+ * `gate` (the default) is lean with less process and a code-quality bar (below). `lean` cuts the review layers that measured runs showed cost the most and changed the
  * least (extra fix rounds, the second review panel, complex-tier plan critics, per-step implementer
  * dispatches). `full` is upstream's flow, and its prompt text stays byte for byte what it was: nothing
  * here adds text unless the profile is `lean` or `gate`. Only the user's own process environment chooses the
@@ -9,7 +9,7 @@
  * and a project's config may not set it either (it is not in PROJECT_ENV_SETTINGS). The lean instructions live in extensions/dev-team/lean/<skill>.md
  * and are inserted into the skill text only while lean is active.
  *
- * `gate` (opt-in) is lean with less process and a code-quality bar: no plan critics, two review lenses per slice
+ * `gate` is lean with less process and a code-quality bar: no plan critics, two review lenses per slice
  * (plus the simplify lens and, when selected, security at the last slice), no report files, and `QUALITY_BAR` in
  * the guide, so the bar binds the session itself as well as /build's implementer. Its sections live in
  * extensions/dev-team/gate/<skill>.md. Lean's text is unchanged by it.
@@ -24,13 +24,13 @@ export const REVIEW_PROFILE_ENV = "DEV_TEAM_REVIEW";
 /** Skills with a lean section in extensions/dev-team/lean/ (and a gate section in extensions/dev-team/gate/). */
 export const LEAN_SKILLS: ReadonlySet<string> = new Set(["plan", "build", "code-review", "ship"]);
 
-/** Unset, empty or `lean` is lean; `full` is full; `gate` is gate; anything else is lean with a warning. Case and spaces are ignored. */
+/** Unset, empty or `gate` is gate; `lean` is lean; `full` is full; anything else is gate with a warning. Case and spaces are ignored. */
 export function parseReviewProfile(value: string | undefined): { profile: ReviewProfile; warning?: string } {
 	const v = (value ?? "").trim().toLowerCase();
-	if (v === "" || v === "lean") return { profile: "lean" };
+	if (v === "" || v === "gate") return { profile: "gate" };
+	if (v === "lean") return { profile: "lean" };
 	if (v === "full") return { profile: "full" };
-	if (v === "gate") return { profile: "gate" };
-	return { profile: "lean", warning: `dev-team: ${REVIEW_PROFILE_ENV}=${JSON.stringify(value)} is not full, lean or gate; using lean.` };
+	return { profile: "gate", warning: `dev-team: ${REVIEW_PROFILE_ENV}=${JSON.stringify(value)} is not gate, lean or full; using gate.` };
 }
 
 /** The profile from a process environment. Pass the environment as it was before any config `env` is applied. */
@@ -40,7 +40,7 @@ export function reviewProfileFromEnv(env: NodeJS.ProcessEnv): { profile: ReviewP
 
 /**
  * Sets DEV_TEAM_REVIEW in an environment that tools, hooks and child agents inherit, after config `env`
- * entries were merged into it: always the profile itself, never removed, because an unset value means lean.
+ * entries were merged into it: always the profile itself, never removed, because an unset value means gate.
  * So a config file's value never reaches a child, and a child reads the same profile as its parent.
  */
 export function applyReviewProfileEnv(env: NodeJS.ProcessEnv, profile: ReviewProfile): void {
@@ -103,14 +103,14 @@ export function insertReviewProfileNote(body: string, note: string | undefined):
  * the lean profile's code-shape metrics (erosion 0, max cyclomatic complexity 10): the review layers added none.
  */
 export const QUALITY_BAR =
-	"- Code quality bar (gate): every function you or an agent writes has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters, and the project's linter (`ruff check` for Python) reports nothing on changed files. Before you report code work done, run the linter and `lizard -w -C 10 -L 60 -a 5 <changed source files>` (install `lizard` into the project's environment if it is missing), fix every finding and re-run until both are clean. Write the least code that works: use what the codebase, the standard library or an installed dependency already has; no speculative options, no wrapper, factory or layer used once, no duplicated logic; fewer lines, never denser lines. Never cut input validation or error handling at a real boundary to save lines. Run every test command under `timeout 600` (or the platform's equivalent), so a hung test fails fast instead of stalling the session.";
+	"- Code quality bar (gate): every function you or an agent writes has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters, and the project's linter (`ruff check` for Python) reports nothing on changed files. Before you report code work done, run the linter and `lizard -w -C 10 -L 60 -a 5 <changed source files>` (install `lizard` into the project's environment if it is missing), fix every finding and re-run until both are clean. Write the least code that works: use what the codebase, the standard library or an installed dependency already has; no speculative options, no wrapper, factory or layer used once, no duplicated logic; fewer lines, never denser lines. Never cut input validation or error handling at a real boundary to save lines. Run every test command under `timeout 600` (or the platform's equivalent), so a hung test fails fast instead of stalling the session. Where the spec is silent, follow the established standard for the interface (JSON Pointer error locations, RFC 9457 error bodies, RFC 9110 status codes, ISO 8601 times); where the spec is explicit, the spec wins, even against the standard.";
 
 /** The dev-team guide lines for the lean or gate profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile): string {
 	if (profile === "full") return "";
-	if (profile === "gate") return `- Review profile: gate (${REVIEW_PROFILE_ENV}=gate in the user's environment; unset selects lean, full the full profile). /plan, /build, /code-review and /ship carry a "Review profile: gate" section that overrides their steps: no plan critics, one implementer dispatch and one review panel per slice (spec-compliance and correctness at every slice; the simplify lens, and security when selected, at the last slice), only \`error\` findings fixed in one round. The static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still runs, and its errors are fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.
+	if (profile === "gate") return `- Review profile: gate (the default; ${REVIEW_PROFILE_ENV}=lean or ${REVIEW_PROFILE_ENV}=full in the user's environment selects another profile). /plan, /build, /code-review and /ship carry a "Review profile: gate" section that overrides their steps: no plan critics, one implementer dispatch and one review panel per slice (spec-compliance and correctness at every slice; the simplify lens, and security when selected, at the last slice), only \`error\` findings fixed in one round. The static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still runs, and its errors are fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.
 ${QUALITY_BAR}`;
-	return `- Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full in the user's environment selects the full profile). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
+	return `- Review profile: lean (the user set ${REVIEW_PROFILE_ENV}=lean; unset selects the default gate profile, full the full profile). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
 }
 
 const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
@@ -146,8 +146,8 @@ export function reviewProfilePreloadedSkills(profile: ReviewProfile, agentName: 
 
 const LIZARD_COMMAND = "lizard --csv <files> | python3 ${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/adapters/lizard-adapter.py";
 
-const LEAN_NOTE_HEADING = `## Review profile: lean (the default; ${REVIEW_PROFILE_ENV}=full turns it off)`;
-const GATE_NOTE_HEADING = `## Review profile: gate (${REVIEW_PROFILE_ENV}=gate; unset it for lean)`;
+const LEAN_NOTE_HEADING = `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean; unset it for the default gate profile)`;
+const GATE_NOTE_HEADING = `## Review profile: gate (the default; ${REVIEW_PROFILE_ENV}=lean or full turns it off)`;
 const GATE_ENGINEER_EXTRA =
 	" Do not write a report file; your final message is your report, at most 300 words. Run every test command under `timeout 600`, so a hung test fails fast instead of stalling the task.";
 

@@ -1,6 +1,6 @@
 ## Review profile: gate (read first)
 
-This session runs the gate review profile (the user set `DEV_TEAM_REVIEW=gate`). This section overrides step 5 and the plan format where they differ; every other step runs as written.
+This session runs the gate review profile, the default (the user did not set `DEV_TEAM_REVIEW` to `lean` or `full`). This section overrides step 5 and the plan format where they differ; every other step runs as written.
 
 - **No plan critics.** Skip step 5's reviewer dispatch and its revision loop. Write `Plan review: skipped (gate profile)` in the Plan Review Summary and go on to step 6, which presents the plan at the approval gate. Write each open question under `## Risks & Open Questions` yourself.
 - **Test budget.** Write a Gherkin scenario only for behavior the request states or one of its examples shows. Each step's **TEST** line names the step's scenarios and the request rules no scenario covers, and nothing more: no lists of extra edge cases, permutations, resource or memory bounds, signals or injected filesystem failures that the request does not ask for. `/build` holds the implementer to one test per scenario plus one per such rule.
