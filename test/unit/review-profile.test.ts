@@ -204,6 +204,7 @@ test("gate profile: its own sections, the quality bar in the guide, lean's text 
 	assert.match(guide, /no plan critics/);
 	assert.match(guide, /\n- Code quality bar \(gate\): .*cyclomatic complexity of at most 10.*lizard -w -C 10 -L 60 -a 5.*timeout 600/);
 	assert.doesNotMatch(reviewProfileGuideLine("lean"), /Code quality bar/);
+	assert.match(guide, /Where the spec is silent, follow the established standard .*the spec wins, even against the standard\./);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
 		const note = reviewProfileNote(ROOT, "gate", name) ?? "";
