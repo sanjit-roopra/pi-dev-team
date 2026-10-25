@@ -1,0 +1,8 @@
+## Review profile: gate (read first)
+
+This session runs the gate review profile (the user set `DEV_TEAM_REVIEW=gate`). This section overrides step 5 and the plan format where they differ; every other step runs as written.
+
+- **No plan critics.** Skip step 5's reviewer dispatch and its revision loop. Write `Plan review: skipped (gate profile)` in the Plan Review Summary and go on to step 6, which presents the plan at the approval gate. Write each open question under `## Risks & Open Questions` yourself.
+- **Test budget.** Write a Gherkin scenario only for behavior the request states or one of its examples shows. Each step's **TEST** line names the step's scenarios and the request rules no scenario covers, and nothing more: no lists of extra edge cases, permutations, resource or memory bounds, signals or injected filesystem failures that the request does not ask for. `/build` holds the implementer to one test per scenario plus one per such rule.
+- **Short plan.** Write the sections `/build` reads (header, Goal, Acceptance Criteria as one line each, Slices with their Gherkin and steps, Parallelization, Complexity Classification, Risks & Open Questions, Build Progress) and keep them terse: no Approach stances, Skipped or Pre-PR Quality Gate prose, no Mermaid diagram for a single-wave plan (one line, such as `One wave: slice 1.`), each scenario three to five lines, each step's **IMPLEMENT**, **TEST** and **REFACTOR** one line each, each open question one line.
+- When the plan reaches `/build`, the same profile applies there: one implementer dispatch and one review panel per slice.

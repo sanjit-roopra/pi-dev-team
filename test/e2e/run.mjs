@@ -271,7 +271,7 @@ const scenarios = {
 		r = pi(env, childProbe, { vars: { DEV_TEAM_REVIEW: "full" } });
 		assert(r.out.includes("CHILD_REVIEW=[full]"), `child did not get the full profile: ${r.out.slice(-300)} ${r.err}`);
 		r = pi(env, probe, { vars: { DEV_TEAM_REVIEW: "bogus" } });
-		assert(r.out.includes("REVIEW=[lean]") && r.err.includes("is not full or lean; using lean"), `unknown value not warned and replaced: ${r.out.slice(-300)} ${r.err}`);
+		assert(r.out.includes("REVIEW=[lean]") && r.err.includes("is not full, lean or gate; using lean"), `unknown value not warned and replaced: ${r.out.slice(-300)} ${r.err}`);
 		// Neither the project's nor the user's config file may choose the profile.
 		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
 		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ env: { DEV_TEAM_REVIEW: "full" } }));
