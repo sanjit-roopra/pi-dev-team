@@ -65,7 +65,7 @@ test("hook run: DEV_TEAM_REVIEW from a config file's env never reaches a hook", 
 	const fromConfig = (): DevTeamConfig => ({ ...withTimeout(60), env: { DEV_TEAM_REVIEW: "full" } });
 	const bridge = new HookBridge(root, fromConfig, () => python, () => {});
 	delete process.env.DEV_TEAM_REVIEW;
-	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /REVIEW=\[lean\]/);
+	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /REVIEW=\[gate\]/);
 	process.env.DEV_TEAM_REVIEW = "full";
 	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /REVIEW=\[full\]/);
 });
