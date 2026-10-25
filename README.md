@@ -124,7 +124,7 @@ DEV_TEAM_REVIEW=full pi
 
 | Setting | Values | What it does |
 |---|---|---|
-| `DEV_TEAM_REVIEW` | `lean` (default), `full` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
+| `DEV_TEAM_REVIEW` | `lean` (default), `full`, `gate` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
 | `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `lean`: run the Farley test score at the end of `/build` |
 | `DEV_TEAM_MAX_PARALLEL_AGENTS` | a number, 1 or more | Max agents at once; wins over every config file |
 
@@ -139,6 +139,16 @@ What `lean` changes, compared with `full`:
 - No step 6 backstop review and no Farley score, unless `DEV_TEAM_FARLEY=on`.
 
 Spec-compliance review, structure review, lint, type-check and the complexity check still run at every checkpoint. Their errors are still fixed.
+
+### Gate profile (opt-in)
+
+`DEV_TEAM_REVIEW=gate pi` runs less process than `lean` and adds a code-quality bar. In benchmark runs the bar alone gave the same code shape and hidden-test results as `lean`, at a fraction of the time and cost.
+
+- A quality bar in every session, not only in `/build`: each function has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters. The agent runs the linter and `lizard -w -C 10 -L 60 -a 5`, and fixes every finding before it reports.
+- `/plan`: no plan critics.
+- `/build`: spec-compliance and correctness review at each slice. The simplify lens and, when selected, security review run at the last slice. No other lens runs.
+- Agents write no report files. Every test command runs under `timeout 600`.
+- With no human attached, `/build` skips the Feedback & Learning step.
 
 Only your shell can set these. A config file's `env` cannot, so a cloned repository cannot change your review profile. An unknown `DEV_TEAM_REVIEW` value means `lean`, with a warning. Details and measured effects: [PORTING.md](PORTING.md).
 
