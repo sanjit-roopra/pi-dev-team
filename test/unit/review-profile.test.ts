@@ -6,6 +6,8 @@ import { test } from "node:test";
 import { DEFAULT_CONFIG, filterProjectConfig, loadConfig, PROJECT_ENV_SETTINGS } from "../../extensions/dev-team/lib/config.ts";
 import {
 	applyReviewProfileEnv,
+	EXAMPLE_BAR,
+	examplesEnabled,
 	farleyEnabled,
 	insertReviewProfileNote,
 	LEAN_SKILLS,
@@ -226,4 +228,15 @@ test("gate profile: its own sections, the quality bar in the guide, lean's text 
 	assert.match(engineer, /timeout 600/);
 	assert.doesNotMatch(reviewProfileAgentNote("lean", "software-engineer"), /report file|timeout 600/);
 	assert.match(reviewProfileAgentNote("gate", "test-review"), /^## Review profile: gate/);
+});
+
+test("example check: opt-in with DEV_TEAM_EXAMPLES=on, only in the gate guide line", () => {
+	assert.equal(examplesEnabled({}), false);
+	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: " On " }), true);
+	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "1" }), false);
+	assert.ok(!reviewProfileGuideLine("gate").includes(EXAMPLE_BAR));
+	assert.ok(reviewProfileGuideLine("gate", true).endsWith(`\n${EXAMPLE_BAR}`));
+	assert.ok(!reviewProfileGuideLine("lean", true).includes(EXAMPLE_BAR));
+	assert.equal(reviewProfileGuideLine("full", true), "");
+	assert.match(EXAMPLE_BAR, /scripts\/example_replay\.py/);
 });
