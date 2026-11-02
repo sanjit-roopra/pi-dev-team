@@ -12,17 +12,25 @@ from _loader import ROOT, load_module
 replay = load_module("example_replay_under_test", ROOT / "scripts" / "example_replay.py")
 
 SERVER = r'''
-import json, sys
+import json, sys, uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
 STAMP = sys.argv[2]
+ITEMS = {}
 class H(BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
+    def log_message(self, *a): sys.stderr.write("x" * 2048 + "\n")
+    def reply(self, code, obj):
+        out = json.dumps(obj).encode()
+        self.send_response(code); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out))); self.end_headers(); self.wfile.write(out)
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
         body = json.loads(self.rfile.read(n) or b"{}")
-        out = json.dumps({"created_at": STAMP, "name": body.get("name"), "id": "17"}).encode()
-        self.send_response(201); self.send_header("Content-Type", "application/json"); self.end_headers()
-        self.wfile.write(out)
+        item = {"created_at": STAMP, "name": body.get("name"), "id": str(uuid.uuid4())}
+        ITEMS[item["id"]] = item
+        self.reply(201, item)
+    def do_GET(self):
+        item = ITEMS.get(self.path.rsplit("/", 1)[-1])
+        self.reply(200, item) if item else self.reply(404, {"error": "not found"})
 HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 '''
 
@@ -39,7 +47,17 @@ Create an item:
 
 ```
 POST /items {"name": "a"}
-201 {"id": "1", "name": "a", "created_at": "2025-10-12T14:03:22Z"}
+201 {"id": "2f6d1f7c-7a71-4d8e-a2ae-2b7a5b3d6c44", "name": "a", "created_at": "2025-10-12T14:03:22Z"}
+GET /items/2f6d1f7c-7a71-4d8e-a2ae-2b7a5b3d6c44
+200 {"id": "2f6d1f7c-7a71-4d8e-a2ae-2b7a5b3d6c44", "name": "a"}
+```
+
+Events (excerpt):
+
+```
+{"event": "START", "n": 2}
+... (more events) ...
+{"event": "END"}
 ```
 
 Schema:
@@ -82,20 +100,41 @@ def greet_case(stamp, vary=("at",)):
     }
 
 
-def item_case(stamp):
+UID = "2f6d1f7c-7a71-4d8e-a2ae-2b7a5b3d6c44"
+
+
+def item_case(stamp, gets=1):
+    get = {"http": "GET /items/{item}", "status": 200, "response": {"id": "{item}", "name": "a"}, "match": "subset",
+           "why": "Events (excerpt):"}
     return {
         "id": "create-item",
-        "source": 'POST /items {"name": "a"}\n201 {"id": "1", "name": "a", "created_at": "2025-10-12T14:03:22Z"}',
+        "source": f'POST /items {{"name": "a"}}\n201 {{"id": "{UID}", "name": "a", "created_at": "2025-10-12T14:03:22Z"}}\nGET /items/{UID}\n200 {{"id": "{UID}", "name": "a"}}',
         "server": f"{sys.executable} {{root}}/server.py {{port}} {stamp}",
-        "steps": [{"http": "POST /items", "body": {"name": "a"}, "status": 201,
-                   "response": {"id": "1", "name": "a", "created_at": "2025-10-12T14:03:22Z"}, "vary": ["id", "created_at"]}],
+        "steps": [{"http": "POST /items", "body": {"name": "a"}, "status": 201, "save": {"item": "id"},
+                   "response": {"id": UID, "name": "a", "created_at": "2025-10-12T14:03:22Z"}, "vary": ["id", "created_at"]}]
+        + [get] * gets,
     }
+
+
+def excerpt_case(lines):
+    return {"id": "events", "source": '{"event": "START", "n": 2} ... (more events) ... {"event": "END"}',
+            "steps": [{"run": [sys.executable, "-c", f"print({lines!r})"], "match": "excerpt",
+                       "stdout": '{"event": "START", "n": 2}\n... (more events) ...\n{"event": "END"}'}]}
 
 
 SCHEMA_SKIP = [{"block": "item := {id, name, created_at}", "reason": "schema, not an example"}]
 
 
 class Shape(unittest.TestCase):
+    def test_uuid_and_hex_shape(self):
+        self.assertTrue(replay.same_shape(UID, "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"))
+        self.assertFalse(replay.same_shape(UID, "item-1"))
+        self.assertTrue(replay.same_shape("run_ab12cd", "run_9f00e1"))
+
+    def test_placeholder_matches_any_value(self):
+        self.assertIsNone(replay.compare({"id": "<uuid>"}, '{"id": "abc"}', {}))
+        self.assertIsNotNone(replay.compare({"id": "<uuid>"}, '{"id": ""}', {}))
+
     def test_timestamp_shape(self):
         self.assertTrue(replay.same_shape("2025-10-12T14:03:22Z", "2026-11-02T10:15:07Z"))
         self.assertFalse(replay.same_shape("2025-10-12T14:03:22Z", "2026-11-02T10:15:07.148842Z"))
@@ -134,17 +173,24 @@ class Compare(unittest.TestCase):
         self.assertIsNotNone(replay.compare("took 12 ms", "took 7.5 ms", {"match": "shape"}))
 
 
+GOOD_EVENTS = '{"event": "START", "n": 2}\n{"event": "FILE"}\n{"event": "END", "extra": 1}'
+
+
+def all_cases(stamp="2026-11-02T10:15:07Z", events=GOOD_EVENTS, gets=1):
+    return [greet_case(stamp), item_case(stamp, gets), excerpt_case(events)]
+
+
 class Runs(unittest.TestCase):
     def test_passing_cli_and_http_cases(self):
         p = Project()
-        p.write_cases([greet_case("2026-11-02T10:15:07Z"), item_case("2026-11-02T10:15:07Z")], SCHEMA_SKIP)
+        p.write_cases(all_cases(), SCHEMA_SKIP)
         code, out = p.run()
         self.assertEqual(code, 0, out)
-        self.assertIn("2/2 cases pass", out)
+        self.assertIn("3/3 cases pass", out)
 
     def test_fractional_seconds_fail(self):
         p = Project()
-        p.write_cases([greet_case("2026-11-02T10:15:07.148842Z"), item_case("2026-11-02T10:15:07+00:00")], SCHEMA_SKIP)
+        p.write_cases([greet_case("2026-11-02T10:15:07.148842Z"), item_case("2026-11-02T10:15:07+00:00"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
         code, out = p.run()
         self.assertEqual(code, 1)
         self.assertIn("case greet: FAIL step 1: stdout: $.at", out)
@@ -156,6 +202,32 @@ class Runs(unittest.TestCase):
         code, out = p.run("--only", "greet")
         self.assertEqual(code, 1)
         self.assertIn("expected '2025-10-12T14:03:22Z'", out)
+
+    def test_noisy_server_and_saved_ids_over_many_steps(self):
+        p = Project()
+        p.write_cases(all_cases(gets=60), SCHEMA_SKIP)
+        code, out = p.run()
+        self.assertEqual(code, 0, out)
+
+    def test_excerpt_order_and_missing_line(self):
+        p = Project()
+        p.write_cases(all_cases(events='{"event": "END"}\n{"event": "START", "n": 2}'), SCHEMA_SKIP)
+        code, out = p.run("--only", "events")
+        self.assertEqual(code, 1)
+        self.assertIn("not found in order", out)
+
+    def test_jsonl_expected(self):
+        self.assertIsNone(replay.compare('{"e": 1}\n{"e": 2}', '{"e": 1}\n{"e": 2}\n', {}))
+        self.assertIn("$[1].e", replay.compare('{"e": 1}\n{"e": 2}', '{"e": 1}\n{"e": 3}\n', {}))
+
+    def test_disputed_step_reports_without_failing(self):
+        p = Project(request=REQUEST + "\nGreetings never include a time.\n")
+        case = greet_case("2026-11-02T10:15:07.1Z")
+        case["steps"][0]["disputed"] = "Greetings never include a time."
+        p.write_cases([case, item_case("2026-11-02T10:15:07Z"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
+        code, out = p.run()
+        self.assertEqual(code, 0, out)
+        self.assertIn("case greet: DISPUTED", out)
 
     def test_files_and_exit(self):
         p = Project(request="```\n$ touch out/w.txt\n(empty line)\n```\n")
@@ -170,16 +242,41 @@ class Honesty(unittest.TestCase):
         p = Project()
         case = greet_case("2026-11-02T10:15:07.148842Z")
         case["steps"][0]["stdout"] = '{"greeting": "Hello, Ada", "at": "2025-10-12T14:03:22.000000Z"}'
-        p.write_cases([case, item_case("2026-11-02T10:15:07Z")], SCHEMA_SKIP)
+        p.write_cases([case, item_case("2026-11-02T10:15:07Z"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
         code, out = p.run()
         self.assertEqual(code, 1)
         self.assertIn("which its `source` does not show", out)
+
+    def test_truncated_value_is_not_in_source(self):
+        case = greet_case("x")
+        case["steps"][0]["stdout"] = '{"greeting": "Hello, Ada", "at": "2025-10-12T14:03:22"}'
+        problems = replay.source_problems(case, replay.collapse(REQUEST))
+        self.assertTrue(any("2025-10-12T14:03:22" in p for p in problems), problems)
+
+    def test_subset_needs_an_elision_or_a_quote(self):
+        case = item_case("x")
+        case["steps"][1].pop("why")
+        problems = replay.source_problems(case, replay.collapse(REQUEST))
+        self.assertTrue(any("needs '...'" in p for p in problems), problems)
+
+    def test_ambiguous_skip_is_reported(self):
+        p = Project(request="```\n{\n\"a\": 1\n}\n```\n```\n{\n\"b\": 2\n}\n```\n")
+        p.write_cases([], [{"block": "{", "reason": "schema"}])
+        code, out = p.run()
+        self.assertEqual(code, 1)
+        self.assertIn("matches 2 blocks", out)
+
+    def test_source_miss_says_where(self):
+        case = greet_case("x")
+        case["source"] = case["source"].replace("Ada", "Bob")
+        problems = replay.source_problems(case, replay.collapse(REQUEST))
+        self.assertIn("where the request has", problems[0])
 
     def test_source_must_be_in_a_request(self):
         p = Project()
         case = greet_case("2026-11-02T10:15:07Z")
         case["source"] = case["source"].replace("Ada", "Bob")
-        p.write_cases([case, item_case("2026-11-02T10:15:07Z")], SCHEMA_SKIP)
+        p.write_cases([case, item_case("2026-11-02T10:15:07Z"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
         self.assertIn("not word for word", p.run()[1])
 
     def test_uncovered_block_is_reported(self):
@@ -188,12 +285,13 @@ class Honesty(unittest.TestCase):
         code, out = p.run()
         self.assertEqual(code, 1)
         self.assertIn("block starting 'POST /items", out)
+        self.assertIn("block starting '{\"event\": \"START\"", out)
         self.assertIn("block starting 'item := {id, name, created_at}'", out)
 
     def test_missing_case_file_with_examples_fails(self):
         code, out = Project().run()
         self.assertEqual(code, 1)
-        self.assertIn("0/0 cases pass, 3 problem(s)", out)
+        self.assertIn("0/0 cases pass, 4 problem(s)", out)
 
     def test_no_requests_no_cases_passes(self):
         p = Project(request="no examples here")
@@ -205,10 +303,10 @@ class Honesty(unittest.TestCase):
         case = greet_case("2026-11-02T10:15:07Z")
         case["steps"][0]["run"] = f"{sys.executable} -c 'print(1)'"
         case["superseded_by"] = "greetings say Hi instead of Hello"
-        p.write_cases([case, item_case("2026-11-02T10:15:07Z")], SCHEMA_SKIP)
+        p.write_cases([case, item_case("2026-11-02T10:15:07Z"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
         self.assertEqual(p.run()[0], 0)
         case["superseded_by"] = "greetings changed"
-        p.write_cases([case, item_case("2026-11-02T10:15:07Z")], SCHEMA_SKIP)
+        p.write_cases([case, item_case("2026-11-02T10:15:07Z"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
         self.assertIn("`superseded_by` is not word for word", p.run()[1])
 
     def test_duplicate_ids_are_unusable(self):
