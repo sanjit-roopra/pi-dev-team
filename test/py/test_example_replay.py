@@ -333,6 +333,16 @@ class Honesty(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("SUPERSEDED, now fails", out)
 
+    def test_superseded_case_whose_input_is_now_rejected_still_fails(self):
+        p = Project(request="```\n$ greet\nHello\n```\n")
+        (p.root / ".claude/memory/requests/request-2.md").write_text("Greetings now say Hi.")
+        case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",
+                "steps": [{"run": f"{sys.executable} -c 'import sys; sys.exit(\"bad input\")' {{root}}", "stdout": "Hello"}]}
+        p.write_cases([case])
+        code, out = p.run()
+        self.assertEqual(code, 1, out)
+        self.assertIn("now rejects the input", out)
+
     def test_superseding_quote_must_be_newer(self):
         p = Project(request="```\n$ greet\nHello\n```\nGreetings now say Hi.\n")
         case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",

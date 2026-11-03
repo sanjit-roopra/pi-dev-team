@@ -90,7 +90,10 @@ vary: keys whose values the program generates (ids, timestamps, random tokens). 
   Never put a value the request defines (a count, a sum, a status, a name) under vary.
 unordered: true compares JSON arrays as multisets, only when the request says the order is unspecified.
 superseded_by: a case stops counting only on text from a newer request that changes that example's output for
-  its input; each superseded case needs its own quote, and it still runs (a failure is shown, not counted).
+  its input; each superseded case needs its own quote, and it still runs (a failure is shown, not counted). If
+  the program now rejects the case's input (non-zero exit, 4xx/5xx status), the case still fails.
+Inputs (files, run, stdin, body) come from the example too: never change an input the example shows, only add
+what it leaves out.
 disputed: "<quote>" on a step whose example contradicts the request's own text: the quote is the contradicting
   text, word for word. A disputed step that fails is reported and does not fail the run. Not for a format,
   precision or suffix the text leaves open: there the example decides.
@@ -608,6 +611,8 @@ def run_command(step: dict, ctx: dict, timeout: float) -> list[str]:
     want = step.get("exit", None if "{root}" in text else 0)  # a setup command must succeed
     if want is not None and done.returncode != want:
         problems.append(f"exit {done.returncode}, expected {want}; stderr: {done.stderr[-300:]!r}")
+    if done.returncode != 0 and step.get("exit", 0) == 0:
+        ctx["_rejected"] = f"exit {done.returncode}: {done.stderr.strip()[-200:]!r}"
     for stream in ("stdout", "stderr"):
         if stream in step:
             diff = compare(fill_expected(step[stream], ctx), getattr(done, stream), step)
@@ -618,7 +623,7 @@ def run_command(step: dict, ctx: dict, timeout: float) -> list[str]:
 
 def fill_expected(expected, ctx: dict):
     """Saved values replace their {name} in expected output, so a later step checks the id it was given."""
-    saved = {k: v for k, v in ctx.items() if k not in ("root", "tmp", "port")}
+    saved = {k: v for k, v in ctx.items() if k not in ("root", "tmp", "port") and not k.startswith("_")}
     if not saved:
         return expected
     text = fill(json_text(expected), {k: v if isinstance(expected, str) else json_text(v).strip('"') for k, v in saved.items()})
@@ -648,6 +653,8 @@ def run_http(step: dict, ctx: dict, timeout: float) -> list[str]:
     problems = []
     if "status" in step and status != step["status"]:
         problems.append(f"status {status}, expected {step['status']}; body: {text[:300]!r}")
+    if status >= 400 and step.get("status", 200) < 400:
+        ctx["_rejected"] = f"status {status}: {text[:200]!r}"
     if "response" in step:
         diff = compare(fill_expected(step["response"], ctx), text, step)
         if diff:
@@ -702,13 +709,15 @@ def run_steps(case: dict, ctx: dict, timeout: float) -> tuple[list[str], list[st
     return failures, disputed
 
 
-def run_case(case: dict, root: Path, timeout: float) -> tuple[list[str], list[str]]:
+def run_case(case: dict, root: Path, timeout: float) -> tuple[list[str], list[str], str | None]:
+    """(failures, disputed failures, how the program rejected an input the example shows working, if it did)."""
     with tempfile.TemporaryDirectory(prefix="example-") as tmp:
         ctx = {"root": root, "tmp": tmp, "port": free_port()}
         write_files(Path(tmp), case.get("files"), ctx)
         proc, problem = start_server(case["server"], ctx, timeout) if case.get("server") else (None, None)
         try:
-            return ([problem], []) if problem else run_steps(case, ctx, timeout)
+            failures, disputed = ([problem], []) if problem else run_steps(case, ctx, timeout)
+            return failures, disputed, ctx.get("_rejected")
         finally:
             stop_server(proc)
 
@@ -766,9 +775,14 @@ def main(argv=None) -> int:
     active = [c for c in chosen if c.get("superseded_by") is None]
     passed = 0
     for case in chosen:
-        problems, contested = run_case(case, root, args.timeout)
+        problems, contested, rejected = run_case(case, root, args.timeout)
         if case.get("superseded_by") is not None:  # still run, so a dropped regression stays visible
-            disputed += [f"case {case['id']}: SUPERSEDED, now fails (not counted) {p}" for p in problems]
+            if problems and rejected:
+                failures.append(f"case {case['id']}: FAIL superseded, but the program now rejects the input this earlier "
+                                f"example shows working ({rejected}). A newer request changes outputs; rejecting an earlier "
+                                "example's input is a regression unless the newer text names that input as invalid.")
+            else:
+                disputed += [f"case {case['id']}: SUPERSEDED, now fails (not counted) {p}" for p in problems]
             continue
         failures += [f"case {case['id']}: FAIL {p}" for p in problems]
         disputed += [f"case {case['id']}: DISPUTED {p}" for p in contested]
