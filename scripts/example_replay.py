@@ -66,7 +66,8 @@ Placeholders: {root} the project root, {tmp} the case directory, {port} a free p
 step saved. `server`, when set, is started before the steps and stopped after them; `http` steps go to it.
 `save` stores values from a JSON response or stdout ({"name": "dotted.path", e.g. "items.0.id"}) for later
 steps: use it where an example reuses an id the program generated.
-A step checks only what it names: `stdout`, `stderr`, `exit` for `run`; `status`, `response` for `http`;
+A step checks only what it names: `stdout`, `stderr`, `exit` for `run` (a command without {root} is setup and
+must exit 0 unless it names `exit`); `status`, `response` for `http`;
 `files` compares files in the case directory after the earlier steps. A case must check something.
 `source` must be word for word in a saved request (whitespace may differ), and every expected value must
 appear whole in it. Setup steps that state no expected output need no source.
@@ -75,7 +76,8 @@ match (per step):
   exact    text equal (line endings and trailing whitespace ignored); the default for text
   json     JSON equal, key order ignored; the default when the expected value is JSON. JSON lines (one value
            per line) compare as a list. Numbers compare by value.
-  subset   like json, but objects may have keys the example omits
+  subset   like json, but objects may have keys the example omits (an object with a "..." key in the example
+           already allows other keys)
   excerpt  the example shows some lines of the output, in order, with "..." lines for the omitted ones; each
            shown line must appear in the output in that order (JSON lines compare as JSON, with subset objects)
   shape    text with the same shape (see vary)
@@ -87,6 +89,8 @@ vary: keys whose values the program generates (ids, timestamps, random tokens). 
   2025-10-12T14:03:22+00:00. An expected value written as <description> matches any non-empty string.
   Never put a value the request defines (a count, a sum, a status, a name) under vary.
 unordered: true compares JSON arrays as multisets, only when the request says the order is unspecified.
+superseded_by: a case stops counting only on text from a newer request that changes that example's output for
+  its input; each superseded case needs its own quote, and it still runs (a failure is shown, not counted).
 disputed: "<quote>" on a step whose example contradicts the request's own text: the quote is the contradicting
   text, word for word. A disputed step that fails is reported and does not fail the run. Not for a format,
   precision or suffix the text leaves open: there the example decides.
@@ -103,6 +107,7 @@ UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-
 PLACEHOLDER = re.compile(r"<[^<>\n]+>\Z")
 ELISION = re.compile(r"^\s*(\.\.\.|…)")
 BRACKETS_ONLY = re.compile(r"^[\s\[\]{}(),]*$")
+ELIDED_KEYS = ("...", "…")
 CHECK_KEYS = ("stdout", "stderr", "exit", "status", "response", "files")
 MISSING = object()
 
@@ -196,14 +201,17 @@ class JsonDiff:
     def _dict(self, expected, actual, path):
         if not isinstance(actual, dict):
             return f"{path}: expected an object, got {type(actual).__name__}"
+        elided = any(k in ELIDED_KEYS for k in expected)  # {"...": "..."} in an example: other keys may follow
         for k, value in expected.items():
+            if k in ELIDED_KEYS:
+                continue
             if k not in actual:
                 return f"{path}.{k}: missing"
             diff = self.first(value, actual[k], f"{path}.{k}", k)
             if diff:
                 return diff
         extra = sorted(set(actual) - set(expected))
-        return None if self.subset or not extra else f"{path}: unexpected keys {extra}"
+        return None if self.subset or elided or not extra else f"{path}: unexpected keys {extra}"
 
     def _list(self, expected, actual, path):
         if not isinstance(actual, list):
@@ -419,10 +427,34 @@ def source_problems(case: dict, requests_text: str) -> list[str]:
         missing = value_in_source(value, source, saved)
         if missing is not None:
             problems.append(f"expected {where} has {missing[:80]!r}, which its `source` does not show whole")
-    superseded = case.get("superseded_by")
-    if superseded is not None and (not collapse(superseded) or collapse(superseded) not in requests_text):
-        problems.append("`superseded_by` is not word for word in any saved request")
     return problems + step_problems(case, requests_text)
+
+
+def request_index(text: str, requests: list[tuple[str, str]]) -> int:
+    """The index of the first saved request (oldest first) that holds `text`, or -1."""
+    return next((i for i, (_, body) in enumerate(requests) if text and text in collapse(body)), -1)
+
+
+def superseding_problems(cases: list[dict], requests: list[tuple[str, str]]) -> list[str]:
+    """A case stops running only on newer request text, and one sentence does not retire several examples."""
+    problems, by_quote = [], {}
+    for case in cases:
+        if case.get("superseded_by") is None:
+            continue
+        quote = collapse(case["superseded_by"])
+        at = request_index(quote, requests)
+        if at < 0:
+            problems.append(f"case {case['id']}: `superseded_by` is not word for word in any saved request")
+        elif at <= request_index(collapse(case.get("source", "")), requests):
+            problems.append(f"case {case['id']}: `superseded_by` must quote a request newer than the one its source comes from")
+        by_quote.setdefault(quote, []).append(case["id"])
+    for quote, ids in by_quote.items():
+        if len(ids) > 1:
+            problems.append(f"cases {', '.join(ids)} stop running on one sentence {quote[:100]!r}: superseding is for newer "
+                            "text or an example that shows a different output for the same input. A new rule that makes your "
+                            "program reject an earlier example's input is a regression unless the new text names that input "
+                            "as invalid: keep the cases and fix the program, or give each case its own quote that changes it.")
+    return problems
 
 
 def fenced_blocks(requests: list[tuple[str, str]]):
@@ -572,8 +604,10 @@ def run_command(step: dict, ctx: dict, timeout: float) -> list[str]:
     except subprocess.TimeoutExpired:
         return [f"timed out after {timeout:.0f}s"]
     problems = []
-    if "exit" in step and done.returncode != step["exit"]:
-        problems.append(f"exit {done.returncode}, expected {step['exit']}; stderr: {done.stderr[-300:]!r}")
+    text = " ".join(command) if isinstance(command, list) else command
+    want = step.get("exit", None if "{root}" in text else 0)  # a setup command must succeed
+    if want is not None and done.returncode != want:
+        problems.append(f"exit {done.returncode}, expected {want}; stderr: {done.stderr[-300:]!r}")
     for stream in ("stdout", "stderr"):
         if stream in step:
             diff = compare(fill_expected(step[stream], ctx), getattr(done, stream), step)
@@ -704,6 +738,7 @@ def static_problems(data: dict, requests: list[tuple[str, str]]) -> list[str]:
     problems = []
     for case in data["cases"]:
         problems += [f"case {case['id']}: {p}" for p in source_problems(case, requests_text)]
+    problems += superseding_problems(data["cases"], requests)
     return problems + coverage_problems(requests, data["cases"], data["skipped"])
 
 
@@ -727,10 +762,14 @@ def main(argv=None) -> int:
         return 2
     requests = load_requests(root / args.requests)
     failures, disputed = static_problems(data, requests), []
-    active = [c for c in data["cases"] if c.get("superseded_by") is None and (not args.only or c["id"] in args.only)]
+    chosen = [c for c in data["cases"] if not args.only or c["id"] in args.only]
+    active = [c for c in chosen if c.get("superseded_by") is None]
     passed = 0
-    for case in active:
+    for case in chosen:
         problems, contested = run_case(case, root, args.timeout)
+        if case.get("superseded_by") is not None:  # still run, so a dropped regression stays visible
+            disputed += [f"case {case['id']}: SUPERSEDED, now fails (not counted) {p}" for p in problems]
+            continue
         failures += [f"case {case['id']}: FAIL {p}" for p in problems]
         disputed += [f"case {case['id']}: DISPUTED {p}" for p in contested]
         passed += not problems

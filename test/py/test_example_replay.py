@@ -298,8 +298,8 @@ class Honesty(unittest.TestCase):
         self.assertEqual(p.run()[0], 0)
 
     def test_superseded_case_stops_running_only_with_a_quote(self):
-        request = REQUEST + "\nFrom now on greetings say Hi instead of Hello.\n"
-        p = Project(request=request)
+        p = Project()
+        (p.root / ".claude/memory/requests/request-2.md").write_text("From now on greetings say Hi instead of Hello.\n")
         case = greet_case("2026-11-02T10:15:07Z")
         case["steps"][0]["run"] = f"{sys.executable} -c 'print(1)'"
         case["superseded_by"] = "greetings say Hi instead of Hello"
@@ -308,6 +308,47 @@ class Honesty(unittest.TestCase):
         case["superseded_by"] = "greetings changed"
         p.write_cases([case, item_case("2026-11-02T10:15:07Z"), excerpt_case(GOOD_EVENTS)], SCHEMA_SKIP)
         self.assertIn("`superseded_by` is not word for word", p.run()[1])
+
+    def test_one_sentence_cannot_retire_several_cases(self):
+        older = "```\n$ greet --name Ada\nHello, Ada\n```\n```\n$ greet --name Bob\nHello, Bob\n```\n"
+        p = Project(request=older)
+        (p.root / ".claude/memory/requests/request-2.md").write_text("The `--name` field is now required.")
+        cases = [{"id": n, "source": f"$ greet --name {n}\nHello, {n}", "superseded_by": "The `--name` field is now required.",
+                  "steps": [{"run": f"{sys.executable} -c 'print(\"Hello, {n}\")'", "stdout": f"Hello, {n}"}]} for n in ("Ada", "Bob")]
+        p.write_cases(cases)
+        code, out = p.run()
+        self.assertEqual(code, 1)
+        self.assertIn("stop running on one sentence", out)
+        cases[1].pop("superseded_by")
+        p.write_cases(cases)
+        self.assertEqual(p.run()[0], 0)
+
+    def test_superseded_case_still_runs_and_shows_failure(self):
+        p = Project(request="```\n$ greet\nHello\n```\n")
+        (p.root / ".claude/memory/requests/request-2.md").write_text("Greetings now say Hi.")
+        case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",
+                "steps": [{"run": f"{sys.executable} -c 'print(1)'", "stdout": "Hello"}]}
+        p.write_cases([case])
+        code, out = p.run()
+        self.assertEqual(code, 0, out)
+        self.assertIn("SUPERSEDED, now fails", out)
+
+    def test_superseding_quote_must_be_newer(self):
+        p = Project(request="```\n$ greet\nHello\n```\nGreetings now say Hi.\n")
+        case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",
+                "steps": [{"run": "true", "stdout": "Hello"}]}
+        p.write_cases([case])
+        self.assertIn("must quote a request newer", p.run()[1])
+
+    def test_elided_object_allows_other_keys(self):
+        self.assertIsNone(replay.compare({"a": 1, "...": "..."}, '{"a": 1, "b": 2}', {}))
+        self.assertIsNotNone(replay.compare({"a": 1}, '{"a": 1, "b": 2}', {}))
+
+    def test_failing_setup_command_fails(self):
+        p = Project(request="```\n$ x\nok\n```\n")
+        case = {"id": "s", "source": "$ x\nok", "steps": [{"run": "false"}, {"run": f"{sys.executable} -c 'print(\"ok\")'", "stdout": "ok"}]}
+        p.write_cases([case])
+        self.assertIn("exit 1, expected 0", p.run()[1])
 
     def test_duplicate_ids_are_unusable(self):
         p = Project()
