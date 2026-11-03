@@ -18,7 +18,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, hasRequestText, REQUEST_DIR, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, hasRequestText, REQUEST_DIR, requestFileLine, resolveSkillName, saveDirectRequest, saveRequest, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -216,6 +216,16 @@ test("saveRequest also keeps /specs and /ship requests, one file per command", (
 		assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), `Build it; print "Z" times.`);
 	}
 	assert.equal(saveRequest(cwd, "ship", "again", now), undefined, "an existing file is never overwritten");
+});
+
+test("saveDirectRequest keeps a typed request word for word for the example check, but not a /command", (t) => {
+	const cwd = tempDir(t, "dt-request-direct-");
+	const text = "Implement it.\n\n```\n$ tool --at now\n2025-10-12T14:03:22Z\n```\n";
+	const rel = saveDirectRequest(cwd, text, new Date("2026-11-02T22:00:00.000Z"));
+	assert.equal(rel, path.join(REQUEST_DIR, "request-2026-11-02T22-00-00-000Z.md"));
+	assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), text);
+	assert.equal(saveDirectRequest(cwd, "/plan build it"), undefined);
+	assert.equal(saveDirectRequest(cwd, "  "), undefined);
 });
 
 test("saveRequest saves nothing for other skills, empty arguments or a symlinked memory dir", (t) => {

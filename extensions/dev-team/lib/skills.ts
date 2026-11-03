@@ -228,7 +228,22 @@ export function hasRequestText(args: string): boolean {
 /** Saves a command's arguments to REQUEST_DIR and returns the path relative to cwd; undefined when not saved. Never throws. */
 export function saveRequest(cwd: string, bareName: string, args: string, now = new Date()): string | undefined {
 	if (!SAVE_REQUEST_SKILLS.has(bareName) || !hasRequestText(args)) return undefined;
-	const rel = path.join(REQUEST_DIR, `${bareName}-${now.toISOString().replace(/[:.]/g, "-")}.md`);
+	return writeRequest(cwd, bareName, args, now);
+}
+
+/**
+ * Saves a typed request that is not a command (no leading `/`) to REQUEST_DIR as `request-<time>.md`, for the
+ * example check (`DEV_TEAM_EXAMPLES=on`): `scripts/example_replay.py` checks that each example case quotes a
+ * saved request word for word. Code writes it, so the copy the check compares against is the user's own text.
+ * Returns the path relative to cwd; undefined when not saved. Never throws.
+ */
+export function saveDirectRequest(cwd: string, text: string, now = new Date()): string | undefined {
+	if (text.trimStart().startsWith("/") || !hasRequestText(text)) return undefined;
+	return writeRequest(cwd, "request", text, now);
+}
+
+function writeRequest(cwd: string, name: string, text: string, now: Date): string | undefined {
+	const rel = path.join(REQUEST_DIR, `${name}-${now.toISOString().replace(/[:.]/g, "-")}.md`);
 	let at = cwd;
 	for (const part of REQUEST_DIR.split(path.sep)) {
 		at = path.join(at, part);
@@ -240,7 +255,7 @@ export function saveRequest(cwd: string, bareName: string, args: string, now = n
 	}
 	try {
 		fs.mkdirSync(path.join(cwd, REQUEST_DIR), { recursive: true });
-		fs.writeFileSync(path.join(cwd, rel), args, { encoding: "utf-8", flag: "wx" });
+		fs.writeFileSync(path.join(cwd, rel), text, { encoding: "utf-8", flag: "wx" });
 		return rel;
 	} catch {
 		// The request still reaches the model in the command text.

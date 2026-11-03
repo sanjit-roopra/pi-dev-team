@@ -36,13 +36,14 @@ import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolv
 import { recordCost } from "./lib/metrics.ts";
 import {
 	applyReviewProfileEnv,
+	examplesEnabled,
 	farleyEnabled,
 	reviewProfileArgs,
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
 	reviewProfileNote,
 } from "./lib/review-profile.ts";
-import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
+import { commandText, discoverSkillPool, discoverInvocableSkills, discoverSkills, expandSkill, requestFileLine, resolveSkillName, saveDirectRequest, saveRequest, type SkillDef, skillIndex, unavailableSkillReason } from "./lib/skills.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE, buildSystemPrompt, forwardedArgs, registerSubagentTool, usageEntryOf } from "./lib/subagent.ts";
 import { SUBAGENT_USAGE_ENTRY } from "./lib/subagent-types.ts";
 import { confirmCaution, dialogTimeoutMs, registerAskUser, registerWebFetch } from "./lib/tools-misc.ts";
@@ -108,6 +109,7 @@ export default function devTeam(pi: ExtensionAPI) {
 	// Read before any config file's env is applied (applyEnv): only the user's own environment sets it.
 	const review = reviewProfileFromEnv(process.env);
 	const farley = farleyEnabled(process.env);
+	const examples = review.profile === "gate" && examplesEnabled(process.env);
 	let reviewWarned = false;
 	/** The gate or lean section for a package skill, or undefined (full profile: skill text unchanged). */
 	const profileNoteFor = (skill: SkillDef) =>
@@ -565,7 +567,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const tierModelsText = hasAgentPrompt
 			? ""
 			: tierModelsLine(config.models, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, (id) => !!findModel(ctx, id));
-		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief", reviewProfileGuideLine(review.profile));
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief", reviewProfileGuideLine(review.profile, examples));
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
 			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
@@ -590,6 +592,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			// A new request, not a steer or follow-up to the running one. pi runs extension /commands before
 			// this event, so text starting with "/" here is a pi skill, a template or a path.
 			if (!event.streamingBehavior) {
+				if (examples) saveDirectRequest(ctx.cwd, event.text);
 				const continuesFlow = briefGate.newRequest();
 				// A reply inside a flow keeps that task's wait mode.
 				taskWaits = wantsWait(event.text) || (continuesFlow && taskWaits);
