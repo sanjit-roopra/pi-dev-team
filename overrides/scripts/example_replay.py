@@ -398,6 +398,25 @@ def located_miss(source: str, requests_text: str) -> str:
     return f"matches for {lo} of {len(source)} characters, then the case has {source[lo:lo + 40]!r} where the request has {found}"
 
 
+KEY_VALUE = re.compile(r"^\s*-?\s*([\w.-]+)\s*[:=]\s*\S")
+
+
+def input_problems(case: dict, source: str) -> list[str]:
+    """Input lines (key: value) whose key the example shows with another value: the case changed the example's
+    input, e.g. to get past a validation the program added."""
+    problems = []
+    for name, content in (case.get("files") or {}).items():
+        for line in json_text(content).splitlines():
+            match = KEY_VALUE.match(line)
+            if not match or collapse(line) in source:
+                continue
+            key = match.group(1)
+            if re.search(rf"(?<![\w.-]){re.escape(key)}\s*[:=]", source):
+                problems.append(f"input file {name} has {collapse(line)[:80]!r}, but its `source` shows `{key}` with "
+                                "another value: never change an input the example shows")
+    return problems
+
+
 def partial_ok(case: dict, step: dict, requests_text: str) -> bool:
     if step.get("match") not in ("subset", "excerpt"):
         return True
@@ -430,7 +449,7 @@ def source_problems(case: dict, requests_text: str) -> list[str]:
         missing = value_in_source(value, source, saved)
         if missing is not None:
             problems.append(f"expected {where} has {missing[:80]!r}, which its `source` does not show whole")
-    return problems + step_problems(case, requests_text)
+    return problems + input_problems(case, source) + step_problems(case, requests_text)
 
 
 def request_index(text: str, requests: list[tuple[str, str]]) -> int:

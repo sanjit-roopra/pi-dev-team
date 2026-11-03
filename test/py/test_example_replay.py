@@ -343,6 +343,14 @@ class Honesty(unittest.TestCase):
         self.assertEqual(code, 1, out)
         self.assertIn("now rejects the input", out)
 
+    def test_changed_example_input_is_reported(self):
+        source = "jobs:\n  - id: a\n    destination: ignored://sink\n$ run\nok"
+        case = {"id": "c", "source": source, "files": {"s.yaml": "jobs:\n  - id: a\n    destination: backup://\n    extra: 1"},
+                "steps": [{"run": "true", "stdout": "ok"}]}
+        problems = replay.source_problems(case, replay.collapse(source))
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("destination: backup://", problems[0])
+
     def test_superseding_quote_must_be_newer(self):
         p = Project(request="```\n$ greet\nHello\n```\nGreetings now say Hi.\n")
         case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",
