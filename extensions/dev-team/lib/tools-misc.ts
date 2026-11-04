@@ -35,7 +35,7 @@ type Q = PlainQuestion & { multiSelect?: boolean };
 const OTHER = "Other (type an answer)";
 
 /** A human answers dialogs only in the main session with a UI (DEV_TEAM_INTERACTIVE, see index.ts applyInteractive). */
-const humanAttached = (ctx: ExtensionContext) => ctx.hasUI && process.env.DEV_TEAM_INTERACTIVE === "1";
+export const humanAttached = (ctx: ExtensionContext) => ctx.hasUI && process.env.DEV_TEAM_INTERACTIVE === "1";
 
 /** Milliseconds a question waits, or undefined: wait for the human. */
 export function dialogTimeoutMs(mode: AnswerMode, timeoutSec: number): number | undefined {

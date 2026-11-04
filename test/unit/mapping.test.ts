@@ -18,7 +18,7 @@ import {
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
 import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
-import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, hasRequestText, REQUEST_DIR, requestFileLine, resolveSkillName, saveDirectRequest, saveRequest, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
+import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, hasRequestText, REQUEST_DIR, requestFileLine, resolveSkillName, saveApprovedExamples, saveDirectRequest, saveRequest, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
 
@@ -226,6 +226,27 @@ test("saveDirectRequest keeps a typed request word for word for the example chec
 	assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), text);
 	assert.equal(saveDirectRequest(cwd, "/plan build it"), undefined);
 	assert.equal(saveDirectRequest(cwd, "  "), undefined);
+});
+
+test("saveApprovedExamples keeps approved examples word for word as approved-<time>.md and never overwrites", (t) => {
+	const cwd = tempDir(t, "dt-request-approved-");
+	const text = "```\n$ greet --name Ada\nHello, Ada\n```\n";
+	const now = new Date("2026-11-04T09:30:00.000Z");
+	const rel = saveApprovedExamples(cwd, text, now);
+	assert.equal(rel, path.join(REQUEST_DIR, "approved-2026-11-04T09-30-00-000Z.md"));
+	assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), text);
+	assert.equal(saveApprovedExamples(cwd, "other", now), undefined, "an existing file is never overwritten");
+	assert.equal(fs.readFileSync(path.join(cwd, rel!), "utf8"), text);
+	assert.equal(saveApprovedExamples(cwd, " \n "), undefined);
+});
+
+test("saveApprovedExamples saves nothing into a symlinked requests dir", (t) => {
+	const cwd = tempDir(t, "dt-request-approved-link-");
+	const elsewhere = tempDir(t, "dt-request-approved-target-");
+	fs.mkdirSync(path.join(cwd, ".claude", "memory"), { recursive: true });
+	fs.symlinkSync(elsewhere, path.join(cwd, REQUEST_DIR));
+	assert.equal(saveApprovedExamples(cwd, "Hello"), undefined);
+	assert.deepEqual(fs.readdirSync(elsewhere), []);
 });
 
 test("saveRequest saves nothing for other skills, empty arguments or a symlinked memory dir", (t) => {

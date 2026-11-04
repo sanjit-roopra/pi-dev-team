@@ -317,10 +317,21 @@ def json_text(value) -> str:
 # --- Requests: source and coverage checks --------------------------------------------
 
 
+REQUEST_STAMP = re.compile(r"^[a-z]+-(\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z)\.md$")
+
+
+def request_order(path: Path) -> tuple[str, str]:
+    """Oldest first by the time in the saved name (`<kind>-<ISO time>.md`), whatever the kind: `approved-`,
+    `plan-`, `request-` and `specs-` files interleave by time. A name without a time sorts first, by name."""
+    match = REQUEST_STAMP.match(path.name)
+    return (match.group(1) if match else "", path.name)
+
+
 def load_requests(directory: Path) -> list[tuple[str, str]]:
+    """The saved requests, oldest first (`request_order`), as (file name, text)."""
     if not directory.is_dir():
         return []
-    files = sorted(p for p in directory.iterdir() if p.is_file())
+    files = sorted((p for p in directory.iterdir() if p.is_file()), key=request_order)
     return [(p.name, p.read_text(encoding="utf-8", errors="replace")) for p in files]
 
 

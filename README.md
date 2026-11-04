@@ -21,9 +21,10 @@ It is a port of Bryan Finster's dev-team plugin for Claude Code ([bdfinst/agenti
 | [Node.js](https://nodejs.org) | 22.19+ | pi does not start. |
 | [pi](https://pi.dev) | 1.0+ | The package does not load. |
 | Git | recent | Most commands do not work. |
-| Python | 3.10+ | The guard hooks are off. pi shows a warning. |
+| Python | 3.10+ | The guard hooks are off. pi shows a warning. The example check cannot run. |
 | [GitHub CLI](https://cli.github.com) (`gh`) | recent | `/pr` and `/ship` cannot open a pull request. |
 | `jq` | any | Some quality gates do not run. |
+| [`lizard`](https://github.com/terryyin/lizard) | any | The gate profile's quality bar installs it into the project. |
 
 A guard hook is a small script that runs around a tool call. It can stop an unsafe action, for example a pull request without a code review.
 
@@ -40,7 +41,15 @@ Each command stops and asks you before it continues. `/ship <task>` runs all fou
 
 A plain request without a command first gets a short brief: what the team builds, when it is done, what it assumes. A bigger task waits for your ok, then runs `/ship`.
 
-Each question shows its time left. Press `w` to make it wait, or run `/dev-team wait` for the session. A request with "grill me" waits too.
+### Your request is the spec
+
+When you type a task after `/specs`, `/plan` or `/ship`, the extension saves your text word for word in `.claude/memory/requests/`. The plan, the build and the reviewers check the work against that file, not against a summary the model wrote. A point your request leaves open becomes an open question for you, not a silent decision.
+
+Only an issue number, a URL or a file path (`/ship 123`, `/specs docs/spec.md`) is not saved: then the issue or the document is the request.
+
+### Questions
+
+Each question shows its time left. Press `w` to make it wait, or run `/dev-team wait` for the session. `/dev-team timeout` switches back. A request with "grill me" waits too.
 
 ### Phone message when the team goes on alone (optional)
 
@@ -59,7 +68,11 @@ Other commands:
 - `/triage <bug>`: finds the root cause and writes a fix plan.
 - `/fix <bug>`: triage, prove the bug, fix it with tests, open a pull request.
 - `/continue`: continues your last session's work.
-- `/help`: the main commands. `/help --all`: all commands.
+- `/spend`: what your sessions cost (see [below](#see-where-the-spend-went)).
+- `/dev-team`: the package status. `/dev-team models`, `hooks`, `doctor`, `wait`, `timeout`.
+- `/help`: the main commands. `/help --all`: all commands. Neither lists `/spend` or `/dev-team`.
+
+When `gh` is logged in, `/pr` also files the steps it skipped and the problems it noticed but did not fix as one GitHub issue, and links it in the pull request.
 
 ## Choose the models
 
@@ -81,6 +94,7 @@ A `/build` step that fails twice retries once on a stronger tier (not with `inhe
 The agents can do what you can do in a terminal: change files, run commands, and make many model calls (up to 6 agents at once).
 
 - The guard hooks reduce the risk. For example, they block `gh pr create` until a code review passes. They need Python.
+- When you are at the terminal, pi asks before it runs a command the destructive guard marks `CAUTION`. No answer in time means no. Without a human, pi only shows the warning.
 - pi shows each running agent: its time, cost, current command and its place in the queue.
 - pi's footer shows the session cost in USD, agents included. With GitHub Copilot, the status line also shows the session's AI credits.
 
@@ -116,8 +130,6 @@ The month starts on the 1st at 00:00 UTC.
 
 ## Review profile: gate by default, lean and full on request
 
-> **Changed:** `gate` is now the default review profile. Before, the default was `lean`. To keep the old behavior, start pi with `DEV_TEAM_REVIEW=lean`.
-
 By default the team runs the gate review profile: a code-quality bar in every session, and little review process. To run more review, start pi with another profile:
 
 ```bash
@@ -129,18 +141,65 @@ DEV_TEAM_REVIEW=full pi   # every review step of the upstream plugin
 |---|---|---|
 | `DEV_TEAM_REVIEW` | `gate` (default), `lean`, `full` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
 | `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `gate` and `lean`: run the Farley test score at the end of `/build` |
+| `DEV_TEAM_EXAMPLES` | `off` (default), `on` | Under `gate` only: run the [example check](#example-check-optional) |
 | `DEV_TEAM_MAX_PARALLEL_AGENTS` | a number, 1 or more | Max agents at once; wins over every config file |
 
 ### Gate profile (default)
 
 - A quality bar in every session, not only in `/build`: each function has a cyclomatic complexity of at most 10, at most 60 lines and at most 5 parameters. The agent runs the linter and `lizard -w -C 10 -L 60 -a 5`, and fixes every finding before it reports.
 - Where the spec is silent, the agent follows the established standard for the interface: JSON Pointer error locations, RFC 9457 error bodies, RFC 9110 status codes, ISO 8601 times. Where the spec is explicit, the spec wins. **New and experimental:** its first benchmark test showed no effect yet.
-- `/plan`: no plan critics.
+- `/plan`: no plan critics. Gherkin scenarios only for behavior the request states or shows. Short plans.
+- `/build`: one implementer per slice. One test per scenario, plus one per request rule no scenario covers.
 - `/build`: spec-compliance and correctness review at each slice. The simplify lens and, when selected, security review run at the last slice. No other lens runs.
-- Agents write no report files. Every test command runs under `timeout 600`.
+- `/build`: `lizard` (and `jscpd`, when installed) runs at every checkpoint. No step 6 backstop review, and no Farley score unless `DEV_TEAM_FARLEY=on`.
+- Reviews fix only `error` findings, in one round. `/code-review` still runs the full panel.
+- `/ship` does not run a second review panel over files the build already reviewed.
+- Agents get short tasks and write no report files. Every test command runs under `timeout 600`.
 - With no human attached, `/build` skips the Feedback & Learning step.
 
 Why gate: on SlopCodeBench, plain pi with only this quality bar matched the lean profile on hidden tests and code shape (no function above complexity 10), at a quarter to half of the time and cost. Plan critics and the larger review panels changed no test result.
+
+### Example check (optional)
+
+The example check makes the examples in your request the acceptance tests. It is off by default and works only with the gate profile:
+
+```bash
+DEV_TEAM_EXAMPLES=on pi
+```
+
+What it does:
+
+- The extension saves each request you type (not a `/command`) word for word in `.claude/memory/requests/`, as `/specs`, `/plan` and `/ship` already do.
+- The agent copies each input-to-output example of your request into `.dev-team/examples.json`.
+- Before it reports the work done, it runs `scripts/example_replay.py` until it exits 0. The script runs each example against the program and compares the output.
+- Each case must quote a saved request word for word, and each expected value must appear in that quote. So the agent cannot write its own expected output.
+- Cases stay across requests. A later change that breaks an earlier example fails the check.
+- Where your request shows an example of a format, the example decides, even against an interface standard.
+
+When it helps: requests with concrete examples, for example a command and its exact output, or an HTTP call and its response.
+
+When it does nothing: a vague request has no examples, so the check runs 0 cases and passes. Examples written only in prose are not turned into cases. Behavior the request neither states nor shows is not checked.
+
+Results: on 52 SlopCodeBench checkpoints, hidden tests passed 77.3% with the check and 70.3% without, at 58% of the cost. That was an earlier version of the check (`bbc791c`). The later hardening is not measured yet, so the check stays opt-in.
+
+`.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which `/setup` keeps out of Git (`.claude/memory/`). Commit both or ignore both: cases without their requests fail the check.
+
+#### Approved examples in `/specs`
+
+With the check on, `/specs` adds one step after its questions. For each acceptance criterion that your request shows no example for, the agent proposes small, concrete examples: an input and its exact output. pi shows them in a dialog, "Are these the right examples?":
+
+| You choose | What happens |
+|---|---|
+| Approve | The extension saves the text you saw, unchanged, as `.claude/memory/requests/approved-<time>.md`. The check then accepts these examples. |
+| Edit them first | An editor opens. The extension saves your edited text instead. |
+| Reject | Nothing is saved. The agent asks what is wrong, or proposes other examples. |
+| No answer in time, `Esc`, an empty editor, or no human | Nothing is saved. The spec lists the examples under "Decide these". |
+
+- Only your own answer saves. The extension writes the file, not the agent. Agent writes to `.claude/memory/requests/` are blocked. The block is a scan of the command, not a sandbox: a program that builds the path itself gets past it.
+- One dialog shows at most 40 lines, so you can read it all.
+- `w` and `/dev-team wait` work here as for every question. A timeout sends the phone message, if you set one up.
+
+Weak spot: if you approve without reading, the agent grades itself again. Check the exact outputs: formats, precision, suffixes, error text. Those are what the tests compare.
 
 ### Lean profile (`DEV_TEAM_REVIEW=lean`)
 
@@ -156,7 +215,7 @@ What `lean` changes, compared with `full`:
 
 Spec-compliance review, structure review, lint, type-check and the complexity check still run at every checkpoint. Their errors are still fixed. Lean has no session-wide quality bar.
 
-Only your shell can set these. A config file's `env` cannot, so a cloned repository cannot change your review profile. An unknown `DEV_TEAM_REVIEW` value means `gate`, with a warning. Details and measured effects: [PORTING.md](PORTING.md).
+Only your shell can set `DEV_TEAM_REVIEW`, `DEV_TEAM_FARLEY` and `DEV_TEAM_EXAMPLES`. A config file's `env` cannot, so a cloned repository cannot change your review profile. An unknown `DEV_TEAM_REVIEW` value means `gate`, with a warning. Details and measured effects: [PORTING.md](PORTING.md).
 
 Most review lenses and plan critics think at `medium` effort (all profiles). A dispatch can lower an agent's effort, but never raise it.
 
@@ -195,8 +254,8 @@ All settings, with defaults:
   "readDedup": true,           // re-reading an unchanged file gives a note
   "claudeShim": true,          // scripts' `claude -p` runs pi
   "allowPiSubagents": false,   // true lets the model use pi-subagents' tools (user file only)
-  "askTimeoutSec": 120,        // questions wait this long, then go on; 0 = never ask
-  "answerMode": "timeout",     // timeout, or wait: questions wait for you
+  "askTimeoutSec": 120,        // questions wait this long, then go on; 0 = never ask (user file only)
+  "answerMode": "timeout",     // timeout, or wait: questions wait for you (user file only)
   "routing": "brief",          // brief or off: a brief before a plain request changes files
   "notify": "",                // "ntfy:<name>": phone message (see above; user file only)
   "env": {},                   // DEV_TEAM_* settings, for example "DEV_TEAM_MAX_PARALLEL_BUILDS": "2"
@@ -204,7 +263,7 @@ All settings, with defaults:
 }
 ```
 
-The process environment comes last: `DEV_TEAM_MAX_PARALLEL_AGENTS` overrides `maxParallelAgents`, and `DEV_TEAM_REVIEW` and `DEV_TEAM_FARLEY` are read only from there (see [Review profile](#review-profile-gate-by-default-lean-and-full-on-request)).
+The process environment comes last: `DEV_TEAM_MAX_PARALLEL_AGENTS` overrides `maxParallelAgents`, and `DEV_TEAM_REVIEW`, `DEV_TEAM_FARLEY` and `DEV_TEAM_EXAMPLES` are read only from there (see [Review profile](#review-profile-gate-by-default-lean-and-full-on-request)).
 
 A project file cannot change `hooks`, so a cloned repository cannot turn off your guards. `/dev-team hooks` shows which guards are on.
 

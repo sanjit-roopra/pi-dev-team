@@ -1,0 +1,10 @@
+## Example check: approved examples (read first; `DEV_TEAM_EXAMPLES=on`)
+
+The example check runs the request's examples as acceptance tests, and a case counts only when its `source` is word for word in a saved request under `.claude/memory/requests/`. This spec is your text, so its examples do not count; examples the human approves do. This adds one step after Step C (grilling), before you finalize the acceptance criteria; every other step runs as written.
+
+- **Propose examples.** For each acceptance criterion that the saved request shows no example for, write concrete examples of its observable behavior: an input (a command, a call, a file) and its exact output, each in a fenced block. Keep each example small, with real values, not placeholders.
+- **Ask the human.** Call `dev_team_approve_examples` with `criteria` (one line) and `examples` (the fenced blocks, exactly as they go in the spec), one call per round of examples, at most 40 lines each. Ask the next round only after the answer.
+- **Log the answer.** Add a `## Decision Log` row with the tool's `source`: `user` (approved, edited or rejected), `assumed (timeout)`, `assumed (no human)` or `assumed (skipped)`. Only an answer with source `user` and a saved `path` makes the examples settled: copy the saved text (the human's edited version when they edited it) into the acceptance criteria character for character, and add a metadata line `**Approved examples**: <path>` for each saved file. An example nobody approved stays in the spec as an assumption under `## Decide these`, never as a case source.
+- **On a rejection**, ask what is wrong or propose different examples; do not save or reuse the rejected ones.
+- **Never write `.claude/memory/requests/` yourself**, and never make a case `source` from the spec or from an example nobody approved. dev-team code writes that folder and blocks other writes there.
+- **Weak spot:** a human who approves without reading turns this back into you grading yourself. Keep each round short enough to read, and show the exact outputs (formats, precision, suffixes, error text) that the tests will compare.

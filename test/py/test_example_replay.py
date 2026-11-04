@@ -351,6 +351,30 @@ class Honesty(unittest.TestCase):
         self.assertEqual(len(problems), 1, problems)
         self.assertIn("destination: backup://", problems[0])
 
+    def test_requests_are_ordered_by_their_saved_time_not_their_kind(self):
+        d = Path(tempfile.mkdtemp(prefix="dt-requests-"))
+        for name in ("request-2026-11-04T10-00-00-000Z.md", "approved-2026-11-04T09-00-00-000Z.md",
+                     "plan-2026-11-04T11-00-00-000Z.md", "approved-2026-11-04T12-00-00-000Z.md", "notes.md"):
+            (d / name).write_text(name)
+        self.assertEqual([n for n, _ in replay.load_requests(d)], [
+            "notes.md", "approved-2026-11-04T09-00-00-000Z.md", "request-2026-11-04T10-00-00-000Z.md",
+            "plan-2026-11-04T11-00-00-000Z.md", "approved-2026-11-04T12-00-00-000Z.md"])
+
+    def test_newer_approved_examples_may_supersede_an_older_request(self):
+        p = Project(request="no examples here")
+        requests = p.root / ".claude/memory/requests"
+        (requests / "request-1.md").unlink()
+        (requests / "request-2026-11-04T10-00-00-000Z.md").write_text("```\n$ greet\nHello\n```\n")
+        (requests / "approved-2026-11-04T11-00-00-000Z.md").write_text("```\n$ greet\nHi\n```\n")
+        old = {"id": "old", "source": "$ greet\nHello", "superseded_by": "$ greet\nHi",
+               "steps": [{"run": f"{sys.executable} -c 'print(\"Hi\")'", "stdout": "Hello"}]}
+        new = {"id": "new", "source": "$ greet\nHi", "steps": [{"run": f"{sys.executable} -c 'print(\"Hi\")'", "stdout": "Hi"}]}
+        p.write_cases([old, new])
+        code, out = p.run()
+        self.assertEqual(code, 0, out)
+        (requests / "approved-2026-11-04T11-00-00-000Z.md").rename(requests / "approved-2026-11-04T09-00-00-000Z.md")
+        self.assertIn("must quote a request newer", p.run()[1])
+
     def test_superseding_quote_must_be_newer(self):
         p = Project(request="```\n$ greet\nHello\n```\nGreetings now say Hi.\n")
         case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",

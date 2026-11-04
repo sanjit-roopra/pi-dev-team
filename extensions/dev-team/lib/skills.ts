@@ -242,6 +242,17 @@ export function saveDirectRequest(cwd: string, text: string, now = new Date()): 
 	return writeRequest(cwd, "request", text, now);
 }
 
+/**
+ * Saves examples the human approved (or edited) in `dev_team_approve_examples` to REQUEST_DIR as
+ * `approved-<time>.md`, raw and with no header, so a case `source` quoting them matches character for
+ * character and their fenced blocks fall under example_replay.py's coverage check. Only that tool calls
+ * this, after a real human answer. Returns the path relative to cwd; undefined when not saved. Never throws.
+ */
+export function saveApprovedExamples(cwd: string, text: string, now = new Date()): string | undefined {
+	if (!text.trim()) return undefined;
+	return writeRequest(cwd, "approved", text, now);
+}
+
 function writeRequest(cwd: string, name: string, text: string, now: Date): string | undefined {
 	const rel = path.join(REQUEST_DIR, `${name}-${now.toISOString().replace(/[:.]/g, "-")}.md`);
 	let at = cwd;

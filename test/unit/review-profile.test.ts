@@ -8,6 +8,7 @@ import {
 	applyReviewProfileEnv,
 	EXAMPLE_BAR,
 	examplesEnabled,
+	examplesSpecsNote,
 	farleyEnabled,
 	insertReviewProfileNote,
 	LEAN_SKILLS,
@@ -239,4 +240,15 @@ test("example check: opt-in with DEV_TEAM_EXAMPLES=on, only in the gate guide li
 	assert.ok(!reviewProfileGuideLine("lean", true).includes(EXAMPLE_BAR));
 	assert.equal(reviewProfileGuideLine("full", true), "");
 	assert.match(EXAMPLE_BAR, /scripts\/example_replay\.py/);
+	assert.match(EXAMPLE_BAR, /dev_team_approve_examples/);
+	assert.doesNotMatch(reviewProfileGuideLine("gate"), /dev_team_approve_examples/);
+});
+
+test("example check: /specs gets the approved-examples step, other skills nothing", () => {
+	const note = examplesSpecsNote(ROOT, "specs") ?? "";
+	assert.match(note, /^## Example check: approved examples/);
+	assert.match(note, /dev_team_approve_examples/);
+	assert.match(note, /\*\*Approved examples\*\*: <path>/);
+	assert.match(note, /approves without reading/);
+	assert.equal(examplesSpecsNote(ROOT, "plan"), undefined);
 });

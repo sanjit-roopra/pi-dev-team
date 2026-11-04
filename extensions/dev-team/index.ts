@@ -12,6 +12,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking, tierModelsLine } from "./lib/agents.ts";
+import { registerApproveExamples } from "./lib/approve-examples.ts";
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
 import { isModelVisibleRead, ReadTracker } from "./lib/read-dedup.ts";
 import {
@@ -37,6 +38,7 @@ import { recordCost } from "./lib/metrics.ts";
 import {
 	applyReviewProfileEnv,
 	examplesEnabled,
+	examplesSpecsNote,
 	farleyEnabled,
 	reviewProfileArgs,
 	reviewProfileFromEnv,
@@ -64,6 +66,7 @@ import {
 } from "./lib/brief.ts";
 import { createPlainGate, lintQuestion, type PlainQuestion, questionStyleGuide } from "./lib/plain-questions.ts";
 import { pickOne, typeAnswer, type Waiter } from "./lib/question-dialog.ts";
+import { REQUEST_DIR_BLOCK, writesRequestDir } from "./lib/request-guard.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { piSubagentsBlockReason, piSubagentsLoadsLater, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
 import { describeRunaway, ToolArgsWatchdog } from "./lib/tool-args-watchdog.ts";
@@ -111,9 +114,12 @@ export default function devTeam(pi: ExtensionAPI) {
 	const farley = farleyEnabled(process.env);
 	const examples = review.profile === "gate" && examplesEnabled(process.env);
 	let reviewWarned = false;
-	/** The gate or lean section for a package skill, or undefined (full profile: skill text unchanged). */
-	const profileNoteFor = (skill: SkillDef) =>
-		skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name, farley) : undefined;
+	/** The gate or lean section for a package skill, plus /specs' approved-examples step under the example check; undefined: skill text unchanged. */
+	const profileNoteFor = (skill: SkillDef) => {
+		if (skill.source !== "package") return undefined;
+		const notes = [reviewProfileNote(packageRoot, review.profile, skill.name, farley), examples ? examplesSpecsNote(packageRoot, skill.name) : undefined];
+		return notes.filter(Boolean).join("\n\n") || undefined;
+	};
 	/** The args a package skill expands with (gate and lean /build get --backstop-review=skip); full: unchanged. */
 	const profileArgsFor = (skill: SkillDef, args: string) => (skill.source === "package" ? reviewProfileArgs(review.profile, skill.name, args) : args);
 	// Project config is read again at session start, once pi's trust decision is known.
@@ -241,6 +247,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	registerAskUser(pi, getConfig, { answerMode, onAway });
 	registerWebFetch(pi);
 	registerBriefTool(pi, { gate: briefGate, approveFeature, onAway, sessionId: (ctx) => ctx.sessionManager.getSessionId() });
+	// The example check's approved examples: only a human answer in this tool adds a saved request.
+	if (examples) registerApproveExamples(pi, { getConfig, answerMode, onAway });
 
 	/** Whether a dev_team_subagent call dispatches an agent that can change files (no tools: list = all tools). */
 	function dispatchWrites(input: Record<string, unknown>, ctx: ExtensionContext): boolean {
@@ -605,6 +613,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
 		if (blockedForeignTools().has(event.toolName)) return { block: true, reason: piSubagentsBlockReason(event.toolName) };
 		const input = event.input as Record<string, unknown>;
+		// Under the example check, saved requests are the human's words: only dev-team code writes them.
+		if (examples && writesRequestDir(event.toolName, input, ctx.cwd)) return { block: true, reason: REQUEST_DIR_BLOCK };
 		const routing = !isSubagent && config.routing === "brief";
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			if (routing && !briefGate.open && dispatchWrites(input, ctx)) return { block: true, reason: briefGate.blockReason() };
