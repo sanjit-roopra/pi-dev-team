@@ -17,33 +17,33 @@ const bash = (command: string, cwd: string) => writesRequestDir("bash", { comman
 
 test("writesRequestDir blocks write and edit into the saved requests, also through a symlink or another case", (t) => {
 	const cwd = project(t);
-	assert.equal(writesRequestDir("write", { path: ".claude/memory/requests/request-x.md", content: "x" }, cwd), true);
+	assert.equal(writesRequestDir("write", { path: ".dev-team/requests/request-x.md", content: "x" }, cwd), true);
 	assert.equal(writesRequestDir("edit", { path: path.join(cwd, REQUEST_DIR, "approved-1.md") }, cwd), true);
-	assert.equal(writesRequestDir("write", { file_path: "./.claude/memory/../memory/requests/a.md" }, cwd), true);
+	assert.equal(writesRequestDir("write", { file_path: "./.dev-team/../.dev-team/requests/a.md" }, cwd), true);
 	fs.symlinkSync(path.join(cwd, REQUEST_DIR), path.join(cwd, "link"));
 	assert.equal(writesRequestDir("write", { path: "link/a.md" }, cwd), true, "a symlink into the folder");
-	if (process.platform === "darwin") assert.equal(writesRequestDir("write", { path: ".claude/Memory/Requests/a.md" }, cwd), true);
+	if (process.platform === "darwin") assert.equal(writesRequestDir("write", { path: ".Dev-Team/Requests/a.md" }, cwd), true);
 	assert.equal(writesRequestDir("write", { path: ".claude/memory/plans/p.md" }, cwd), false);
 	assert.equal(writesRequestDir("write", { path: "src/requests.ts" }, cwd), false);
-	assert.equal(writesRequestDir("read", { path: ".claude/memory/requests/a.md" }, cwd), false);
+	assert.equal(writesRequestDir("read", { path: ".dev-team/requests/a.md" }, cwd), false);
 });
 
 test("writesRequestDir blocks bash redirects, cp, mv, tee, ln, rm and sed -i into the saved requests", (t) => {
 	const cwd = project(t);
 	for (const command of [
-		"echo hi > .claude/memory/requests/request-1.md",
-		"printf x >> .claude/memory/requests/a.md",
-		"cat <<'EOF' > .claude/memory/requests/a.md\n$ greet\nHello\nEOF",
-		"cp /tmp/forged.md .claude/memory/requests/",
-		"mv .claude/memory/requests/a.md /tmp/a.md",
-		"echo x | tee .claude/memory/requests/a.md",
-		"ln -s /tmp/x .claude/memory/requests",
-		"rm -rf .claude/memory",
-		"rm -rf .claude",
-		"sed -i '' 's/Hello/Hi/' .claude/memory/requests/a.md",
-		"timeout 60 touch .claude/memory/requests/a.md",
-		"echo $(echo x > .claude/memory/requests/a.md)",
-		"echo x >| .claude/memory/requests/a.md",
+		"echo hi > .dev-team/requests/request-1.md",
+		"printf x >> .dev-team/requests/a.md",
+		"cat <<'EOF' > .dev-team/requests/a.md\n$ greet\nHello\nEOF",
+		"cp /tmp/forged.md .dev-team/requests/",
+		"mv .dev-team/requests/a.md /tmp/a.md",
+		"echo x | tee .dev-team/requests/a.md",
+		"ln -s /tmp/x .dev-team/requests",
+		"rm -rf .dev-team",
+		"mv .dev-team /tmp/old",
+		"sed -i '' 's/Hello/Hi/' .dev-team/requests/a.md",
+		"timeout 60 touch .dev-team/requests/a.md",
+		"echo $(echo x > .dev-team/requests/a.md)",
+		"echo x >| .dev-team/requests/a.md",
 	]) {
 		assert.equal(bash(command, cwd), true, command);
 	}
@@ -52,28 +52,28 @@ test("writesRequestDir blocks bash redirects, cp, mv, tee, ln, rm and sed -i int
 test("writesRequestDir blocks a computed target or a program run on a line that names the folder", (t) => {
 	const cwd = project(t);
 	for (const command of [
-		'd=.claude/memory/requests; echo x > "$d/a.md"',
-		"python3 -c \"open('.claude/memory/requests/a.md', 'w').write('x')\"",
-		"python3 - <<'EOF'\nimport os\nopen(os.path.join('.claude', 'memory', 'requests', 'a.md'), 'w')\nEOF",
-		"dd if=/tmp/x of=.claude/memory/requests/a.md",
-		"git checkout -- .claude/memory/requests",
-		"cp -t .claude/memory/requests /tmp/forged.md",
+		'd=.dev-team/requests; echo x > "$d/a.md"',
+		"python3 -c \"open('.dev-team/requests/a.md', 'w').write('x')\"",
+		"python3 - <<'EOF'\nimport os\nopen(os.path.join('.dev-team', 'requests', 'a.md'), 'w')\nEOF",
+		"dd if=/tmp/x of=.dev-team/requests/a.md",
+		"git checkout -- .dev-team/requests",
+		"cp -t .dev-team/requests /tmp/forged.md",
 	]) {
 		assert.equal(bash(command, cwd), true, command);
 	}
-	assert.equal(writesRequestDir("powershell", { command: "Set-Content .claude\\memory\\requests\\a.md x" }, cwd), true);
+	assert.equal(writesRequestDir("powershell", { command: "Set-Content .dev-team\\requests\\a.md x" }, cwd), true);
 	assert.equal(writesRequestDir("powershell", { command: "Get-ChildItem src" }, cwd), false);
 });
 
 test("writesRequestDir lets reads of the saved requests and the example check run", (t) => {
 	const cwd = project(t);
 	for (const command of [
-		"cat .claude/memory/requests/*.md",
-		"ls -la .claude/memory/requests/",
-		"grep -n greet .claude/memory/requests/request-1.md | head -5",
-		"python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --requests .claude/memory/requests",
-		"timeout 600 python3 /pkg/scripts/example_replay.py --requests .claude/memory/requests > /tmp/replay.log",
-		"cat .claude/memory/requests/request-1.md > /tmp/copy.md",
+		"cat .dev-team/requests/*.md",
+		"ls -la .dev-team/requests/",
+		"grep -n greet .dev-team/requests/request-1.md | head -5",
+		"python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --requests .dev-team/requests",
+		"timeout 600 python3 /pkg/scripts/example_replay.py --requests .dev-team/requests > /tmp/replay.log",
+		"cat .dev-team/requests/request-1.md > /tmp/copy.md",
 		"echo x > .claude/memory/plans/p.md",
 		"npm test",
 	]) {
@@ -84,38 +84,143 @@ test("writesRequestDir lets reads of the saved requests and the example check ru
 test("writesRequestDir follows cd and pushd: a relative write after a cd into the folder or above it is blocked", (t) => {
 	const cwd = project(t);
 	for (const command of [
-		"cd .claude/memory/requests && echo hi > approved-2026-01-01T00-00-00-000Z.md",
-		"cd .claude/memory/requests; printf x >> request-x.md",
-		"cd .claude/memory && echo x > requests/a.md",
-		"cd .claude && cd memory && echo x > requests/a.md",
-		"cd .claude/memory/requests && grep x a > b.md",
-		"cd .claude && printf x > memory/requests/a.md",
-		"cd .claude/memory/requests; cat /tmp/f > approved-1.md",
-		"cd .claude/memory && cp /tmp/f requests/",
-		"cd .claude/memory && rm -rf requests",
-		"cd .claude/memory && mv requests old",
-		"cd .claude/memory && python3 -c \"open('requests/a.md', 'w')\"",
-		"cd .claude/memory && cat > req$(echo uests)/a.md",
-		"pushd .claude/memory && echo x > requests/a.md",
+		"cd .dev-team/requests && echo hi > approved-2026-01-01T00-00-00-000Z.md",
+		"cd .dev-team/requests; printf x >> request-x.md",
+		"cd .dev-team && echo x > requests/a.md",
+		"cd src && cd ../.dev-team && echo x > requests/a.md",
+		"cd .dev-team/requests && grep x a > b.md",
+		"cd .dev-team && printf x > requests/a.md",
+		"cd .dev-team/requests; cat /tmp/f > approved-1.md",
+		"cd .dev-team && cp /tmp/f requests/",
+		"cd .dev-team && rm -rf requests",
+		"cd .dev-team && mv requests old",
+		"cd .dev-team && python3 -c \"open('requests/a.md', 'w')\"",
+		"cd .dev-team && cat > req$(echo uests)/a.md",
+		"pushd .dev-team && echo x > requests/a.md",
 		'cd "$D" && echo x > memory/requests/a.md',
 	]) {
 		assert.equal(bash(command, cwd), true, command);
 	}
-	for (const command of ["cd .claude/memory/requests && cat a.md", "cd src && npm test", "cd /tmp && echo x > a.md"]) {
+	for (const command of ["cd .dev-team/requests && cat a.md", "cd src && npm test", "cd /tmp && echo x > a.md"]) {
 		assert.equal(bash(command, cwd), false, command);
 	}
 });
 
-test("writesRequestDir blocks a computed target on a line that mentions .claude, and python -c with a trailing example_replay.py", (t) => {
+test("writesRequestDir blocks a computed target on a line that may spell the folder in parts, and python -c with a trailing example_replay.py", (t) => {
 	const cwd = project(t);
 	for (const command of [
-		"cat > .claude/memory/req$(echo uests)/a.md",
-		"d=.claude/memory/req; cp x ${d}uests/a.md",
-		'echo hi > "$(printf .claude/memory/req)uests/a.md"',
-		"python3 -c \"open('.claude/memory/requests/a.md','w').write('x')\" example_replay.py",
-		"python3 -m example_replay .claude/memory/requests example_replay.py",
+		"cat > .dev-team/req$(echo uests)/a.md",
+		"d=.dev-team/req; cp x ${d}uests/a.md",
+		'echo hi > "$(printf .dev-team/req)uests/a.md"',
+		'd=.dev-team; echo x > "$d/requests/a.md"',
+		"python3 -c \"open('.dev-team/requests/a.md','w').write('x')\" example_replay.py",
+		"python3 -m example_replay .dev-team/requests example_replay.py",
 	]) {
 		assert.equal(bash(command, cwd), true, command);
 	}
-	assert.equal(bash("python3 -u scripts/example_replay.py --requests .claude/memory/requests", cwd), false);
+	assert.equal(bash("python3 -u scripts/example_replay.py --requests .dev-team/requests", cwd), false);
 });
+
+test("writesRequestDir blocks a statement that names the folder and runs anything but a known read", (t) => {
+	const cwd = project(t);
+	for (const command of [
+		"find .dev-team/requests -name '*.md' -delete",
+		"find .dev-team/requests -exec cp /tmp/f {} \\;",
+		"ls .dev-team/requests | xargs rm",
+		"awk '{print > \".dev-team/requests/a.md\"}' /tmp/f",
+		"sed -n 'w .dev-team/requests/a.md' /tmp/f",
+		"sort -o .dev-team/requests/a.md /tmp/f",
+		"uniq /tmp/f .dev-team/requests/a.md",
+		"mv -t .dev-team/requests /tmp/forged.md",
+		"node -e \"require('fs').writeFileSync('.dev-team/requests/a.md','x')\"",
+		"bash -c 'echo x > .dev-team/requests/a.md'",
+		"tar -xf /tmp/f.tar -C .dev-team/requests",
+		"git restore .dev-team/requests",
+		"curl -o .dev-team/requests/a.md http://x",
+		"uv run python -c \"open('.dev-team/requests/a.md','w')\"",
+	]) {
+		assert.equal(bash(command, cwd), true, command);
+	}
+});
+
+test("writesRequestDir lets ordinary reads that name the folder run (v5 smoke false positives)", (t) => {
+	const cwd = project(t);
+	for (const command of [
+		"find .dev-team/requests -type f -printf '%T@ %p\\n' | sort -n",
+		"ls -la .dev-team/requests && rg -n 'Example' .dev-team/requests && git status --short",
+		"git log --oneline -- .dev-team/requests",
+		"git diff .dev-team/requests",
+		"sed -n '1,40p' .dev-team/requests/request-1.md",
+		"awk '/^```/{n++} END {print n}' .dev-team/requests/request-1.md",
+		"sort .dev-team/requests/*.md | uniq -c | head",
+		"cp .dev-team/requests/request-1.md /tmp/copy.md",
+		"mkdir -p .dev-team && cat .dev-team/requests/request-1.md",
+		"mkdir -p .dev-team",
+		"cd .dev-team && cat > examples.json <<'EOF'\n{}\nEOF",
+		"echo x > .dev-team/examples.json",
+		"python3 scripts/example_replay.py --cases .dev-team/examples.json > \"$LOG\"",
+	]) {
+		assert.equal(bash(command, cwd), false, command);
+	}
+	assert.equal(writesRequestDir("write", { path: ".dev-team/examples.json", content: "{}" }, cwd), false);
+});
+
+test("writesRequestDir blocks forging shapes found in review: pipes into shells, xargs, loops, aliases, links, computed cd", (t) => {
+	const cwd = project(t);
+	for (const command of [
+		"printf 'echo forged > %s\\n' .dev-team/requests/x.md | bash",
+		"echo 'echo forged > .dev-team/requests/x.md' | sh",
+		"cat <<'EOF' | bash\necho forged > .dev-team/requests/x.md\nEOF",
+		"bash <(echo 'echo forged > .dev-team/requests/x.md')",
+		"find .dev-team/requests -print0 | xargs -0 rm",
+		"printf '%s\\n' .dev-team/requests/a.md | xargs -I{} touch {}",
+		"ls /tmp/forged | xargs -I{} cp /tmp/forged/{} .dev-team/requests/",
+		"git ls-files .dev-team/requests | xargs git rm",
+		"for f in .dev-team/requests/*.md; do python3 fix.py \"$f\"; done",
+		"ls .dev-team/requests | while read f; do python3 fix.py \".dev-team/requests/$f\"; done",
+		"d=$(printf %s .dev-team/requests); python3 w.py \"$d\"",
+		"set -- .dev-team/requests/*; python3 w.py \"$@\"",
+		"w(){ python3 -c \"import sys;open(sys.argv[1],'w')\" \"$1\"; }; w .dev-team/requests/a.md",
+		"ln .dev-team/requests/a.md h && echo forged > h",
+		"ln -s .dev-team/requests r && echo forged > r/a.md",
+		"cd \"$(pwd)/.dev-team/requests\" && python3 -c \"open('x.md','w')\"",
+		"cd -- .dev-team/requests && touch a.md",
+		"cd ~+/.dev-team/requests && touch a.md",
+		"echo x > .dev-team/$(printf re)quests/a.md",
+		"git show --output=.dev-team/requests/x.md HEAD",
+		"git diff HEAD~3 -- .dev-team/requests | git apply -R",
+		"sudo -u root sh -c 'echo forged > .dev-team/requests/x.md'",
+		"nice python3 -c \"open('.dev-team/requests/x.md','w')\"",
+		"xxd -r /tmp/x .dev-team/requests/a.md",
+		"gawk -i inplace '{print \"forged\"}' .dev-team/requests/a.md",
+		"awk -f p.awk .dev-team/requests/a.md",
+		"sed -f s.sed .dev-team/requests/a.md",
+		"sed -n 's/^/forged/gw .dev-team/requests/x.md' in.txt",
+		"node <<'JS-END'\nrequire('fs').writeFileSync('.dev-team/requests/a.md','x')\nJS-END",
+		"cat > /tmp/w.sh <<'EOF'\necho forged > .dev-team/requests/x.md\nEOF\nsh /tmp/w.sh",
+		"echo 'echo forged > .dev-team/requests/x.md' > /tmp/w.sh && sh /tmp/w.sh",
+		"rg --pre ./w.sh x .dev-team/requests",
+		"alias p=python3\np -c \"open('.dev-team/requests/x.md','w')\"",
+	]) {
+		assert.equal(bash(command, cwd), true, command);
+	}
+});
+
+test("writesRequestDir lets reads found as false positives in review run", (t) => {
+	const cwd = project(t);
+	for (const command of [
+		"git -C . log --oneline -- .dev-team/requests",
+		"git -c core.pager=cat log -- .dev-team/requests",
+		"awk -F'|' '{print $2}' .dev-team/requests/a.md",
+		"awk 'length > 80' .dev-team/requests/a.md",
+		"pip install requests 2>&1 | tee \"$TMPDIR/pip.log\"",
+		"grep -rn \"requests\" src > \"$TMPDIR/hits.txt\"",
+		"ls .dev-team/requests; find src -name '*.pyc' | xargs rm -f",
+		"uniq -f 1 .dev-team/requests/a.md",
+		"find .dev-team/requests -name '*.md' -exec grep -n Example {} +",
+		"cd src && python -m pytest",
+	]) {
+		assert.equal(bash(command, cwd), false, command);
+	}
+});
+

@@ -5,7 +5,7 @@ A request (issue, spec, ticket) that shows an example (a command and its output,
 response) makes that example a contract. This script reads a case file (default `.dev-team/examples.json`)
 in which each example is copied from the request, runs every case against the program, and compares the
 output. It also checks that the case file is honest and complete against the saved requests (default
-`.claude/memory/requests/`):
+`.dev-team/requests/`):
 
 - every case quotes its example (`source`) word for word from a saved request, and every expected value
   appears whole in that quote, so a case cannot be edited to match the code;
@@ -103,7 +103,7 @@ program, not the case.
 """
 
 CASES_DEFAULT = ".dev-team/examples.json"
-REQUESTS_DEFAULT = ".claude/memory/requests"
+REQUESTS_DEFAULT = ".dev-team/requests"
 FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})[^\n]*\n(.*?)^[ \t]*\2[ \t]*$", re.M | re.S)
 TOKEN = re.compile(r"[A-Za-z0-9]+")
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")

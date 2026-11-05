@@ -43,7 +43,7 @@ A plain request without a command first gets a short brief: what the team builds
 
 ### Your request is the spec
 
-When you type a task after `/specs`, `/plan` or `/ship`, the extension saves your text word for word in `.claude/memory/requests/`. The plan, the build and the reviewers check the work against that file, not against a summary the model wrote. A point your request leaves open becomes an open question for you, not a silent decision.
+When you type a task after `/specs`, `/plan` or `/ship`, the extension saves your text word for word in `.dev-team/requests/`. The plan, the build and the reviewers check the work against that file, not against a summary the model wrote. A point your request leaves open becomes an open question for you, not a silent decision.
 
 Only an issue number, a URL or a file path (`/ship 123`, `/specs docs/spec.md`) is not saved: then the issue or the document is the request.
 
@@ -169,7 +169,7 @@ DEV_TEAM_EXAMPLES=on pi
 
 What it does:
 
-- The extension saves each request you type (not a `/command`) word for word in `.claude/memory/requests/`, as `/specs`, `/plan` and `/ship` already do.
+- The extension saves each request you type (not a `/command`) word for word in `.dev-team/requests/`, as `/specs`, `/plan` and `/ship` already do.
 - The agent copies each input-to-output example of your request into `.dev-team/examples.json`.
 - Before it reports the work done, it runs `scripts/example_replay.py` until it exits 0. The script runs each example against the program and compares the output.
 - Each case must quote a saved request word for word, and each expected value must appear in that quote. So the agent cannot write its own expected output.
@@ -182,7 +182,7 @@ When it does nothing: a vague request has no examples, so the check runs 0 cases
 
 Results: on 52 SlopCodeBench checkpoints, hidden tests passed 77.3% with the check and 70.3% without, at 58% of the cost. That was an earlier version of the check (`bbc791c`). The later hardening is not measured yet, so the check stays opt-in.
 
-`.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which `/setup` keeps out of Git (`.claude/memory/`). Commit both or ignore both: cases without their requests fail the check.
+`.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which `/setup` keeps out of Git (`.dev-team/requests/`). Commit both or ignore both: cases without their requests fail the check.
 
 #### Approved examples in `/specs`
 
@@ -190,12 +190,12 @@ With the check on, `/specs` adds one step after its questions. For each acceptan
 
 | You choose | What happens |
 |---|---|
-| Approve | The extension saves the text you saw, unchanged, as `.claude/memory/requests/approved-<time>.md`. The check then accepts these examples. |
+| Approve | The extension saves the text you saw, unchanged, as `.dev-team/requests/approved-<time>.md`. The check then accepts these examples. |
 | Edit them first | An editor opens. The extension saves your edited text instead. |
 | Reject | Nothing is saved. The agent asks what is wrong, or proposes other examples. |
 | No answer in time, `Esc`, an empty editor, or no human | Nothing is saved. The spec lists the examples under "Decide these". |
 
-- Only your own answer saves. The extension writes the file, not the agent. Agent writes to `.claude/memory/requests/` are blocked. The block is a scan of the command, not a sandbox: a program that builds the path itself gets past it.
+- Only your own answer saves. The extension writes the file, not the agent. Agent writes to `.dev-team/requests/` are blocked; you can still edit those files yourself. The block is a scan of the command, not a sandbox: a program that builds the path itself gets past it.
 - One dialog shows at most 40 lines, so you can read it all.
 - `w` and `/dev-team wait` work here as for every question. A timeout sends the phone message, if you set one up.
 

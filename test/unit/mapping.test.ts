@@ -243,20 +243,19 @@ test("saveApprovedExamples keeps approved examples word for word as approved-<ti
 test("saveApprovedExamples saves nothing into a symlinked requests dir", (t) => {
 	const cwd = tempDir(t, "dt-request-approved-link-");
 	const elsewhere = tempDir(t, "dt-request-approved-target-");
-	fs.mkdirSync(path.join(cwd, ".claude", "memory"), { recursive: true });
+	fs.mkdirSync(path.join(cwd, ".dev-team"), { recursive: true });
 	fs.symlinkSync(elsewhere, path.join(cwd, REQUEST_DIR));
 	assert.equal(saveApprovedExamples(cwd, "Hello"), undefined);
 	assert.deepEqual(fs.readdirSync(elsewhere), []);
 });
 
-test("saveRequest saves nothing for other skills, empty arguments or a symlinked memory dir", (t) => {
+test("saveRequest saves nothing for other skills, empty arguments or a symlinked .dev-team dir", (t) => {
 	const cwd = tempDir(t, "dt-request-none-");
 	for (const skill of ["build", "autoship", "code-review"]) assert.equal(saveRequest(cwd, skill, "--yes"), undefined);
 	assert.equal(saveRequest(cwd, "plan", "   "), undefined);
 	assert.equal(fs.existsSync(path.join(cwd, REQUEST_DIR)), false);
 	const elsewhere = tempDir(t, "dt-request-target-");
-	fs.mkdirSync(path.join(cwd, ".claude"));
-	fs.symlinkSync(elsewhere, path.join(cwd, ".claude", "memory"));
+	fs.symlinkSync(elsewhere, path.join(cwd, ".dev-team"));
 	assert.equal(saveRequest(cwd, "plan", "do it"), undefined);
 	assert.deepEqual(fs.readdirSync(elsewhere), []);
 });
@@ -274,7 +273,7 @@ test("saveRequest saves nothing when the arguments only point at issues, URLs or
 
 test("saveRequest returns undefined instead of throwing when it cannot write", (t) => {
 	const cwd = tempDir(t, "dt-request-ro-");
-	fs.writeFileSync(path.join(cwd, ".claude"), "a file, not a dir");
+	fs.writeFileSync(path.join(cwd, ".dev-team"), "a file, not a dir");
 	assert.equal(saveRequest(cwd, "plan", "do it"), undefined);
 });
 

@@ -1229,7 +1229,7 @@ async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-examples-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	const ctx = { ...blockCtx, cwd, isProjectTrusted: () => false };
-	const forge = () => ext.handlers.tool_call[0]({ toolName: "write", toolCallId: "w", input: { path: ".claude/memory/requests/request-x.md", content: "x" } }, ctx) as Promise<Verdict>;
+	const forge = () => ext.handlers.tool_call[0]({ toolName: "write", toolCallId: "w", input: { path: ".dev-team/requests/request-x.md", content: "x" } }, ctx) as Promise<Verdict>;
 	const specs = async () =>
 		((await (ext.tools.skill as unknown as { execute: (...args: unknown[]) => Promise<{ content: { text: string }[] }> }).execute("s", { name: "specs", args: "" }, undefined, () => {}, ctx)).content[0].text);
 	return { ext, forge, specs };

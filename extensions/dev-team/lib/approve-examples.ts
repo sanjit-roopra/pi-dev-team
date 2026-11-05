@@ -5,7 +5,7 @@
  * request shows no examples, so the check passes with no cases. A spec /specs writes is the model's own
  * text and is never saved. Here /specs proposes concrete input-to-output examples and the human approves or
  * edits them in a dialog; on a real answer, code (not the model) saves exactly the approved or edited text to
- * `.claude/memory/requests/approved-<time>.md`, so those examples become case sources. No human, a timeout,
+ * `.dev-team/requests/approved-<time>.md`, so those examples become case sources. No human, a timeout,
  * Esc or a rejection saves nothing. The model cannot write that folder itself (request-guard.ts).
  *
  * Weak spot: a human who approves without reading turns this back into the model grading itself.
@@ -104,13 +104,13 @@ export function registerApproveExamples(pi: ExtensionAPI, deps: ApproveExamplesD
 		name: DEV_TEAM_APPROVE_EXAMPLES_TOOL,
 		label: "Approve examples",
 		description:
-			"Show the human concrete input-to-output examples for acceptance criteria and ask them to approve or edit them. Only a human approval saves them (word for word, by dev-team code) under .claude/memory/requests/, where the example check accepts them as case sources. No human, a timeout or a rejection saves nothing. Never write that folder yourself.",
+			"Show the human concrete input-to-output examples for acceptance criteria and ask them to approve or edit them. Only a human approval saves them (word for word, by dev-team code) under .dev-team/requests/, where the example check accepts them as case sources. No human, a timeout or a rejection saves nothing. Never write that folder yourself.",
 		promptSnippet: "Ask the human to approve examples for the acceptance criteria",
 		parameters: Params,
 		executionMode: "sequential",
 		// It asks the human, so only the model may call it, never a codemode script.
 		exposure: "model-only",
-		// It writes .claude/memory/requests/approved-*.md.
+		// It writes .dev-team/requests/approved-*.md.
 		annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
 		async execute(_id, params, signal, _onUpdate, ctx: ExtensionContext) {
 			const problem = examplesProblem(params.examples, params.criteria);
