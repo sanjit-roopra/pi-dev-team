@@ -107,9 +107,21 @@ export const QUALITY_BAR =
 
 export const EXAMPLES_ENV = "DEV_TEAM_EXAMPLES";
 
-/** The example check is opt-in (`DEV_TEAM_EXAMPLES=on` in the user's process environment) until measured. */
+export type ExamplesMode = "off" | "on" | "spec";
+
+/**
+ * The example check is opt-in until measured: `DEV_TEAM_EXAMPLES=on` in the user's process environment turns it on,
+ * `spec` adds the executable spec (SPEC_BAR: an author that sees only the request writes the cases, which must fail
+ * before the code exists and are then frozen). Anything else (case and spaces ignored) is off.
+ */
+export function examplesMode(env: NodeJS.ProcessEnv): ExamplesMode {
+	const v = (env[EXAMPLES_ENV] ?? "").trim().toLowerCase();
+	return v === "on" || v === "spec" ? v : "off";
+}
+
+/** Whether the example check runs (`on` or `spec`). */
 export function examplesEnabled(env: NodeJS.ProcessEnv): boolean {
-	return (env[EXAMPLES_ENV] ?? "").trim().toLowerCase() === "on";
+	return examplesMode(env) !== "off";
 }
 
 /**
@@ -121,6 +133,17 @@ export function examplesEnabled(env: NodeJS.ProcessEnv): boolean {
  */
 export const EXAMPLE_BAR =
 	"- Example check (gate): the examples a request shows are its acceptance tests. Typed requests are saved word for word under `.dev-team/requests/`. Before writing code, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --format` and copy every input-to-output example of the request into `.dev-team/examples.json` as cases: `source` is the example copied character for character, and expected outputs are copied exactly as shown (precision, suffixes, wording, empty lines), never edited to fit the code; never change an input the example shows either, only add what it leaves out. Put only values the program generates (ids, timestamps, random tokens) under `vary`, which still requires the example's shape; `save` an id an example reuses; use `excerpt` for an example that elides lines with `...`. Skip a code block that is not an example (a schema, a grammar) with a reason. Keep the cases of earlier requests: they guard behaviour that a later change must not break; drop one only with `superseded_by` quoting newer request text that changes that example's output for its input; a new rule that makes your program reject an earlier example's input is a regression unless the new text names that input as invalid, so keep the case and fix the program. Before you report code work done, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py` (under `timeout 600`), fix the program, not the case, for every failure, and re-run until it exits 0. Where the request says the caller prepares something (an output directory exists, a file is created), create or tolerate it when it is missing, unless the request names an error for that case. Mark a step `disputed` only when its example contradicts the request's own text, quoting that text. Where the text leaves a format, precision or suffix open, the example decides, even against an interface standard: a standard applies only where the request has neither text nor an example on that point. When /specs writes acceptance criteria and the request shows no example for a criterion, propose concrete input-to-output examples and call `dev_team_approve_examples`: only examples the human approved or edited, which that tool saves under `.dev-team/requests/`, may be case sources. Never write that folder yourself.";
+
+/**
+ * The executable spec the gate profile adds to its bar under DEV_TEAM_EXAMPLES=spec, instead of EXAMPLE_BAR
+ * (Dave Farley's acceptance-test-driven development, adapted). Under EXAMPLE_BAR the implementing session copies
+ * the examples itself, so a rule given only in prose is never a case, and the session that writes the code also
+ * writes its tests. Here `scenario-author`, which reads only the saved requests, turns every example and every
+ * listed rule into a case through the program's real interface; `dev_team_freeze_cases` runs them against the
+ * unchanged program and freezes those that fail, and example_replay.py then fails on any frozen case that changed.
+ */
+export const SPEC_BAR =
+	"- Executable spec (gate): the request's examples and rules are its acceptance tests, written before code by `scenario-author`, an agent that sees only the request, shown to fail, then frozen. Typed requests are saved word for word under `.dev-team/requests/`; never write that folder yourself. As the session (not as a dispatched agent), at the start of each request and before you change program code: (1) dispatch `scenario-author` with the saved request path(s) (`ls .dev-team/requests/`); it writes `.dev-team/examples.json` (format: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --format`): a quoted case for every input-to-output example and a `derived` case for every listed rule. (2) Call `dev_team_freeze_cases`, which runs the cases against the unchanged program and freezes each that fails; when it reports static problems or refuses a case, dispatch `scenario-author` again with its report, never fix the case file by hand, and call it again. (3) Implement. Never edit or delete a frozen case: the check fails on any change except the two below. Keep the cases of earlier requests: they guard behaviour that a later change must not break; a case stops running only with `superseded_by` quoting newer request text that changes that example's output for its input, and its replacement is a new case from `scenario-author` that runs the same input; a new rule that makes your program reject an earlier example's input is a regression unless the new text names that input as invalid, so fix the program. If you believe a derived case is wrong, quote the request text that contradicts it and mark that step `disputed` with the quote (that field does not break the freeze); `spec-compliance-review` judges disputes, so give it the case id and the quote. Expected outputs follow the request exactly (precision, suffixes, wording, empty lines); `vary` covers only values the program generates (ids, timestamps, random tokens) and still requires their shape; `save` keeps an id a later step reuses; `excerpt` is for an example that elides lines with `...`. (4) Before you report code work done, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py` with no flags under `timeout 600`, fix the program, not the case, for every failure, and re-run until it exits 0. Where the request says the caller prepares something (an output directory exists, a file is created), create or tolerate it when it is missing, unless the request names an error for that case. Where the text leaves a format, precision or suffix open, the example decides, even against an interface standard: a standard applies only where the request has neither text nor an example on that point. When /specs writes acceptance criteria and the request shows no example for a criterion, propose concrete input-to-output examples and call `dev_team_approve_examples`: only examples the human approved or edited, which that tool saves under `.dev-team/requests/`, may be case sources.";
 
 /**
  * The approved-examples step for /specs under the example check, from extensions/dev-team/gate/specs-examples.md;
@@ -135,11 +158,16 @@ export function examplesSpecsNote(packageRoot: string, skillName: string): strin
 	}
 }
 
-/** The dev-team guide lines for the lean or gate profile; empty for full, so the full guide is unchanged. */
-export function reviewProfileGuideLine(profile: ReviewProfile, examples = false): string {
+/**
+ * The dev-team guide lines for the lean or gate profile; empty for full, so the full guide is unchanged. Under gate,
+ * `examples` adds EXAMPLE_BAR (`on`, or true) or SPEC_BAR (`spec`).
+ */
+export function reviewProfileGuideLine(profile: ReviewProfile, examples: boolean | ExamplesMode = false): string {
 	if (profile === "full") return "";
+	const mode: ExamplesMode = examples === true ? "on" : examples === false ? "off" : examples;
+	const bar = mode === "spec" ? SPEC_BAR : mode === "on" ? EXAMPLE_BAR : "";
 	if (profile === "gate") return `- Review profile: gate (the default; ${REVIEW_PROFILE_ENV}=lean or ${REVIEW_PROFILE_ENV}=full in the user's environment selects another profile). /plan, /build, /code-review and /ship carry a "Review profile: gate" section that overrides their steps: no plan critics, one implementer dispatch and one review panel per slice (spec-compliance and correctness at every slice; the simplify lens, and security when selected, at the last slice), only \`error\` findings fixed in one round. The static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still runs, and its errors are fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.
-${QUALITY_BAR}${examples ? `\n${EXAMPLE_BAR}` : ""}`;
+${QUALITY_BAR}${bar ? `\n${bar}` : ""}`;
 	return `- Review profile: lean (the user set ${REVIEW_PROFILE_ENV}=lean; unset selects the default gate profile, full the full profile). /plan, /build, /code-review and /ship carry a "Review profile: lean" section that overrides their steps: one review panel per slice (only the spec-compliance, correctness, structure and test lenses until the last slice, which runs every selected lens over every changed file), only \`error\` findings fixed in one round, plan critics at most the standard tier. Spec-compliance review, structure-review and the static-analysis pre-pass (lint, type-check, and lizard complexity at every /build checkpoint) still run, and lint and complexity errors are still fixed. /build runs with --backstop-review=skip. An implementer works a step at a time, runs only that step's tests while it works, and runs lint, type-check and the full suite once at the end of its task. Tests stay within a budget of one per Gherkin scenario plus one per request rule no scenario covers, and test-review holds to the same budget. /build skips the Farley Score (the qa-engineer dispatch) unless ${FARLEY_ENV}=on.`;
 }
 

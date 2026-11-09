@@ -9,8 +9,12 @@
  * paths of rm, mv, cp, tee, touch and the like are resolved and blocked only when they land in the folder.
  * A human edits the folder freely; only the model's tool calls are checked.
  *
- * Not a sandbox: a program that builds the path at run time without naming the folder (`python -c` joining
- * strings, or a shell variable on a line that never mentions the folder) gets past this static scan.
+ * A line that names the freeze file (`.frozen.json`, or its copy's `dev-team-frozen/` folder) may only read,
+ * and code fed to an interpreter (a heredoc, `-c`, `-e`) that names `.dev-team` counts as a write.
+ *
+ * Not a sandbox: a program that builds the path at run time without naming the folder (a script file that
+ * joins strings, or a shell variable on a line that never mentions the folder) gets past this static scan.
+ * freeze-cases.ts keeps a copy of the freeze file outside the project for that reason.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -30,6 +34,14 @@ const HINTS_REQUEST_DIR = /dev-team[\W_]{0,8}req|dev-team\S*[$`]|[$`]\S*quests/i
  * the folder they make every statement count as naming it.
  */
 const CARRIES_PATH = /(?:^|[\s;&|(])(?:for|while|until|select|function|read|mapfile|readarray|set|alias|declare|typeset|local|export)\b|\(\)\s*\{|[<>]\(|(?:^|[\s;&|(])[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=(?:\S*(?:\$\(|`|dev-team)|\()/i;
+
+/**
+ * The freeze file `.frozen.json` and its copy outside the project (`dev-team-frozen/`, freeze-cases.ts): a line
+ * that names either may only read. Not `--frozen` (`uv sync --frozen`).
+ */
+const NAMES_FREEZE = /\.frozen\b|dev-team-frozen|frozen[\W_]{0,8}json/i;
+/** Programs that run code they are given (a heredoc on stdin, `-c`/`-e`): the scan cannot see what that code writes. */
+const INTERPRETER = /^(?:sh|bash|zsh|dash|ksh|fish|python(?:\d(?:\.\d+)?)?|node|deno|bun|perl|ruby|php|osascript)$/;
 
 /** Commands that only read, so a statement that names the folder may still run them. */
 const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
@@ -251,6 +263,73 @@ function statements(command: string): string[] {
 }
 
 /**
+ * The line without its heredoc bodies (the delimiter lines stay), and the bodies. Quotes, `$(...)` and
+ * backticks are skipped as statements() skips them, so a `<<` inside them opens no heredoc.
+ */
+function splitHeredocs(command: string): { rest: string; bodies: string[] } {
+	let rest = "";
+	const bodies: string[] = [];
+	const pending: string[] = [];
+	for (let i = 0; i < command.length; ) {
+		const ch = command[i];
+		let stop = i + 1;
+		if (ch === "\\") stop = i + 2;
+		else if (ch === "'" || ch === "`") stop = command.indexOf(ch, i + 1) < 0 ? command.length : command.indexOf(ch, i + 1) + 1;
+		else if (ch === '"') {
+			let j = i + 1;
+			while (j < command.length && command[j] !== '"') j += command[j] === "\\" ? 2 : 1;
+			stop = j + 1;
+		} else if (command.startsWith("<<", i) && command[i + 2] !== "<") {
+			const m = /^<<-?\s*(['"]?)([^\s'";&|<>()]+)\1/.exec(command.slice(i));
+			if (m) pending.push(m[2]);
+			stop = i + (m ? m[0].length : 2);
+		}
+		rest += command.slice(i, stop);
+		i = stop;
+		if (ch !== "\n") continue;
+		while (pending.length) {
+			const delim = pending.shift()!;
+			let body = "";
+			for (;;) {
+				const lineEnd = command.indexOf("\n", i);
+				const line = command.slice(i, lineEnd < 0 ? command.length : lineEnd);
+				i = lineEnd < 0 ? command.length : lineEnd + 1;
+				if (line.replace(/^\t+/, "") === delim) {
+					rest += line + (lineEnd < 0 ? "" : "\n");
+					break;
+				}
+				body += line + "\n";
+				if (lineEnd < 0) break;
+			}
+			bodies.push(body);
+		}
+	}
+	return { rest, bodies };
+}
+
+/**
+ * Whether the line feeds code that names `.dev-team` to an interpreter: a heredoc body, or the argument of
+ * `-c`/`-e`. Such code builds paths at run time (`pathlib.Path('.dev-team').rglob(...)`, `cd .dev-team` then a loop over a glob), which the scan cannot follow, so it is taken as a write. `python example_replay.py` is not code.
+ */
+function feedsInterpreterDevTeam(command: string, commands: BashCommand[]): boolean {
+	const interpreters = commands.filter((c) => INTERPRETER.test(path.basename(c.name)) && !runsExampleReplay(c.words));
+	if (!interpreters.length) return false;
+	if (splitHeredocs(command).bodies.some((b) => /dev-team/i.test(b))) return true;
+	return interpreters.some((c) => c.words.some((w, i) => i > 0 && /^-[A-Za-z]*[ce]$/.test(c.words[i - 1]) && /dev-team/i.test(w)));
+}
+
+/**
+ * A loop, function, read/set, alias or computed assignment that may carry the folder's path. Heredoc bodies
+ * count only when they spell the folder or part of it: a Python heredoc with a `for` loop that reads `sde/`
+ * is program text, not shell (v6 eve_market_tools checkpoint 2), while a body fed to a shell that builds the
+ * path from `.dev-team` and `$d/requests` still counts.
+ */
+function carriesPath(command: string): boolean {
+	const { rest, bodies } = splitHeredocs(command);
+	return CARRIES_PATH.test(rest) || bodies.some((b) => CARRIES_PATH.test(b) && /dev-team|quests/i.test(b));
+}
+
+/**
  * Whether a tool call writes REQUEST_DIR. write and edit: their path. bash: a visible write target there
  * (redirect, cp, mv, tee, ln, touch, rm, sed -i, ...), resolved against the project and every folder the
  * line `cd`s into (`mkdir` of the `.dev-team` folder above it is fine); a computed target on a line that
@@ -259,8 +338,9 @@ function statements(command: string): string[] {
  * only commands that read (readsOnly), so `find .dev-team/requests; python -m unittest` runs but
  * `ls .dev-team/requests | xargs rm` or `echo ... .dev-team/requests ... | sh` do not. After a `cd` near
  * the folder or one the scan cannot follow (computed, `cd -`, `~+`), a loop, function, read/set, alias,
- * process substitution, a computed assignment, or a statement that writes the folder's name to a file (a
- * script run later), every statement of the line counts as naming the folder.
+ * process substitution, a computed assignment (outside heredoc bodies that do not spell the folder; see
+ * carriesPath), or a statement that writes the folder's name to a file (a script run later), every statement
+ * of the line counts as naming the folder.
  */
 export function writesRequestDir(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
     if (toolName === "write" || toolName === "edit") {
@@ -272,6 +352,9 @@ export function writesRequestDir(toolName: string, input: Record<string, unknown
     if (toolName !== "bash" || typeof input.command !== "string") return false;
     const command = input.command;
     const commands = bashCommands(command);
+    // The freeze file and its copy: reads only, whatever folder the line is in (`find . -name .frozen.json -delete`).
+    if (NAMES_FREEZE.test(command) && !commands.every(readsOnly)) return true;
+    if (feedsInterpreterDevTeam(command, commands)) return true;
     const { bases, unknown } = cdBases(commands, cwd);
     const home = (p: string) => p.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
     const hits = (c: BashCommand, t: WriteTarget) =>
@@ -290,7 +373,7 @@ export function writesRequestDir(toolName: string, input: Record<string, unknown
         const prefix = unquote(t.text.split(/[$`]/)[0]).replace(/^["']/, "");
         return prefix !== "" && bases.some((b) => inside(foldPath(realish(path.join(cwd, devTeam))), foldPath(realish(path.resolve(b, home(prefix))))));
     };
-    if (targets.some((t) => t.dynamic && (startsInDevTeam(t) || HINTS_REQUEST_DIR.test(command) || CARRIES_PATH.test(command)))) return true;
+    if (targets.some((t) => t.dynamic && (startsInDevTeam(t) || HINTS_REQUEST_DIR.test(command) || carriesPath(command)))) return true;
     if (unknown && targets.length && /dev-team|requests/i.test(command)) return true;
     const cdNear = bases.slice(1).some((b) => touchesRequestDir(b, cwd));
     if (!cdNear && !NAMES_REQUEST_DIR.test(command)) return false;
@@ -300,6 +383,6 @@ export function writesRequestDir(toolName: string, input: Record<string, unknown
     // be a script a later statement runs; a cd whose target the shell computes may land in the folder.
     const writesFolderName = parts.some((st) => st.names && st.commands.some((c) => c.writes.some((t) => !/^\/dev\/(?:null|stdout|stderr|tty)$/.test(t.text))));
     const computedCd = /(?:^|[\s;&|(])(?:cd|pushd)\s+[^;&|\n]*[$`]/.test(command);
-    const lineWide = cdNear || unknown || computedCd || writesFolderName || CARRIES_PATH.test(command);
+    const lineWide = cdNear || unknown || computedCd || writesFolderName || carriesPath(command);
     return parts.some((st) => (lineWide || st.names) && !st.commands.every(readsOnly));
 }

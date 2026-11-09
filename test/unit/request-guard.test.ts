@@ -224,3 +224,72 @@ test("writesRequestDir lets reads found as false positives in review run", (t) =
 	}
 });
 
+
+test("writesRequestDir guards the freeze file: writes, copies, moves, deletes and scripts are blocked, reads run", (t) => {
+	const cwd = project(t);
+	assert.equal(writesRequestDir("write", { path: ".dev-team/requests/.frozen.json", content: "{}" }, cwd), true);
+	assert.equal(writesRequestDir("edit", { path: path.join(cwd, REQUEST_DIR, ".frozen.json") }, cwd), true);
+	assert.equal(writesRequestDir("read", { path: ".dev-team/requests/.frozen.json" }, cwd), false);
+	for (const command of [
+		"echo '{}' > .dev-team/requests/.frozen.json",
+		"cp /tmp/f.json .dev-team/requests/.frozen.json",
+		"mv /tmp/f.json .dev-team/requests/.frozen.json",
+		"rm .dev-team/requests/.frozen.json",
+		"rm -f .dev-team/requests/.*.json",
+		"python3 - <<'EOF'\nimport json\njson.dump({'version': 1, 'cases': {}}, open('.dev-team/requests/.frozen.json', 'w'))\nEOF",
+		"jq '.cases = {}' .dev-team/requests/.frozen.json > /tmp/f && mv /tmp/f .dev-team/requests/.frozen.json",
+	]) {
+		assert.equal(bash(command, cwd), true, command);
+	}
+	for (const command of ["cat .dev-team/requests/.frozen.json", "jq .cases .dev-team/requests/.frozen.json", "ls -a .dev-team/requests"]) {
+		assert.equal(bash(command, cwd), false, command);
+	}
+});
+
+test("writesRequestDir: a loop in a heredoc body that does not spell the folder is program text (v6 eve cp2 false positive)", (t) => {
+	const cwd = project(t);
+	const eve =
+		".venv/bin/python - <<'PY'\nimport bz2,csv\nfrom pathlib import Path\nfor p in Path('sde').glob('*'):\n print(p.name,p.stat().st_size)\nPY\nfind .dev-team/requests -type f -maxdepth 2 -print\n git status --short 2>/dev/null || true";
+	assert.equal(bash(eve, cwd), false);
+	assert.equal(bash("python3 - <<-EOF\n\tx = 1\n\tfor i in range(3): print(i)\n\tEOF\nls .dev-team/requests", cwd), false, "<<- with tab-indented delimiter");
+	for (const command of [
+		// The body is shell that builds the path from parts, so the line still counts as naming the folder.
+		"ls .dev-team/requests; bash <<'EOF'\nd=.dev-team; for f in $d/requests/*; do rm $f; done\nEOF",
+		// A loop outside the heredoc still counts.
+		"cat <<'EOF' > /tmp/x\nhi\nEOF\nfor f in .dev-team/requests/*; do python3 w.py \"$f\"; done",
+		// A python heredoc that names the folder is still a script that names it.
+		"python3 - <<'EOF'\nfor p in __import__('pathlib').Path('.dev-team/requests').glob('*'): print(p.read_text())\nEOF",
+		// A quoted `<<` opens no heredoc, so the loop after it is shell.
+		"echo '<<EOF'\nfor f in .dev-team/requests/*; do python3 w.py \"$f\"; done",
+	]) {
+		assert.equal(bash(command, cwd), true, command);
+	}
+});
+
+test("writesRequestDir: a line that names the freeze file only reads, and code fed to an interpreter may not name .dev-team (v7 review)", (t) => {
+	const cwd = project(t);
+	for (const command of [
+		"find .dev-team -name .frozen.json -delete",
+		"find . -name .frozen.json -exec rm {} +",
+		"python3 - <<'EOF'\nimport pathlib\nfor p in pathlib.Path('.dev-team').rglob('.frozen.json'): p.unlink()\nEOF",
+		"bash <<'EOF'\ncd .dev-team\nfor f in */.frozen.json; do rm $f; done\nEOF",
+		"python3 -c \"import os; os.remove(os.path.join('.dev-team','reque'+'sts','.frozen.json'))\"",
+		"rm -rf ~/.pi/agent/dev-team-frozen",
+		// No `.frozen` on the line, but code that names .dev-team and builds the rest at run time.
+		"python3 - <<'EOF'\nimport shutil\nshutil.rmtree('.dev-team/' + 'reque' + 'sts')\nEOF",
+		"python3 -c \"import shutil; shutil.rmtree('.dev-team/'+'reque'+'sts')\"",
+		"node -e \"require('fs').rmSync('.dev-team/'+'reque'+'sts', {recursive: true})\"",
+	]) {
+		assert.equal(bash(command, cwd), true, command);
+	}
+	for (const command of [
+		"cat .dev-team/requests/.frozen.json",
+		"find .dev-team -name .frozen.json",
+		"uv sync --frozen && uv run pytest -q",
+		"python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py",
+		"python3 - <<'EOF'\nfor p in __import__('pathlib').Path('sde').glob('*'): print(p)\nEOF",
+		"cd .dev-team && cat > examples.json <<'EOF'\n{}\nEOF",
+	]) {
+		assert.equal(bash(command, cwd), false, command);
+	}
+});

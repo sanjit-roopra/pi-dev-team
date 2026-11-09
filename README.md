@@ -141,7 +141,7 @@ DEV_TEAM_REVIEW=full pi   # every review step of the upstream plugin
 |---|---|---|
 | `DEV_TEAM_REVIEW` | `gate` (default), `lean`, `full` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
 | `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `gate` and `lean`: run the Farley test score at the end of `/build` |
-| `DEV_TEAM_EXAMPLES` | `off` (default), `on` | Under `gate` only: run the [example check](#example-check-optional) |
+| `DEV_TEAM_EXAMPLES` | `off` (default), `on`, `spec` | Under `gate` only: run the [example check](#example-check-optional); `spec` adds the [executable spec](#executable-spec-dev_team_examplesspec) |
 | `DEV_TEAM_MAX_PARALLEL_AGENTS` | a number, 1 or more | Max agents at once; wins over every config file |
 
 ### Gate profile (default)
@@ -200,6 +200,27 @@ With the check on, `/specs` adds one step after its questions. For each acceptan
 - `w` and `/dev-team wait` work here as for every question. A timeout sends the phone message, if you set one up.
 
 Weak spot: if you approve without reading, the agent grades itself again. Check the exact outputs: formats, precision, suffixes, error text. Those are what the tests compare.
+
+#### Executable spec (`DEV_TEAM_EXAMPLES=spec`)
+
+`spec` is everything `on` does, plus acceptance cases that someone other than the implementer writes, before the code, and that the implementer cannot change. It follows Dave Farley's acceptance-test-driven development: the spec becomes executable cases, they fail first, then the code makes them pass.
+
+```bash
+DEV_TEAM_EXAMPLES=spec pi
+```
+
+What it adds, for each request:
+
+1. Before it changes any code, the agent dispatches `scenario-author`. That agent reads only the saved requests and the current `.dev-team/examples.json`, never the program or its tests. It writes a quoted case for every example, and a derived case for every rule in a list: small inputs it picks and the exact output the rule implies, run through the program's real command or HTTP call. A rule that sets nothing it can observe is skipped with a reason.
+2. The agent calls `dev_team_freeze_cases`. The tool runs every case against the unchanged program (`example_replay.py --red`). A case that fails is frozen: its hash goes into `.dev-team/requests/.frozen.json`, which only the tool writes. A case that already passes is refused, unless it says which earlier request built that behaviour (`already_passing`, accepted only when the case quotes an older request than the newest one). A case that passes only because the program file does not exist yet counts as failing. The tool also keeps a copy of the freeze file in pi's agent folder (`$PI_CODING_AGENT_DIR/dev-team-frozen/`, or `DEV_TEAM_FREEZE_DIR`); a case missing from or changed in the project's file is restored from it, and `example_replay.py` fails on any difference.
+3. The agent implements. `example_replay.py` now also fails when a case is not frozen, changed after it was frozen, or removed. A newer request that changes an old case's output retires it with `superseded_by` and gets a replacement case that runs the same input; that field does not break the freeze. When the newer request makes the old input invalid, the replacement expects the rejection and the old case stops counting. In spec mode `--mode on`, another `--requests` folder and a partial `--only` run cannot make the check pass.
+4. Every list item of four words or more in a request is a rule, and must be quoted by a case or skipped with a reason. So rules written only in prose become tests too.
+
+When it helps: specs that state many rules in prose and show few examples. With `on`, those rules are checked only by the model's judgement.
+
+Cost: one more agent per request (the scenario author, plus a second dispatch when the freeze reports problems) and one red run of all cases before the code changes. Not measured yet.
+
+Limits: a derived case is the author's reading of a rule. When that reading is wrong, the program must still pass it, or the agent quotes the request text that contradicts it and marks the step `disputed` for `spec-compliance-review` to judge; `disputed` does not break the freeze, and the replay lists disputed frozen cases on their own line. The guard on `.dev-team/requests/` is a scan of commands, not a sandbox.
 
 ### Lean profile (`DEV_TEAM_REVIEW=lean`)
 
