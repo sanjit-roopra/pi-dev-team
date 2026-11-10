@@ -341,8 +341,13 @@ function carriesPath(command: string): boolean {
  * process substitution, a computed assignment (outside heredoc bodies that do not spell the folder; see
  * carriesPath), or a statement that writes the folder's name to a file (a script run later), every statement
  * of the line counts as naming the folder.
+ *
+ * `frozen` (the default) is the executable spec, where a freeze file exists: code fed to an interpreter may not name
+ * `.dev-team` at all. Without it (`DEV_TEAM_EXAMPLES=on`) such code is checked like any statement, so a script that
+ * reads `.dev-team/examples.json` runs and one that names the request folder does not (44 of 44 blocks in the v7
+ * benchmark run were reads of this kind).
  */
-export function writesRequestDir(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
+export function writesRequestDir(toolName: string, input: Record<string, unknown>, cwd: string, frozen = true): boolean {
     if (toolName === "write" || toolName === "edit") {
         const file = input.path ?? input.file_path;
         return typeof file === "string" && file !== "" && touchesRequestDir(file, cwd);
@@ -354,7 +359,7 @@ export function writesRequestDir(toolName: string, input: Record<string, unknown
     const commands = bashCommands(command);
     // The freeze file and its copy: reads only, whatever folder the line is in (`find . -name .frozen.json -delete`).
     if (NAMES_FREEZE.test(command) && !commands.every(readsOnly)) return true;
-    if (feedsInterpreterDevTeam(command, commands)) return true;
+    if (frozen && feedsInterpreterDevTeam(command, commands)) return true;
     const { bases, unknown } = cdBases(commands, cwd);
     const home = (p: string) => p.replace(/^~(?=$|\/)/, process.env.HOME ?? "~");
     const hits = (c: BashCommand, t: WriteTarget) =>

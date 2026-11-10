@@ -293,3 +293,14 @@ test("writesRequestDir: a line that names the freeze file only reads, and code f
 		assert.equal(bash(command, cwd), false, command);
 	}
 });
+
+test("writesRequestDir without a freeze file (on mode): a script may read .dev-team/examples.json, not name the request folder", (t) => {
+	const cwd = project(t);
+	const on = (command: string) => writesRequestDir("bash", { command }, cwd, false);
+	const reads = "python3 - <<'PY'\nimport json\nfrom pathlib import Path\nfor c in json.loads(Path('.dev-team/examples.json').read_text())['cases']:\n    print(c['id'])\nPY";
+	assert.equal(on(reads), false, "reads the case file");
+	assert.equal(bash(reads, cwd), true, "still blocked under the executable spec");
+	assert.equal(on("python3 -c \"import json; print(json.load(open('.dev-team/examples.json'))['cases'][0])\""), false);
+	assert.equal(on("python3 - <<'PY'\nopen('.dev-team/requests/request-x.md', 'w').write('x')\nPY"), true, "names the request folder");
+	assert.equal(on("echo x > .dev-team/requests/a.md"), true);
+});

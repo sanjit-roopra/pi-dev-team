@@ -171,8 +171,9 @@ What it does:
 
 - The extension saves each request you type (not a `/command`) word for word in `.dev-team/requests/`, as `/specs`, `/plan` and `/ship` already do.
 - The agent copies each input-to-output example of your request into `.dev-team/examples.json`.
+- A configuration or data block your request shows (a YAML file, a schedule) becomes a case too: the program runs on it as written and must do what your text says. The same holds for the first-run or empty state of an output your request shows. These cases are marked `derived`, because their expected output comes from your prose, not from an example.
 - Before it reports the work done, it runs `scripts/example_replay.py` until it exits 0. The script runs each example against the program and compares the output.
-- Each case must quote a saved request word for word, and each expected value must appear in that quote. So the agent cannot write its own expected output.
+- Each case must quote a saved request word for word, and each expected value must appear in that quote. So the agent cannot write its own expected output. A `derived` case must still quote the request, but its expected values need not appear in the quote.
 - Cases stay across requests. A later change that breaks an earlier example fails the check.
 - Where your request shows an example of a format, the example decides, even against an interface standard.
 
@@ -180,7 +181,7 @@ When it helps: requests with concrete examples, for example a command and its ex
 
 When it does nothing: a vague request has no examples, so the check runs 0 cases and passes. Examples written only in prose are not turned into cases. Behavior the request neither states nor shows is not checked.
 
-Results: on 52 SlopCodeBench checkpoints, hidden tests passed 77.3% with the check and 70.3% without, at 58% of the cost. That was an earlier version of the check (`bbc791c`). The later hardening is not measured yet, so the check stays opt-in.
+Results: on 52 SlopCodeBench checkpoints (10 problems, one run each), hidden tests passed 78.2% with the check (`2004010`) and 70.3% without, at about 1.1 times the cost. Almost all of the gain comes from problems whose requests show exact outputs. The rules for configuration blocks and empty states are newer and not measured yet, so the check stays opt-in.
 
 `.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which `/setup` keeps out of Git (`.dev-team/requests/`). Commit both or ignore both: cases without their requests fail the check.
 

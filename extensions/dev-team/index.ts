@@ -619,7 +619,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		if (blockedForeignTools().has(event.toolName)) return { block: true, reason: piSubagentsBlockReason(event.toolName) };
 		const input = event.input as Record<string, unknown>;
 		// Under the example check, saved requests are the human's words: only dev-team code writes them.
-		if (examples && writesRequestDir(event.toolName, input, ctx.cwd)) return { block: true, reason: REQUEST_DIR_BLOCK };
+		if (examples && writesRequestDir(event.toolName, input, ctx.cwd, exampleMode === "spec")) return { block: true, reason: REQUEST_DIR_BLOCK };
 		const routing = !isSubagent && config.routing === "brief";
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			if (routing && !briefGate.open && dispatchWrites(input, ctx)) return { block: true, reason: briefGate.blockReason() };

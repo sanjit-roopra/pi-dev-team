@@ -487,14 +487,15 @@ class DerivedCases(unittest.TestCase):
         p.write_cases(cases)
         out = "\n".join(p.static())
         self.assertIn("case rule-lines: `source` is not word for word", out)
-        self.assertIn("case rule-empty: derived `source` must quote the rule it instances: at least 8 words", out)
+        self.assertIn("case rule-empty: derived `source` must quote the text it instances: at least 8 words", out)
 
     def test_derived_case_skips_input_line_check(self):
         case = {"id": "d", "derived": True, "source": "every job has a destination: a sink the job writes to always",
                 "files": {"s.yaml": "destination: other"}, "steps": [{"run": "true", "stdout": "x"}]}
         text = replay.collapse(case["source"])
         self.assertEqual(replay.source_problems(case, text, spec=True), [])
-        self.assertTrue(replay.source_problems(case, text, spec=False))
+        self.assertEqual(replay.source_problems(case, text, spec=False), [])
+        self.assertTrue(replay.source_problems({**case, "derived": False}, text, spec=False))
 
     def test_derived_failure_is_labelled(self):
         p = SpecProject()
@@ -506,13 +507,13 @@ class DerivedCases(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("case rule-empty: FAIL derived step 1: stdout", out)
 
-    def test_on_mode_ignores_derived(self):
+    def test_on_mode_accepts_derived_without_rule_coverage_or_freeze(self):
         p = SpecProject()
         p.write_cases(count_cases())
-        code, out = p.run()
-        self.assertEqual(code, 1)
-        self.assertIn("case rule-lines: expected stdout has '5', which its `source` does not show whole", out)
+        out = p.run()[1]
+        self.assertNotIn("does not show whole", out)
         self.assertNotIn("rule not covered", out)
+        self.assertNotIn("is not frozen", out)
         self.assertNotIn("spec mode", out)
 
 
@@ -636,7 +637,9 @@ class DotfilesAndModes(unittest.TestCase):
         on = p.run("--format")[1]
         spec = p.run("--format", "--mode", "spec")[1]
         self.assertEqual(on, replay.FORMAT + "\n")
-        self.assertNotIn("derived", on)
+        self.assertIn("derived: true", on)
+        for word in ("already_passing", '{"rule":', "--red", ".frozen.json"):
+            self.assertNotIn(word, on)
         for word in ("derived: true", "already_passing", '{"rule":', "--red", ".frozen.json"):
             self.assertIn(word, spec)
 

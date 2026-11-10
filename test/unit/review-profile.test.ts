@@ -247,18 +247,21 @@ test("example check: opt-in with DEV_TEAM_EXAMPLES=on, only in the gate guide li
 	assert.doesNotMatch(reviewProfileGuideLine("gate"), /dev_team_approve_examples/);
 });
 
-test("executable spec: DEV_TEAM_EXAMPLES=spec selects SPEC_BAR in the gate guide line; on keeps the v6 text byte for byte", () => {
+test("executable spec: DEV_TEAM_EXAMPLES=spec selects SPEC_BAR in the gate guide line; on is pinned to the v8 text", () => {
 	assert.equal(examplesMode({}), "off");
 	assert.equal(examplesMode({ DEV_TEAM_EXAMPLES: " On " }), "on");
 	assert.equal(examplesMode({ DEV_TEAM_EXAMPLES: "SPEC\n" }), "spec");
 	assert.equal(examplesMode({ DEV_TEAM_EXAMPLES: "1" }), "off");
 	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "spec" }), true);
 	const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-	// sha256 of reviewProfileGuideLine("gate", true) at cf27e9a (the v6 arm).
-	const V6 = "cecde92b5eb47c778e9e0b5b6287388fcfd471b67cd6f3582723295b9393aa0c";
-	assert.equal(sha(reviewProfileGuideLine("gate", "on")), V6);
-	assert.equal(sha(reviewProfileGuideLine("gate", true)), V6);
+	// sha256 of reviewProfileGuideLine("gate", true) for the v8 arm (v6 was cecde92b... at cf27e9a); a change here
+	// changes what a benchmark arm measures, so bump it on purpose.
+	const V8 = "7c041e36d82a4594acb62afa5b9bb509fe7e7ebe671314fc6e0f06d913975fe2";
+	assert.equal(sha(reviewProfileGuideLine("gate", "on")), V8);
+	assert.equal(sha(reviewProfileGuideLine("gate", true)), V8);
 	assert.equal(reviewProfileGuideLine("gate", "off"), reviewProfileGuideLine("gate"));
+	for (const rule of [/time or iteration limit/, /request's own nouns/, /configuration or data block/, /first-run or empty state/])
+		assert.match(reviewProfileGuideLine("gate", "on"), rule);
 	const spec = reviewProfileGuideLine("gate", "spec");
 	assert.ok(spec.endsWith(`\n${SPEC_BAR}`));
 	assert.ok(!spec.includes(EXAMPLE_BAR));

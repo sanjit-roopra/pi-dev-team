@@ -100,6 +100,12 @@ superseded_by: a case stops counting only on text from a newer request that chan
   the program now rejects the case's input (non-zero exit, 4xx/5xx status), the case still fails.
 Inputs (files, run, stdin, body) come from the example too: never change an input the example shows, only add
 what it leaves out.
+derived: true on a case whose output the request states in prose, not in an example: a configuration or data
+  block the request shows (run the program on that block as written), or the first-run or empty state of an
+  output the request shows. Expected values are the exact output the request's text implies through the
+  program's real interface (the CLI command or HTTP call the request defines). `source` is still word for word
+  in a saved request, quotes the block or the text that states the outcome, and has at least 8 words. Expected
+  values and inputs need not appear in it. Never mark an example that shows its own output as derived.
 disputed: "<quote>" on a step whose example contradicts the request's own text: the quote is the contradicting
   text, word for word. A disputed step that fails is reported and does not fail the run. Not for a format,
   precision or suffix the text leaves open: there the example decides.
@@ -112,10 +118,8 @@ SPEC_FORMAT = """\
 
 Spec mode (DEV_TEAM_EXAMPLES=spec): the rules of a request become cases too, written before the code.
 
-derived: true on a case: its expected values are your concrete instance of a rule the request states in prose
-  (small inputs you choose, and the exact output the rule implies through the program's real interface: the CLI
-  command or HTTP call the request defines). `source` is still word for word in a saved request, quotes the rule,
-  and has at least 8 words (quote a shorter rule with the words around it). Expected values and inputs need not appear in it. Everything else applies as above.
+derived: true (see above) is also how every listed rule becomes a case here: small inputs you choose, and the
+  exact output the rule implies through the program's real interface.
 already_passing: "<reason>" on a case that passes before you implement anything, because an earlier request
   already built that behaviour: not with only one saved request, and not on a case whose source comes from the
   newest one. Any other case must fail on its red run. A case that passes only because the program file it
@@ -492,7 +496,9 @@ DERIVED_MIN_WORDS = 8
 
 
 def is_derived(case: dict, spec: bool) -> bool:
-    return spec and case.get("derived") is True
+    """A derived case states output the request gives in prose; `on` mode allows it too, spec mode also requires
+    one per listed rule (rule coverage)."""
+    return case.get("derived") is True
 
 
 def source_problems(case: dict, requests_text: str, spec: bool = False) -> list[str]:
@@ -503,7 +509,7 @@ def source_problems(case: dict, requests_text: str, spec: bool = False) -> list[
         return ["`source` is not word for word in any saved request: " + located_miss(source, requests_text)]
     if is_derived(case, spec):  # the author's instance of a prose rule: its values are not in the quote
         short = len(source.split()) < DERIVED_MIN_WORDS
-        return ([f"derived `source` must quote the rule it instances: at least {DERIVED_MIN_WORDS} words"] if short else []) \
+        return ([f"derived `source` must quote the text it instances: at least {DERIVED_MIN_WORDS} words"] if short else []) \
             + step_problems(case, requests_text)
     problems = []
     saved = {"{" + name + "}" for step in case.get("steps", []) for name in (step.get("save") or {})}
