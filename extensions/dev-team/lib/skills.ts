@@ -203,10 +203,10 @@ export function commandText(skill: SkillDef, args: string, profileNote?: string)
  * writes its own criteria and every later gate checks against them, so a requirement the plan rewords passes
  * every review; /specs and /ship hand later phases a model's summary. The saved file gives every phase and its
  * reviewers the user's own text. Code writes it, not the model: a model copy can shorten it, and a model may
- * invoke a skill again with a summary as its arguments. The directory sits under .claude/memory/, which /setup
- * already git-ignores in user projects, like the plans that name it.
+ * invoke a skill again with a summary as its arguments. The directory sits next to the example check's case
+ * file (.dev-team/examples.json); /setup git-ignores it in user projects.
  */
-export const REQUEST_DIR = path.join(".claude", "memory", "requests");
+export const REQUEST_DIR = path.join(".dev-team", "requests");
 const SAVE_REQUEST_SKILLS: ReadonlySet<string> = new Set(["plan", "specs", "ship"]);
 
 /** An issue number or list (`12`, `#12`, `4,5`), a URL or a file path: names a source, is not request text. */
@@ -240,6 +240,17 @@ export function saveRequest(cwd: string, bareName: string, args: string, now = n
 export function saveDirectRequest(cwd: string, text: string, now = new Date()): string | undefined {
 	if (text.trimStart().startsWith("/") || !hasRequestText(text)) return undefined;
 	return writeRequest(cwd, "request", text, now);
+}
+
+/**
+ * Saves examples the human approved (or edited) in `dev_team_approve_examples` to REQUEST_DIR as
+ * `approved-<time>.md`, raw and with no header, so a case `source` quoting them matches character for
+ * character and their fenced blocks fall under example_replay.py's coverage check. Only that tool calls
+ * this, after a real human answer. Returns the path relative to cwd; undefined when not saved. Never throws.
+ */
+export function saveApprovedExamples(cwd: string, text: string, now = new Date()): string | undefined {
+	if (!text.trim()) return undefined;
+	return writeRequest(cwd, "approved", text, now);
 }
 
 function writeRequest(cwd: string, name: string, text: string, now: Date): string | undefined {

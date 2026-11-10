@@ -1212,3 +1212,73 @@ test("a tiny brief that grows to 4 new files gets one size advisory; a failed ca
 	assert.match(await result(), ADVISORY, "first write past the size");
 	assert.doesNotMatch(await result(), ADVISORY, "only once");
 });
+
+/** A fresh extension loaded with DEV_TEAM_EXAMPLES and DEV_TEAM_REVIEW set in the user's environment (read at load). */
+async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string; DEV_TEAM_REVIEW?: string }) {
+	for (const key of ["DEV_TEAM_EXAMPLES", "DEV_TEAM_REVIEW"] as const) {
+		const before = process.env[key];
+		t.after(() => {
+			if (before === undefined) delete process.env[key];
+			else process.env[key] = before;
+		});
+		if (env[key] === undefined) delete process.env[key];
+		else process.env[key] = env[key];
+	}
+	const ext = await loadExtension();
+	t.after(ext.cleanup);
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-examples-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	const ctx = { ...blockCtx, cwd, isProjectTrusted: () => false };
+	const forge = () => ext.handlers.tool_call[0]({ toolName: "write", toolCallId: "w", input: { path: ".dev-team/requests/request-x.md", content: "x" } }, ctx) as Promise<Verdict>;
+	const specs = async () =>
+		((await (ext.tools.skill as unknown as { execute: (...args: unknown[]) => Promise<{ content: { text: string }[] }> }).execute("s", { name: "specs", args: "" }, undefined, () => {}, ctx)).content[0].text);
+	return { ext, forge, specs };
+}
+
+const SAVED_REQUESTS_REASON = /Saved requests are written by dev-team code only/;
+
+test("example check on (gate): dev_team_approve_examples is registered, a write to the saved requests is blocked, /specs gets the approval step", async (t) => {
+	const { ext, forge, specs } = await examplesSession(t, { DEV_TEAM_EXAMPLES: "on" });
+	assert.equal(ext.tools.dev_team_approve_examples?.exposure, "model-only");
+	assert.equal(ext.tools.dev_team_approve_examples?.annotations?.readOnlyHint, false);
+	const r = await forge();
+	assert.equal(r?.block, true);
+	assert.match(r?.reason ?? "", SAVED_REQUESTS_REASON);
+	assert.match(await specs(), /## Example check: approved examples/);
+});
+
+test("executable spec (gate): dev_team_freeze_cases joins the approval tool, the freeze file is guarded, the guide carries SPEC_BAR", async (t) => {
+	const { ext } = await examplesSession(t, { DEV_TEAM_EXAMPLES: "spec" });
+	assert.equal(ext.tools.dev_team_freeze_cases?.exposure, "model-only");
+	assert.equal(ext.tools.dev_team_freeze_cases?.annotations?.readOnlyHint, false);
+	assert.ok(ext.tools.dev_team_approve_examples);
+	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-spec-"));
+	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+	const ctx = { ...blockCtx, cwd, isProjectTrusted: () => false };
+	const r = (await ext.handlers.tool_call[0]({ toolName: "bash", toolCallId: "b", input: { command: "echo '{}' > .dev-team/requests/.frozen.json" } }, ctx)) as Verdict;
+	assert.equal(r?.block, true);
+	assert.match(r?.reason ?? "", SAVED_REQUESTS_REASON);
+	const opts: { sections?: Record<string, string> } = {};
+	await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, ctx);
+	assert.match(opts.sections?.dev_team ?? "", /- Executable spec \(gate\)/);
+	assert.doesNotMatch(opts.sections?.dev_team ?? "", /- Example check \(gate\)/);
+});
+
+test("example check on: no dev_team_freeze_cases, the guide carries EXAMPLE_BAR, not SPEC_BAR", async (t) => {
+	const { ext } = await examplesSession(t, { DEV_TEAM_EXAMPLES: "on" });
+	assert.equal(ext.tools.dev_team_freeze_cases, undefined);
+	const opts: { sections?: Record<string, string> } = {};
+	await ext.handlers.before_agent_start[0]({ systemPromptOptions: opts }, { ...blockCtx, isProjectTrusted: () => false });
+	assert.match(opts.sections?.dev_team ?? "", /- Example check \(gate\)/);
+	assert.doesNotMatch(opts.sections?.dev_team ?? "", /Executable spec/);
+});
+
+test("example check off, or a lean or full profile: no approval tool, no write guard, /specs unchanged", async (t) => {
+	for (const env of [{}, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "full" }, { DEV_TEAM_EXAMPLES: "spec", DEV_TEAM_REVIEW: "lean" }]) {
+		const { ext, forge, specs } = await examplesSession(t, env);
+		assert.equal(ext.tools.dev_team_approve_examples, undefined, JSON.stringify(env));
+		assert.equal(ext.tools.dev_team_freeze_cases, undefined, JSON.stringify(env));
+		assert.doesNotMatch((await forge())?.reason ?? "", SAVED_REQUESTS_REASON, JSON.stringify(env));
+		assert.doesNotMatch(await specs(), /Example check: approved examples|dev_team_approve_examples/, JSON.stringify(env));
+	}
+});

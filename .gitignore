@@ -18,6 +18,7 @@ test/.tmp/
 # Personal configuration and agent runtime state
 /.pi/dev-team.local.json
 /.claude/settings.local.json
+/.dev-team/requests/
 /.claude/memory/
 /.claude/metrics/
 /.claude/plans/

@@ -167,6 +167,65 @@ function segmentsChange(segments: ShellSegment[], cwd: string | undefined): bool
 	return false;
 }
 
+/** A path a bash command writes, as written; `dynamic`: the shell computes part of it. */
+export type WriteTarget = Target;
+
+/** A simple command of a bash line: its name (after assignments, prefixes and `timeout <duration>`), its words, and the paths it visibly writes. */
+export interface BashCommand {
+	name: string;
+	words: string[];
+	writes: WriteTarget[];
+}
+
+/**
+ * Every simple command a bash line runs, `$(...)` and backtick commands included, with the paths each
+ * visibly writes: redirect targets, `>|` targets, and the paths of a mutating command (cp, ln, install
+ * and rsync write their last path; rm, mv, tee, touch, sed -i, perl -i and the others every path).
+ * A path the shell computes is marked dynamic; a write a program does itself (`python -c`) is not seen.
+ */
+export function bashCommands(command: string): BashCommand[] {
+	const active = withoutSingleQuoted(command);
+	const clobbered = [...active.replace(/"(?:\\.|[^"\\])*"/g, '""').matchAll(/>\|\s*([^\s&;|<>]+)/g)];
+	const forced: BashCommand[] = clobbered.length ? [{ name: "", words: [], writes: clobbered.map((m) => ({ text: m[1], dynamic: /[$`]/.test(m[1]) })) }] : [];
+	const backticks = [...active.matchAll(/`([^`]+)`/g)].flatMap((m) => bashCommands(m[1]));
+	return [...forced, ...backticks, ...segmentCommands(scanShell(command))];
+}
+
+/** Skips `timeout [options] <duration>` before a command, so `timeout 600 cmd` names `cmd`. */
+function skipTimeout(words: string[], at: number): number {
+	if (words[at] !== "timeout") return at;
+	let i = at + 1;
+	while (words[i]?.startsWith("-")) i++;
+	return i + 1;
+}
+
+function segmentCommands(segments: ShellSegment[]): BashCommand[] {
+	return segments.flatMap((segment) => {
+		const nested = segmentCommands(segment.flatMap((w) => w.substitutions ?? []));
+		const views = segment.map(unquotedView);
+		const writes: Target[] = [];
+		for (let i = 0; i < segment.length; i++) {
+			const target = segment[i].redirect ? undefined : redirectTarget(segment, views, i);
+			if (target) writes.push(target);
+		}
+		const texts = segment.map((w) => w.text);
+		const skipPrefixes = (i: number) => {
+			while (i < texts.length && (ASSIGNMENT.test(texts[i]) || PREFIXES.has(texts[i]))) i++;
+			return i;
+		};
+		const at = skipPrefixes(skipTimeout(texts, skipPrefixes(0)));
+		const words = texts.slice(at);
+		const name = path.basename(words[0] ?? "");
+		const paths = segment
+			.slice(at + 1)
+			.filter((w) => w.text && !w.text.startsWith("-") && !REDIRECT.test(w.text))
+			.map((w) => ({ text: w.text, dynamic: w.dynamic }));
+		if (MUTATING_COMMANDS.has(name)) writes.push(...(COPY_COMMANDS.has(name) ? paths.slice(-1) : paths));
+		else if ((name === "sed" || name === "perl") && words.slice(1).some((w) => IN_PLACE.test(w))) writes.push(...paths);
+		return [...nested, { name, words, writes }];
+	});
+}
+
 /** Paths the team keeps its own state and reports in; writing them needs no brief. */
 function isStatePath(file: unknown, cwd: string): boolean {
 	if (typeof file !== "string" || !file) return false;

@@ -17,6 +17,7 @@
     "agents/Explore.md",
     "agents/general-purpose.md",
     "agents/refactor-opportunity-review.md",
+    "agents/scenario-author.md",
     "hooks/guards.json",
     "hooks/pre_tool_guard.py",
     "scripts/build_phase.py",

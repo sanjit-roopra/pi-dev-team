@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -8,6 +9,8 @@ import {
 	applyReviewProfileEnv,
 	EXAMPLE_BAR,
 	examplesEnabled,
+	examplesMode,
+	examplesSpecsNote,
 	farleyEnabled,
 	insertReviewProfileNote,
 	LEAN_SKILLS,
@@ -19,6 +22,7 @@ import {
 	reviewProfileNote,
 	reviewProfilePreloadedSkills,
 	selectFarleyBlock,
+	SPEC_BAR,
 } from "../../extensions/dev-team/lib/review-profile.ts";
 import { commandText, discoverSkillPool, discoverSkills, expandSkill } from "../../extensions/dev-team/lib/skills.ts";
 import { preloadedSkillText } from "../../extensions/dev-team/lib/subagent.ts";
@@ -239,4 +243,46 @@ test("example check: opt-in with DEV_TEAM_EXAMPLES=on, only in the gate guide li
 	assert.ok(!reviewProfileGuideLine("lean", true).includes(EXAMPLE_BAR));
 	assert.equal(reviewProfileGuideLine("full", true), "");
 	assert.match(EXAMPLE_BAR, /scripts\/example_replay\.py/);
+	assert.match(EXAMPLE_BAR, /dev_team_approve_examples/);
+	assert.doesNotMatch(reviewProfileGuideLine("gate"), /dev_team_approve_examples/);
+});
+
+test("executable spec: DEV_TEAM_EXAMPLES=spec selects SPEC_BAR in the gate guide line; on is pinned to the v8 text", () => {
+	assert.equal(examplesMode({}), "off");
+	assert.equal(examplesMode({ DEV_TEAM_EXAMPLES: " On " }), "on");
+	assert.equal(examplesMode({ DEV_TEAM_EXAMPLES: "SPEC\n" }), "spec");
+	assert.equal(examplesMode({ DEV_TEAM_EXAMPLES: "1" }), "off");
+	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "spec" }), true);
+	const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+	// sha256 of reviewProfileGuideLine("gate", true) for the v8 arm (v6 was cecde92b... at cf27e9a); a change here
+	// changes what a benchmark arm measures, so bump it on purpose.
+	const V8 = "7c041e36d82a4594acb62afa5b9bb509fe7e7ebe671314fc6e0f06d913975fe2";
+	assert.equal(sha(reviewProfileGuideLine("gate", "on")), V8);
+	assert.equal(sha(reviewProfileGuideLine("gate", true)), V8);
+	assert.equal(reviewProfileGuideLine("gate", "off"), reviewProfileGuideLine("gate"));
+	for (const rule of [/time or iteration limit/, /request's own nouns/, /configuration or data block/, /first-run or empty state/])
+		assert.match(reviewProfileGuideLine("gate", "on"), rule);
+	const spec = reviewProfileGuideLine("gate", "spec");
+	assert.ok(spec.endsWith(`\n${SPEC_BAR}`));
+	assert.ok(!spec.includes(EXAMPLE_BAR));
+	assert.equal(reviewProfileGuideLine("lean", "spec"), reviewProfileGuideLine("lean"));
+	assert.equal(reviewProfileGuideLine("full", "spec"), "");
+	assert.ok(!SPEC_BAR.includes("\n"), "one line, like EXAMPLE_BAR");
+	assert.ok(SPEC_BAR.startsWith("- "));
+	// The order: author first, freeze, implement, replay until exit 0.
+	const at = (re: RegExp) => SPEC_BAR.search(re);
+	assert.ok(at(/dispatch `scenario-author`/) >= 0 && at(/dispatch `scenario-author`/) < at(/`dev_team_freeze_cases`/));
+	assert.ok(at(/`dev_team_freeze_cases`/) < at(/\(3\) Implement/) && at(/\(3\) Implement/) < at(/until it exits 0/));
+	for (const kept of [/never fix the case file by hand/, /Never edit or delete a frozen case/, /`disputed`/, /`spec-compliance-review` judges disputes/, /`superseded_by`/, /`vary`/, /`save`/, /`excerpt`/, /the example decides, even against an interface standard/, /timeout 600/, /dev_team_approve_examples/, /scripts\/example_replay\.py/]) {
+		assert.match(SPEC_BAR, kept);
+	}
+});
+
+test("example check: /specs gets the approved-examples step, other skills nothing", () => {
+	const note = examplesSpecsNote(ROOT, "specs") ?? "";
+	assert.match(note, /^## Example check: approved examples/);
+	assert.match(note, /dev_team_approve_examples/);
+	assert.match(note, /\*\*Approved examples\*\*: <path>/);
+	assert.match(note, /approves without reading/);
+	assert.equal(examplesSpecsNote(ROOT, "plan"), undefined);
 });

@@ -12,6 +12,8 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking, tierModelsLine } from "./lib/agents.ts";
+import { registerApproveExamples } from "./lib/approve-examples.ts";
+import { registerFreezeCases } from "./lib/freeze-cases.ts";
 import { autocompactDue, describeAutocompact } from "./lib/autocompact.ts";
 import { isModelVisibleRead, ReadTracker } from "./lib/read-dedup.ts";
 import {
@@ -36,7 +38,8 @@ import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolv
 import { recordCost } from "./lib/metrics.ts";
 import {
 	applyReviewProfileEnv,
-	examplesEnabled,
+	examplesMode,
+	examplesSpecsNote,
 	farleyEnabled,
 	reviewProfileArgs,
 	reviewProfileFromEnv,
@@ -64,6 +67,7 @@ import {
 } from "./lib/brief.ts";
 import { createPlainGate, lintQuestion, type PlainQuestion, questionStyleGuide } from "./lib/plain-questions.ts";
 import { pickOne, typeAnswer, type Waiter } from "./lib/question-dialog.ts";
+import { REQUEST_DIR_BLOCK, writesRequestDir } from "./lib/request-guard.ts";
 import { removeProcessFiles } from "./lib/session-files.ts";
 import { piSubagentsBlockReason, piSubagentsLoadsLater, piSubagentsTools, stripPiSubagentsPrompt, withoutBlocked } from "./lib/pi-subagents.ts";
 import { describeRunaway, ToolArgsWatchdog } from "./lib/tool-args-watchdog.ts";
@@ -109,11 +113,16 @@ export default function devTeam(pi: ExtensionAPI) {
 	// Read before any config file's env is applied (applyEnv): only the user's own environment sets it.
 	const review = reviewProfileFromEnv(process.env);
 	const farley = farleyEnabled(process.env);
-	const examples = review.profile === "gate" && examplesEnabled(process.env);
+	// `on` or `spec` (the executable spec: scenario-author writes the cases, dev_team_freeze_cases freezes them); gate only.
+	const exampleMode = review.profile === "gate" ? examplesMode(process.env) : "off";
+	const examples = exampleMode !== "off";
 	let reviewWarned = false;
-	/** The gate or lean section for a package skill, or undefined (full profile: skill text unchanged). */
-	const profileNoteFor = (skill: SkillDef) =>
-		skill.source === "package" ? reviewProfileNote(packageRoot, review.profile, skill.name, farley) : undefined;
+	/** The gate or lean section for a package skill, plus /specs' approved-examples step under the example check; undefined: skill text unchanged. */
+	const profileNoteFor = (skill: SkillDef) => {
+		if (skill.source !== "package") return undefined;
+		const notes = [reviewProfileNote(packageRoot, review.profile, skill.name, farley), examples ? examplesSpecsNote(packageRoot, skill.name) : undefined];
+		return notes.filter(Boolean).join("\n\n") || undefined;
+	};
 	/** The args a package skill expands with (gate and lean /build get --backstop-review=skip); full: unchanged. */
 	const profileArgsFor = (skill: SkillDef, args: string) => (skill.source === "package" ? reviewProfileArgs(review.profile, skill.name, args) : args);
 	// Project config is read again at session start, once pi's trust decision is known.
@@ -241,6 +250,10 @@ export default function devTeam(pi: ExtensionAPI) {
 	registerAskUser(pi, getConfig, { answerMode, onAway });
 	registerWebFetch(pi);
 	registerBriefTool(pi, { gate: briefGate, approveFeature, onAway, sessionId: (ctx) => ctx.sessionManager.getSessionId() });
+	// The example check's approved examples: only a human answer in this tool adds a saved request.
+	if (examples) registerApproveExamples(pi, { getConfig, answerMode, onAway });
+	// The executable spec: freezes the cases that fail before the code exists.
+	if (exampleMode === "spec") registerFreezeCases(pi, { packageRoot });
 
 	/** Whether a dev_team_subagent call dispatches an agent that can change files (no tools: list = all tools). */
 	function dispatchWrites(input: Record<string, unknown>, ctx: ExtensionContext): boolean {
@@ -567,7 +580,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const tierModelsText = hasAgentPrompt
 			? ""
 			: tierModelsLine(config.models, ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined, (id) => !!findModel(ctx, id));
-		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief", reviewProfileGuideLine(review.profile, examples));
+		const guide = compatGuide(packageRoot, index, process.env.DEV_TEAM_INTERACTIVE === "1" ? answerMode() : undefined, styleGuideFor(config.githubStyle), tierModelsText, blocked.size > 0, !hasAgentPrompt && !isSubagent && config.routing === "brief", reviewProfileGuideLine(review.profile, exampleMode));
 		opts.sections = { ...(opts.sections ?? {}), dev_team: guide };
 		if (hasAgentPrompt) {
 			// The agent's own text goes after the dev-team guide. pi renders the appended prompt before the
@@ -605,6 +618,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("tool_call", async (event, ctx) => {
 		if (blockedForeignTools().has(event.toolName)) return { block: true, reason: piSubagentsBlockReason(event.toolName) };
 		const input = event.input as Record<string, unknown>;
+		// Under the example check, saved requests are the human's words: only dev-team code writes them.
+		if (examples && writesRequestDir(event.toolName, input, ctx.cwd, exampleMode === "spec")) return { block: true, reason: REQUEST_DIR_BLOCK };
 		const routing = !isSubagent && config.routing === "brief";
 		if (event.toolName === DEV_TEAM_SUBAGENT_TOOL) {
 			if (routing && !briefGate.open && dispatchWrites(input, ctx)) return { block: true, reason: briefGate.blockReason() };

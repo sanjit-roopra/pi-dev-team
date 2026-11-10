@@ -5,7 +5,7 @@ A request (issue, spec, ticket) that shows an example (a command and its output,
 response) makes that example a contract. This script reads a case file (default `.dev-team/examples.json`)
 in which each example is copied from the request, runs every case against the program, and compares the
 output. It also checks that the case file is honest and complete against the saved requests (default
-`.claude/memory/requests/`):
+`.dev-team/requests/`):
 
 - every case quotes its example (`source`) word for word from a saved request, and every expected value
   appears whole in that quote, so a case cannot be edited to match the code;
@@ -14,8 +14,13 @@ output. It also checks that the case file is honest and complete against the sav
 Cases are kept across requests, so a later change that breaks an earlier example fails here. A case stops
 running only when `superseded_by` quotes text from a saved request that changes the behaviour.
 
-    example_replay.py [--cases FILE] [--requests DIR] [--root DIR] [--only ID] [--timeout SECONDS]
+    example_replay.py [--cases FILE] [--requests DIR] [--root DIR] [--only ID] [--timeout SECONDS] [--mode on|spec]
+    example_replay.py --red [--json]  checks the case file, then runs every case before the code exists (red run)
     example_replay.py --format        prints the case file format
+
+Spec mode (env DEV_TEAM_EXAMPLES=spec, or once `<requests dir>/.frozen.json` exists, or --mode spec) also accepts
+derived cases (a rule's concrete instance), checks that every rule (list item) in a saved request is covered by a
+case or skipped, and checks every case against the freeze file, so a frozen case cannot be edited to match the code.
 
 Exit 0: every check holds and every case passes. 1: a check or case failed (each is listed). 2: the case file
 is unusable.
@@ -23,6 +28,7 @@ is unusable.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -94,6 +100,12 @@ superseded_by: a case stops counting only on text from a newer request that chan
   the program now rejects the case's input (non-zero exit, 4xx/5xx status), the case still fails.
 Inputs (files, run, stdin, body) come from the example too: never change an input the example shows, only add
 what it leaves out.
+derived: true on a case whose output the request states in prose, not in an example: a configuration or data
+  block the request shows (run the program on that block as written), or the first-run or empty state of an
+  output the request shows. Expected values are the exact output the request's text implies through the
+  program's real interface (the CLI command or HTTP call the request defines). `source` is still word for word
+  in a saved request, quotes the block or the text that states the outcome, and has at least 8 words. Expected
+  values and inputs need not appear in it. Never mark an example that shows its own output as derived.
 disputed: "<quote>" on a step whose example contradicts the request's own text: the quote is the contradicting
   text, word for word. A disputed step that fails is reported and does not fail the run. Not for a format,
   precision or suffix the text leaves open: there the example decides.
@@ -102,8 +114,39 @@ Copy expected values exactly as the request shows them. When the program disagre
 program, not the case.
 """
 
+SPEC_FORMAT = """\
+
+Spec mode (DEV_TEAM_EXAMPLES=spec): the rules of a request become cases too, written before the code.
+
+derived: true (see above) is also how every listed rule becomes a case here: small inputs you choose, and the
+  exact output the rule implies through the program's real interface.
+already_passing: "<reason>" on a case that passes before you implement anything, because an earlier request
+  already built that behaviour: not with only one saved request, and not on a case whose source comes from the
+  newest one. Any other case must fail on its red run. A case that passes only because the program file it
+  runs ({root}/...) does not exist yet counts as red (vacuous). An error case that the current program already
+  rejects for another reason (an unknown option, say) passes too: add a first step that uses the new behaviour
+  successfully, or check the error text the request states, so the case fails until the feature exists.
+skipped also takes {"rule": "<the list item's text, or enough of its start to match only that item>",
+  "reason": "not observable / covered by <case id> / ..."}.
+Rule coverage: every list item (-, *, +, 1. or 1)) with at least 4 words, outside code blocks, in a saved
+  request is a rule. A case covers it when its `source` holds 8 consecutive words of the item (the whole item if
+  it is shorter), else skip it with a reason.
+Red run: example_replay.py --red [--json] checks the case file and runs every case; failures are expected there.
+  dev_team_freeze_cases records each case's hash in .dev-team/requests/.frozen.json (and a copy outside the
+  project). A frozen case must not change (superseded_by and a step's `disputed` excepted) and must not be
+  removed. A step's structure (run/http/files, match, exit, status) is checked before anything runs.
+superseded_by (spec mode): the case needs a replacement, an active case whose source comes from the superseding
+  request (or a newer one) and whose first run/http step has the same input. One sentence may then supersede
+  several cases, each with its own replacement. When the newer text makes the old input invalid, the old case
+  stops failing on the rejection: its replacement expects it.
+Normal run (spec mode): --mode on does not turn the freeze check off, --requests must be the default folder, and
+  --only fails on an unknown id or a partial run: run without --only before you report done.
+"""
+
 CASES_DEFAULT = ".dev-team/examples.json"
-REQUESTS_DEFAULT = ".claude/memory/requests"
+REQUESTS_DEFAULT = ".dev-team/requests"
+FROZEN_NAME = ".frozen.json"
+MODES = ("on", "spec")
 FENCE = re.compile(r"^([ \t]*)(`{3,}|~{3,})[^\n]*\n(.*?)^[ \t]*\2[ \t]*$", re.M | re.S)
 TOKEN = re.compile(r"[A-Za-z0-9]+")
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
@@ -317,10 +360,22 @@ def json_text(value) -> str:
 # --- Requests: source and coverage checks --------------------------------------------
 
 
+REQUEST_STAMP = re.compile(r"^[a-z]+-(\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z)\.md$")
+
+
+def request_order(path: Path) -> tuple[str, str]:
+    """Oldest first by the time in the saved name (`<kind>-<ISO time>.md`), whatever the kind: `approved-`,
+    `plan-`, `request-` and `specs-` files interleave by time. A name without a time sorts first, by name."""
+    match = REQUEST_STAMP.match(path.name)
+    return (match.group(1) if match else "", path.name)
+
+
 def load_requests(directory: Path) -> list[tuple[str, str]]:
+    """The saved requests, oldest first (`request_order`), as (file name, text). Dotfiles (the freeze file) are
+    not requests."""
     if not directory.is_dir():
         return []
-    files = sorted(p for p in directory.iterdir() if p.is_file())
+    files = sorted((p for p in directory.iterdir() if p.is_file() and not p.name.startswith(".")), key=request_order)
     return [(p.name, p.read_text(encoding="utf-8", errors="replace")) for p in files]
 
 
@@ -437,12 +492,25 @@ def step_problems(case: dict, requests_text: str) -> list[str]:
     return problems
 
 
-def source_problems(case: dict, requests_text: str) -> list[str]:
+DERIVED_MIN_WORDS = 8
+
+
+def is_derived(case: dict, spec: bool) -> bool:
+    """A derived case states output the request gives in prose; `on` mode allows it too, spec mode also requires
+    one per listed rule (rule coverage)."""
+    return case.get("derived") is True
+
+
+def source_problems(case: dict, requests_text: str, spec: bool = False) -> list[str]:
     source = collapse(case.get("source", ""))
     if not source:
         return ["has no `source` (the example copied from the request)"]
     if source not in requests_text:
         return ["`source` is not word for word in any saved request: " + located_miss(source, requests_text)]
+    if is_derived(case, spec):  # the author's instance of a prose rule: its values are not in the quote
+        short = len(source.split()) < DERIVED_MIN_WORDS
+        return ([f"derived `source` must quote the text it instances: at least {DERIVED_MIN_WORDS} words"] if short else []) \
+            + step_problems(case, requests_text)
     problems = []
     saved = {"{" + name + "}" for step in case.get("steps", []) for name in (step.get("save") or {})}
     for where, value in expected_values(case):
@@ -457,8 +525,29 @@ def request_index(text: str, requests: list[tuple[str, str]]) -> int:
     return next((i for i, (_, body) in enumerate(requests) if text and text in collapse(body)), -1)
 
 
-def superseding_problems(cases: list[dict], requests: list[tuple[str, str]]) -> list[str]:
-    """A case stops running only on newer request text, and one sentence does not retire several examples."""
+def first_input(case: dict) -> str | None:
+    """The first `run` or `http` step's input (command, stdin, body), as comparable text; None without one."""
+    for step in case.get("steps") or []:
+        if isinstance(step, dict) and ("run" in step or "http" in step):
+            return json.dumps([step.get("run"), step.get("http"), step.get("stdin"), step.get("body")], sort_keys=True)
+    return None
+
+
+def replacement(case: dict, cases: list[dict], requests: list[tuple[str, str]]) -> str | None:
+    """Spec mode: the id of an active case that takes over a superseded one: its source comes from the request
+    that holds the `superseded_by` quote, or a newer one, and its first run/http step has the same input."""
+    at = request_index(collapse(case.get("superseded_by") or ""), requests)
+    key = first_input(case)
+    if at < 0 or key is None:
+        return None
+    return next((c["id"] for c in cases if c is not case and c.get("superseded_by") is None and first_input(c) == key
+                 and request_index(collapse(c.get("source", "")), requests) >= at), None)
+
+
+def superseding_problems(cases: list[dict], requests: list[tuple[str, str]], spec: bool = False) -> list[str]:
+    """A case stops running only on newer request text, and one sentence does not retire several examples. In
+    spec mode each superseded case also needs a replacement (see `replacement`); one sentence may then retire
+    several cases, each with its own replacement (a change to every output, say)."""
     problems, by_quote = [], {}
     for case in cases:
         if case.get("superseded_by") is None:
@@ -469,8 +558,15 @@ def superseding_problems(cases: list[dict], requests: list[tuple[str, str]]) -> 
             problems.append(f"case {case['id']}: `superseded_by` is not word for word in any saved request")
         elif at <= request_index(collapse(case.get("source", "")), requests):
             problems.append(f"case {case['id']}: `superseded_by` must quote a request newer than the one its source comes from")
-        by_quote.setdefault(quote, []).append(case["id"])
-    for quote, ids in by_quote.items():
+        elif spec and replacement(case, cases, requests) is None:
+            problems.append(f"case {case['id']}: superseded, but no case replaces it: add a case whose source quotes the "
+                            "superseding request (or a newer one) and whose first run/http step has the same input "
+                            "(command, stdin, body), expecting what the newer text says")
+        by_quote.setdefault(quote, []).append(case)
+    for quote, group in by_quote.items():
+        ids = [c["id"] for c in group]
+        if spec and all(replacement(c, cases, requests) for c in group):
+            continue
         if len(ids) > 1:
             problems.append(f"cases {', '.join(ids)} stop running on one sentence {quote[:100]!r}: superseding is for newer "
                             "text or an example that shows a different output for the same input. A new rule that makes your "
@@ -497,10 +593,13 @@ def block_covered(block_text: str, body_lines: list[str], sources: list[str]) ->
     return bool(lines) and all(line in joined for line in lines)
 
 
-def skip_targets(skipped: list[dict], distinct_blocks: set[str]) -> tuple[set[str], list[str]]:
-    """The blocks the skips name, and problems with skips that name no block or more than one."""
+def skip_targets(skipped: list[dict], distinct_blocks: set[str], spec: bool = False) -> tuple[set[str], list[str]]:
+    """The blocks the skips name, and problems with skips that name no block or more than one. A rule skip is
+    checked by rule_coverage_problems in spec mode; in on mode it is a skip without a block, as in v6."""
     covered, problems = set(), []
     for skip in skipped:
+        if spec and "rule" in skip and "block" not in skip:
+            continue
         start = collapse(skip.get("block", ""))
         if not start or not skip.get("reason"):
             problems.append(f"skip {start[:60]!r}: needs `block` and `reason`")
@@ -512,10 +611,11 @@ def skip_targets(skipped: list[dict], distinct_blocks: set[str]) -> tuple[set[st
     return covered, problems
 
 
-def coverage_problems(requests: list[tuple[str, str]], cases: list[dict], skipped: list[dict]) -> list[str]:
+def coverage_problems(requests: list[tuple[str, str]], cases: list[dict], skipped: list[dict],
+                      spec: bool = False) -> list[str]:
     sources = [collapse(c.get("source", "")) for c in cases if collapse(c.get("source", ""))]
     blocks = list(fenced_blocks(requests))
-    skipped_blocks, problems = skip_targets(skipped, {b[2] for b in blocks})
+    skipped_blocks, problems = skip_targets(skipped, {b[2] for b in blocks}, spec)
     body_lines = {}
     for name, text in requests:
         for match in FENCE.finditer(text):
@@ -525,6 +625,173 @@ def coverage_problems(requests: list[tuple[str, str]], cases: list[dict], skippe
             continue
         problems.append(f"not covered by case sources or skipped with a reason: {name}:{line} block starting {first[:80]!r}")
     return problems
+
+
+LIST_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+(\S.*)$")
+RULE_MIN_WORDS = 4
+RULE_WINDOW = 8
+
+
+def without_fences(text: str) -> str:
+    """`text` with each fenced block's lines blanked, so line numbers stay."""
+    return FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
+def list_items(text: str) -> list[str]:
+    """The collapsed text of each markdown list item outside fenced blocks, with its continuation lines (a
+    non-blank line that follows an item and does not start a new item, heading or block)."""
+    items, current = [], None
+    for line in without_fences(text).splitlines():
+        match = LIST_ITEM.match(line)
+        if match:
+            if current is not None:
+                items.append(current)
+            current = match.group(1)
+        elif current is not None and line.strip() and not line.lstrip().startswith(("#", "```", "~~~", "|", ">")):
+            current += " " + line.strip()
+        elif current is not None:
+            items.append(current)
+            current = None
+    if current is not None:
+        items.append(current)
+    return [collapse(item) for item in items]
+
+
+def rules(requests: list[tuple[str, str]]):
+    """(request name, rule text) for each list item with at least RULE_MIN_WORDS words."""
+    for name, text in requests:
+        for item in list_items(text):
+            if len(item.split()) >= RULE_MIN_WORDS:
+                yield name, item
+
+
+def rule_covered(rule: str, padded_sources: list[str]) -> bool:
+    words = rule.split()
+    size = min(RULE_WINDOW, len(words))
+    windows = {" " + " ".join(words[i:i + size]) + " " for i in range(len(words) - size + 1)}
+    return any(w in s for s in padded_sources for w in windows)
+
+
+def rule_skip_targets(skipped: list[dict], distinct_rules: set[str]) -> tuple[set[str], list[str]]:
+    covered, problems = set(), []
+    for skip in skipped:
+        if "rule" not in skip:
+            continue
+        start = collapse(skip.get("rule", ""))
+        if not start or not skip.get("reason"):
+            problems.append(f"skip rule {start[:60]!r}: needs `rule` and `reason`")
+            continue
+        # The whole text of an item names that item, even when it is also the start of a longer one.
+        hits = [start] if start in distinct_rules else [r for r in distinct_rules if r.startswith(start)]
+        if len(hits) != 1:
+            problems.append(f"skip rule {start[:60]!r} matches {len(hits)} rules: quote enough of the item to match exactly one")
+        covered.update(hits if len(hits) == 1 else [])
+    return covered, problems
+
+
+def rule_coverage_problems(requests: list[tuple[str, str]], cases: list[dict], skipped: list[dict]) -> list[str]:
+    """Spec mode: every rule (list item) is quoted by some case source or skipped with a reason."""
+    padded = [" " + collapse(c.get("source", "")) + " " for c in cases if collapse(c.get("source", ""))]
+    found = list(rules(requests))
+    skipped_rules, problems = rule_skip_targets(skipped, {r for _, r in found})
+    seen = set()
+    for name, rule in found:
+        if rule in skipped_rules or (rule, name) in seen or rule_covered(rule, padded):
+            continue
+        seen.add((rule, name))
+        problems.append(f'rule not covered: "{rule[:80]}" ({name}): add a case (derived: true, see '
+                        "example_replay.py --format --mode spec) whose source quotes it, or skip it with a reason")
+    return problems
+
+
+# --- Freeze file -------------------------------------------------------------------------
+
+
+def case_hash(case: dict) -> str:
+    """sha256 of the case without `superseded_by` and without each step's `disputed`, so superseding a frozen
+    case or disputing one of its steps later keeps its hash (both are how a frozen case is answered, not edits)."""
+    body = {k: v for k, v in case.items() if k != "superseded_by"}
+    if isinstance(body.get("steps"), list):
+        body["steps"] = [{k: v for k, v in step.items() if k != "disputed"} if isinstance(step, dict) else step
+                         for step in body["steps"]]
+    text = json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def load_frozen(path: Path) -> dict:
+    """The freeze file's `cases` ({id: {hash, red, frozen_at}}); empty when there is none."""
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as err:
+        raise CaseFileError(f"{path}: not valid JSON: {err}") from err
+    if not isinstance(data, dict) or not isinstance(data.get("cases", {}), dict):
+        raise CaseFileError(f"{path}: expected an object with a `cases` object")
+    return data.get("cases", {})
+
+
+def freeze_problems(cases: list[dict], frozen: dict) -> list[str]:
+    problems = []
+    by_id = {c["id"]: c for c in cases}
+    for case in cases:
+        entry = frozen.get(case["id"])
+        if entry is None:
+            if case.get("superseded_by") is None:
+                problems.append(f"case {case['id']} is not frozen: call dev_team_freeze_cases before you implement it")
+        elif not isinstance(entry, dict) or entry.get("hash") != case_hash(case):
+            problems.append(f"case {case['id']} changed after it was frozen: restore it; a changed spec needs "
+                            "superseded_by and a new case")
+    for case_id in frozen:
+        if case_id not in by_id:
+            problems.append(f"frozen case {case_id} was removed: keep it; use superseded_by")
+    return problems
+
+
+def freeze_copy_path(root: Path, env=None) -> Path:
+    """The copy of the freeze file that dev_team_freeze_cases keeps outside the project (freeze-cases.ts,
+    freezeCopyPath): `$DEV_TEAM_FREEZE_DIR`, else `$PI_CODING_AGENT_DIR/dev-team-frozen` (pi's agent folder,
+    `~/.pi/agent` by default), named by the project's real path. Deleting or editing the freeze file in the
+    project then shows up as a difference from it."""
+    env = os.environ if env is None else env
+    agent = env.get("PI_CODING_AGENT_DIR") or str(Path.home() / ".pi" / "agent")
+    base = Path(env.get("DEV_TEAM_FREEZE_DIR") or Path(agent) / "dev-team-frozen")
+    key = hashlib.sha256(os.path.realpath(root).encode("utf-8")).hexdigest()[:16]
+    return base / f"{key}.frozen.json"
+
+
+def load_freeze(frozen_path: Path, copy_path: Path | None) -> tuple[dict, list[str]]:
+    """The frozen cases and the problems with the freeze file. When the copy outside the project exists it is
+    the record (only the tool writes both), and every difference of the project's file from it is a problem."""
+    disk = load_frozen(frozen_path)
+    if copy_path is None or not copy_path.is_file():
+        return disk, []
+    copy = load_frozen(copy_path)
+    problems = []
+    for case_id, entry in copy.items():
+        if case_id not in disk:
+            problems.append(f"frozen case {case_id} is missing from {FROZEN_NAME}: only dev_team_freeze_cases writes the "
+                            "freeze file; call it to restore the file from its copy")
+        elif not isinstance(disk[case_id], dict) or not isinstance(entry, dict) or disk[case_id].get("hash") != entry.get("hash"):
+            problems.append(f"frozen case {case_id} has another hash in {FROZEN_NAME} than dev_team_freeze_cases recorded")
+    for case_id in disk:
+        if case_id not in copy:
+            problems.append(f"{FROZEN_NAME} names case {case_id}, which dev_team_freeze_cases never froze")
+    return copy, problems
+
+
+def env_spec(env) -> bool:
+    """DEV_TEAM_EXAMPLES=spec, case and spaces ignored (as review-profile.ts examplesMode reads it)."""
+    return (env.get("DEV_TEAM_EXAMPLES") or "").strip().lower() == "spec"
+
+
+def resolve_mode(flag: str | None, frozen_path: Path, env=None, copy_path: Path | None = None) -> str:
+    """spec when DEV_TEAM_EXAMPLES=spec or the freeze file (or its copy outside the project) exists, whatever
+    --mode says: `--mode on` cannot turn the freeze check off. Otherwise --mode (for tests), else on."""
+    env = os.environ if env is None else env
+    if env_spec(env) or frozen_path.is_file() or (copy_path is not None and copy_path.is_file()):
+        return "spec"
+    return flag or "on"
 
 
 # --- Running cases ---------------------------------------------------------------------
@@ -632,12 +899,29 @@ def run_command(step: dict, ctx: dict, timeout: float) -> list[str]:
         problems.append(f"exit {done.returncode}, expected {want}; stderr: {done.stderr[-300:]!r}")
     if done.returncode != 0 and step.get("exit", 0) == 0:
         ctx["_rejected"] = f"exit {done.returncode}: {done.stderr.strip()[-200:]!r}"
+    if done.returncode != 0 and "_absent" not in ctx:
+        absent = absent_program(text, ctx)
+        if absent:
+            ctx["_absent"] = absent
     for stream in ("stdout", "stderr"):
         if stream in step:
             diff = compare(fill_expected(step[stream], ctx), getattr(done, stream), step)
             if diff:
                 problems.append(f"{stream}: {diff}")
     return problems + save_values(step, done.stdout, ctx)
+
+
+ROOT_PATH = re.compile(r"\{root\}(/[^\s'\"`;&|<>()]+)")
+
+
+def absent_program(command: str, ctx: dict) -> str | None:
+    """A path under {root} that the command names and that does not exist: the program is not written yet, so
+    a failing exit proves nothing (python exits 2 on a missing script, a shell 127)."""
+    for rel in ROOT_PATH.findall(command):
+        path = Path(str(ctx["root"]) + fill(rel, ctx))
+        if not path.exists():
+            return str(path)
+    return None
 
 
 def fill_expected(expected, ctx: dict):
@@ -728,14 +1012,17 @@ def run_steps(case: dict, ctx: dict, timeout: float) -> tuple[list[str], list[st
     return failures, disputed
 
 
-def run_case(case: dict, root: Path, timeout: float) -> tuple[list[str], list[str], str | None]:
-    """(failures, disputed failures, how the program rejected an input the example shows working, if it did)."""
+def run_case(case: dict, root: Path, timeout: float, info: dict | None = None) -> tuple[list[str], list[str], str | None]:
+    """(failures, disputed failures, how the program rejected an input the example shows working, if it did).
+    `info` gets `absent`: a program path the case named that did not exist when a command failed."""
     with tempfile.TemporaryDirectory(prefix="example-") as tmp:
         ctx = {"root": root, "tmp": tmp, "port": free_port()}
         write_files(Path(tmp), case.get("files"), ctx)
         proc, problem = start_server(case["server"], ctx, timeout) if case.get("server") else (None, None)
         try:
             failures, disputed = ([problem], []) if problem else run_steps(case, ctx, timeout)
+            if info is not None and ctx.get("_absent"):
+                info["absent"] = ctx["_absent"]
             return failures, disputed, ctx.get("_rejected")
         finally:
             stop_server(proc)
@@ -761,13 +1048,115 @@ def load_cases(path: Path) -> dict:
     return data
 
 
-def static_problems(data: dict, requests: list[tuple[str, str]]) -> list[str]:
+MATCH_MODES = ("exact", "json", "subset", "excerpt", "shape")
+HTTP_LINE = re.compile(r"^[A-Za-z]+ /\S*$")
+
+
+def structure_problems(case: dict) -> list[str]:
+    """Spec mode: a case that cannot run as written. Found here, before the freeze, a mistake is the author's
+    to fix; found by a run, the frozen case would fail for good."""
+    problems = []
+    steps = case.get("steps")
+    if not isinstance(steps, list) or not steps or not all(isinstance(s, dict) for s in steps):
+        return ["`steps` must be a non-empty list of objects"]
+    if "files" in case and not isinstance(case["files"], dict):
+        problems.append("`files` must be an object of file name to content")
+    if "server" in case and not isinstance(case["server"], str):
+        problems.append("`server` must be a command string")
+    for i, step in enumerate(steps, 1):
+        if not {"run", "http", "files"} & set(step):
+            problems.append(f"step {i}: has no `run`, `http` or `files`")
+        if "run" in step and not (isinstance(step["run"], str) and step["run"].strip()
+                                  or isinstance(step["run"], list) and step["run"] and all(isinstance(a, str) for a in step["run"])):
+            problems.append(f"step {i}: `run` must be a command string or a list of strings")
+        if "http" in step and not (isinstance(step["http"], str) and HTTP_LINE.match(step["http"].strip())):
+            problems.append(f"step {i}: `http` must be \"METHOD /path\"")
+        if "files" in step and not isinstance(step["files"], dict):
+            problems.append(f"step {i}: `files` must be an object of file name to expected content")
+        for key in ("exit", "status"):
+            if key in step and (not isinstance(step[key], int) or isinstance(step[key], bool)):
+                problems.append(f"step {i}: `{key}` must be an integer")
+        if step.get("match") is not None and step["match"] not in MATCH_MODES:
+            problems.append(f"step {i}: unknown match {step['match']!r} (one of {', '.join(MATCH_MODES)})")
+        for key in ("save", "headers"):
+            if key in step and not isinstance(step[key], dict):
+                problems.append(f"step {i}: `{key}` must be an object")
+        if "vary" in step and not isinstance(step["vary"], list):
+            problems.append(f"step {i}: `vary` must be a list of keys")
+        if step.get("match") in ("json", "subset"):
+            for key in ("stdout", "stderr", "response"):
+                if isinstance(step.get(key), str) and parse_json_output(step[key]) is MISSING:
+                    problems.append(f"step {i}: `{key}` is not JSON, but match is {step['match']}")
+    return problems
+
+
+def already_passing_problems(case: dict, requests: list[tuple[str, str]]) -> list[str]:
+    """Spec mode: `already_passing` is for behaviour an earlier request built, so it needs a reason, an earlier
+    request, and a source that is not from the newest one."""
+    if "already_passing" not in case:
+        return []
+    if not (isinstance(case["already_passing"], str) and case["already_passing"].strip()):
+        return ["`already_passing` needs a reason"]
+    if len(requests) < 2:
+        return ["`already_passing` is for behaviour an earlier request built, and there is only one saved request: "
+                "a case must fail before the code exists"]
+    if request_index(collapse(case.get("source", "")), requests) == len(requests) - 1:
+        return [f"`already_passing` is for behaviour an earlier request built, but the source comes from the newest "
+                f"request ({requests[-1][0]}): a case for it must fail before the code exists"]
+    return []
+
+
+def static_problems(data: dict, requests: list[tuple[str, str]], spec: bool = False) -> list[str]:
     requests_text = collapse("\n".join(text for _, text in requests))
     problems = []
     for case in data["cases"]:
-        problems += [f"case {case['id']}: {p}" for p in source_problems(case, requests_text)]
-    problems += superseding_problems(data["cases"], requests)
-    return problems + coverage_problems(requests, data["cases"], data["skipped"])
+        problems += [f"case {case['id']}: {p}" for p in source_problems(case, requests_text, spec)]
+        if spec:
+            problems += [f"case {case['id']}: {p}" for p in structure_problems(case) + already_passing_problems(case, requests)]
+    problems += superseding_problems(data["cases"], requests, spec)
+    problems += coverage_problems(requests, data["cases"], data["skipped"], spec)
+    return problems + (rule_coverage_problems(requests, data["cases"], data["skipped"]) if spec else [])
+
+
+def red_run(data: dict, requests: list[tuple[str, str]], chosen: list[dict], root: Path, timeout: float,
+            spec: bool, as_json: bool) -> int:
+    """Static checks, then every active case, before the code exists: failures are expected, so exit 0."""
+    problems = static_problems(data, requests, spec)
+    results = {}
+    if not problems:
+        for case in chosen:
+            if case.get("superseded_by") is not None:
+                continue
+            info = {}
+            failures, _disputed, _rejected = run_case(case, root, timeout, info)
+            vacuous = not failures and bool(info.get("absent"))
+            if vacuous:
+                # An error case (`exit: 2`) passes on a program that is not there: it passes for the right reason
+                # only once the program exists, so it counts as red.
+                failures = [f"passes only because {info['absent']} does not exist yet"]
+            results[case["id"]] = {"hash": case_hash(case), "passed": not failures,
+                                   "derived": is_derived(case, spec), "already_passing": bool(case.get("already_passing")),
+                                   "failures": failures, **({"vacuous": True} if vacuous else {})}
+    if as_json:
+        cases = {i: {k: v for k, v in r.items() if k != "failures"} for i, r in results.items()}
+        print(json.dumps({"static_problems": problems, "cases": cases}, ensure_ascii=False))
+        return 1 if problems else 0
+    for line in problems:
+        print(line)
+    if problems:
+        print(f"example_replay --red: {len(problems)} problem(s) in the case file; no case ran")
+        return 1
+    for case_id, r in results.items():
+        label = " derived" if r["derived"] else ""
+        if r["passed"]:
+            note = " (already_passing)" if r["already_passing"] else ": passes before implementation"
+            print(f"case {case_id}: GREEN{label}{note}")
+        else:
+            print(f"case {case_id}: RED{label} {r['failures'][0]}")
+    red = sum(not r["passed"] for r in results.values())
+    print(f"example_replay --red: {red}/{len(results)} cases fail before implementation, "
+          f"{sum(r['passed'] and r['already_passing'] for r in results.values())} already passing")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -778,38 +1167,85 @@ def main(argv=None) -> int:
     parser.add_argument("--only", action="append", default=[], help="run only this case id (repeatable)")
     parser.add_argument("--timeout", type=float, default=30.0, help="seconds per step and for server start")
     parser.add_argument("--format", action="store_true", help="print the case file format and exit")
+    parser.add_argument("--mode", choices=MODES, help="on or spec, for tests: DEV_TEAM_EXAMPLES=spec or a freeze file "
+                        "(in the project or its copy) selects spec whatever this says")
+    parser.add_argument("--red", action="store_true", help="red run: check the case file, run every case, exit 0 "
+                        "even when cases fail (they should, before the code exists)")
+    parser.add_argument("--json", action="store_true", help="with --red: print one JSON object")
     args = parser.parse_args(argv)
-    if args.format:
-        print(FORMAT)
-        return 0
     root = Path(args.root).resolve()
+    # The freeze file is always the project's, whatever --requests names: a copied requests folder without it
+    # must not turn the freeze check off.
+    frozen_path = root / REQUESTS_DEFAULT / FROZEN_NAME
+    copy_path = freeze_copy_path(root)
+    spec = resolve_mode(args.mode, frozen_path, copy_path=copy_path) == "spec"
+    if args.format:
+        print(FORMAT + SPEC_FORMAT if spec else FORMAT)
+        return 0
     try:
         data = load_cases(root / args.cases)
+        frozen, freeze_file_problems = load_freeze(frozen_path, copy_path) if spec and not args.red else ({}, [])
     except CaseFileError as err:
         print(f"example_replay: {err}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"error": str(err)}))
         return 2
-    requests = load_requests(root / args.requests)
-    failures, disputed = static_problems(data, requests), []
+    requests_dir = (root / args.requests).resolve()
+    if spec and requests_dir != (root / REQUESTS_DEFAULT).resolve():
+        message = (f"--requests {args.requests}: in spec mode the saved requests are {REQUESTS_DEFAULT}, which only "
+                   "dev-team code writes; run without --requests")
+        print(json.dumps({"static_problems": [message], "cases": {}}) if args.json else f"example_replay: {message}")
+        return 1
+    requests = load_requests(requests_dir)
     chosen = [c for c in data["cases"] if not args.only or c["id"] in args.only]
+    if args.red:
+        return red_run(data, requests, chosen, root, args.timeout, spec, args.json)
+    failures, disputed = static_problems(data, requests, spec), []
     active = [c for c in chosen if c.get("superseded_by") is None]
+    if spec:
+        failures += freeze_file_problems + freeze_problems(data["cases"], frozen)
+        known = {c["id"] for c in data["cases"]}
+        failures += [f"--only {i}: no such case" for i in args.only if i not in known]
+        every = [c for c in data["cases"] if c.get("superseded_by") is None]
+        if args.only and len(active) < len(every):
+            failures.append(f"partial run: --only ran {len(active)} of {len(every)} active cases; run without --only "
+                            "before you report done")
     passed = 0
+    frozen_disputes = []
     for case in chosen:
         problems, contested, rejected = run_case(case, root, args.timeout)
         if case.get("superseded_by") is not None:  # still run, so a dropped regression stays visible
-            if problems and rejected:
+            heir = replacement(case, data["cases"], requests) if spec else None
+            if problems and rejected and heir:
+                # The newer request made this input invalid, and its replacement (same input) checks that.
+                disputed.append(f"case {case['id']}: SUPERSEDED by {heir}, now rejects the input (not counted; {heir} "
+                                f"checks the newer behaviour) ({rejected})")
+            elif problems and rejected:
                 failures.append(f"case {case['id']}: FAIL superseded, but the program now rejects the input this earlier "
                                 f"example shows working ({rejected}). A newer request changes outputs; rejecting an earlier "
                                 "example's input is a regression unless the newer text names that input as invalid.")
             else:
                 disputed += [f"case {case['id']}: SUPERSEDED, now fails (not counted) {p}" for p in problems]
             continue
-        failures += [f"case {case['id']}: FAIL {p}" for p in problems]
+        label = "FAIL derived" if is_derived(case, spec) else "FAIL"
+        failures += [f"case {case['id']}: {label} {p}" for p in problems]
         disputed += [f"case {case['id']}: DISPUTED {p}" for p in contested]
+        if spec and contested and case["id"] in frozen:
+            frozen_disputes.append(case["id"])
         passed += not problems
     for line in failures + disputed:
         print(line)
-    print(f"example_replay: {passed}/{len(active)} cases pass, {len(failures)} problem(s), {len(disputed)} disputed, "
-          f"{len(data['skipped'])} block(s) skipped, {len(requests)} saved request(s)")
+    if frozen_disputes:
+        print(f"DISPUTED FROZEN CASES: {', '.join(frozen_disputes)}: a failing step of a frozen case is not counted "
+              "because it is marked `disputed`; give spec-compliance-review each case id and its quote to judge")
+    blocks = sum("rule" not in s for s in data["skipped"]) if spec else len(data["skipped"])
+    summary = (f"example_replay: {passed}/{len(active)} cases pass, {len(failures)} problem(s), {len(disputed)} disputed, "
+               f"{blocks} block(s) skipped, {len(requests)} saved request(s)")
+    if spec:
+        summary += (f", spec mode: {sum(is_derived(c, spec) for c in active)} derived, "
+                    f"{sum(bool(c.get('already_passing')) for c in active)} already passing, "
+                    f"{sum('rule' in s for s in data['skipped'])} rule(s) skipped, {len(frozen)} frozen")
+    print(summary)
     return 1 if failures else 0
 
 
