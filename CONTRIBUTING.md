@@ -7,7 +7,7 @@ This file is for people who change the package. To use the package, read [README
 The package is a compatibility runtime, not a rewrite. A compatibility runtime gives the upstream files the environment that they expect, so the files can stay the same.
 
 - `sync/sync_upstream.py` copies the agents, skills, hooks, scripts, and knowledge from upstream.
-- The Python code stays byte-identical to upstream.
+- The Python code stays byte-identical to upstream. Two scripts are added by the port, not upstream: `scripts/build_phase.py` and `scripts/example_replay.py`. Edit them in `overrides/scripts/`; the sync copies them over `scripts/`. Keep both copies the same (`cmp overrides/scripts/example_replay.py scripts/example_replay.py`).
 - The sync then copies pi-specific files from `overrides/` over the upstream files. For a slim skill (see below), `overrides/` also holds the upstream text of that skill, unchanged, split into reference files.
 - Last, it applies a short list of text patches. The lists are `PATCHES` and `LEAN_PATCHES` (lean production code) in `sync/sync_upstream.py`.
 - The TypeScript extension in `extensions/dev-team/` gives that content the Claude Code functions that it expects.
@@ -55,6 +55,14 @@ Do step 1 one time only. It links the pi packages that you installed globally, s
 
 1. Link the pi packages: `./test/link-deps.sh`
 2. Run the unit tests and the Python tests: `npm test`
+
+   `test/py/test_example_replay.py` opens ports on `127.0.0.1`. If a sandbox blocks localhost, run the unit tests on the host (`node --test test/unit/*.test.ts`) and the Python tests in a container with Python 3.10+ and `git` (some tests run `git`), for example:
+
+   ```bash
+   docker run --rm --user $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/w -w /w/test/py \
+     --entrypoint python3 <image> -m unittest discover -p 'test_*.py'
+   ```
+
 3. Run the end-to-end tests: `npm run e2e`
 
 The end-to-end tests run the real `pi` binary with an offline scripted model. They do not call a model provider and cost nothing. They test the commands, the guards, the subagents, the worktrees, the ledgers, the cost meter, the `claude` shim, and the installed package.

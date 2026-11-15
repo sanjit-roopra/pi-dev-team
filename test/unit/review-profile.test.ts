@@ -8,6 +8,8 @@ import {
 	applyReviewProfileEnv,
 	EXAMPLE_BAR,
 	examplesEnabled,
+	isNested,
+	examplesSpecsNote,
 	farleyEnabled,
 	insertReviewProfileNote,
 	LEAN_SKILLS,
@@ -230,13 +232,35 @@ test("gate profile: its own sections, the quality bar in the guide, lean's text 
 	assert.match(reviewProfileAgentNote("gate", "test-review"), /^## Review profile: gate/);
 });
 
-test("example check: opt-in with DEV_TEAM_EXAMPLES=on, only in the gate guide line", () => {
-	assert.equal(examplesEnabled({}), false);
+test("example check: on by default, DEV_TEAM_EXAMPLES=off turns it off, only in the gate guide line", () => {
+	assert.equal(examplesEnabled({}), true);
+	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "" }), true);
 	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: " On " }), true);
-	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "1" }), false);
+	for (const off of ["off", " OFF ", "0", "false", "FALSE", "no", " No "]) assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: off }), false, off);
+	// Only the off words turn it off; any other value leaves the default.
+	for (const v of ["1", "true", "yes", "disabled", "bogus"]) assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: v }), true, v);
 	assert.ok(!reviewProfileGuideLine("gate").includes(EXAMPLE_BAR));
 	assert.ok(reviewProfileGuideLine("gate", true).endsWith(`\n${EXAMPLE_BAR}`));
 	assert.ok(!reviewProfileGuideLine("lean", true).includes(EXAMPLE_BAR));
 	assert.equal(reviewProfileGuideLine("full", true), "");
 	assert.match(EXAMPLE_BAR, /scripts\/example_replay\.py/);
+	assert.match(EXAMPLE_BAR, /dev_team_approve_examples/);
+	assert.doesNotMatch(reviewProfileGuideLine("gate"), /dev_team_approve_examples/);
+});
+
+test("nested marker: another process's pid means nested, this process's own pid (a /reload) or none does not", () => {
+	assert.equal(isNested({}, 100), false);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "" }, 100), false);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "100" }, 100), false);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "99" }, 100), true);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "1" }, 100), true);
+});
+
+test("example check: /specs gets the approved-examples step, other skills nothing", () => {
+	const note = examplesSpecsNote(ROOT, "specs") ?? "";
+	assert.match(note, /^## Example check: approved examples/);
+	assert.match(note, /dev_team_approve_examples/);
+	assert.match(note, /\*\*Approved examples\*\*: <path>/);
+	assert.match(note, /approves without reading/);
+	assert.equal(examplesSpecsNote(ROOT, "plan"), undefined);
 });

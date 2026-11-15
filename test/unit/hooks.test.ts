@@ -69,3 +69,21 @@ test("hook run: DEV_TEAM_REVIEW from a config file's env never reaches a hook", 
 	process.env.DEV_TEAM_REVIEW = "full";
 	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /REVIEW=\[full\]/);
 });
+
+test("hook run: DEV_TEAM_EXAMPLES from a config file's env never reaches a hook", async (t) => {
+	const python = resolvePython();
+	if (!python) return t.skip("python >= 3.10 not found");
+	const root = hookRoot(t);
+	fs.writeFileSync(path.join(root, "hooks", "env.py"), "import os; print('EXAMPLES=[' + os.environ.get('DEV_TEAM_EXAMPLES', '') + ']')");
+	const before = process.env.DEV_TEAM_EXAMPLES;
+	t.after(() => {
+		if (before === undefined) delete process.env.DEV_TEAM_EXAMPLES;
+		else process.env.DEV_TEAM_EXAMPLES = before;
+	});
+	const fromConfig = (): DevTeamConfig => ({ ...withTimeout(60), env: { DEV_TEAM_EXAMPLES: "off" } });
+	const bridge = new HookBridge(root, fromConfig, () => python, () => {});
+	delete process.env.DEV_TEAM_EXAMPLES;
+	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /EXAMPLES=\[on\]/);
+	process.env.DEV_TEAM_EXAMPLES = "off";
+	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /EXAMPLES=\[off\]/);
+});

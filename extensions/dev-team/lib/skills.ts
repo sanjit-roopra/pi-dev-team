@@ -233,13 +233,24 @@ export function saveRequest(cwd: string, bareName: string, args: string, now = n
 
 /**
  * Saves a typed request that is not a command (no leading `/`) to REQUEST_DIR as `request-<time>.md`, for the
- * example check (`DEV_TEAM_EXAMPLES=on`): `scripts/example_replay.py` checks that each example case quotes a
+ * example check (on unless `DEV_TEAM_EXAMPLES=off`): `scripts/example_replay.py` checks that each example case quotes a
  * saved request word for word. Code writes it, so the copy the check compares against is the user's own text.
  * Returns the path relative to cwd; undefined when not saved. Never throws.
  */
 export function saveDirectRequest(cwd: string, text: string, now = new Date()): string | undefined {
 	if (text.trimStart().startsWith("/") || !hasRequestText(text)) return undefined;
 	return writeRequest(cwd, "request", text, now);
+}
+
+/**
+ * Saves examples the human approved (or edited) in `dev_team_approve_examples` to REQUEST_DIR as
+ * `approved-<time>.md`, raw and with no header, so a case `source` quoting them matches character for
+ * character and their fenced blocks fall under example_replay.py's coverage check. Only that tool calls
+ * this, after a real human answer. Returns the path relative to cwd; undefined when not saved. Never throws.
+ */
+export function saveApprovedExamples(cwd: string, text: string, now = new Date()): string | undefined {
+	if (!text.trim()) return undefined;
+	return writeRequest(cwd, "approved", text, now);
 }
 
 function writeRequest(cwd: string, name: string, text: string, now: Date): string | undefined {
@@ -254,8 +265,16 @@ function writeRequest(cwd: string, name: string, text: string, now: Date): strin
 		}
 	}
 	try {
-		fs.mkdirSync(path.join(cwd, REQUEST_DIR), { recursive: true });
-		fs.writeFileSync(path.join(cwd, rel), text, { encoding: "utf-8", flag: "wx" });
+		// The user's own words can hold anything they pasted: owner-only, and kept out of Git even in a
+		// repository /setup never touched (the folder's own .gitignore; example_replay.py skips dot files).
+		const dir = path.join(cwd, REQUEST_DIR);
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+		try {
+			fs.writeFileSync(path.join(dir, ".gitignore"), "*\n", { encoding: "utf-8", flag: "wx", mode: 0o600 });
+		} catch {
+			// already there
+		}
+		fs.writeFileSync(path.join(cwd, rel), text, { encoding: "utf-8", flag: "wx", mode: 0o600 });
 		return rel;
 	} catch {
 		// The request still reaches the model in the command text.

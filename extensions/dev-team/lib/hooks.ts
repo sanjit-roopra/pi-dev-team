@@ -17,7 +17,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { DEV_TEAM_SUBAGENT_TOOL } from "./agents.ts";
 import { DEFAULT_CONFIG, type DevTeamConfig, isHookEnabled } from "./config.ts";
-import { applyReviewProfileEnv, reviewProfileFromEnv } from "./review-profile.ts";
+import { applyExamplesEnv, applyReviewProfileEnv, examplesEnabled, reviewProfileFromEnv } from "./review-profile.ts";
 
 export type ClaudeEvent =
 	| "SessionStart"
@@ -256,6 +256,7 @@ export class HookBridge {
 			};
 			// The user's own profile, never a config file's (review-profile.ts): applyEnv normalized process.env.
 			applyReviewProfileEnv(env, reviewProfileFromEnv(process.env).profile);
+			applyExamplesEnv(env, examplesEnabled(process.env));
 			try {
 				proc = spawn(this.python as string, [spec.script], {
 					cwd: fs.existsSync(cwd) ? cwd : undefined,

@@ -107,20 +107,59 @@ export const QUALITY_BAR =
 
 export const EXAMPLES_ENV = "DEV_TEAM_EXAMPLES";
 
-/** The example check is opt-in (`DEV_TEAM_EXAMPLES=on` in the user's process environment) until measured. */
+/**
+ * The example check is on by default under the gate profile; `DEV_TEAM_EXAMPLES=off` (or `0`, `false`, `no`) in the
+ * user's process environment turns it off. Default since it was measured on 52 SlopCodeBench checkpoints (v5,
+ * 2004010): hidden tests 78.2% against 70.3% for gate without it, the same code shape, about 10% more cost.
+ */
 export function examplesEnabled(env: NodeJS.ProcessEnv): boolean {
-	return (env[EXAMPLES_ENV] ?? "").trim().toLowerCase() === "on";
+	return !["off", "0", "false", "no"].includes((env[EXAMPLES_ENV] ?? "").trim().toLowerCase());
 }
 
 /**
- * The example check the gate profile adds to its bar under DEV_TEAM_EXAMPLES=on. A written rule ("follow the
+ * Writes the load-time example-check setting into an environment that tools, hooks and child agents inherit,
+ * after config `env` entries were merged into it, as applyReviewProfileEnv does for the profile: a config file's
+ * DEV_TEAM_EXAMPLES never reaches a child, so a child never drops the request guard its parent keeps.
+ */
+export function applyExamplesEnv(env: NodeJS.ProcessEnv, on: boolean): void {
+	env[EXAMPLES_ENV] = on ? "on" : "off";
+}
+
+/**
+ * Set by a session, to its own pid, in the environment its tools inherit. A pi session that finds another
+ * process's pid there at load was started by another session (`pi -p` or the `claude` shim from a bash call),
+ * so its prompt is the model's text, not the human's, and is not saved as a request. Its own pid means the
+ * module was loaded again in the same process (`/reload`), which is still the top-level session.
+ */
+export const NESTED_ENV = "DEV_TEAM_NESTED";
+
+export function isNested(env: NodeJS.ProcessEnv, pid: number): boolean {
+	const marker = (env[NESTED_ENV] ?? "").trim();
+	return marker !== "" && marker !== String(pid);
+}
+
+/**
+ * The example check the gate profile adds to its bar while the example check is on (unless DEV_TEAM_EXAMPLES=off). A written rule ("follow the
  * examples", "the spec wins") leaves the match to the model's judgement, and in SlopCodeBench runs it missed:
  * every example showed `2025-10-12T14:03:22Z` and the program wrote microseconds (trajectory_api, 126 hidden
  * tests), or `+00:00` where examples showed `Z` (file_backup, 70). Like the lizard bar, this makes it a command
  * with an exit code: `scripts/example_replay.py` runs the request's examples and compares by value or shape.
  */
 export const EXAMPLE_BAR =
-	"- Example check (gate): the examples a request shows are its acceptance tests. Typed requests are saved word for word under `.claude/memory/requests/`. Before writing code, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --format` and copy every input-to-output example of the request into `.dev-team/examples.json` as cases: `source` is the example copied character for character, and expected outputs are copied exactly as shown (precision, suffixes, wording, empty lines), never edited to fit the code; never change an input the example shows either, only add what it leaves out. Put only values the program generates (ids, timestamps, random tokens) under `vary`, which still requires the example's shape; `save` an id an example reuses; use `excerpt` for an example that elides lines with `...`. Skip a code block that is not an example (a schema, a grammar) with a reason. Keep the cases of earlier requests: they guard behaviour that a later change must not break; drop one only with `superseded_by` quoting newer request text that changes that example's output for its input; a new rule that makes your program reject an earlier example's input is a regression unless the new text names that input as invalid, so keep the case and fix the program. Before you report code work done, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py` (under `timeout 600`), fix the program, not the case, for every failure, and re-run until it exits 0. Where the request says the caller prepares something (an output directory exists, a file is created), create or tolerate it when it is missing, unless the request names an error for that case. Mark a step `disputed` only when its example contradicts the request's own text, quoting that text. Where the text leaves a format, precision or suffix open, the example decides, even against an interface standard: a standard applies only where the request has neither text nor an example on that point.";
+	"- Example check (gate): the examples a request shows are its acceptance tests. Typed requests are saved word for word under `.claude/memory/requests/`. Before writing code, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --format` and copy every input-to-output example of the request into `.dev-team/examples.json` as cases: `source` is the example copied character for character, and expected outputs are copied exactly as shown (precision, suffixes, wording, empty lines), never edited to fit the code; never change an input the example shows either, only add what it leaves out. Put only values the program generates (ids, timestamps, random tokens) under `vary`, which still requires the example's shape; `save` an id an example reuses; use `excerpt` for an example that elides lines with `...`. Skip a code block that is not an example (a schema, a grammar) with a reason. Keep the cases of earlier requests: they guard behaviour that a later change must not break; drop one only with `superseded_by` quoting newer request text that changes that example's output for its input; a new rule that makes your program reject an earlier example's input is a regression unless the new text names that input as invalid, so keep the case and fix the program. Before you report code work done, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py` (under `timeout 600`), fix the program, not the case, for every failure, and re-run until it exits 0. Where the request says the caller prepares something (an output directory exists, a file is created), create or tolerate it when it is missing, unless the request names an error for that case. Mark a step `disputed` only when its example contradicts the request's own text, quoting that text. Where the text leaves a format, precision or suffix open, the example decides, even against an interface standard: a standard applies only where the request has neither text nor an example on that point. When /specs writes acceptance criteria and the request shows no example for a criterion, propose concrete input-to-output examples and call `dev_team_approve_examples`: only examples the human approved or edited, which that tool saves under `.claude/memory/requests/`, may be case sources. Never write that folder yourself.";
+
+/**
+ * The approved-examples step for /specs under the example check, from extensions/dev-team/gate/specs-examples.md;
+ * undefined for another skill or without the file. index.ts adds it only while the example check is on, under the gate profile.
+ */
+export function examplesSpecsNote(packageRoot: string, skillName: string): string | undefined {
+	if (skillName !== "specs") return undefined;
+	try {
+		return fs.readFileSync(path.join(packageRoot, "extensions", "dev-team", "gate", "specs-examples.md"), "utf-8").trim();
+	} catch {
+		return undefined;
+	}
+}
 
 /** The dev-team guide lines for the lean or gate profile; empty for full, so the full guide is unchanged. */
 export function reviewProfileGuideLine(profile: ReviewProfile, examples = false): string {
