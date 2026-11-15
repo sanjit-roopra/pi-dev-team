@@ -107,13 +107,17 @@ export const QUALITY_BAR =
 
 export const EXAMPLES_ENV = "DEV_TEAM_EXAMPLES";
 
-/** The example check is opt-in (`DEV_TEAM_EXAMPLES=on` in the user's process environment) until measured. */
+/**
+ * The example check is on by default under the gate profile; `DEV_TEAM_EXAMPLES=off` (or `0`, `false`, `no`) in the
+ * user's process environment turns it off. Default since it was measured on 52 SlopCodeBench checkpoints (v5,
+ * 2004010): hidden tests 78.2% against 70.3% for gate without it, the same code shape, about 10% more cost.
+ */
 export function examplesEnabled(env: NodeJS.ProcessEnv): boolean {
-	return (env[EXAMPLES_ENV] ?? "").trim().toLowerCase() === "on";
+	return !["off", "0", "false", "no"].includes((env[EXAMPLES_ENV] ?? "").trim().toLowerCase());
 }
 
 /**
- * The example check the gate profile adds to its bar under DEV_TEAM_EXAMPLES=on. A written rule ("follow the
+ * The example check the gate profile adds to its bar while the example check is on (unless DEV_TEAM_EXAMPLES=off). A written rule ("follow the
  * examples", "the spec wins") leaves the match to the model's judgement, and in SlopCodeBench runs it missed:
  * every example showed `2025-10-12T14:03:22Z` and the program wrote microseconds (trajectory_api, 126 hidden
  * tests), or `+00:00` where examples showed `Z` (file_backup, 70). Like the lizard bar, this makes it a command
@@ -124,7 +128,7 @@ export const EXAMPLE_BAR =
 
 /**
  * The approved-examples step for /specs under the example check, from extensions/dev-team/gate/specs-examples.md;
- * undefined for another skill or without the file. index.ts adds it only under DEV_TEAM_EXAMPLES=on and the gate profile.
+ * undefined for another skill or without the file. index.ts adds it only while the example check is on, under the gate profile.
  */
 export function examplesSpecsNote(packageRoot: string, skillName: string): string | undefined {
 	if (skillName !== "specs") return undefined;

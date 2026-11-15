@@ -7,6 +7,7 @@ import { after, type TestContext, test } from "node:test";
 import { CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { MODEL_PRESETS } from "../../extensions/dev-team/lib/config.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
+import { examplesEnabled, reviewProfileFromEnv } from "../../extensions/dev-team/lib/review-profile.ts";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
 type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean>; renderResult?: (...args: unknown[]) => unknown };
@@ -66,7 +67,9 @@ test("loading the extension starts no process (the Python probe waits for first 
 
 test("every dev-team tool declares pi's safety hints", async () => {
 	const { tools } = await loaded;
-	assert.deepEqual(Object.keys(tools).sort(), ["ask_user", "dev_team_brief", "dev_team_subagent", "skill", "web_fetch"]);
+	// dev_team_approve_examples exists while the example check is on (the default; DEV_TEAM_EXAMPLES=off in the shell running the tests removes it).
+	const approve = examplesEnabled(process.env) && reviewProfileFromEnv(process.env).profile === "gate" ? ["dev_team_approve_examples"] : [];
+	assert.deepEqual(Object.keys(tools).sort(), ["ask_user", ...approve, "dev_team_brief", "dev_team_subagent", "skill", "web_fetch"]);
 	for (const tool of Object.values(tools)) assert.ok(tool.annotations, `${tool.name} has annotations`);
 });
 
@@ -1237,18 +1240,20 @@ async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string
 
 const SAVED_REQUESTS_REASON = /Saved requests are written by dev-team code only/;
 
-test("example check on (gate): dev_team_approve_examples is registered, a write to the saved requests is blocked, /specs gets the approval step", async (t) => {
-	const { ext, forge, specs } = await examplesSession(t, { DEV_TEAM_EXAMPLES: "on" });
-	assert.equal(ext.tools.dev_team_approve_examples?.exposure, "model-only");
-	assert.equal(ext.tools.dev_team_approve_examples?.annotations?.readOnlyHint, false);
-	const r = await forge();
-	assert.equal(r?.block, true);
-	assert.match(r?.reason ?? "", SAVED_REQUESTS_REASON);
-	assert.match(await specs(), /## Example check: approved examples/);
+test("example check on (gate, the default or DEV_TEAM_EXAMPLES=on): dev_team_approve_examples is registered, a write to the saved requests is blocked, /specs gets the approval step", async (t) => {
+	for (const env of [{}, { DEV_TEAM_EXAMPLES: "on" }]) {
+		const { ext, forge, specs } = await examplesSession(t, env);
+		assert.equal(ext.tools.dev_team_approve_examples?.exposure, "model-only", JSON.stringify(env));
+		assert.equal(ext.tools.dev_team_approve_examples?.annotations?.readOnlyHint, false);
+		const r = await forge();
+		assert.equal(r?.block, true, JSON.stringify(env));
+		assert.match(r?.reason ?? "", SAVED_REQUESTS_REASON);
+		assert.match(await specs(), /## Example check: approved examples/);
+	}
 });
 
 test("example check off, or a lean or full profile: no approval tool, no write guard, /specs unchanged", async (t) => {
-	for (const env of [{}, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "full" }]) {
+	for (const env of [{ DEV_TEAM_EXAMPLES: "off" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "full" }]) {
 		const { ext, forge, specs } = await examplesSession(t, env);
 		assert.equal(ext.tools.dev_team_approve_examples, undefined, JSON.stringify(env));
 		assert.doesNotMatch((await forge())?.reason ?? "", SAVED_REQUESTS_REASON, JSON.stringify(env));

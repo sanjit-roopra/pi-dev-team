@@ -1,5 +1,5 @@
 /**
- * dev_team_approve_examples: approved examples for the example check (`DEV_TEAM_EXAMPLES=on`, gate profile).
+ * dev_team_approve_examples: approved examples for the example check (gate profile, on unless `DEV_TEAM_EXAMPLES=off`).
  *
  * example_replay.py accepts a case only when its `source` is word for word in a saved request, and a vague
  * request shows no examples, so the check passes with no cases. A spec /specs writes is the model's own

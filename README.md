@@ -141,7 +141,7 @@ DEV_TEAM_REVIEW=full pi   # every review step of the upstream plugin
 |---|---|---|
 | `DEV_TEAM_REVIEW` | `gate` (default), `lean`, `full` | How much review `/plan`, `/build`, `/code-review` and `/ship` run |
 | `DEV_TEAM_FARLEY` | `off` (default), `on` | Under `gate` and `lean`: run the Farley test score at the end of `/build` |
-| `DEV_TEAM_EXAMPLES` | `off` (default), `on` | Under `gate` only: run the [example check](#example-check-optional) |
+| `DEV_TEAM_EXAMPLES` | `on` (default), `off` | Under `gate` only: run the [example check](#example-check-on-by-default) |
 | `DEV_TEAM_MAX_PARALLEL_AGENTS` | a number, 1 or more | Max agents at once; wins over every config file |
 
 ### Gate profile (default)
@@ -159,12 +159,12 @@ DEV_TEAM_REVIEW=full pi   # every review step of the upstream plugin
 
 Why gate: on SlopCodeBench, plain pi with only this quality bar matched the lean profile on hidden tests and code shape (no function above complexity 10), at a quarter to half of the time and cost. Plan critics and the larger review panels changed no test result.
 
-### Example check (optional)
+### Example check (on by default)
 
-The example check makes the examples in your request the acceptance tests. It is off by default and works only with the gate profile:
+The example check makes the examples in your request the acceptance tests. It is on by default and works only with the gate profile. To turn it off:
 
 ```bash
-DEV_TEAM_EXAMPLES=on pi
+DEV_TEAM_EXAMPLES=off pi
 ```
 
 What it does:
@@ -180,7 +180,7 @@ When it helps: requests with concrete examples, for example a command and its ex
 
 When it does nothing: a vague request has no examples, so the check runs 0 cases and passes. Examples written only in prose are not turned into cases. Behavior the request neither states nor shows is not checked.
 
-Results: on 52 SlopCodeBench checkpoints, hidden tests passed 77.3% with the check and 70.3% without, at 58% of the cost. That was an earlier version of the check (`bbc791c`). The later hardening is not measured yet, so the check stays opt-in.
+Results on 52 SlopCodeBench checkpoints (10 problems, one run each, GPT 6.1 Sol): with this version of the check (`2004010`), hidden tests passed 78.2%, against 70.3% for the gate profile without it, with the same code shape (structural erosion 0.001 against 0.002, no function above complexity 10) and about 10% more cost. On the four problems it was tuned on, two runs scored 77.8% and 77.1%. On six other problems it scored 78.6% against 78.4%, so most of the gain is on requests with concrete examples. Later variants that added more case rules or a frozen test spec scored the same or worse at higher cost, so this version is the default.
 
 `.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which `/setup` keeps out of Git (`.claude/memory/`). Commit both or ignore both: cases without their requests fail the check.
 

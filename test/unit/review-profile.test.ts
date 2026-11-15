@@ -231,10 +231,11 @@ test("gate profile: its own sections, the quality bar in the guide, lean's text 
 	assert.match(reviewProfileAgentNote("gate", "test-review"), /^## Review profile: gate/);
 });
 
-test("example check: opt-in with DEV_TEAM_EXAMPLES=on, only in the gate guide line", () => {
-	assert.equal(examplesEnabled({}), false);
+test("example check: on by default, DEV_TEAM_EXAMPLES=off turns it off, only in the gate guide line", () => {
+	assert.equal(examplesEnabled({}), true);
+	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "" }), true);
 	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: " On " }), true);
-	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "1" }), false);
+	for (const off of ["off", " OFF ", "0", "false", "no"]) assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: off }), false, off);
 	assert.ok(!reviewProfileGuideLine("gate").includes(EXAMPLE_BAR));
 	assert.ok(reviewProfileGuideLine("gate", true).endsWith(`\n${EXAMPLE_BAR}`));
 	assert.ok(!reviewProfileGuideLine("lean", true).includes(EXAMPLE_BAR));

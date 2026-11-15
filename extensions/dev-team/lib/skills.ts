@@ -233,7 +233,7 @@ export function saveRequest(cwd: string, bareName: string, args: string, now = n
 
 /**
  * Saves a typed request that is not a command (no leading `/`) to REQUEST_DIR as `request-<time>.md`, for the
- * example check (`DEV_TEAM_EXAMPLES=on`): `scripts/example_replay.py` checks that each example case quotes a
+ * example check (on unless `DEV_TEAM_EXAMPLES=off`): `scripts/example_replay.py` checks that each example case quotes a
  * saved request word for word. Code writes it, so the copy the check compares against is the user's own text.
  * Returns the path relative to cwd; undefined when not saved. Never throws.
  */

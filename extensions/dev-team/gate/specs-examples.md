@@ -1,4 +1,4 @@
-## Example check: approved examples (read first; `DEV_TEAM_EXAMPLES=on`)
+## Example check: approved examples (read first; the example check is on)
 
 The example check runs the request's examples as acceptance tests, and a case counts only when its `source` is word for word in a saved request under `.claude/memory/requests/`. This spec is your text, so its examples do not count; examples the human approves do. This adds one step after Step C (grilling), before you finalize the acceptance criteria; every other step runs as written.
 

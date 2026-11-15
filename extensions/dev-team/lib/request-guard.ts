@@ -1,6 +1,6 @@
 /**
  * The write guard on the saved requests (REQUEST_DIR, `.claude/memory/requests/`) under the example check
- * (`DEV_TEAM_EXAMPLES=on`, gate profile). example_replay.py accepts a case only when its `source` is word for
+ * (gate profile, on unless `DEV_TEAM_EXAMPLES=off`). example_replay.py accepts a case only when its `source` is word for
  * word in a saved request, so the check is only as honest as that directory: dev-team code writes it (the
  * typed request, the examples a human approved), the model must not. The tool_call handler blocks a write,
  * edit or bash call that visibly writes, moves or deletes there, or the `.claude` and `.claude/memory`
