@@ -265,8 +265,16 @@ function writeRequest(cwd: string, name: string, text: string, now: Date): strin
 		}
 	}
 	try {
-		fs.mkdirSync(path.join(cwd, REQUEST_DIR), { recursive: true });
-		fs.writeFileSync(path.join(cwd, rel), text, { encoding: "utf-8", flag: "wx" });
+		// The user's own words can hold anything they pasted: owner-only, and kept out of Git even in a
+		// repository /setup never touched (the folder's own .gitignore; example_replay.py skips dot files).
+		const dir = path.join(cwd, REQUEST_DIR);
+		fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+		try {
+			fs.writeFileSync(path.join(dir, ".gitignore"), "*\n", { encoding: "utf-8", flag: "wx", mode: 0o600 });
+		} catch {
+			// already there
+		}
+		fs.writeFileSync(path.join(cwd, rel), text, { encoding: "utf-8", flag: "wx", mode: 0o600 });
 		return rel;
 	} catch {
 		// The request still reaches the model in the command text.

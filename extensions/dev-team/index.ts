@@ -36,10 +36,12 @@ import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
 import { recordCost } from "./lib/metrics.ts";
 import {
+	applyExamplesEnv,
 	applyReviewProfileEnv,
 	examplesEnabled,
 	examplesSpecsNote,
 	farleyEnabled,
+	NESTED_ENV,
 	reviewProfileArgs,
 	reviewProfileFromEnv,
 	reviewProfileGuideLine,
@@ -112,7 +114,10 @@ export default function devTeam(pi: ExtensionAPI) {
 	// Read before any config file's env is applied (applyEnv): only the user's own environment sets it.
 	const review = reviewProfileFromEnv(process.env);
 	const farley = farleyEnabled(process.env);
-	const examples = review.profile === "gate" && examplesEnabled(process.env);
+	const examplesSetting = examplesEnabled(process.env);
+	const examples = review.profile === "gate" && examplesSetting;
+	// Started from another session's tool call: its typed prompt is model text, never a saved request.
+	const nested = process.env[NESTED_ENV] === "1";
 	let reviewWarned = false;
 	/** The gate or lean section for a package skill, plus /specs' approved-examples step under the example check; undefined: skill text unchanged. */
 	const profileNoteFor = (skill: SkillDef) => {
@@ -167,6 +172,8 @@ export default function devTeam(pi: ExtensionAPI) {
 		config = loadConfig(cwd, projectConfigOpts(ctx)).config;
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
 		applyReviewProfileEnv(process.env, review.profile);
+		applyExamplesEnv(process.env, examplesSetting);
+		process.env[NESTED_ENV] = "1";
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
@@ -600,7 +607,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			// A new request, not a steer or follow-up to the running one. pi runs extension /commands before
 			// this event, so text starting with "/" here is a pi skill, a template or a path.
 			if (!event.streamingBehavior) {
-				if (examples) saveDirectRequest(ctx.cwd, event.text);
+				if (examples && !nested) saveDirectRequest(ctx.cwd, event.text);
 				const continuesFlow = briefGate.newRequest();
 				// A reply inside a flow keeps that task's wait mode.
 				taskWaits = wantsWait(event.text) || (continuesFlow && taskWaits);

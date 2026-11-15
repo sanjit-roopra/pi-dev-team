@@ -7,7 +7,6 @@ import { after, type TestContext, test } from "node:test";
 import { CLOCK_TICK_MS } from "../../extensions/dev-team/lib/live-clock.ts";
 import { MODEL_PRESETS } from "../../extensions/dev-team/lib/config.ts";
 import { AGENT_PROMPT_FLAG, AGENT_PROMPT_FLAG_VALUE } from "../../extensions/dev-team/lib/subagent.ts";
-import { examplesEnabled, reviewProfileFromEnv } from "../../extensions/dev-team/lib/review-profile.ts";
 
 // Runs in its own process (node --test isolates files), so the Python probe cache starts empty.
 type ToolDef = { name: string; exposure?: string; annotations?: Record<string, boolean>; renderResult?: (...args: unknown[]) => unknown };
@@ -16,12 +15,21 @@ type CommandDef = { description?: string; getArgumentCompletions?: (prefix: stri
 
 type ToolInfo = { name: string; sourceInfo: { path: string; source: string; origin?: string } };
 
-async function loadExtension(opts: { flags?: Record<string, unknown>; config?: Record<string, unknown>; allTools?: ToolInfo[]; activeTools?: string[] } = {}) {
+/** The settings the extension reads from the user's shell at load; loadExtension clears them, so the developer's own shell never changes a test. */
+const SHELL_SETTINGS = ["DEV_TEAM_EXAMPLES", "DEV_TEAM_REVIEW", "DEV_TEAM_FARLEY", "DEV_TEAM_NESTED"] as const;
+
+async function loadExtension(opts: { flags?: Record<string, unknown>; config?: Record<string, unknown>; allTools?: ToolInfo[]; activeTools?: string[]; env?: Partial<Record<(typeof SHELL_SETTINGS)[number], string>> } = {}) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-load-"));
 	const marker = path.join(dir, "probed");
 	const fakePython = path.join(dir, "python");
 	fs.writeFileSync(fakePython, `#!/bin/sh\ntouch "${marker}"\nexit 1\n`, { mode: 0o755 });
-	const savedEnv = { DEV_TEAM_PYTHON: process.env.DEV_TEAM_PYTHON, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, DEV_TEAM_SUBAGENT: process.env.DEV_TEAM_SUBAGENT };
+	const savedEnv: Record<string, string | undefined> = { DEV_TEAM_PYTHON: process.env.DEV_TEAM_PYTHON, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR, DEV_TEAM_SUBAGENT: process.env.DEV_TEAM_SUBAGENT };
+	// A session's applyEnv writes these into this process too, so they are restored after every load.
+	for (const key of SHELL_SETTINGS) {
+		savedEnv[key] = process.env[key];
+		if (opts.env?.[key] === undefined) delete process.env[key];
+		else process.env[key] = opts.env[key];
+	}
 	process.env.DEV_TEAM_PYTHON = fakePython;
 	// The user's own ~/.pi/agent/dev-team.json must not change what the extension does here.
 	process.env.PI_CODING_AGENT_DIR = dir;
@@ -67,9 +75,8 @@ test("loading the extension starts no process (the Python probe waits for first 
 
 test("every dev-team tool declares pi's safety hints", async () => {
 	const { tools } = await loaded;
-	// dev_team_approve_examples exists while the example check is on (the default; DEV_TEAM_EXAMPLES=off in the shell running the tests removes it).
-	const approve = examplesEnabled(process.env) && reviewProfileFromEnv(process.env).profile === "gate" ? ["dev_team_approve_examples"] : [];
-	assert.deepEqual(Object.keys(tools).sort(), ["ask_user", ...approve, "dev_team_brief", "dev_team_subagent", "skill", "web_fetch"]);
+	// dev_team_approve_examples: the example check is on by default (gate profile).
+	assert.deepEqual(Object.keys(tools).sort(), ["ask_user", "dev_team_approve_examples", "dev_team_brief", "dev_team_subagent", "skill", "web_fetch"]);
 	for (const tool of Object.values(tools)) assert.ok(tool.annotations, `${tool.name} has annotations`);
 });
 
@@ -1217,17 +1224,8 @@ test("a tiny brief that grows to 4 new files gets one size advisory; a failed ca
 });
 
 /** A fresh extension loaded with DEV_TEAM_EXAMPLES and DEV_TEAM_REVIEW set in the user's environment (read at load). */
-async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string; DEV_TEAM_REVIEW?: string }) {
-	for (const key of ["DEV_TEAM_EXAMPLES", "DEV_TEAM_REVIEW"] as const) {
-		const before = process.env[key];
-		t.after(() => {
-			if (before === undefined) delete process.env[key];
-			else process.env[key] = before;
-		});
-		if (env[key] === undefined) delete process.env[key];
-		else process.env[key] = env[key];
-	}
-	const ext = await loadExtension();
+async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string; DEV_TEAM_REVIEW?: string; DEV_TEAM_NESTED?: string }) {
+	const ext = await loadExtension({ env });
 	t.after(ext.cleanup);
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-examples-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
@@ -1235,10 +1233,45 @@ async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string
 	const forge = () => ext.handlers.tool_call[0]({ toolName: "write", toolCallId: "w", input: { path: ".claude/memory/requests/request-x.md", content: "x" } }, ctx) as Promise<Verdict>;
 	const specs = async () =>
 		((await (ext.tools.skill as unknown as { execute: (...args: unknown[]) => Promise<{ content: { text: string }[] }> }).execute("s", { name: "specs", args: "" }, undefined, () => {}, ctx)).content[0].text);
-	return { ext, forge, specs };
+	/** Types a request as the human would, and returns the saved request files' contents. */
+	const type = async (text: string) => {
+		await ext.handlers.input[0]({ text, source: "interactive" }, ctx);
+		const dir = path.join(cwd, ".claude", "memory", "requests");
+		return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => !f.startsWith(".")).map((f) => fs.readFileSync(path.join(dir, f), "utf-8")) : [];
+	};
+	const start = async () => {
+		for (const h of ext.handlers.session_start) await h({ reason: "startup" }, ctx);
+	};
+	return { ext, cwd, forge, specs, type, start };
 }
 
 const SAVED_REQUESTS_REASON = /Saved requests are written by dev-team code only/;
+
+test("example check by default: a typed request is saved word for word; off, lean and a nested session save nothing", async (t) => {
+	const text = "Print `hi`:\n\n```\n$ app\nhi\n```";
+	const on = await examplesSession(t, {});
+	const saved = await on.type(text);
+	assert.equal(saved.length, 1);
+	assert.ok(saved[0].includes(text), saved[0]);
+	// Owner-only, and ignored by Git through the folder's own .gitignore.
+	const dir = path.join(on.cwd, ".claude", "memory", "requests");
+	const [file] = fs.readdirSync(dir).filter((f) => !f.startsWith("."));
+	assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
+	assert.equal(fs.readFileSync(path.join(dir, ".gitignore"), "utf-8"), "*\n");
+	for (const env of [{ DEV_TEAM_EXAMPLES: "off" }, { DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_NESTED: "1" }]) {
+		const s = await examplesSession(t, env);
+		assert.deepEqual(await s.type(text), [], JSON.stringify(env));
+	}
+});
+
+test("a session passes its example-check setting and the nested marker to the tools and agents it starts, whatever a config file says", async (t) => {
+	for (const [env, want] of [[{}, "on"], [{ DEV_TEAM_EXAMPLES: "off" }, "off"]] as const) {
+		const s = await examplesSession(t, env);
+		await s.start();
+		assert.equal(process.env.DEV_TEAM_EXAMPLES, want, JSON.stringify(env));
+		assert.equal(process.env.DEV_TEAM_NESTED, "1");
+	}
+});
 
 test("example check on (gate, the default or DEV_TEAM_EXAMPLES=on): dev_team_approve_examples is registered, a write to the saved requests is blocked, /specs gets the approval step", async (t) => {
 	for (const env of [{}, { DEV_TEAM_EXAMPLES: "on" }]) {
@@ -1253,7 +1286,7 @@ test("example check on (gate, the default or DEV_TEAM_EXAMPLES=on): dev_team_app
 });
 
 test("example check off, or a lean or full profile: no approval tool, no write guard, /specs unchanged", async (t) => {
-	for (const env of [{ DEV_TEAM_EXAMPLES: "off" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "full" }]) {
+	for (const env of [{ DEV_TEAM_EXAMPLES: "off" }, { DEV_TEAM_EXAMPLES: "false" }, { DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_EXAMPLES: "on", DEV_TEAM_REVIEW: "full" }]) {
 		const { ext, forge, specs } = await examplesSession(t, env);
 		assert.equal(ext.tools.dev_team_approve_examples, undefined, JSON.stringify(env));
 		assert.doesNotMatch((await forge())?.reason ?? "", SAVED_REQUESTS_REASON, JSON.stringify(env));

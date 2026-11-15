@@ -235,7 +235,9 @@ test("example check: on by default, DEV_TEAM_EXAMPLES=off turns it off, only in 
 	assert.equal(examplesEnabled({}), true);
 	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: "" }), true);
 	assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: " On " }), true);
-	for (const off of ["off", " OFF ", "0", "false", "no"]) assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: off }), false, off);
+	for (const off of ["off", " OFF ", "0", "false", "FALSE", "no", " No "]) assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: off }), false, off);
+	// Only the off words turn it off; any other value leaves the default.
+	for (const v of ["1", "true", "yes", "disabled", "bogus"]) assert.equal(examplesEnabled({ DEV_TEAM_EXAMPLES: v }), true, v);
 	assert.ok(!reviewProfileGuideLine("gate").includes(EXAMPLE_BAR));
 	assert.ok(reviewProfileGuideLine("gate", true).endsWith(`\n${EXAMPLE_BAR}`));
 	assert.ok(!reviewProfileGuideLine("lean", true).includes(EXAMPLE_BAR));

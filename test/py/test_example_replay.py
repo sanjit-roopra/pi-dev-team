@@ -2,6 +2,7 @@
 import io
 import json
 import sys
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -354,8 +355,9 @@ class Honesty(unittest.TestCase):
     def test_requests_are_ordered_by_their_saved_time_not_their_kind(self):
         d = Path(tempfile.mkdtemp(prefix="dt-requests-"))
         for name in ("request-2026-11-04T10-00-00-000Z.md", "approved-2026-11-04T09-00-00-000Z.md",
-                     "plan-2026-11-04T11-00-00-000Z.md", "approved-2026-11-04T12-00-00-000Z.md", "notes.md"):
+                     "plan-2026-11-04T11-00-00-000Z.md", "approved-2026-11-04T12-00-00-000Z.md", "notes.md", ".gitignore"):
             (d / name).write_text(name)
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
         self.assertEqual([n for n, _ in replay.load_requests(d)], [
             "notes.md", "approved-2026-11-04T09-00-00-000Z.md", "request-2026-11-04T10-00-00-000Z.md",
             "plan-2026-11-04T11-00-00-000Z.md", "approved-2026-11-04T12-00-00-000Z.md"])

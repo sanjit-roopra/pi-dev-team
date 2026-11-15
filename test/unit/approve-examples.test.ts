@@ -41,7 +41,7 @@ function fakeUi(t: TestContext, answers: unknown[]) {
 		return answer;
 	};
 	const ui = { select: dialog("select"), editor: dialog("editor"), notify: () => {} };
-	const saved = () => (fs.existsSync(path.join(cwd, REQUEST_DIR)) ? fs.readdirSync(path.join(cwd, REQUEST_DIR)) : []);
+	const saved = () => (fs.existsSync(path.join(cwd, REQUEST_DIR)) ? fs.readdirSync(path.join(cwd, REQUEST_DIR)).filter((f) => !f.startsWith(".")) : []);
 	return { ctx: { hasUI: true, mode: "rpc", cwd, ui }, calls, saved, cwd };
 }
 

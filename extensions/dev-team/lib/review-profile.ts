@@ -117,6 +117,22 @@ export function examplesEnabled(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
+ * Writes the load-time example-check setting into an environment that tools, hooks and child agents inherit,
+ * after config `env` entries were merged into it, as applyReviewProfileEnv does for the profile: a config file's
+ * DEV_TEAM_EXAMPLES never reaches a child, so a child never drops the request guard its parent keeps.
+ */
+export function applyExamplesEnv(env: NodeJS.ProcessEnv, on: boolean): void {
+	env[EXAMPLES_ENV] = on ? "on" : "off";
+}
+
+/**
+ * Set by a session in the environment its tools inherit. A pi session that finds it at load was started by
+ * another session (`pi -p` or the `claude` shim from a bash call), so its prompt is the model's text, not the
+ * human's, and is not saved as a request.
+ */
+export const NESTED_ENV = "DEV_TEAM_NESTED";
+
+/**
  * The example check the gate profile adds to its bar while the example check is on (unless DEV_TEAM_EXAMPLES=off). A written rule ("follow the
  * examples", "the spec wins") leaves the match to the model's judgement, and in SlopCodeBench runs it missed:
  * every example showed `2025-10-12T14:03:22Z` and the program wrote microseconds (trajectory_api, 126 hidden

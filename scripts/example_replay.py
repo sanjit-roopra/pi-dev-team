@@ -331,7 +331,8 @@ def load_requests(directory: Path) -> list[tuple[str, str]]:
     """The saved requests, oldest first (`request_order`), as (file name, text)."""
     if not directory.is_dir():
         return []
-    files = sorted((p for p in directory.iterdir() if p.is_file()), key=request_order)
+    # Dot files (the folder's .gitignore) are not requests.
+    files = sorted((p for p in directory.iterdir() if p.is_file() and not p.name.startswith(".")), key=request_order)
     return [(p.name, p.read_text(encoding="utf-8", errors="replace")) for p in files]
 
 
