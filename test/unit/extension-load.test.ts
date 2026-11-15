@@ -1258,10 +1258,18 @@ test("example check by default: a typed request is saved word for word; off, lea
 	const [file] = fs.readdirSync(dir).filter((f) => !f.startsWith("."));
 	assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
 	assert.equal(fs.readFileSync(path.join(dir, ".gitignore"), "utf-8"), "*\n");
-	for (const env of [{ DEV_TEAM_EXAMPLES: "off" }, { DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_NESTED: "1" }]) {
+	for (const env of [{ DEV_TEAM_EXAMPLES: "off" }, { DEV_TEAM_REVIEW: "lean" }, { DEV_TEAM_NESTED: String(process.pid + 1) }]) {
 		const s = await examplesSession(t, env);
 		assert.deepEqual(await s.type(text), [], JSON.stringify(env));
 	}
+});
+
+test("a /reload loads the extension again in the same process: the session's own nested marker does not stop saving", async (t) => {
+	const first = await examplesSession(t, {});
+	await first.start();
+	assert.equal(process.env.DEV_TEAM_NESTED, String(process.pid));
+	const reloaded = await examplesSession(t, { DEV_TEAM_NESTED: process.env.DEV_TEAM_NESTED });
+	assert.equal((await reloaded.type("Print `hi`.")).length, 1);
 });
 
 test("a session passes its example-check setting and the nested marker to the tools and agents it starts, whatever a config file says", async (t) => {
@@ -1269,7 +1277,7 @@ test("a session passes its example-check setting and the nested marker to the to
 		const s = await examplesSession(t, env);
 		await s.start();
 		assert.equal(process.env.DEV_TEAM_EXAMPLES, want, JSON.stringify(env));
-		assert.equal(process.env.DEV_TEAM_NESTED, "1");
+		assert.equal(process.env.DEV_TEAM_NESTED, String(process.pid));
 	}
 });
 

@@ -8,6 +8,7 @@ import {
 	applyReviewProfileEnv,
 	EXAMPLE_BAR,
 	examplesEnabled,
+	isNested,
 	examplesSpecsNote,
 	farleyEnabled,
 	insertReviewProfileNote,
@@ -245,6 +246,14 @@ test("example check: on by default, DEV_TEAM_EXAMPLES=off turns it off, only in 
 	assert.match(EXAMPLE_BAR, /scripts\/example_replay\.py/);
 	assert.match(EXAMPLE_BAR, /dev_team_approve_examples/);
 	assert.doesNotMatch(reviewProfileGuideLine("gate"), /dev_team_approve_examples/);
+});
+
+test("nested marker: another process's pid means nested, this process's own pid (a /reload) or none does not", () => {
+	assert.equal(isNested({}, 100), false);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "" }, 100), false);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "100" }, 100), false);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "99" }, 100), true);
+	assert.equal(isNested({ DEV_TEAM_NESTED: "1" }, 100), true);
 });
 
 test("example check: /specs gets the approved-examples step, other skills nothing", () => {

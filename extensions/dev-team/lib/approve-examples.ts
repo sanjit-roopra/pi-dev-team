@@ -70,7 +70,7 @@ const NOT_SOURCES = "These examples are not approved and not saved: do not use t
 
 function savedReply(cwd: string, text: string, edited: boolean) {
 	const rel = saveApprovedExamples(cwd, text);
-	if (!rel) return reply(`The user approved, but the examples could not be saved. ${NOT_SOURCES} Mark them assumed (skipped) and list them under \`## Decide these\`.`, { approved: true, source: "skipped" });
+	if (!rel) return reply(`The user approved, but the examples could not be saved. ${NOT_SOURCES} Log them as "assumed (skipped)" in the Decision Log and list them under \`## Decide these\`.`, { approved: false, source: "skipped" });
 	const what = edited ? `The user edited the examples. Use this text, not your proposal:\n\n${text}\n\n` : "The user approved the examples. ";
 	return reply(
 		`${what}Saved word for word at \`${rel}\`. Log the answer with source \`user\` in the Decision Log, record \`**Approved examples**: ${rel}\` in the spec, and copy each example into \`.dev-team/examples.json\` as a case whose \`source\` quotes it character for character.`,

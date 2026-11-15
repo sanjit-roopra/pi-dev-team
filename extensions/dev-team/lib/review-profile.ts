@@ -126,11 +126,17 @@ export function applyExamplesEnv(env: NodeJS.ProcessEnv, on: boolean): void {
 }
 
 /**
- * Set by a session in the environment its tools inherit. A pi session that finds it at load was started by
- * another session (`pi -p` or the `claude` shim from a bash call), so its prompt is the model's text, not the
- * human's, and is not saved as a request.
+ * Set by a session, to its own pid, in the environment its tools inherit. A pi session that finds another
+ * process's pid there at load was started by another session (`pi -p` or the `claude` shim from a bash call),
+ * so its prompt is the model's text, not the human's, and is not saved as a request. Its own pid means the
+ * module was loaded again in the same process (`/reload`), which is still the top-level session.
  */
 export const NESTED_ENV = "DEV_TEAM_NESTED";
+
+export function isNested(env: NodeJS.ProcessEnv, pid: number): boolean {
+	const marker = (env[NESTED_ENV] ?? "").trim();
+	return marker !== "" && marker !== String(pid);
+}
 
 /**
  * The example check the gate profile adds to its bar while the example check is on (unless DEV_TEAM_EXAMPLES=off). A written rule ("follow the

@@ -42,7 +42,7 @@ import {
 	type UsageTotals,
 	type WorktreeInfo,
 } from "./subagent-types.ts";
-import { applyReviewProfileEnv, reviewProfileAgentNote, reviewProfileFromEnv, reviewProfilePreloadedSkills } from "./review-profile.ts";
+import { applyExamplesEnv, applyReviewProfileEnv, examplesEnabled, reviewProfileAgentNote, reviewProfileFromEnv, reviewProfilePreloadedSkills } from "./review-profile.ts";
 import { saveFullOutput } from "./session-files.ts";
 import { discoverSkillPool, expandSkill, namedSkills, type SkillDef, skillIndex } from "./skills.ts";
 import { buildTranscriptLines, type PiMessageLike, writeTranscript } from "./transcript.ts";
@@ -441,6 +441,8 @@ export function registerSubagentTool(deps: SubagentDeps): void {
 			delete env.DEV_TEAM_INTERACTIVE;
 			// The parent's profile, never a config file's (review-profile.ts): applyEnv normalized process.env.
 			applyReviewProfileEnv(env, profile);
+			// The parent's example-check setting too: a config file's `env` spread above must not turn the child's guard off.
+			applyExamplesEnv(env, examplesEnabled(process.env));
 
 			const run = newChildRunState(choice.model);
 			let stderr = "";

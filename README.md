@@ -182,7 +182,7 @@ When it does nothing: a vague request has no examples, so the check runs 0 cases
 
 Results on 52 SlopCodeBench checkpoints (10 problems, one run each, GPT 6.1 Sol): with this version of the check (`2004010`), hidden tests passed 78.2%, against 70.3% for the gate profile without it, with the same code shape (structural erosion 0.001 against 0.002, no function above complexity 10) and about 10% more cost. On the four problems it was tuned on, two runs scored 77.8% and 77.1%, against 61.9% for the gate profile without it. On the six other problems it scored 78.6% against 78.4%, so the gain is on requests with concrete examples. Later variants that added more case rules or a frozen test spec scored the same or worse at higher cost, so this version is the default.
 
-`.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which stay local: `/setup` keeps `.claude/memory/` out of Git. So keep `.dev-team/examples.json` out of Git too, or un-ignore `.claude/memory/requests/` and commit both. Cases committed without their requests fail the check on a fresh clone.
+`.dev-team/examples.json` is written in your repository. Its cases quote the saved requests, which stay local: `/setup` keeps `.claude/memory/` out of Git. So keep `.dev-team/examples.json` out of Git too, or commit both: remove the `.gitignore` the extension writes in `.claude/memory/requests/` and un-ignore that folder if `/setup` ignored it. Cases committed without their requests fail the check on a fresh clone.
 
 #### Approved examples in `/specs`
 

@@ -41,6 +41,7 @@ import {
 	examplesEnabled,
 	examplesSpecsNote,
 	farleyEnabled,
+	isNested,
 	NESTED_ENV,
 	reviewProfileArgs,
 	reviewProfileFromEnv,
@@ -116,8 +117,10 @@ export default function devTeam(pi: ExtensionAPI) {
 	const farley = farleyEnabled(process.env);
 	const examplesSetting = examplesEnabled(process.env);
 	const examples = review.profile === "gate" && examplesSetting;
-	// Started from another session's tool call: its typed prompt is model text, never a saved request.
-	const nested = process.env[NESTED_ENV] === "1";
+	// Started from another session's tool call: its typed prompt is model text, never a saved request. The
+	// marker holds the pid of the session that set it, so this process's own marker (left by applyEnv
+	// before a /reload, which runs this factory again) does not count.
+	const nested = isNested(process.env, process.pid);
 	let reviewWarned = false;
 	/** The gate or lean section for a package skill, plus /specs' approved-examples step under the example check; undefined: skill text unchanged. */
 	const profileNoteFor = (skill: SkillDef) => {
@@ -173,7 +176,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		for (const [k, v] of Object.entries(config.env)) process.env[k] = String(v);
 		applyReviewProfileEnv(process.env, review.profile);
 		applyExamplesEnv(process.env, examplesSetting);
-		process.env[NESTED_ENV] = "1";
+		process.env[NESTED_ENV] = String(process.pid);
 		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
 		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
