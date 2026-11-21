@@ -53,7 +53,7 @@ def count_user_lines(transcript_path: Path) -> int:
 # project dir — both code_intelligence_nudge.py (read side) and
 # code_intelligence_turn_mark.py (write side) used to hardcode this
 # path independently.
-SENTINEL_RELATIVE_PATH = Path(".claude") / "code-intelligence-turn-state.json"
+SENTINEL_RELATIVE_PATH = Path(".pi", "dev-team") / "code-intelligence-turn-state.json"
 
 
 def matches_current_turn(sentinel: dict, tid: str, tc: int) -> bool:

@@ -13,19 +13,19 @@ allowed-tools: Read, Write, Glob, Grep, Bash(mkdir *), Bash(date *), Bash(git br
 
 # Plan
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
 **Name the reuse.** In step 3, every step that adds production code says what it reuses: an existing function (by name), the standard library, a platform feature, or an already-installed dependency. When nothing fits, the step says `new:` and why. Size each step to the smallest change that satisfies its Gherkin scenario; options, configuration and abstractions nothing asks for stay out of the plan. The test part of each step is exempt: test scope comes from the Gherkin scenarios.
 
 **No approval section in the plan.** In step 6 non-interactive, skip the `## Approval` section: the `config-changelog.jsonl` entry is the audit record, and its `description` states the trigger.
 
-**The request is the spec when no spec artifact exists.** When step 1 finds no spec artifact by either path and the invocation names a saved request file (`.claude/memory/requests/*.md`, typed with the command or passed on by `/ship`), that file is the spec artifact for the rest of this command. Step 2 uses that file as the primary source, the plan records it in a metadata line `**Source request**: <path>`, and step 5 passes that path to every critic together with the plan. Flags in it are command options, not requirements. Copy each example of exact output in the request (an output line, a file, a message) into the Gherkin character for character, and never write your own example for output the request already shows. When the request's prose allows more than one form and all of its output examples show one form, the plan uses the examples' form, unless the request calls the examples illustrative; name the wider reading in `## Risks & Open Questions`. When a spec artifact exists and has a `**Source request**` line, copy that line into the plan and pass that path to every critic in step 5 as well. Do not call the `skill` tool for `plan` again: this skill is already loaded, and a second call replaces the request with a summary.
+**The request is the spec when no spec artifact exists.** When step 1 finds no spec artifact by either path and the invocation names a saved request file (`.pi/dev-team/memory/requests/*.md`, typed with the command or passed on by `/ship`), that file is the spec artifact for the rest of this command. Step 2 uses that file as the primary source, the plan records it in a metadata line `**Source request**: <path>`, and step 5 passes that path to every critic together with the plan. Flags in it are command options, not requirements. Copy each example of exact output in the request (an output line, a file, a message) into the Gherkin character for character, and never write your own example for output the request already shows. When the request's prose allows more than one form and all of its output examples show one form, the plan uses the examples' form, unless the request calls the examples illustrative; name the wider reading in `## Risks & Open Questions`. When a spec artifact exists and has a `**Source request**` line, copy that line into the plan and pass that path to every critic in step 5 as well. Do not call the `skill` tool for `plan` again: this skill is already loaded, and a second call replaces the request with a summary.
 
 **An unclear request is an open question, not a decision.** Where the source request is unclear or silent on observable behaviour (a count, a value, a boundary, an order, a format), first check whether an example decides it: work out the example's output under each reading. The example decides only when the outputs differ; when they match, write "Example N does not decide this" and do not cite it as support. When no example decides and the request is unclear, plan the reading under which every input and parameter the request defines changes some output, then the one closest to the request's words; when the request is silent, plan the simplest reading consistent with the examples. Either way the choice is a guess: list the other reading under `## Risks & Open Questions` as unresolved, quoting the request text each reading rests on and naming an input on which they give different output. Never write that choice as a settled acceptance criterion or mark it "Plan decision": the criterion names its open question. Interactive runs ask each open question at the step 6 approval gate; an answer becomes a settled criterion that quotes it. In non-interactive runs nobody answers, so the question stays open.
 
 **One scenario per example and per stated rule.** Besides the copied output examples, each statement of observable behaviour in the request (a bound, a default, an order, a count, an output format) gets a Gherkin scenario whose input and expected value come from the request's text, not from the plan's wording. When a rule's meaning depends on an open question, its scenario uses only inputs on which every reading gives the same output, names the open question, and does not assert the disputed case.
-<!-- pi-port-notes -->
+<!-- pi-notes -->
 
 
 Role: orchestrator. This command creates a structured plan — it does not implement anything.
@@ -41,7 +41,7 @@ You have been invoked with the `/plan` command.
 3. **Incremental.** Each step must leave the codebase in a working, committable state.
 4. **Human approval required.** Present the plan for approval before any implementation begins.
 5. **Be concise.** The plan is the artifact; keep chat to decisions and gaps.
-6. **State your approach stance.** For any high-reversal-cost axis in `${CLAUDE_PLUGIN_ROOT}/knowledge/decision-defaults.md` the task touches (replace-vs-merge, format fidelity, migrate-vs-edit-stub, auto-merge-vs-direct, scope), state the chosen stance explicitly in the plan so it is visible — and correctable — at the human gate.
+6. **State your approach stance.** For any high-reversal-cost axis in `${DEV_TEAM_ROOT}/knowledge/decision-defaults.md` the task touches (replace-vs-merge, format fidelity, migrate-vs-edit-stub, auto-merge-vs-direct, scope), state the chosen stance explicitly in the plan so it is visible — and correctable — at the human gate.
 
 ## Parse Arguments
 
@@ -107,7 +107,7 @@ Create `plans/` if it doesn't exist. When writing the plan file, populate the `#
 Then derive the waves — never hand-author them:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plan_waves.py" <plan-file>
+python3 "${DEV_TEAM_ROOT}/scripts/plan_waves.py" <plan-file>
 ```
 
 Render the `## Parallelization` Mermaid DAG + wave table and the wave-grouped
@@ -149,7 +149,7 @@ When in doubt, classify up (standard rather than trivial, complex rather than st
 Each persona is a registered agent — dispatch by `subagent_type` like any
 other agent. The harness reads each one's own `model:`/`effort:`
 frontmatter natively; there is no dispatch-time override to pass and no
-plugin-side resolution step.
+package-side resolution step.
 
 | Reviewer | Agent | Focus |
 | ---------- | ---------- | ------- |
@@ -173,8 +173,8 @@ Pass each reviewer the full plan content. Also pass the Parallelization Critic t
 
 **First determine interactivity.** The run is **non-interactive** when any of these hold: `--yes` was passed, `DEV_TEAM_AUTO_APPROVE=1` is set in the environment, or `DEV_TEAM_INTERACTIVE` is not `1` (pi sets it only when a human UI is attached; a tool shell never has a TTY, so `test -t 0` must not be used — the headless/CI/automation case). Otherwise it is **interactive**. This is the same non-interactive principle the GitHub-issue prompt below already follows; the approval gate now follows it too, so a headless `/plan`→`/build` run never hangs waiting for input.
 
-- **Interactive** (unchanged from prior behavior) → Display the plan and the review summary. Ask: "Approve this plan to begin implementation, or suggest changes?" Mark the plan status as `approved` once the user confirms. If the user requests changes, update the plan and re-present. This is the Phase 2→3 gate: append an `approval` entry to `.claude/metrics/config-changelog.jsonl` per the [human-oversight-protocol § Audit trail](../human-oversight-protocol/SKILL.md#audit-trail) schema — `proposed` names the plan (e.g. "Approve plan for <task>"), `evidence_shown` points at the plan file (and any spec artifact), `risks_surfaced` lists the plan's `## Risks & Open Questions` items (`[]` if none).
-- **Non-interactive** → do **not** prompt or block. Auto-approve: set `**Status**: approved` and append an explicit audit record to the plan so the bypass is **never silent** — add an `## Approval` section reading: `Auto-approved (non-interactive) at <date> — no human review gate. Trigger: <--yes | DEV_TEAM_AUTO_APPROVE=1 | no TTY>.` Then continue, appending the same three-field `.claude/metrics/config-changelog.jsonl` entry; `description` states the bypass trigger.
+- **Interactive** (unchanged from prior behavior) → Display the plan and the review summary. Ask: "Approve this plan to begin implementation, or suggest changes?" Mark the plan status as `approved` once the user confirms. If the user requests changes, update the plan and re-present. This is the Phase 2→3 gate: append an `approval` entry to `.pi/dev-team/metrics/config-changelog.jsonl` per the [human-oversight-protocol § Audit trail](../human-oversight-protocol/SKILL.md#audit-trail) schema — `proposed` names the plan (e.g. "Approve plan for <task>"), `evidence_shown` points at the plan file (and any spec artifact), `risks_surfaced` lists the plan's `## Risks & Open Questions` items (`[]` if none).
+- **Non-interactive** → do **not** prompt or block. Auto-approve: set `**Status**: approved` and append an explicit audit record to the plan so the bypass is **never silent** — add an `## Approval` section reading: `Auto-approved (non-interactive) at <date> — no human review gate. Trigger: <--yes | DEV_TEAM_AUTO_APPROVE=1 | no TTY>.` Then continue, appending the same three-field `.pi/dev-team/metrics/config-changelog.jsonl` entry; `description` states the bypass trigger.
 
 #### Post-approval: persist the Gherkin (`.feature` export)
 
@@ -183,7 +183,7 @@ directory, run the export **from the repo root** (destinations resolve against
 the invocation cwd):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plan_gherkin_export.py" <plan-file>
+python3 "${DEV_TEAM_ROOT}/scripts/plan_gherkin_export.py" <plan-file>
 ```
 
 Show its summary (destination, files written, overwritten, stale removed) to
@@ -198,7 +198,7 @@ script no-ops with a note).
 After approval, classify the origin remote — **only** offer issue creation on an actual GitHub host:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/git_origin_host.py"
+python3 "${DEV_TEAM_ROOT}/scripts/git_origin_host.py"
 ```
 
 - **`github`** → prompt **once**, showing the count: *"Open 1 parent issue and N linked slice issues from this plan? [y/N]"* (N = number of slices). The default is **No**. Invoke `/issues-from-plan` **only on explicit `y`**; on No (or anything else), create nothing and continue.

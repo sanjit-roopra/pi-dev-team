@@ -1,4 +1,4 @@
-"""Stryker (JS/TS) mutation-testing adapter — Python port of stryker.sh.
+"""Stryker (JS/TS) mutation-testing adapter.
 
 Contract mirrors the bash adapter:
   ADAPTER_SOURCE_FILE   — source file to mutate (scopes `--mutate`)

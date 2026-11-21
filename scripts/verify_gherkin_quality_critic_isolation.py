@@ -16,7 +16,7 @@ nothing would catch it.
 This script closes that gap with a cross-contamination canary: each
 instance's `.feature` fixture carries a distinct, randomly-generated marker
 string embedded in its own context (mirroring how a real dispatch's cited
-source text could carry incidental detail). Two fully independent `claude
+source text could carry incidental detail). Two fully independent `dev-team-run
 -p` subprocess calls dispatch the real `gherkin-quality-critic` agent (via
 the `/review-agent` skill) against each fixture — no shared mutable state, no
 piping one call's output into the other's input. If either transcript
@@ -30,13 +30,14 @@ what the two instances are asked to review (the fixture's Gherkin content is
 otherwise identical); only the throwaway canary comment differs.
 
 **Opt-in, paid, fail-open.** Mirrors `evals/README.md`'s "CI gate (issue
-#99)" live-gate convention: this script dispatches the real `claude` CLI, so
-it costs tokens and must never block anyone without eval credentials. When
-the `claude` CLI is missing or `ANTHROPIC_API_KEY` is unset, it prints a
-skip message and exits 0 — never a failure. It is not wired into any CI
+#99)" live-gate convention: this script dispatches a real agent through the
+`dev-team-run` helper (which runs pi with pi's own login), so it costs
+tokens and must never block anyone without eval credentials. When the
+`dev-team-run` helper is not on PATH, it prints a skip message and exits 0
+— never a failure. It is not wired into any CI
 workflow by this change; see `knowledge/gherkin-quality-review-dispatch.md`
 for how to run it locally (or gate it into CI the same way the existing live
-eval gate is: a label + `ANTHROPIC_API_KEY`).
+eval gate is: a label + provider credentials).
 
 Stdlib only. (ADR 0014/0015).
 
@@ -76,8 +77,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default=None,
-        help="model id passed to `claude -p --model` (default: omitted, so "
-        "`claude -p` uses its own configured default model — this script "
+        help="model id passed to `dev-team-run -p --model` (default: omitted, so "
+        "`dev-team-run -p` uses its own configured default model — this script "
         "does not pin a snapshot; see ADR 0026)",
     )
     parser.add_argument(
@@ -93,12 +94,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def check_prerequisites() -> list[str]:
     """Return missing-prerequisite messages (empty == ready to dispatch)."""
     missing: list[str] = []
-    if shutil.which("claude") is None:
+    if shutil.which("dev-team-run") is None:
         missing.append(
-            "the `claude` CLI (npm install -g @anthropic-ai/claude-code)"
+            "the `dev-team-run` helper (ships in pi-dev-team's bin/; on PATH inside pi)"
         )
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        missing.append("ANTHROPIC_API_KEY (required to dispatch a live agent call)")
     return missing
 
 
@@ -154,14 +153,14 @@ def build_prompt(feature_path: Path, canary: str) -> str:
 
 
 def dispatch(prompt: str, model: str | None, timeout: float) -> str | None:
-    """Run one fully independent `claude -p` subprocess. Returns the raw
+    """Run one fully independent `dev-team-run -p` subprocess. Returns the raw
     captured stdout (the "transcript"), or None on any infrastructure
     problem (CLI crash, timeout, no output) — callers must treat None as
     fail-open, never as a contamination finding. `model` is only appended to
-    the command when explicitly given — omitted, `claude -p` resolves its
+    the command when explicitly given — omitted, `dev-team-run -p` resolves its
     own configured default rather than this script pinning a snapshot."""
     cmd = [
-        "claude",
+        "dev-team-run",
         "-p",
         prompt,
         "--output-format",

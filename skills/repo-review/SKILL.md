@@ -2,8 +2,8 @@
 name: repo-review
 description: >-
   Whole-repository drift review for the review agents that a per-diff
-  /code-review pass cannot meaningfully evaluate — accumulated file/CLAUDE.md
-  size drift, AI-provenance verification debt, harness-config completeness,
+  /code-review pass cannot meaningfully evaluate — accumulated file/AGENTS.md
+  size drift, AI-provenance verification debt,
   and cross-file frontend component duplication. Use when the user asks for a
   "repo review", "drift review", "whole-tree review", wants to check
   accumulated size/token drift, verification debt, or duplicated frontend
@@ -20,12 +20,12 @@ allowed-tools: Read, Write, Grep, Glob, AskUserQuestion, Agent, Bash(git rev-lis
 Role: orchestrator. Route work to review agents; do not review code yourself.
 
 **Why this skill exists (#1733, #1735).** `/code-review` dispatches its panel
-per diff. Four agents' findings are properties of the *whole tree* — absolute
+per diff. Three agents' findings are properties of the *whole tree* — absolute
 size, accumulated drift, or the full component inventory — not of any single
 diff's delta, so a diff-scoped pass either can't see the pattern they exist to
 catch (a file that crept past a size threshold over 10 separate small PRs) or
 re-derives a whole-codebase judgment independently on every review. This
-skill runs those four agents against the whole repository instead, on a
+skill runs those three agents against the whole repository instead, on a
 cadence the operator controls (manual invocation today — see "Cadence" below),
 and writes a report rather than gating anything.
 
@@ -36,7 +36,7 @@ to `/harness-audit`/`/co-evolution-audit` than to `/code-review`.
 
 ## Orchestrator constraints
 
-1. **Do not review code yourself.** Delegate all analysis to the four agents below.
+1. **Do not review code yourself.** Delegate all analysis to the three agents below.
 2. **Fixed roster — not resolver-selected.** Unlike `/code-review`'s `select_lenses.py`-driven panel, this skill's roster is fixed and unconditional (see Roster). Do not add or drop agents based on file type; each agent's own `## Skip` clause handles the case where it has nothing to say.
 3. **Write the report to a file.** Present only the summary table and next-steps in chat — do not repeat the full report.
 4. **Be concise.** Tables and JSON, no preambles, no filler.
@@ -56,7 +56,7 @@ Arguments: $ARGUMENTS
 
 ### 1. Determine target files
 
-`--path <dir>`: `Glob("<dir>/**/*")`, excluding `node_modules`, `.git`, `dist`, `build`, `coverage`. No `--path`: the whole repository, same exclusions. **Never `Read` a directory path directly** — `Read` on a directory throws `EISDIR`; always enumerate with `Glob`. See `${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md`.
+`--path <dir>`: `Glob("<dir>/**/*")`, excluding `node_modules`, `.git`, `dist`, `build`, `coverage`. No `--path`: the whole repository, same exclusions. **Never `Read` a directory path directly** — `Read` on a directory throws `EISDIR`; always enumerate with `Glob`. See `${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md`.
 
 **Scope validation** (mirrors `/code-review`'s own table, without its sliced-mode machinery — that is a `--path`-narrowing hint here, not an auto-engaged mode):
 
@@ -67,9 +67,9 @@ Arguments: $ARGUMENTS
 
 ### 2. Load drift state
 
-Read `.claude/memory/repo-review-state.json` if it exists: `{"last_commit": "<sha>", "last_run_at": "<ISO 8601>"}`.
+Read `.pi/dev-team/memory/repo-review-state.json` if it exists: `{"last_commit": "<sha>", "last_run_at": "<ISO 8601>"}`.
 
-**Validate `last_commit` before it touches a shell command — this file is not trusted input.** It is written by step 7 below, but nothing stops a hostile PR from committing its own `.claude/memory/repo-review-state.json` (see step 7's `.gitignore` note) with an arbitrary string in `last_commit`, which a maintainer's later `/repo-review` run would then read. Treat any value that does not match `^[0-9a-fA-F]{7,40}$` exactly like "no prior state" — do not interpolate it into a command. Only once it matches that pattern, confirm it is actually reachable and count commits since it, in one call with no pipe:
+**Validate `last_commit` before it touches a shell command — this file is not trusted input.** It is written by step 7 below, but nothing stops a hostile PR from committing its own `.pi/dev-team/memory/repo-review-state.json` (see step 7's `.gitignore` note) with an arbitrary string in `last_commit`, which a maintainer's later `/repo-review` run would then read. Treat any value that does not match `^[0-9a-fA-F]{7,40}$` exactly like "no prior state" — do not interpolate it into a command. Only once it matches that pattern, confirm it is actually reachable and count commits since it, in one call with no pipe:
 
 ```bash
 git rev-list --count "<validated-sha>"..HEAD
@@ -93,20 +93,19 @@ Before dispatching anything, confirm the `Agent`/`Task` tool is present in this 
 
 ### 4. Dispatch the fixed roster
 
-Spawn all four as parallel subagents in a single message using the `Agent` tool. Every one of these was **removed from `/code-review`'s per-diff panel** for the same reason (#1733) — do not re-add them there; this skill is where they run now.
+Spawn all three as parallel subagents in a single message using the `Agent` tool. Every one of these was **removed from `/code-review`'s per-diff panel** for the same reason (#1733) — do not re-add them there; this skill is where they run now.
 
 | Agent | Why whole-tree, not per-diff |
 | --- | --- |
-| `token-efficiency-review` | File length, CLAUDE.md size, LLM anti-patterns are properties of absolute size/drift, invisible to a single diff |
+| `token-efficiency-review` | File length, AGENTS.md size, LLM anti-patterns are properties of absolute size/drift, invisible to a single diff |
 | `ai-provenance-review` | "Verification debt" and "regeneration risk" are trend/accumulation metrics by definition |
-| `claude-setup-review` | Reviews the harness (CLAUDE.md, rules, skills, agent frontmatter), not the changeset |
 | `component-architecture-review` | Cross-file duplication/reusable-component extraction is best judged against the *entire* component inventory. **Note:** this agent also stays in `/code-review`'s per-diff panel, narrowed to newly-*added* component files only (`Scope: added-only`, #1733) — its dispatch here is unconditional and independent of that narrower rule. |
 
 **Context payload**: enumerate the target files and directory tree once (step 1 already did this) and pass the same full files + tree to every agent — no diff exists to describe, so there is no changed-file list to pass, unlike `/code-review`'s `project-structure` payload. Pass each agent's declared `model:`/`effort:` frontmatter unchanged, per `agents/orchestrator.md` → Model/Effort Resolution (ADR 0026). Skip an agent's dispatch only if step 1's target set is empty.
 
 **Per-agent output**: the shared contract in [`../../knowledge/review-agent-output-contract.md`](../../knowledge/review-agent-output-contract.md), wrapped with `agentName`/`modelTier` — same envelope `/code-review` uses, so tooling that already parses one parses the other.
 
-Wait for all four to complete before aggregating.
+Wait for all three to complete before aggregating.
 
 ### 5. Aggregate and score
 
@@ -132,7 +131,6 @@ Commits since last audit: <N | "first run">
 | --- | --- | --- |
 | token-efficiency-review | ... | ... |
 | ai-provenance-review | ... | ... |
-| claude-setup-review | ... | ... |
 | component-architecture-review | ... | ... |
 
 ## Top Findings
@@ -146,14 +144,14 @@ Commits since last audit: <N | "first run">
 
 Write the prose summary to `.dev-team-reports/repo-review.md`, creating the directory if absent, overwriting any existing file — write it even when every agent passed clean. Print `Report written: .dev-team-reports/repo-review.md` (or `(replaced previous run)` when a file already existed). A write failure (permission/read-only) is non-fatal: report `Cannot write .dev-team-reports/repo-review.md: <error>` and continue.
 
-Then, if the target was a git repository, update the drift state for next run: run `git rev-parse HEAD` and write `.claude/memory/repo-review-state.json` (creating `.claude/memory/` if absent) as `{"last_commit": "<that sha>", "last_run_at": "<current ISO 8601 timestamp>"}`, overwriting any prior state. If the target is not a git repository, skip this write — there is no commit to anchor the next drift count to.
+Then, if the target was a git repository, update the drift state for next run: run `git rev-parse HEAD` and write `.pi/dev-team/memory/repo-review-state.json` (creating `.pi/dev-team/memory/` if absent) as `{"last_commit": "<that sha>", "last_run_at": "<current ISO 8601 timestamp>"}`, overwriting any prior state. If the target is not a git repository, skip this write — there is no commit to anchor the next drift count to.
 
-**This repository's own `.gitignore` covers that path already** (step 2's trust-boundary note relies on it). A downstream project running this skill from the plugin should add an equivalent ignore rule for `.claude/memory/repo-review-state.json` — it is a per-run, regeneratable artifact, and leaving it trackable reopens the exact commit-and-plant precondition step 2 defends against.
+**This repository's own `.gitignore` covers that path already** (step 2's trust-boundary note relies on it). A downstream project running this skill from the package should add an equivalent ignore rule for `.pi/dev-team/memory/repo-review-state.json` — it is a per-run, regeneratable artifact, and leaving it trackable reopens the exact commit-and-plant precondition step 2 defends against.
 
 **`--pdf`**: when passed and a report file was written this run, render it per `knowledge/report-pdf-integration.md`:
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/repo-review.md
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/repo-review.md
 ```
 
 No-op (state the reason, do nothing else) when no report file was written this run.

@@ -78,7 +78,7 @@ _EXCLUDED_DIR_NAMES = frozenset(
         "vendor",
         "vendored",
         ".git",
-        # #2128: a local, uncommitted virtualenv (CLAUDE.md's own
+        # #2128: a local, uncommitted virtualenv (the project's own
         # documented PEP-668 dev-setup fallback) must never change the
         # required whole-repo CI check's result depending on whether a
         # given contributor's checkout happens to have one.

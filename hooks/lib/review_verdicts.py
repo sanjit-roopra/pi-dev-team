@@ -10,16 +10,16 @@ A deliberate sibling of `hooks/lib/boundary_events.py`, not an extension of
 it (Decision 1): `boundary_events.py`'s own docstring forbids ever writing a
 real `file_path` into that stream ("Never write free text ... file paths ...
 must never appear"), so a per-file verdict needs its own store,
-`.claude/metrics/review-verdicts.jsonl`, written via the same
+`.pi/dev-team/metrics/review-verdicts.jsonl`, written via the same
 `atomic_state.append_line_locked` primitive `boundary_events.py` uses.
 
 ALWAYS-ON (Decision 2): unlike `telemetry.py`, this stream is not gated by
-`DEV_TEAM_TELEMETRY`/`~/.claude/telemetry.json` consent — same posture as
+`DEV_TEAM_TELEMETRY`/`~/.pi/agent/dev-team/telemetry.json` consent — same posture as
 `boundary-events.jsonl` itself, for the same reason (local-only, mechanical
 accountability data: lens/path/hash/outcome, no prose).
 
 Fail-open: every exception in `emit_review_verdict()` is swallowed. A full
-disk, read-only `.claude/metrics/`, or malformed state must never change the
+disk, read-only `.pi/dev-team/metrics/`, or malformed state must never change the
 calling hook's stdout, stderr, or exit code. `load_verdicts()` never raises
 either — an absent file, a corrupted line, or a stale `plugin_version` row
 all degrade to "no usable rows" rather than an exception.
@@ -37,7 +37,7 @@ enforces that boundary.
 
 Once a `pass` row can suppress a real dispatch, the ledger stops being pure
 telemetry and becomes something a contributor benefits from forging: commit
-a `.claude/metrics/review-verdicts.jsonl` (this repo's `.gitignore` excludes
+a `.pi/dev-team/metrics/review-verdicts.jsonl` (this repo's `.gitignore` excludes
 `**/metrics/*`, but `git add -f` still works) claiming `security-review`
 already passed a file whose content-hash the contributor can trivially
 compute themselves (they wrote it), and a reviewer who checks out that
@@ -50,13 +50,13 @@ become a self-certification shortcut"), applied here to the ledger's OWN
 provenance rather than to `pre_pr_review.py`'s corroboration. Any git error
 (no `git` on `PATH`, `cwd` isn't a repository, a subprocess failure)
 resolves toward TRUSTING the file, matching every other environment
-assumption this plugin already makes about git being present — this check
+assumption this package already makes about git being present — this check
 adds a targeted distrust signal, it is not a general "can we run git"
 capability probe.
 
 Stdlib only, except for one deliberate `git` subprocess call in
 `_ledger_is_git_tracked` — the read-side analogue of `hooks/lib/
-review_gate_hash.py`'s own git subprocess use elsewhere in this plugin's
+review_gate_hash.py`'s own git subprocess use elsewhere in this package's
 `hooks/lib/`. See ADR 0014 / ADR 0015.
 """
 
@@ -170,14 +170,14 @@ def emit_review_verdict(
     session_id: str | None = None,
 ) -> None:
     """Append one compact JSON line to
-    `<cwd>/.claude/metrics/review-verdicts.jsonl`.
+    `<cwd>/.pi/dev-team/metrics/review-verdicts.jsonl`.
 
     Unconditional (Decision 2) — no consent check. Fail-open: any error (bad
-    `cwd`, unwritable `.claude/metrics/`, disk full, etc.) is swallowed
+    `cwd`, unwritable `.pi/dev-team/metrics/`, disk full, etc.) is swallowed
     silently, matching `emit_boundary_event`'s own contract.
 
     Args:
-        cwd: Directory whose `.claude/metrics/` subdirectory receives the
+        cwd: Directory whose `.pi/dev-team/metrics/` subdirectory receives the
             row. Accepts `str` or `Path`.
         lens: The review agent's name (e.g. "security-review").
         file_path: The in-scope file this verdict is about.
@@ -187,7 +187,7 @@ def emit_review_verdict(
     """
     try:
         base = Path(cwd) if cwd else Path.cwd()
-        log = artifact_paths.resolve_file("metrics", _LOG_NAME, base)
+        log = artifact_paths.resolve_file("metrics", _LOG_NAME, base, migrate=False)
         log.parent.mkdir(parents=True, exist_ok=True)
 
         payload = {
@@ -262,7 +262,7 @@ def _is_usable_version(row_version: object, current_version: str) -> bool:
 
 
 def load_verdicts(cwd) -> list[dict]:
-    """Read `<cwd>/.claude/metrics/review-verdicts.jsonl` and return its
+    """Read `<cwd>/.pi/dev-team/metrics/review-verdicts.jsonl` and return its
     usable rows.
 
     "Usable" excludes: an absent file, a git-tracked ledger (see module

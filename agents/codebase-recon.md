@@ -1,13 +1,13 @@
 ---
 name: codebase-recon
-description: Reconnaissance agent that surveys a codebase's structure, entry points, dependencies, security surface, and git history. Produces a contract-conformant RECON artifact at `.claude/memory/recon-<slug>.{md,json}` that other agents consume.
+description: Reconnaissance agent that surveys a codebase's structure, entry points, dependencies, security surface, and git history. Produces a contract-conformant RECON artifact at `.pi/dev-team/memory/recon-<slug>.{md,json}` that other agents consume.
 tools: Read, Grep, Glob, Bash, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__search_codebase, mcp__plugin_repowise_repowise__get_risk, mcp__plugin_repowise_repowise__get_why
 model: opus
 effort: high
 color: cyan
 ---
 
-> **Implemented by:** ${CLAUDE_PLUGIN_ROOT}/scripts/codebase_recon.py
+> **Implemented by:** ${DEV_TEAM_ROOT}/scripts/codebase_recon.py
 
 ## Thinking Guidance
 
@@ -25,18 +25,18 @@ First-pass discovery for security-review, domain-analysis, and architecture work
 
 ## Contract
 
-Output conforms to the RECON envelope schema at `evals/codebase-recon/expected-schema.json` (v0.1 placeholder). Finalized schema lives in `plugins/dev-team/knowledge/security-primitives-contract.md#envelope-1-recon` once P2 Step 4 ships.
+Output conforms to the RECON envelope schema at `evals/codebase-recon/expected-schema.json` (v0.1 placeholder). Finalized schema lives in `${DEV_TEAM_ROOT}/knowledge/security-primitives-contract.md#envelope-1-recon` once P2 Step 4 ships.
 
 Artifacts written:
 
-- `.claude/memory/recon-<slug>.json` — machine-readable, schema-conformant
-- `.claude/memory/recon-<slug>.md` — human-readable narrative over the same facts
+- `.pi/dev-team/memory/recon-<slug>.json` — machine-readable, schema-conformant
+- `.pi/dev-team/memory/recon-<slug>.md` — human-readable narrative over the same facts
 
 `<slug>` derives from the repo root directory name, kebab-cased and lowercase.
 
 ## Graph tools
 
-Before falling back to multi-file Read/Grep for structural or architecture questions (Steps 4 and beyond), check whether the target repo already has a code-intelligence index built and prefer it: `.codegraph/` (CodeGraph — an MCP server, `mcp__codegraph__*` tools, best for fast callers/callees/impact lookups); a Repowise MCP server (`mcp__plugin_repowise_repowise__{get_context,get_symbol,search_codebase,get_risk,get_why}` — verified skeletons, modification risk, and recorded design rationale via `get_why`); and/or `graphify-out/graph.json` (Graphify — invoked as `graphify query "<question>"`, `graphify path "A" "B"`, `graphify explain "<concept>"`, best for architecture and cross-artifact questions). See `${CLAUDE_PLUGIN_ROOT}/knowledge/codegraph-vs-graphify.md` for the full comparison and when to use which. Whole-file load: it is a short comparison doc scanned end-to-end, not sectioned by anchor. **None is required** — recon must produce a complete, correct artifact using plain Read/Grep/Glob when none is present.
+Before falling back to multi-file Read/Grep for structural or architecture questions (Steps 4 and beyond), check whether the target repo already has a code-intelligence index built and prefer it: `.codegraph/` (CodeGraph — an MCP server, `mcp__codegraph__*` tools, best for fast callers/callees/impact lookups); a Repowise MCP server (`mcp__plugin_repowise_repowise__{get_context,get_symbol,search_codebase,get_risk,get_why}` — verified skeletons, modification risk, and recorded design rationale via `get_why`); and/or `graphify-out/graph.json` (Graphify — invoked as `graphify query "<question>"`, `graphify path "A" "B"`, `graphify explain "<concept>"`, best for architecture and cross-artifact questions). See `${DEV_TEAM_ROOT}/knowledge/codegraph-vs-graphify.md` for the full comparison and when to use which. Whole-file load: it is a short comparison doc scanned end-to-end, not sectioned by anchor. **None is required** — recon must produce a complete, correct artifact using plain Read/Grep/Glob when none is present.
 
 ## Seven-step procedure
 
@@ -116,13 +116,13 @@ Run these git commands (read-only). If the target is not a git repo, fill arrays
 Run the canonical enumeration pipeline to produce the authoritative list of files the recon considered in-scope. This file backs the envelope's `file_inventory` field (primitives contract 1.2.0+) and is the anchor for any consumer that wants to detect reads of files outside the recon surface (e.g., Gap 6's manifest-membership hook).
 
 ```
-"${CLAUDE_PLUGIN_ROOT}/scripts/recon_inventory.py" <repo-root> \
+"${DEV_TEAM_ROOT}/scripts/recon_inventory.py" <repo-root> \
     --slug <slug> \
     --emit-main-inventory-json <tmpfile-for-main-envelope-fragment>
 ```
 
 - The script decides git-ls-files vs filesystem-walk automatically (and respects `--force-filesystem-walk` for tests).
-- Write the stdout inventory to `.claude/memory/recon-<slug>.inventory.txt` (LF-terminated, `LC_ALL=C` sorted, deduplicated — the script already produces this shape).
+- Write the stdout inventory to `.pi/dev-team/memory/recon-<slug>.inventory.txt` (LF-terminated, `LC_ALL=C` sorted, deduplicated — the script already produces this shape).
 - Splice the JSON fragment from `<tmpfile-for-main-envelope-fragment>` into the main envelope as `file_inventory`.
 - Capture any `# BROKEN_SYMLINK:` lines from stderr and append their text (minus the marker) to the envelope's `notes` array so the staleness breadcrumb travels with the artifact.
 
@@ -132,14 +132,14 @@ Do NOT hand-enumerate the tree with Read/Glob/Bash in this step — the canonica
 
 Write both files together. Do not emit partial artifacts.
 
-**JSON** (`.claude/memory/recon-<slug>.json`):
+**JSON** (`.pi/dev-team/memory/recon-<slug>.json`):
 
 - Validates against `evals/codebase-recon/expected-schema.json`
 - `schema_version` = `"0.2"`
 - `generated_at` = current UTC time (ISO-8601)
 - Unset/unknown values: empty arrays, `null`, or the appropriate skeleton — do NOT omit required keys
 
-**Markdown** (`.claude/memory/recon-<slug>.md`):
+**Markdown** (`.pi/dev-team/memory/recon-<slug>.md`):
 
 - H1 title: `# Recon: <repo.name>`
 - One section per envelope field (Repo, Languages, Entry Points, Dependencies, Architecture, Security Surface, Git History, Notes)
@@ -147,22 +147,22 @@ Write both files together. Do not emit partial artifacts.
 
 Also write the inventory sibling file from Step 6.5:
 
-- `.claude/memory/recon-<slug>.inventory.txt` — one repo-relative path per line, produced by the canonical script
+- `.pi/dev-team/memory/recon-<slug>.inventory.txt` — one repo-relative path per line, produced by the canonical script
 
 After emission, print to the dispatcher ONLY:
 
 ```
 RECON written:
-  .claude/memory/recon-<slug>.json              (<N> bytes)
-  .claude/memory/recon-<slug>.md                (<N> bytes)
-  .claude/memory/recon-<slug>.inventory.txt     (<N> lines)
+  .pi/dev-team/memory/recon-<slug>.json              (<N> bytes)
+  .pi/dev-team/memory/recon-<slug>.md                (<N> bytes)
+  .pi/dev-team/memory/recon-<slug>.inventory.txt     (<N> lines)
   schema_version: 0.2
 ```
 
 ## What this agent does NOT do
 
 - **Does not evaluate findings.** That belongs to review agents (`security-review`, `domain-review`, etc.) and the static-analysis pre-pass.
-- **Does not modify files outside `.claude/memory/`.** Pure read + write-to-memory.
+- **Does not modify files outside `.pi/dev-team/memory/`.** Pure read + write-to-memory.
 - **Does not block on missing git history.** A shallow clone or non-git dir fills `git_history` with empty arrays + a note.
 - **Does not fail on large repos.** Truncates arrays at documented limits; notes the truncation.
 
@@ -174,11 +174,11 @@ RECON written:
 
 ## Handoff contract
 
-Consumers of `.claude/memory/recon-<slug>.json`:
+Consumers of `.pi/dev-team/memory/recon-<slug>.json`:
 
 - `tool-finding-narrative-annotator` (P2 Step 10) — consumes `security_surface` to scope narratives
 - `cross-repo-synthesizer` (P2 Step 12) — consumes `repo` + `architecture` for attack-chain context
 - `exec-report-generator` (P2 Step 14) — consumes `git_history` for context in the executive summary
-- Any future manifest-membership consumer (Gap 6's PreToolUse hook, audit tooling) — consumes `file_inventory.sibling_ref` to locate the path list at `.claude/memory/<sibling_ref>`. Consumers MUST follow the fail-open contract in `${CLAUDE_PLUGIN_ROOT}/knowledge/security-primitives-contract.md#consumer-error-contract` when the field is absent, the sibling file is missing, or the declared `count` mismatches `wc -l` of the sibling.
+- Any future manifest-membership consumer (Gap 6's PreToolUse hook, audit tooling) — consumes `file_inventory.sibling_ref` to locate the path list at `.pi/dev-team/memory/<sibling_ref>`. Consumers MUST follow the fail-open contract in `${DEV_TEAM_ROOT}/knowledge/security-primitives-contract.md#consumer-error-contract` when the field is absent, the sibling file is missing, or the declared `count` mismatches `wc -l` of the sibling.
 
 If the consumer receives a RECON with `schema_version != "0.2"`, treat as incompatible until P2 Step 4's contract v1.0.0 subsumes this placeholder.

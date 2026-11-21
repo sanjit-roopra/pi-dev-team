@@ -15,14 +15,14 @@ Verify-model: haiku
 Verify-effort: medium
 <!-- Verification-mode opt-in (#1628): confirming an extracted function or a
      flattened nesting level is a structural read, not a judgment call.
-     Discovery stays sonnet/high. Contract: ${CLAUDE_PLUGIN_ROOT}/knowledge/verification-mode.md
+     Discovery stays sonnet/high. Contract: ${DEV_TEAM_ROOT}/knowledge/verification-mode.md
      (Whole-file load: short shared contract, no anchors). -->
 Cites:
 - design-smells
 - object-calisthenics
 - adversarial-review-protocol
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=clean, warn=minor issues, fail=architectural problems
 Severity: error=breaks maintainability, warning=tech debt, suggestion=improvement
@@ -51,7 +51,7 @@ complexity — is folded into this lens's `Detect`/`Self-Challenge` below.
 
 ## Knowledge Files
 
-Read `${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md` and `${CLAUDE_PLUGIN_ROOT}/knowledge/object-calisthenics.md` before analysis. Whole-file load: both files are reference catalogs the agent scans end-to-end during a review — the smell→pattern table and the nine rules are independent indexes.
+Read `${DEV_TEAM_ROOT}/knowledge/design-smells.md` and `${DEV_TEAM_ROOT}/knowledge/object-calisthenics.md` before analysis. Whole-file load: both files are reference catalogs the agent scans end-to-end during a review — the smell→pattern table and the nine rules are independent indexes.
 
 ## Skip
 
@@ -75,7 +75,7 @@ DRY violations (rule of three):
 
 Coupling issues:
 
-- A hardcoded collaborator that the blocker table in `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md` lets a test double (B1 out-of-process handle, B2 ambient state, B3 prohibitive cost), so a test cannot replace it. Other first-party collaborators constructed inline are not a finding
+- A hardcoded collaborator that the blocker table in `${DEV_TEAM_ROOT}/knowledge/internal-collaborator-doubling.md` lets a test double (B1 out-of-process handle, B2 ambient state, B3 prohibitive cost), so a test cannot replace it. Other first-party collaborators constructed inline are not a finding
 - Module-level or static mutable state (a cache, registry or counter) shared across calls or requests: a shared-state finding. Propose scoping it or passing it explicitly; propose injection only for a B1–B3 collaborator. It is a race only when two accesses can interleave (concurrent entry, or an await between read and write); leave races to `concurrency-review`
 - Circular dependencies
 - Change propagation across modules
@@ -113,8 +113,8 @@ Organization:
 
 Design smells:
 
-- For SRP violations and coupling issues, map to the smell → pattern table in `${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md#design-smells-pattern-mapping`. Every finding should name the smell, quote the code, and include a refactor sketch.
-- For method-level issues (nesting, long methods, flag arguments), check Object Calisthenics rules 1-2 and 7 in `${CLAUDE_PLUGIN_ROOT}/knowledge/object-calisthenics.md`. Whole-file load: the nine-rule catalog is short enough that the agent reads the whole file rather than picking specific rule anchors.
+- For SRP violations and coupling issues, map to the smell → pattern table in `${DEV_TEAM_ROOT}/knowledge/design-smells.md#design-smells-pattern-mapping`. Every finding should name the smell, quote the code, and include a refactor sketch.
+- For method-level issues (nesting, long methods, flag arguments), check Object Calisthenics rules 1-2 and 7 in `${DEV_TEAM_ROOT}/knowledge/object-calisthenics.md`. Whole-file load: the nine-rule catalog is short enough that the agent reads the whole file rather than picking specific rule anchors.
 
 **Lean fix rule (production code only).** A `warning` whose fix restructures code (extracts a function, splits a module, or introduces a type, interface, parameter object, wrapper or layer) and adds more production lines than it removes counts as a `suggestion` with confidence `none`: rewrite it so in the findings JSON before any script reads it, report it, never auto-apply it, and keep it out of the fix loop, overriding any actionability table that says otherwise (`/code-review` step 5b and `skills/code-review/references/05-aggregate.md`, `knowledge/three-phase-workflow.md` § Review Loop). `error` findings are unaffected. Exempt: every finding from `security-review`, `concurrency-review` or `correctness-review`; fixes that correct behavior (a bug, a race, a missing check or cleanup, a security or accessibility gap); a seam for a collaborator the blocker table in `knowledge/internal-collaborator-doubling.md` lets a test double (B1–B3); and test files (`knowledge/test-file-indicators.md`), fixtures and test helpers.
 
@@ -131,7 +131,7 @@ Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` sur
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these structure-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these structure-review-specific challenges:
 
 - Did you check every module/class for SRP violations, including small ones?
 - Did you trace dependency direction? Does business logic depend on infrastructure (not just vice versa)?

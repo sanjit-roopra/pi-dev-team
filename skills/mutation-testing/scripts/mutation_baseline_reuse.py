@@ -55,7 +55,7 @@ from pathlib import Path
 import mutation_report
 
 # skills/mutation-testing/scripts -> skills/mutation-testing -> skills
-# -> plugin root -> hooks/lib
+# -> package root -> hooks/lib
 _HOOKS_LIB_DIR = Path(__file__).resolve().parents[3] / "hooks" / "lib"
 if str(_HOOKS_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_HOOKS_LIB_DIR))

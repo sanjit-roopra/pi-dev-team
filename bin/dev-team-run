@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""`claude` CLI shim for the pi port of dev-team.
+"""`dev-team-run`: run one non-interactive prompt through pi, for dev-team scripts.
 
-Upstream scripts (orchestrator.py, codebase_recon.py, progress_guardian.py,
+Scripts (orchestrator.py, codebase_recon.py, progress_guardian.py,
 token_efficiency_review.py, mutation-testing helpers, ...) shell out to
-`claude -p ...`. Inside a pi session the pi-dev-team extension puts this
-directory first on PATH, so those calls run pi instead:
+`dev-team-run -p ...`. Inside a pi session the pi-dev-team extension puts this
+directory first on PATH (config `cliShim`, default on), so those calls run pi:
 
-  claude -p [--agent NAME] [--model M] [--output-format text|json|stream-json]
-         [--allowedTools "Read Grep ..."] [--append-system-prompt TEXT] [PROMPT]
+  dev-team-run -p [--agent NAME] [--model M] [--output-format text|json|stream-json]
+               [--allowedTools "Read Grep ..."] [--append-system-prompt TEXT] [PROMPT]
     -> pi --mode json -p --no-session [--dev-team-agent NAME] [--dev-team-tier T | --model P/ID]
           [--tools ...] PROMPT
 
-and print Claude's result envelope, e.g.
+and print a result envelope, e.g.
   {"type":"result","subtype":"success","is_error":false,"result":"...","num_turns":2,
    "total_cost_usd":0.01,"usage":{"input_tokens":...},"session_id":"..."}
 
+Tool names in --allowedTools are the hook-protocol names the agents use (Read, Grep, Glob, ...).
 Ignored (no pi equivalent needed): --dangerously-skip-permissions, --session-id,
 --max-turns, --verbose, --permission-mode, --settings, --no-session-persistence.
 Unsupported subcommands (mcp, plugin, --resume) exit 1 with a message.
-Set DEV_TEAM_REAL_CLAUDE=/path/to/claude to pass through to a real Claude Code CLI.
 Stdlib only.
 """
 
@@ -45,7 +45,7 @@ TOOL_MAP = {
 
 
 def warn(msg: str) -> None:
-    print(f"claude (pi-dev-team shim): {msg}", file=sys.stderr)
+    print(f"dev-team-run: {msg}", file=sys.stderr)
 
 
 def fail(msg: str, code: int = 1) -> int:
@@ -83,7 +83,7 @@ def model_args(model: str | None) -> list[str]:
     if low in TIERS:
         return [] if low in ("inherit", "default") else ["--dev-team-tier", low]
     for tier in ("opus", "sonnet", "haiku", "fable"):
-        if tier in low:  # full Claude ids like claude-sonnet-4-5 -> tier
+        if tier in low:  # full model ids like claude-sonnet-4-5 -> tier
             return ["--dev-team-tier", tier]
     return ["--model", m]
 
@@ -96,14 +96,10 @@ def trusted_here(trusted_dir: str, cwd: str) -> bool:
 
 
 def main(argv: list[str]) -> int:
-    real = os.environ.get("DEV_TEAM_REAL_CLAUDE")
-    if real:
-        os.execv(real, [real, *argv])
-
     if argv and argv[0] in ("mcp", "plugin", "config", "update", "doctor", "setup-token", "migrate-installer"):
-        return fail(f"'claude {argv[0]}' has no pi equivalent in this shim (use 'pi {argv[0]}' where it exists).")
+        return fail(f"'dev-team-run {argv[0]}' has no pi equivalent (use 'pi {argv[0]}' where it exists).")
     if "--version" in argv or "-v" in argv:
-        print("2.0.0 (pi-dev-team shim)")
+        print("2.0.0 (pi-dev-team dev-team-run)")
         return 0
 
     fmt = "text"
@@ -144,7 +140,7 @@ def main(argv: list[str]) -> int:
             system_prompt = nxt
             i += 1
         elif a in ("--resume", "-r", "--continue", "-c"):
-            return fail("session resume is not supported by the shim")
+            return fail("session resume is not supported")
         elif a in IGNORED_WITH_VALUE:
             i += 1
         elif a in IGNORED_FLAGS:
@@ -159,7 +155,7 @@ def main(argv: list[str]) -> int:
         i += 1
 
     if not printing:
-        return fail("only non-interactive `claude -p` is supported; run `pi` for an interactive session")
+        return fail("only non-interactive `dev-team-run -p` is supported; run `pi` for an interactive session")
 
     prompt = " ".join(prompt_parts).strip()
     if not prompt and not sys.stdin.isatty():
@@ -167,9 +163,9 @@ def main(argv: list[str]) -> int:
     if not prompt:
         return fail("no prompt given")
 
-    tmp = tempfile.mkdtemp(prefix="pi-dev-team-shim-")
+    tmp = tempfile.mkdtemp(prefix="dev-team-run-")
     cmd = pi_command() + ["--mode", "json", "-p", "--no-session"]
-    try:  # resources of the pi session that set up this shim (extensions loaded with -e; --no-approve if declined)
+    try:  # resources of the pi session that put this helper on PATH (extensions loaded with -e; --no-approve if declined)
         cmd += [str(x) for x in json.loads(os.environ.get("DEV_TEAM_PI_ARGS", "[]"))]
     except (ValueError, TypeError):
         pass

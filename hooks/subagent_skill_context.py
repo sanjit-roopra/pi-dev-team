@@ -15,7 +15,7 @@ No collision with the other hooks on this matcher: none emits
 `hookSpecificOutput`/`updatedInput` today, so this hook is the sole supplier of `updatedInput`
 for `Agent|Task` PreToolUse.
 
-Fail-open throughout, matching every other hook in this plugin:
+Fail-open throughout, matching every other hook in this package:
   - `tool_name` not in {"Agent", "Task"} -> exit 0, no stdout.
   - `tool_input.subagent_type` missing or not a non-empty string -> exit 0,
     no stdout, no `updatedInput`.
@@ -23,7 +23,7 @@ Fail-open throughout, matching every other hook in this plugin:
   - malformed/missing stdin -> exit 0 (mirrors `read_stdin_json`'s own
     fail-open contract exactly).
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin
     Output: JSON on stdout carrying `hookSpecificOutput.updatedInput` when a
              skill hint applies; otherwise no stdout. Always exits 0.
@@ -47,7 +47,7 @@ from instrument_log import append_row  # type: ignore[import-not-found]
 from review_agent_registry import strip_plugin_prefix  # type: ignore[import-not-found]
 from stdin_json import read_stdin_json  # type: ignore[import-not-found]
 
-# hooks/subagent_skill_context.py -> hooks -> plugin root -> agents
+# hooks/subagent_skill_context.py -> hooks -> package root -> agents
 _DEFAULT_AGENTS_DIR = _HOOKS_DIR.parent / "agents"
 
 _DISPATCH_TOOLS = frozenset({"Agent", "Task"})

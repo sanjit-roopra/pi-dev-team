@@ -7,7 +7,7 @@ transcript-level shape of a subagent's completion against 70 real subagent
 transcripts from this session. Step 2.1b (this implementation) turns those
 findings into `classify_stop()`.
 
-## Contract (docs/python-hook-contract.md)
+## Contract
 
     Input : SubagentStop JSON on stdin (`transcript_path`, `session_id`, `cwd`)
     Output: one `boundary-events.jsonl` `"record"`-decision row (#1461's
@@ -24,11 +24,13 @@ Stdlib-only (json/pathlib/sys). See ADR 0014, ADR 0015.
 
 ## What was confirmed, and how
 
-Primary source: this session's own subagent dispatch transcripts on disk at
-    ~/.claude/projects/<project-slug>/<session-id>/subagents/agent-<hash>.jsonl
-(+ a sibling agent-<hash>.meta.json per dispatch). 70 completed subagent transcripts were
-inspected directly (not recalled/guessed) — this is real, live harness output from
-Claude Code 2.1.278, not documentation. No web-doc citation was needed or used since a
+Primary source: real subagent dispatch transcripts on disk, one
+    <session-dir>/subagents/agent-<hash>.jsonl
+per dispatch (+ a sibling agent-<hash>.meta.json). Under pi the dev-team
+extension writes this sidechain format itself (extensions/dev-team/lib/transcript.ts)
+and passes its path as `agent_transcript_path`. 70 completed subagent transcripts were
+inspected directly (not recalled/guessed) — this is real, live harness output, not
+documentation. No web-doc citation was needed or used since a
 real transcript was reachable, per this step's own instructions.
 
 Compared against `hooks/cost_meter.py` (reads `transcript_path` from the hook payload,
@@ -273,7 +275,7 @@ def main() -> int:
     `_EMIT_CLASSIFICATIONS` above for why `clean`/`unreadable` stay silent.
     `emit_boundary_event` is already fail-open internally (module docstring,
     `boundary_events.py`); this function's own try/except is the same
-    outer safety net every other hook in this plugin wraps its entire
+    outer safety net every other hook in this package wraps its entire
     `main()` in (e.g. `destructive_guard.py`), so a failure anywhere in
     this hook — payload parsing, classification, or emission — degrades to a
     silent no-op, never a crash or a non-zero exit.

@@ -56,10 +56,9 @@ from pathlib import Path
 
 #: Mirrors `hooks/pre_pr_review.py`'s `_MIN_DISTINCT_DISPATCHES`. Kept as
 #: a named constant here (rather than imported) because this script must not
-#: depend on the hook package to compute a dispatch plan; the drift test in
-#: `plugins/dev-team/tests/scripts/test_closing_pass.py` asserts the two stay
-#: equal, so a future change to the gate's floor fails a test rather than
-#: silently under-composing the closing pass.
+#: depend on the hook package to compute a dispatch plan; the two must stay
+#: equal, so a future change to the gate's floor must update both rather
+#: than silently under-compose the closing pass.
 MIN_DISTINCT_DISPATCHES = 1
 
 

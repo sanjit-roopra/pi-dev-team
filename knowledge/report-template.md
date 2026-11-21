@@ -3,11 +3,11 @@
 Shared header/footer/empty-section contract for dev-team's ~15
 report-writing skills (`test-health`, `cd-test-architecture`,
 `competitive-analysis`, `docker-image-audit`, `test-improve`,
-`harness-audit`, `session-review`, `explore`, `test-design`,
-`frontend-architecture`, `agent-eval`, and others) to adopt over time.
+`harness-audit`, `explore`, `test-design`,
+`frontend-architecture`, and others) to adopt over time.
 Generalized from `test-improve`'s Phase 9 template
 (`skills/test-improve/templates/executive-summary.md`), the most complete
-existing example in the plugin — same role as `knowledge/review-template.md`
+existing example in the package — same role as `knowledge/review-template.md`
 plays for code-review agents, but for standalone reports rather than the
 review aggregation step.
 
@@ -96,7 +96,7 @@ Every report closes with a Provenance section, generalized from
 - Repository: `<repo path>`
 - Branch / SHA: `<branch>` / `<sha>`
 - Run parameters: `<flags, scope, or other invocation parameters>`
-- `dev-team` plugin version: `<plugin_version>`
+- `dev-team` package version: `<plugin_version>`
 ```
 
 Omit fields that don't apply to a given skill (e.g. a skill with no

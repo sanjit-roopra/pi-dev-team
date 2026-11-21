@@ -1,7 +1,7 @@
 """token_efficiency_review.py — Metrics-based token efficiency reviewer.
 
 Checks files for token-efficiency violations:
-  - CLAUDE.md: character count > 5000 (error), top-level rule count > 200 (error)
+  - AGENTS.md / CLAUDE.md: character count > 5000 (error), top-level rule count > 200 (error)
   - Any file: line count > 500 (warning)
   - .md files: optional LLM quality review (unless --skip-llm)
 
@@ -11,7 +11,7 @@ Exit codes (matches review_result contract):
   2 = warnings only OR LLM check skipped
 
 Usage:
-  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/token_efficiency_review.py --files <path> [<path>...] [--skip-llm]
+  python3 ${DEV_TEAM_ROOT}/scripts/token_efficiency_review.py --files <path> [<path>...] [--skip-llm]
 """
 
 from __future__ import annotations
@@ -30,14 +30,14 @@ sys.path.insert(
     str(Path(__file__).resolve().parent.parent / "hooks" / "lib"),
 )
 from token_efficiency_limits import (
-    CLAUDE_MD_CHAR_LIMIT,
-    CLAUDE_MD_RULE_LIMIT,
     FILE_LINE_LIMIT,
-    is_claude_md_file,
+    INSTRUCTIONS_MD_CHAR_LIMIT,
+    INSTRUCTIONS_MD_RULE_LIMIT,
+    is_instructions_md_file,
 )
 
 # ---------------------------------------------------------------------------
-# CLAUDE.md checks
+# Instructions-file (AGENTS.md / CLAUDE.md) checks
 # ---------------------------------------------------------------------------
 
 
@@ -71,8 +71,8 @@ def _count_top_level_bullets(text: str) -> int:
     return count
 
 
-def check_claude_md(path: Path) -> list[dict]:
-    """Run CLAUDE.md-specific checks. Returns list of issue dicts."""
+def check_instructions_md(path: Path) -> list[dict]:
+    """Run instructions-file (AGENTS.md / CLAUDE.md) checks. Returns list of issue dicts."""
     issues: list[dict] = []
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
@@ -91,7 +91,7 @@ def check_claude_md(path: Path) -> list[dict]:
 
     # 1. Character count
     char_count = len(text)
-    if char_count > CLAUDE_MD_CHAR_LIMIT:
+    if char_count > INSTRUCTIONS_MD_CHAR_LIMIT:
         issues.append(
             make_issue(
                 "error",
@@ -99,18 +99,18 @@ def check_claude_md(path: Path) -> list[dict]:
                 str(path),
                 0,
                 (
-                    f"CLAUDE.md exceeds character limit: {char_count} chars "
-                    f"(limit {CLAUDE_MD_CHAR_LIMIT}). Trim or move content to skills."
+                    f"{path.name} exceeds character limit: {char_count} chars "
+                    f"(limit {INSTRUCTIONS_MD_CHAR_LIMIT}). Trim or move content to skills."
                 ),
                 "Extract procedures into skill files; remove duplicate or verbose sections.",
-                rule_id="claude-md-char-limit",
+                rule_id="instructions-md-char-limit",
             )
         )
 
     # 2. Top-level rule/bullet count
     body = _strip_frontmatter(text)
     rule_count = _count_top_level_bullets(body)
-    if rule_count > CLAUDE_MD_RULE_LIMIT:
+    if rule_count > INSTRUCTIONS_MD_RULE_LIMIT:
         issues.append(
             make_issue(
                 "error",
@@ -118,11 +118,11 @@ def check_claude_md(path: Path) -> list[dict]:
                 str(path),
                 0,
                 (
-                    f"CLAUDE.md has {rule_count} top-level bullet/rule items "
-                    f"(limit {CLAUDE_MD_RULE_LIMIT}). Consolidate or move items to skills."
+                    f"{path.name} has {rule_count} top-level bullet/rule items "
+                    f"(limit {INSTRUCTIONS_MD_RULE_LIMIT}). Consolidate or move items to skills."
                 ),
                 "Group related rules into a skill file; remove duplicate instructions.",
-                rule_id="claude-md-rule-limit",
+                rule_id="instructions-md-rule-limit",
             )
         )
 
@@ -172,12 +172,12 @@ def is_prose_file(path: Path) -> bool:
 
 
 def run_llm_review(path: Path) -> list[dict]:
-    """Call claude CLI to review a prose file. Returns warning-severity findings.
+    """Call the dev-team-run helper to review a prose file. Returns warning-severity findings.
 
     LLM unavailability → returns a single warning finding (exit 2, not 1).
     """
     prompt = (
-        "Review this file for LLM anti-patterns that waste tokens in Claude Code config files:\n"
+        "Review this file for LLM anti-patterns that waste tokens in agent config files:\n"
         "- Role preambles (You are a..., Act as...)\n"
         "- Conversational filler (Please note, It's important to)\n"
         "- Redundant context (same info repeated)\n"
@@ -192,7 +192,7 @@ def run_llm_review(path: Path) -> list[dict]:
     issues: list[dict] = []
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["dev-team-run", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=60,
@@ -205,7 +205,7 @@ def run_llm_review(path: Path) -> list[dict]:
                     "high",
                     str(path),
                     0,
-                    "LLM review unavailable (claude exited non-zero or no output)",
+                    "LLM review unavailable (dev-team-run exited non-zero or no output)",
                     rule_id="llm-unavailable",
                 )
             )
@@ -241,7 +241,7 @@ def run_llm_review(path: Path) -> list[dict]:
                 "high",
                 str(path),
                 0,
-                "LLM review skipped (claude not found or timed out)",
+                "LLM review skipped (dev-team-run not found or timed out)",
                 rule_id="llm-unavailable",
             )
         )
@@ -283,9 +283,9 @@ def main(argv: list[str] | None = None) -> int:
     warnings: list[dict] = []
 
     for path in files:
-        # CLAUDE.md-specific checks
-        if is_claude_md_file(path):
-            for issue in check_claude_md(path):
+        # Instructions-file (AGENTS.md / CLAUDE.md) checks
+        if is_instructions_md_file(path):
+            for issue in check_instructions_md(path):
                 if issue["severity"] == "error":
                     errors.append(issue)
                 else:

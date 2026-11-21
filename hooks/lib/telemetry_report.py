@@ -2,14 +2,14 @@
 """Telemetry report (issues #106, #135).
 
 Aggregates the opt-in, privacy-clean event log written by hooks/telemetry.py
-(~/.claude/metrics/telemetry.jsonl, home-scoped per #1405/#1406 Slice 1) into:
+(~/.pi/agent/dev-team/metrics/telemetry.jsonl, home-scoped per #1405/#1406 Slice 1) into:
 command usage counts, skill usage counts (including agent-/auto-invoked
 skills, counted distinctly from user-typed commands — #135), and the
 pre-commit review gate's bypass rate (bypassed / (fired + bypassed)). With
 telemetry disabled the log doesn't exist and this reports that nothing was
 collected — satisfying "with it disabled, nothing leaves the machine."
 
-Usage: telemetry_report.py [--log ~/.claude/metrics/telemetry.jsonl] [--json]
+Usage: telemetry_report.py [--log ~/.pi/agent/dev-team/metrics/telemetry.jsonl] [--json]
 """
 
 from __future__ import annotations
@@ -20,7 +20,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-_DEFAULT_LOG = Path.home() / ".claude" / "metrics" / "telemetry.jsonl"
+_LIB_DIR = Path(__file__).resolve().parent
+if str(_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(_LIB_DIR))
+
+from artifact_paths import user_state_dir
+
+_DEFAULT_LOG = user_state_dir() / "metrics" / "telemetry.jsonl"
 
 
 def aggregate(log: Path) -> dict:

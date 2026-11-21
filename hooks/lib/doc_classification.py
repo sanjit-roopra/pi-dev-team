@@ -89,6 +89,21 @@ FUNCTIONAL_CONFIG_NAMES = frozenset({"claude.md", "agents.md"})
 # caller layers its own additions on top of this shared core.
 CORE_FUNCTIONAL_CONFIG_SEGMENTS = frozenset({".claude", "agents", "skills", "prompts", "knowledge"})
 
+# dev-team's own project state dir (`.pi/dev-team/...`: plans, memory,
+# metrics) is functional config too, as it was under the `.claude` segment.
+# Matched as the ADJACENT pair only, never `.pi` alone: `.pi/agents`,
+# `.pi/skills` already match their own segments, and other `.pi/` files are
+# not dev-team state. Shared by both call sites.
+STATE_DIR_SEGMENTS = (".pi", "dev-team")
+
+
+def has_state_dir_segments(parts) -> bool:
+    """True when the path ``parts`` contain `.pi` immediately followed by
+    `dev-team` (the project state dir, `artifact_paths.STATE_DIR`)."""
+    parts = tuple(parts)
+    return any(pair == STATE_DIR_SEGMENTS for pair in zip(parts, parts[1:]))
+
+
 # `change_shape.py`'s own "templates" addition, baked in here because
 # `select_lenses.py` wants the identical composed set — see `is_functional_config`.
 _FUNCTIONAL_CONFIG_SEGMENTS_WITH_TEMPLATES = CORE_FUNCTIONAL_CONFIG_SEGMENTS | {"templates"}
@@ -104,7 +119,9 @@ def is_functional_config(file_path: str) -> bool:
     path = PurePosixPath(file_path)
     if path.name.lower() in FUNCTIONAL_CONFIG_NAMES:
         return True
-    return any(seg in _FUNCTIONAL_CONFIG_SEGMENTS_WITH_TEMPLATES for seg in path.parts)
+    return has_state_dir_segments(path.parts) or any(
+        seg in _FUNCTIONAL_CONFIG_SEGMENTS_WITH_TEMPLATES for seg in path.parts
+    )
 
 
 __all__ = (
@@ -112,5 +129,7 @@ __all__ = (
     "DOC_EXTENSIONS",
     "DOC_ROOT_WORDS",
     "FUNCTIONAL_CONFIG_NAMES",
+    "STATE_DIR_SEGMENTS",
+    "has_state_dir_segments",
     "is_functional_config",
 )

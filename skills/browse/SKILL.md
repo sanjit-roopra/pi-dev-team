@@ -111,7 +111,7 @@ node /tmp/browse-action.js && rm /tmp/browse-action.js
 
 ### 4. Read and describe the screenshot
 
-Use the Read tool to view the screenshot image. Claude's multimodal capabilities will interpret the visual content.
+Use the Read tool to view the screenshot image. The model's multimodal capabilities will interpret the visual content.
 
 Describe what you see:
 

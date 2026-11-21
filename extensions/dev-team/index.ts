@@ -1,15 +1,15 @@
 /**
- * pi-dev-team — pi port of Bryan Finster's dev-team plugin (bdfinst/agentic-dev-team).
+ * pi-dev-team — a team of AI agents for pi.
  *
- * This extension provides the Claude Code runtime contract the upstream content relies on:
- *   env (CLAUDE_PLUGIN_ROOT, ...), /commands for skills, the `skill` and `dev_team_subagent` tools,
+ * This extension provides the runtime the agents, skills and hooks rely on:
+ *   env (DEV_TEAM_ROOT, ...), /commands for skills, the `skill` and `dev_team_subagent` tools,
  *   `ask_user`, `web_fetch`, the Python hook bridge and autocompact. The cost meter, /spend and the
  *   AI credits status line are the separate spend extension (extensions/spend), which also runs alone.
- * See PORTING.md for the full mapping.
+ * See docs/architecture.md for how the parts fit together.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { DEV_TEAM_SUBAGENT_TOOL, discoverAgents, discoverDispatchAgents, mapTools, resolveAgentName, resolveModel, resolveThinking, tierModelsLine } from "./lib/agents.ts";
 import { registerApproveExamples } from "./lib/approve-examples.ts";
@@ -33,8 +33,9 @@ import {
 import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
 import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
-import { applyUpdatedInput, claudeToolName, HookBridge, type HookOutcome, resolvePython, toClaudeInput } from "./lib/hooks.ts";
-import { recordCost } from "./lib/metrics.ts";
+import { applyUpdatedInput, hookToolName, HookBridge, type HookOutcome, resolvePython, toHookInput } from "./lib/hooks.ts";
+import { projectRoot, recordCost } from "./lib/metrics.ts";
+import { migrateLegacyState, migrationNotice } from "./lib/migrate-state.ts";
 import {
 	applyExamplesEnv,
 	applyReviewProfileEnv,
@@ -83,8 +84,8 @@ function packageRootDir(): string {
 	return path.resolve(here, "..", "..");
 }
 
-/** package.json or UPSTREAM.json of this package, or {} when it cannot be read. */
-function readJson(file: string): { version?: string; commit?: string } {
+/** package.json of this package, or {} when it cannot be read. */
+function readJson(file: string): { version?: string } {
 	try {
 		return JSON.parse(fs.readFileSync(file, "utf-8"));
 	} catch {
@@ -98,7 +99,7 @@ const WAIT_REQUEST = /\b(?:grill me|ask me everything)\b/i;
 /** A negation earlier in the same sentence: "you don't need to grill me". */
 const NEGATED_WAIT = /\b(?:don['’]?t|do not|no need|never|not|without)\b[^.!?\n]*\b(?:grill me|ask me everything)\b/i;
 const wantsWait = (text: string) => WAIT_REQUEST.test(text) && !NEGATED_WAIT.test(text);
-/** Claude tools that cannot change files. Bash counts as read-only here, so Explore and reviewers can run before a brief; the gate checks the main session's own bash. */
+/** Frontmatter tools (hook-protocol names) that cannot change files. Bash counts as read-only here, so Explore and reviewers can run before a brief; the gate checks the main session's own bash. */
 const READ_ONLY_TOOLS = new Set(["read", "grep", "glob", "ls", "bash", "webfetch", "websearch", "skill", "todowrite", "todoread"]);
 const isReadOnlyTool = (tool: string) => {
 	const name = tool.trim().replace(/\(.*\)$/, "").toLowerCase();
@@ -108,7 +109,7 @@ const SESSION_SOURCE: Record<string, string> = { startup: "startup", reload: "st
 
 export default function devTeam(pi: ExtensionAPI) {
 	const packageRoot = packageRootDir();
-	const portVersion = readJson(path.join(packageRoot, "package.json")).version;
+	const packageVersion = readJson(path.join(packageRoot, "package.json")).version;
 	const isSubagent = process.env.DEV_TEAM_SUBAGENT === "1";
 	const depth = Number(process.env.DEV_TEAM_SUBAGENT_DEPTH || 0) || 0;
 	let cwd = process.cwd();
@@ -160,10 +161,9 @@ export default function devTeam(pi: ExtensionAPI) {
 	let sessionContext: string[] = [];
 	let running = 0;
 
-	process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
 	process.env.DEV_TEAM_ROOT = packageRoot;
 
-	pi.registerFlag("dev-team-agent", { type: "string", description: "Run this pi process as the named dev-team agent (used by the claude CLI shim)" });
+	pi.registerFlag("dev-team-agent", { type: "string", description: "Run this pi process as the named dev-team agent (used by bin/dev-team-run)" });
 	pi.registerFlag(AGENT_PROMPT_FLAG, { type: "string", description: "Set by dev_team_subagent on its children: the appended prompt is a dev-team agent prompt, which lists the agent's own skills and goes after the shared guide" });
 	pi.registerFlag("dev-team-tier", { type: "string", description: "Model tier (opus|sonnet|haiku|fable) resolved through dev-team.json" });
 
@@ -177,19 +177,32 @@ export default function devTeam(pi: ExtensionAPI) {
 		applyReviewProfileEnv(process.env, review.profile);
 		applyExamplesEnv(process.env, examplesSetting);
 		process.env[NESTED_ENV] = String(process.pid);
-		process.env.CLAUDE_PLUGIN_ROOT = packageRoot;
-		process.env.CLAUDE_PROJECT_DIR = ctx.cwd;
-		process.env.CLAUDE_SESSION_ID = ctx.sessionManager.getSessionId();
+		process.env.DEV_TEAM_ROOT = packageRoot;
+		process.env.DEV_TEAM_PROJECT_DIR = ctx.cwd;
+		process.env.DEV_TEAM_SESSION_ID = ctx.sessionManager.getSessionId();
 		applyInteractive(ctx);
-		// The claude shim's children inherit this session's trust decision as dev_team_subagent's do
-		// (see trust.ts); bin/claude adds --approve only in DEV_TEAM_TRUSTED_DIR itself.
+		// bin/dev-team-run's children inherit this session's trust decision as dev_team_subagent's do
+		// (see trust.ts); it adds --approve only in DEV_TEAM_TRUSTED_DIR itself.
 		const shim = shimTrustEnv(childTrustOf(ctx), forwardedArgs());
 		process.env.DEV_TEAM_PI_ARGS = JSON.stringify(shim.piArgs);
 		if (shim.trustedDir) process.env.DEV_TEAM_TRUSTED_DIR = shim.trustedDir;
 		else delete process.env.DEV_TEAM_TRUSTED_DIR;
 		const bin = path.join(packageRoot, "bin");
 		const parts = (process.env.PATH ?? "").split(path.delimiter).filter((p) => p && p !== bin);
-		process.env.PATH = (config.claudeShim ? [bin, ...parts] : parts).join(path.delimiter);
+		process.env.PATH = (config.cliShim ? [bin, ...parts] : parts).join(path.delimiter);
+	}
+
+	let migrationErrorShown = false;
+	/** One-time move of the old `.claude/` state to `.pi/dev-team/` (lib/migrate-state.ts); a failure warns once and never stops the session. */
+	function migrateState(ctx: ExtensionContext) {
+		const agentDir = getAgentDir();
+		const result = migrateLegacyState([ctx.cwd, projectRoot(ctx.cwd)], { agentDir });
+		const notice = migrationNotice(result, agentDir);
+		if (notice && ctx.hasUI) ctx.ui.notify(notice, "info");
+		if (result.error && !migrationErrorShown) {
+			migrationErrorShown = true;
+			warn(`dev-team: could not move the old .claude/ state to .pi/dev-team/: ${result.error}`);
+		}
 	}
 
 	/** A human answers questions when there is a UI and questions are on: askTimeoutSec > 0, or wait mode. */
@@ -252,7 +265,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		getConfig,
 		hooks,
 		depth,
-		onUsage: (r) => pi.appendEntry(SUBAGENT_USAGE_ENTRY, usageEntryOf(r, portVersion)),
+		onUsage: (r) => pi.appendEntry(SUBAGENT_USAGE_ENTRY, usageEntryOf(r, packageVersion)),
 	});
 	registerAskUser(pi, getConfig, { answerMode, onAway });
 	registerWebFetch(pi);
@@ -267,7 +280,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const names = tasks.map((t) => t?.agent ?? t?.subagent_type).filter((n): n is string => typeof n === "string");
 		const { agents } = discoverDispatchAgents(ctx.cwd, packageRoot, ctx.isProjectTrusted(), names);
 		return names.some((name) => {
-			const tools = resolveAgentName(agents, name)?.claudeTools;
+			const tools = resolveAgentName(agents, name)?.hookTools;
 			return !tools || !tools.every(isReadOnlyTool);
 		});
 	}
@@ -276,7 +289,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		name: "skill",
 		label: "Skill",
 		description:
-			"Run a dev-team skill (Claude Code's Skill tool). Returns the skill's instructions with arguments substituted; then follow them. Use it whenever dev-team instructions say to run a slash command such as /plan, /build, /code-review or /pr, or to load a skill by name.",
+			"Run a dev-team skill (the Skill tool dev-team instructions name). Returns the skill's instructions with arguments substituted; then follow them. Use it whenever dev-team instructions say to run a slash command such as /plan, /build, /code-review or /pr, or to load a skill by name.",
 		promptSnippet: "Load and run a dev-team skill / slash command by name",
 		// Returns a skill's instructions; it reads files and changes nothing.
 		annotations: { readOnlyHint: true, openWorldHint: false },
@@ -376,19 +389,18 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	function showStatus(ctx: ExtensionContext) {
 		const { config: cfg, sources, ignoredProjectSettings } = loadConfig(ctx.cwd, projectConfigOpts(ctx));
-		const upstream = readJson(path.join(packageRoot, "UPSTREAM.json"));
 		const agents = discoverAgents(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const skills = discoverSkills(ctx.cwd, packageRoot, { includeProject: ctx.isProjectTrusted() });
 		const enabledHooks = hooks.all.filter((h) => isHookEnabled(cfg, h.name));
 		const lines = [
-			`pi-dev-team (upstream dev-team v${upstream.version ?? "?"} @ ${String(upstream.commit ?? "").slice(0, 10)})`,
+			`pi-dev-team ${packageVersion ?? "?"}`,
 			`root: ${packageRoot}`,
 			`config: ${sources.length ? sources.join(", ") : "defaults"}`,
-			...(ignoredProjectSettings.length ? [`project config ignored (see PORTING.md): ${ignoredProjectSettings.join(", ")}`] : []),
+			...(ignoredProjectSettings.length ? [`project config ignored (see docs/architecture.md): ${ignoredProjectSettings.join(", ")}`] : []),
 			`tiers: ${Object.entries(cfg.models).map(([k, v]) => `${k}=${v}`).join("  ")}`,
 			`agents: ${agents.size}  skills: ${skills.size} (${commandSkills.length} commands)`,
 			`hooks: ${hooks.python ? `${new Set(enabledHooks.map((h) => h.name)).size} enabled via ${hooks.python}` : "DISABLED — no python >= 3.10 found"}`,
-			`autoFormat: ${cfg.autoFormat}  githubStyle: ${cfg.githubStyle}  claudeShim: ${cfg.claudeShim}  maxParallelAgents: ${cfg.maxParallelAgents}`,
+			`autoFormat: ${cfg.autoFormat}  githubStyle: ${cfg.githubStyle}  cliShim: ${cfg.cliShim}  maxParallelAgents: ${cfg.maxParallelAgents}`,
 			`interactive gates: ${answerModeLine(cfg)}  routing: ${cfg.routing}${cfg.notify ? `  notify: ${cfg.notify.split(":")[0]}` : ""}`,
 		];
 		report(ctx, lines.join("\n"));
@@ -425,7 +437,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			["git", which("git")],
 			["gh (PRs, issues)", which("gh")],
 			["jq (some gates)", which("jq")],
-			["claude shim", which("claude")],
+			["dev-team-run (CLI helper)", which("dev-team-run")],
 			["semgrep (optional)", which("semgrep")],
 		] as const;
 		const sessionModel = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
@@ -488,7 +500,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		ctx.ui.notify(`Saved to ${file}:\n${saved.length ? saved.join("\n") : "(no tier changed)"}`, "info");
 	}
 
-	// ---------------------------------------------------------------- agent mode (claude shim: --dev-team-agent)
+	// ---------------------------------------------------------------- agent mode (bin/dev-team-run: --dev-team-agent)
 
 	async function applyAgentFlag(ctx: ExtensionContext) {
 		const agentName = pi.getFlag("dev-team-agent");
@@ -511,7 +523,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			agentPrompt = buildSystemPrompt(def, packageRoot, [], [], discoverSkillPool(config, ctx.cwd, packageRoot, ctx.isProjectTrusted()), config.skillIndexChars);
 			frontmatterModel = def.model;
 			effort = def.effort;
-			const mapping = mapTools(def.claudeTools, pi.getAllTools().map((t) => t.name));
+			const mapping = mapTools(def.hookTools, pi.getAllTools().map((t) => t.name));
 			if (mapping) pi.setActiveTools(mapping.tools);
 		}
 		if (typeof agentName === "string" || typeof tierFlag === "string") {
@@ -546,6 +558,8 @@ export default function devTeam(pi: ExtensionAPI) {
 	pi.on("session_start", async (event, ctx) => {
 		readTracker.reset();
 		applyEnv(ctx);
+		// Before the SessionStart hooks, which read the state; never in an agent or nested run sharing the folder.
+		if (!isSubagent && !nested) migrateState(ctx);
 		await applyAgentFlag(ctx);
 		const blocked = blockedForeignTools();
 		deactivateForeignTools(blocked);
@@ -572,7 +586,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		stripPiSubagentsPrompt(opts, blocked);
 		// A dispatched agent (flag set by dev_team_subagent) or a process run as an agent gets only the
 		// skills its instructions name, in its agent prompt (buildSystemPrompt), so the guide stays the
-		// same for every agent and cacheable. Not keyed on DEV_TEAM_SUBAGENT: a plain `claude -p` from a
+		// same for every agent and cacheable. Not keyed on DEV_TEAM_SUBAGENT: a plain `dev-team-run -p` from a
 		// subagent's bash inherits that env but has no agent prompt, and keeps the full index.
 		const hasAgentPrompt = agentPrompt !== undefined || pi.getFlag(AGENT_PROMPT_FLAG) === AGENT_PROMPT_FLAG_VALUE;
 		const index =
@@ -647,12 +661,12 @@ export default function devTeam(pi: ExtensionAPI) {
 						? plainGate(config.githubStyle, "brief", input, lintBrief(input as unknown as Brief))
 						: {};
 		if (styleVerdict.block) return { block: true, reason: styleVerdict.block };
-		const claudeTool = claudeToolName(event.toolName);
+		const hookTool = hookToolName(event.toolName);
 		const out = await hooks.run(
 			"PreToolUse",
-			{ ...basePayload(ctx), tool_name: claudeTool, tool_use_id: event.toolCallId, tool_input: toClaudeInput(event.toolName, input, ctx.cwd) },
+			{ ...basePayload(ctx), tool_name: hookTool, tool_use_id: event.toolCallId, tool_input: toHookInput(event.toolName, input, ctx.cwd) },
 			ctx.cwd,
-			{ matchTarget: claudeTool },
+			{ matchTarget: hookTool },
 		);
 		notify(ctx, out.notices);
 		if (out.block) return { block: true, reason: out.block };
@@ -669,7 +683,7 @@ export default function devTeam(pi: ExtensionAPI) {
 			running = Math.max(0, running - 1);
 			if (ctx.hasUI) ctx.ui.setStatus("dev-team", running ? `dev-team: ${running} agent call(s) running` : undefined);
 		}
-		const claudeTool = claudeToolName(event.toolName);
+		const hookTool = hookToolName(event.toolName);
 		const input = event.input as Record<string, unknown>;
 		const text = event.content
 			.filter((c) => c.type === "text")
@@ -688,12 +702,12 @@ export default function devTeam(pi: ExtensionAPI) {
 				: { output: text, success: !event.isError };
 		const payload = {
 			...basePayload(ctx),
-			tool_name: claudeTool,
+			tool_name: hookTool,
 			tool_use_id: event.toolCallId,
-			tool_input: toClaudeInput(event.toolName, input, ctx.cwd),
+			tool_input: toHookInput(event.toolName, input, ctx.cwd),
 			tool_response: toolResponse,
 		};
-		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: claudeTool })];
+		const outcomes: HookOutcome[] = [await hooks.run("PostToolUse", payload, ctx.cwd, { matchTarget: hookTool })];
 		const baseline = briefGate.kind === "tiny" && !briefGate.sizeWarned ? briefGate.baseline : undefined;
 		const changed = event.toolName === "write" || event.toolName === "edit" || (event.toolName === "bash" && typeof input.command === "string" && isMutatingBash(input.command, ctx.cwd));
 		if (baseline && changed && !event.isError) {
@@ -772,9 +786,9 @@ export default function devTeam(pi: ExtensionAPI) {
 		readTracker.reset();
 	});
 
-	// Claude Code fires SessionStart(source=compact) after compaction; post_compact_state_reinject uses it
+	// SessionStart(source=compact) runs after compaction; post_compact_state_reinject uses it
 	// to restore /build state. triggerTurn: false adds it to the context (deferred to the end of the turn
-	// when one is running) without starting a model turn, as Claude's additionalContext does.
+	// when one is running) without starting a model turn, as a hook's additionalContext expects.
 	pi.on("session_compact", async (_event, ctx) => {
 		readTracker.reset();
 		if (isSubagent) return;
@@ -814,13 +828,13 @@ function compatGuide(
 	reviewProfileLine: string,
 ): string {
 	return [
-		"This session has the dev-team plugin: a pi port of bdfinst/agentic-dev-team, a persona-driven development team written for Claude Code (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses Claude Code terms. Map them like this:",
+		"This session has the dev-team extension: a persona-driven development team (orchestrator, specialist agents, review agents, skills, guard hooks; main flow /specs -> /plan -> /build -> /pr). Its text uses these terms. Map them like this:",
 		`- Tools: Read=read, Write=write, Edit/MultiEdit=edit, Bash=bash, Grep=grep, Glob=find, Skill=skill, Agent/Task(subagent_type=X, prompt=P)=${DEV_TEAM_SUBAGENT_TOOL}(agent=X, task=P), AskUserQuestion=ask_user, WebFetch=web_fetch. WebSearch and TodoWrite do not exist (keep checklists in your replies).`,
 		`- Always use ${DEV_TEAM_SUBAGENT_TOOL} for dev-team dispatch, including instructions that say to dispatch, spawn or run agents, parallel subagents, an independent review, or to use the subagent tool. Other extensions' subagent tools skip the dev-team tier models, the dispatch hooks and the review evidence the PR gate checks${piSubagentsBlocked ? "; pi-subagents' tools are blocked in this session" : ""}.`,
 		'- A slash command inside dev-team instructions ("run /plan", "invoke /code-review --internal", "/dev-team:project-init") means: call the skill tool with that name and the text after it as args, then follow what it returns. Never ask the user to type it.',
-		`- \${CLAUDE_PLUGIN_ROOT} is ${packageRoot} and is exported in bash. knowledge/, scripts/, agents/, skills/, templates/, hooks/ paths in the instructions are relative to it.`,
-		"- Runtime state lives under .claude/ in the project (memory, metrics, hooks, plans) exactly as the skills describe. Project instructions are AGENTS.md / CLAUDE.md.",
-		'- Plugin hooks run on your tool calls. A blocked call returns the reason: follow it, do not work around it. Text after "dev-team hook notes:" in a tool result is advisory feedback from those hooks.',
+		`- \${DEV_TEAM_ROOT} is ${packageRoot} and is exported in bash. knowledge/, scripts/, agents/, skills/, templates/, hooks/ paths in the instructions are relative to it.`,
+		"- Runtime state lives under .pi/dev-team/ in the project (memory, metrics, hooks, plans) exactly as the skills describe. Project instructions are AGENTS.md (or CLAUDE.md when there is no AGENTS.md).",
+		'- dev-team hooks run on your tool calls. A blocked call returns the reason: follow it, do not work around it. Text after "dev-team hook notes:" in a tool result is advisory feedback from those hooks.',
 		interactive === "wait"
 			? "- Human gates: the user wants to answer every question (DEV_TEAM_INTERACTIVE=1, wait mode). Ask with ask_user; questions wait for the answer. Never go on alone past an open decision."
 			: interactive
@@ -831,7 +845,7 @@ function compatGuide(
 					`- Plain requests: when the user types a request without a /command, call ${DEV_TEAM_BRIEF_TOOL} before you change any file, so they see what you build. You pick the kind: question, tiny, feature or vague; resume when the message answers or continues a /command already running. File changes before it are blocked.`,
 				]
 			: []),
-		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ or .claude/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
+		`- The "orchestrator" the instructions describe is the session the user talks to, not the orchestrator agent. In that session, run skills that run commands or write files (/code-review, /build, /pr, /ship, /fix and the like) yourself; the orchestrator agent can only read and dispatch. Dispatch an agent only for its own role, and only when its \`tools:\` frontmatter covers the work (project .pi/agents/ first, then agents/). A dispatched agent does its task and reports back; it does not start /code-review, /build, /pr, /ship or /fix unless its task or its own agent instructions say to.`,
 		`- To run independent dev-team agents in parallel, issue several ${DEV_TEAM_SUBAGENT_TOOL} calls in one message (or one call with tasks[]). The agent sees only its task text, so pass paths, diff ranges and scope markers explicitly.`,
 		...(tierModelsText ? [`- ${tierModelsText}`] : []),
 		...(reviewProfileLine ? [reviewProfileLine] : []),

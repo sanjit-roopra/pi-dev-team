@@ -15,14 +15,14 @@ Verify-model: haiku
 Verify-effort: medium
 <!-- Verification-mode opt-in (#1628): confirming a rename landed
      consistently is near-mechanical once the rename itself is applied.
-     Discovery stays sonnet/high. Contract: ${CLAUDE_PLUGIN_ROOT}/knowledge/verification-mode.md
+     Discovery stays sonnet/high. Contract: ${DEV_TEAM_ROOT}/knowledge/verification-mode.md
      (Whole-file load: short shared contract, no anchors). -->
 Cites:
 - design-smells
 - adversarial-review-protocol
 - agent-review-methodology
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status (derive from the highest-severity finding, do not let finding *volume* alone change the tier): `fail` when any finding is `error` (misleading name) or `warning` (unclear name, magic value, or inconsistent naming) — both harm readability; `warn` when the only findings are `suggestion` (style); `pass` when there are no findings.
 Severity: error=misleading names, warning=unclear, suggestion=style
@@ -32,7 +32,7 @@ Context needs: diff-only
 
 ## Knowledge Files
 
-Read the "Naming Offender Catalog" section of `${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md#naming-offender-catalog` before analysis. It contains: abbreviation anti-patterns with fix pairs, generic verb offenders, misleading name patterns, and type-encoded name examples — as well as the "What NOT to flag" list to avoid false positives.
+Read the "Naming Offender Catalog" section of `${DEV_TEAM_ROOT}/knowledge/design-smells.md#naming-offender-catalog` before analysis. It contains: abbreviation anti-patterns with fix pairs, generic verb offenders, misleading name patterns, and type-encoded name examples — as well as the "What NOT to flag" list to avoid false positives.
 
 ## Skip
 
@@ -43,7 +43,7 @@ Return `{"status": "skip", "issues": [], "summary": "No code files with nameable
 
 ## Protocol
 
-Run the shared three-phase methodology in `${CLAUDE_PLUGIN_ROOT}/knowledge/agent-review-methodology.md` (Whole-file load: the Enumerate/Classify/Group phases and their rationale, read in full) — enumerate first, classify second, group third.
+Run the shared three-phase methodology in `${DEV_TEAM_ROOT}/knowledge/agent-review-methodology.md` (Whole-file load: the Enumerate/Classify/Group phases and their rationale, read in full) — enumerate first, classify second, group third.
 
 **Phase 1 — Enumerate**: List every identifier visible in the diff:
 
@@ -112,7 +112,7 @@ Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` sur
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these naming-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these naming-review-specific challenges:
 
 - Did you complete Phase 1 enumeration for EVERY identifier in the diff before classifying, or skip to the obvious offenders?
 - For each misleading-name (error) finding, did you confirm the name signals the opposite of its value/behavior, with the code quoted?

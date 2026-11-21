@@ -1,6 +1,6 @@
 """Shared reader for `/build`'s active-state record (#2177, slice 1).
 
-`/build` owns `.claude/memory/build-phase.json` (see `skills/build/SKILL.md`):
+`/build` owns `.pi/dev-team/memory/build-phase.json` (see `skills/build/SKILL.md`):
     {"phase": "<implement|test|refactor|between-steps>", "step": "<N.M>", "written_at": "<ISO8601>",
      "test_files_staged": [], "plan_path": "<repo-relative plan file>"}
 
@@ -46,7 +46,7 @@ BETWEEN_STEPS = "between-steps"
 #: A `written_at` further ahead than this is clock skew or forgery, never "fresh".
 FUTURE_SKEW_SECONDS = 300
 
-STATE_RELPATH = Path(".claude") / "memory" / "build-phase.json"
+STATE_RELPATH = Path(".pi", "dev-team") / "memory" / "build-phase.json"
 
 
 @dataclass(frozen=True)

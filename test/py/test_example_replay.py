@@ -76,8 +76,8 @@ class Project:
 
     def __init__(self, request=REQUEST):
         self.root = Path(tempfile.mkdtemp(prefix="dt-examples-")).resolve()
-        (self.root / ".claude/memory/requests").mkdir(parents=True)
-        (self.root / ".claude/memory/requests/request-1.md").write_text(request)
+        (self.root / ".pi/dev-team/memory/requests").mkdir(parents=True)
+        (self.root / ".pi/dev-team/memory/requests/request-1.md").write_text(request)
         (self.root / "greet.py").write_text(GREET)
         (self.root / "server.py").write_text(SERVER)
 
@@ -300,7 +300,7 @@ class Honesty(unittest.TestCase):
 
     def test_superseded_case_stops_running_only_with_a_quote(self):
         p = Project()
-        (p.root / ".claude/memory/requests/request-2.md").write_text("From now on greetings say Hi instead of Hello.\n")
+        (p.root / ".pi/dev-team/memory/requests/request-2.md").write_text("From now on greetings say Hi instead of Hello.\n")
         case = greet_case("2026-11-02T10:15:07Z")
         case["steps"][0]["run"] = f"{sys.executable} -c 'print(1)'"
         case["superseded_by"] = "greetings say Hi instead of Hello"
@@ -313,7 +313,7 @@ class Honesty(unittest.TestCase):
     def test_one_sentence_cannot_retire_several_cases(self):
         older = "```\n$ greet --name Ada\nHello, Ada\n```\n```\n$ greet --name Bob\nHello, Bob\n```\n"
         p = Project(request=older)
-        (p.root / ".claude/memory/requests/request-2.md").write_text("The `--name` field is now required.")
+        (p.root / ".pi/dev-team/memory/requests/request-2.md").write_text("The `--name` field is now required.")
         cases = [{"id": n, "source": f"$ greet --name {n}\nHello, {n}", "superseded_by": "The `--name` field is now required.",
                   "steps": [{"run": f"{sys.executable} -c 'print(\"Hello, {n}\")'", "stdout": f"Hello, {n}"}]} for n in ("Ada", "Bob")]
         p.write_cases(cases)
@@ -326,7 +326,7 @@ class Honesty(unittest.TestCase):
 
     def test_superseded_case_still_runs_and_shows_failure(self):
         p = Project(request="```\n$ greet\nHello\n```\n")
-        (p.root / ".claude/memory/requests/request-2.md").write_text("Greetings now say Hi.")
+        (p.root / ".pi/dev-team/memory/requests/request-2.md").write_text("Greetings now say Hi.")
         case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",
                 "steps": [{"run": f"{sys.executable} -c 'print(1)'", "stdout": "Hello"}]}
         p.write_cases([case])
@@ -336,7 +336,7 @@ class Honesty(unittest.TestCase):
 
     def test_superseded_case_whose_input_is_now_rejected_still_fails(self):
         p = Project(request="```\n$ greet\nHello\n```\n")
-        (p.root / ".claude/memory/requests/request-2.md").write_text("Greetings now say Hi.")
+        (p.root / ".pi/dev-team/memory/requests/request-2.md").write_text("Greetings now say Hi.")
         case = {"id": "g", "source": "$ greet\nHello", "superseded_by": "Greetings now say Hi.",
                 "steps": [{"run": f"{sys.executable} -c 'import sys; sys.exit(\"bad input\")' {{root}}", "stdout": "Hello"}]}
         p.write_cases([case])
@@ -364,7 +364,7 @@ class Honesty(unittest.TestCase):
 
     def test_newer_approved_examples_may_supersede_an_older_request(self):
         p = Project(request="no examples here")
-        requests = p.root / ".claude/memory/requests"
+        requests = p.root / ".pi/dev-team/memory/requests"
         (requests / "request-1.md").unlink()
         (requests / "request-2026-11-04T10-00-00-000Z.md").write_text("```\n$ greet\nHello\n```\n")
         (requests / "approved-2026-11-04T11-00-00-000Z.md").write_text("```\n$ greet\nHi\n```\n")

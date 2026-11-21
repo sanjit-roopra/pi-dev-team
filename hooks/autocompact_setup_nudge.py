@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""autocompact_setup_nudge — Claude Code SessionStart hook (#2177, slice 3).
+"""autocompact_setup_nudge — SessionStart hook (run by the dev-team extension; #2177, slice 3).
 
-The plugin no longer forces a handoff at a context ceiling; instead
-`/dev-team:setup` sets the harness's own `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`.
+dev-team no longer forces a handoff at a context ceiling; instead
+`/dev-team:setup` sets `autocompactPct` in `.pi/dev-team.json` (the
+`DEV_TEAM_AUTOCOMPACT_PCT` env var overrides it).
 That makes `/setup` load-bearing, so this hook advises running it when a repo
 shows no sign it has been.
 
 Channel: plain stdout (`sys.stdout.write`), matching the other nudge hooks
-(`repo_review_nudge.py`, `mcp_json_repowise_nudge.py`). Like them it is
+(`repo_review_nudge.py`). Like it, this hook is
 self-silencing from state — once the key is configured it never prints — and
 has no once-per-session marker.
 
-- Key absent (process env, settings.local.json, settings.json, user settings):
+- Key absent (process env, dev-team.local.json, dev-team.json, user dev-team.json):
   one advisory line.
 - Key present but invalid (not an integer 1-100): one corrective line.
 - Key valid, opted out, or SessionStart source is "compact": silent.
 
 Opt-out: `DEV_TEAM_AUTOCOMPACT_NUDGE=0` or the marker file
-`.claude/memory/autocompact-nudge-off` (written by `/setup --no-autocompact`).
+`.pi/dev-team/memory/autocompact-nudge-off` (written by `/setup --no-autocompact`).
 
-Project dir: `$CLAUDE_PROJECT_DIR`, else the payload `cwd`, else the process
+Project dir: `$DEV_TEAM_PROJECT_DIR`, else the payload `cwd`, else the process
 cwd. Advisory only: fail-open, always exits 0, never blocks session start.
 Stdlib only.
 """
@@ -34,11 +35,11 @@ _LIB = Path(__file__).resolve().parent / "lib"
 if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
-from autocompact_config import KEY, Status, detect  # type: ignore[import-not-found]
+from autocompact_config import CONFIG_KEY, KEY, Status, detect  # type: ignore[import-not-found]
 from stdin_json import read_stdin_json, resolve_cwd  # type: ignore[import-not-found]
 
 OPT_OUT_ENV = "DEV_TEAM_AUTOCOMPACT_NUDGE"
-OPT_OUT_MARKER = Path(".claude") / "memory" / "autocompact-nudge-off"
+OPT_OUT_MARKER = Path(".pi", "dev-team") / "memory" / "autocompact-nudge-off"
 
 ABSENT_MESSAGE = (
     "dev-team: context autocompact is not configured for this repo; "
@@ -55,14 +56,15 @@ def invalid_message(raw: object, source: str | None) -> str:
     if len(shown) > _MAX_SHOWN:
         shown = shown[: _MAX_SHOWN - 3] + "..."
     where = f" in {source}" if source else ""
+    key = KEY if source in (None, "process env") else CONFIG_KEY
     return (
-        f"dev-team: {KEY}={shown}{where} is invalid (need integer 1-100); "
+        f"dev-team: {key}={shown}{where} is invalid (need integer 1-100); "
         "re-run /dev-team:setup\n"
     )
 
 
 def _project_dir(payload: dict) -> Path:
-    override = os.environ.get("CLAUDE_PROJECT_DIR")
+    override = os.environ.get("DEV_TEAM_PROJECT_DIR")
     if override and Path(override).is_dir():
         return Path(override)
     return Path(resolve_cwd(payload))

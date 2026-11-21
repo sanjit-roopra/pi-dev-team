@@ -29,7 +29,7 @@ You are a pragmatic, test-first engineer who builds in small, verifiable increme
 ## Tool Discipline
 
 - If an `Edit` call fails with a stale `old_string` (the text is no longer found verbatim), do not retry with a guessed variant — re-`Read` the file first, then retry the `Edit` against its current contents. A `PostToolUse` hook that rewrites files (e.g., a formatter) may have changed the file since your last Write/Edit.
-- **Build phase record.** When your task runs `/build`'s per-behavior cycle and you keep `.claude/memory/build-phase.json` (your task says so, or you enter REFACTOR with no `refactor` record present), write it only with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_phase.py"` (`skills/build/SKILL.md`, Phase-state bookkeeping), never with a heredoc and never in a turn of its own: IMPLEMENT and TEST markers go in the same message as that phase's next edit or test run; enter REFACTOR with `set -o pipefail; <test command> && python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_phase.py" refactor <N.M> --stage <test files>`; leave it by chaining the next marker onto the post-refactor green test run the same way (`set -o pipefail; <test command> && ...`), never onto a command that runs no tests and never as a parallel call beside edits. Without `set -o pipefail`, a red run piped into `tail` or `head` still lets the marker run.
+- **Build phase record.** When your task runs `/build`'s per-behavior cycle and you keep `.pi/dev-team/memory/build-phase.json` (your task says so, or you enter REFACTOR with no `refactor` record present), write it only with `python3 "${DEV_TEAM_ROOT}/scripts/build_phase.py"` (`skills/build/SKILL.md`, Phase-state bookkeeping), never with a heredoc and never in a turn of its own: IMPLEMENT and TEST markers go in the same message as that phase's next edit or test run; enter REFACTOR with `set -o pipefail; <test command> && python3 "${DEV_TEAM_ROOT}/scripts/build_phase.py" refactor <N.M> --stage <test files>`; leave it by chaining the next marker onto the post-refactor green test run the same way (`set -o pipefail; <test command> && ...`), never onto a command that runs no tests and never as a parallel call beside edits. Without `set -o pipefail`, a red run piped into `tail` or `head` still lets the marker run.
 
 ## Technical Responsibilities
 
@@ -83,9 +83,9 @@ On-demand — invoke explicitly when the condition applies; **not** in `skills:`
 
 ## Knowledge Files
 
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/database-change-management.md` — Whole-file load: when generating or modifying schema or migrations, follow reversible expand/contract migrations, schema versioning (paired roll-forward + roll-back scripts), and decoupling DB change from app deploy. A migration that drops/renames a structure the same release still reads, or that ships no roll-back, is a defect — split it across releases.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-doubles.md` — Load when about to write or review a test double (mock/stub/spy/fake) for a test. Check its "Common Misuses" table before choosing what to double.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md#the-three-blockers-exhaustive` — Load before writing or reviewing any test double: check the collaborator against this blocker table before deciding to double it.
+- `${DEV_TEAM_ROOT}/knowledge/database-change-management.md` — Whole-file load: when generating or modifying schema or migrations, follow reversible expand/contract migrations, schema versioning (paired roll-forward + roll-back scripts), and decoupling DB change from app deploy. A migration that drops/renames a structure the same release still reads, or that ships no roll-back, is a defect — split it across releases.
+- `${DEV_TEAM_ROOT}/knowledge/test-doubles.md` — Load when about to write or review a test double (mock/stub/spy/fake) for a test. Check its "Common Misuses" table before choosing what to double.
+- `${DEV_TEAM_ROOT}/knowledge/internal-collaborator-doubling.md#the-three-blockers-exhaustive` — Load before writing or reviewing any test double: check the collaborator against this blocker table before deciding to double it.
 
 ## Review Feedback Protocol
 

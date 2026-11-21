@@ -11,7 +11,7 @@ directory") without saying *how* — the model reaches for the nearest tool
 
 **Use `Glob` for existence checks and enumeration:**
 
-- Existence of a known directory: `Glob(".claude/**")`, `Glob("plans/**")`.
+- Existence of a known directory: `Glob(".pi/**")`, `Glob("plans/**")`.
 - Enumerating a directory's contents: `Glob("agents/*.md")`,
   `Glob("docs/specs/**/*.md")`.
 - Checking for one specific candidate file: a targeted `Read` of that exact
@@ -33,6 +33,6 @@ fourth local fix.
 
 Cited by `skills/code-review/SKILL.md` and by review-agent/skill Skip or
 detection sections that probe for a directory's presence or contents
-(`claude-setup-review`, `progress-guardian`, `spec-compliance-review`, the
+(`progress-guardian`, `spec-compliance-review`, the
 `continue` skill) — add a citation here rather than re-explaining the
 mechanism inline.

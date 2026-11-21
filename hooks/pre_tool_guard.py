@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pre_tool_guard.py — Claude Code PreToolUse hook (Python port of pre-tool-guard.sh).
+"""pre_tool_guard.py — PreToolUse hook (run by the dev-team extension).
 
 Runs before Write and Edit tool calls. Blocks writes to sensitive paths
 (credentials, secrets, keys). Warns on writes to protected config files.
@@ -13,13 +13,13 @@ per-repo).
 
 Freeze state (issue #1890) is resolved per invoking repo, NOT relative to
 this hook's own `script_dir`. In a real installed session `script_dir` is
-the shared plugin cache (`~/.claude/plugins/cache/bfinster/dev-team/<ver>/
-hooks/`) — one location shared by every concurrently-running session,
+the installed pi-dev-team package (`hooks/` under `~/.pi/agent/npm/` or
+`~/.pi/agent/git/`) — one location shared by every concurrently-running session,
 worktree, and project on the machine. Resolving freeze state there let one
 session's `/freeze` scope-lock every other, unrelated session's Write/Edit
 calls. `main()` instead resolves it via `hooks/lib/artifact_paths.py`'s
 `resolve_file()`, keyed off the tool call's own `cwd` — landing at
-`<repo-root>/.claude/hooks/freeze-state.json`, the same per-repo `.claude/`
+`<repo-root>/.pi/dev-team/hooks/freeze-state.json`, the same per-repo `.pi/dev-team/`
 convention `.review-passed` and other runtime state already use.
 
 Two follow-up fixes (issue #1904 items 7, 11, 14):
@@ -34,7 +34,7 @@ Two follow-up fixes (issue #1904 items 7, 11, 14):
 - (#1904 items 7, 14) `evaluate()`'s freeze-mode allowlist match now
   relativizes `tool_input.file_path` against the freeze-scoped repo root
   before matching — a real session reports an ABSOLUTE `file_path`, which
-  can never match a repo-relative glob like `.claude/plans/*.md` (item 14).
+  can never match a repo-relative glob like `.pi/dev-team/plans/*.md` (item 14).
   Doing so safely requires knowing whether `file_path` even resolves inside
   the SAME repo `cwd` resolved to: `evaluate()` treats a `file_path` that
   resolves to a different repo root entirely as outside freeze's scope —
@@ -48,12 +48,12 @@ elsewhere) — `_freeze_verdict()` blocks that case rather than falling
 through to the ordinary sensitive-path/warn checks, since a scope lock
 crossing a symlink must never be silently permitted.
 
-pi port changes (shipped from `overrides/hooks/`; see PORTING.md):
+Changes for pi:
 
 - A pattern without `/` (`*secret*`, `*.key`) matches the file NAME only,
   never a directory on the way to it: `~/git/secrets-manager/src/app.ts`
   is an ordinary source file. A pattern with `/` matches the path, at any
-  depth (`.claude/settings.json` also matches an absolute path ending in it).
+  depth (`.pi/settings.json` also matches an absolute path ending in it).
 - `allowed_paths` (guards.json, default `*.md`) exempts a path from the
   sensitive-path block: a review report named `secret-triage.md` holds no
   credentials. The user adds more exceptions as comma-separated patterns in
@@ -107,8 +107,9 @@ _DEFAULT_BLOCKED = [
     "*.token",
 ]
 _DEFAULT_WARN = [
-    ".claude/settings.json",
-    ".claude/claude.md",
+    ".pi/settings.json",
+    ".pi/dev-team.json",
+    ".pi/dev-team.local.json",
 ]
 _DEFAULT_ALLOWED = [
     "*.md",
@@ -276,7 +277,7 @@ def _read_allowed(path: Path | None) -> list[str] | None:
 
 
 def _plugin_allowed(guards_path: Path) -> list[str]:
-    """The plugin's exceptions to the sensitive-path block: guards.json
+    """The package's exceptions to the sensitive-path block: guards.json
     `allowed_paths`, default `_DEFAULT_ALLOWED`."""
     allowed = _read_allowed(guards_path)
     return list(_DEFAULT_ALLOWED) if allowed is None else allowed
@@ -440,7 +441,7 @@ def _sensitive_match(
 ) -> tuple[str, str] | None:
     """Return `(pattern, subject)` for the blocked pattern `file_path` hits,
     or None. The path is checked as written and as resolved, so a
-    harmless-looking symlink (`notes.txt -> .env`) still hits. A plugin
+    harmless-looking symlink (`notes.txt -> .env`) still hits. A package
     exception (`*.md`) only exempts the same form it matches, so a link's
     `.md` name cannot exempt a sensitive target. A user exception is the
     user's own approval, so a match on either form exempts the write (a
@@ -493,7 +494,7 @@ def _cheap_freeze_inactive(cwd: str) -> bool:
 
     Only returns True when `cwd` is unambiguously the repo root itself (a
     `.git` entry exists directly under it — a plain stat, no `git`
-    subprocess needed to confirm this) AND no `.claude/hooks/
+    subprocess needed to confirm this) AND no `.pi/dev-team/hooks/
     freeze-state.json` exists there. Any other shape — `cwd` is a
     subdirectory of the repo (the file could exist at an ancestor this
     check never looks at), or the file exists right here — is ambiguous;
@@ -503,7 +504,7 @@ def _cheap_freeze_inactive(cwd: str) -> bool:
         base = Path(cwd)
         if not (base / ".git").exists():
             return False
-        return not (base / ".claude" / "hooks" / "freeze-state.json").exists()
+        return not (base / artifact_paths.STATE_DIR / "hooks" / "freeze-state.json").exists()
     except OSError:
         return False
 
@@ -525,11 +526,11 @@ def main() -> int:
 
     repo_root: Path | None
     if _cheap_freeze_inactive(cwd):
-        freeze_path = Path(cwd) / ".claude" / "hooks" / "freeze-state.json"
+        freeze_path = Path(cwd) / artifact_paths.STATE_DIR / "hooks" / "freeze-state.json"
         repo_root = None
     else:
         repo_root = artifact_paths.project_root(start=cwd)
-        freeze_path = repo_root / ".claude" / "hooks" / "freeze-state.json"
+        freeze_path = repo_root / artifact_paths.STATE_DIR / "hooks" / "freeze-state.json"
 
     paths = GuardPaths(script_dir / "guards.json", freeze_path, repo_root)
     exit_code, lines = evaluate(file_path, cwd, session_id, paths=paths)

@@ -111,17 +111,17 @@ The mutual-blindness property above — "one message, two calls, read neither
 result until both are issued" — is asserted only in this doc's prose and in
 content-guards that check the markdown *says* the right thing; nothing runs
 two real dispatches and checks isolation held at runtime.
-`${CLAUDE_PLUGIN_ROOT}/scripts/verify_gherkin_quality_critic_isolation.py` closes that gap: it
+`${DEV_TEAM_ROOT}/scripts/verify_gherkin_quality_critic_isolation.py` closes that gap: it
 dispatches the real `gherkin-quality-critic` agent twice via two fully
-independent `claude -p` subprocess calls, each against a fixture carrying its
+independent `dev-team-run -p` subprocess calls, each against a fixture carrying its
 own randomly-generated canary marker, and fails if either transcript contains
 the *other* dispatch's canary. Like `evals/README.md`'s live eval gate, it is
-**opt-in and paid** (needs the `claude` CLI + `ANTHROPIC_API_KEY`) and
-**fails open** — missing credentials print a skip message and exit 0, never a
+**opt-in and paid** (needs the `dev-team-run` helper) and
+**fails open** — a missing helper prints a skip message and exit 0, never a
 failure. It is not wired into any CI workflow by default. Run it locally:
 
 ```bash
-ANTHROPIC_API_KEY=sk-... python3 "${CLAUDE_PLUGIN_ROOT}/scripts/verify_gherkin_quality_critic_isolation.py"
+python3 "${DEV_TEAM_ROOT}/scripts/verify_gherkin_quality_critic_isolation.py"
 ```
 
 ## Scope of this doc

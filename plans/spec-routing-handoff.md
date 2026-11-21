@@ -20,7 +20,7 @@ Full research (coverage matrix vs MinimumCD, other tools, file:line evidence): `
 - `askTimeoutSec: 120` (`lib/config.ts:107`). `0` means non-interactive (`index.ts:109`), NOT "wait forever".
 - `ask_user` asks questions one by one; after one timeout it asks no more (`lib/tools-misc.ts:110-119`).
 - SimpleEnglish + i-have-adhd rules exist only for GitHub text: `GITHUB_STYLE_GUIDE` + linter/gate in `lib/github-style.ts:52-63` (≤25 words/sentence, no filler list, can/will/must, ≤5 list items, point first, one next step).
-- pi has no phone push. Only `ctx.ui.notify()` in the TUI. `PushNotification` is a Claude Code tool, not pi.
+- pi has no phone push. Only `ctx.ui.notify()` in the TUI. `PushNotification` is not a pi tool.
 - Plans are too long to review (example: 617 lines in `plans/dev-team-usage-command.md`), no TL;DR.
 - `build-phase.json` is read by nothing in `extensions/`. No live "which step" display.
 
@@ -30,7 +30,7 @@ Full research (coverage matrix vs MinimumCD, other tools, file:line evidence): `
 - Add a paragraph to `compatGuide`: before changing files for a plain request, call `dev_team_brief`.
 - New tool `dev_team_brief({kind, building, doneWhen, assuming[], slices?})`, new file `extensions/dev-team/lib/brief.ts`.
   - `kind` chosen by the session model (no extra LLM call): `question` (no brief needed) / `tiny` (one sentence, ≤~3 files) / `feature` / `vague`.
-  - `tiny`: render 3 lines (Building / Done when / Assuming), save `.claude/memory/brief.json`, return "continue". No wait.
+  - `tiny`: render 3 lines (Building / Done when / Assuming), save `.pi/dev-team/memory/brief.json`, return "continue". No wait.
   - `feature`: render ≤15-line "At a glance", ask ok via timed question, then tool tells model to run `/ship`.
   - `vague`: tool tells model to run `/specs` (grilling mode, see 2).
 - Gate in `tool_call` handler (deterministic): `input` resets `briefSeen=false`. First write/edit/mutating bash with `briefSeen=false` → block "call dev_team_brief first".

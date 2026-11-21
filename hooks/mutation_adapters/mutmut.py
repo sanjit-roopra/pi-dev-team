@@ -1,4 +1,4 @@
-"""mutmut (Python) mutation-testing adapter — Python port of mutmut.sh.
+"""mutmut (Python) mutation-testing adapter.
 
 mutmut scopes to a single file via `--paths-to-mutate` and completes in
 seconds-to-minutes for typical Python unit test suites. mutmut has no

@@ -22,7 +22,7 @@ All four follow the same processing flow. The distinction is semantic (helping t
 
 ## Where Changes Are Written
 
-The plugin ships as a read-only cache — agent and skill files inside the plugin cannot be edited. Instead, feedback is persisted to **project-local files** that the user controls and that Claude Code loads automatically.
+The package ships read-only — agent and skill files inside the package cannot be edited. Instead, feedback is persisted to **project-local files** that the user controls and that pi loads automatically.
 
 ### Resolution order
 
@@ -30,18 +30,18 @@ When processing a feedback keyword, determine the right destination:
 
 | Change type | Write to | Why |
 | --- | --- | --- |
-| Project convention or preference | **Project `CLAUDE.md`** (`.claude/CLAUDE.md` or repo-root `CLAUDE.md`) | Loaded every session, applies to all agents |
+| Project convention or preference | **Project `AGENTS.md`** (repo-root `AGENTS.md`) | Loaded every session, applies to all agents |
 | Review context (domain knowledge, known issues, team norms) | **`REVIEW-CONTEXT.md`** in project root | Read by `/code-review` and passed to every review agent |
-| Agent behavior override for this project | **Project `CLAUDE.md`** under a `## Agent Overrides` section | Overrides plugin defaults without editing plugin files |
-| Cross-session memory (decisions, project state) | **`.claude/memory/`** files | Persists across context resets |
+| Agent behavior override for this project | **Project `AGENTS.md`** under a `## Agent Overrides` section | Overrides package defaults without editing package files |
+| Cross-session memory (decisions, project state) | **`.pi/dev-team/memory/`** files | Persists across context resets |
 | Rollback a previous change | Reverse the edit in whichever file it was written to | Logged as `type: "rollback"` |
 
 ### What NOT to do
 
-- Do not edit files inside the plugin cache (`~/.claude/plugins/cache/...`). Changes there are overwritten on plugin updates.
-- Do not create new agent or skill files in the project. Instead, add override instructions to project `CLAUDE.md`.
+- Do not edit files inside the installed package (`${DEV_TEAM_ROOT}`). Changes there are overwritten on package updates.
+- Do not create new agent or skill files in the project. Instead, add override instructions to project `AGENTS.md`.
 
-### Project CLAUDE.md structure for overrides
+### Project AGENTS.md structure for overrides
 
 When writing agent behavior overrides, add them under a dedicated section so they're easy to find and manage:
 
@@ -56,7 +56,7 @@ When writing agent behavior overrides, add them under a dedicated section so the
 - Default to event-driven architecture for new services
 ```
 
-These instructions are loaded into every session and take precedence over the plugin's built-in agent definitions because project `CLAUDE.md` is processed after plugin files.
+These instructions are loaded into every session and take precedence over the package's built-in agent definitions because project `AGENTS.md` is processed after package files.
 
 ## Processing Flow
 
@@ -71,19 +71,22 @@ These instructions are loaded into every session and take precedence over the pl
 ### Approval rules
 
 - Preference and convention changes: apply after diff preview
-- New sections or structural edits to CLAUDE.md: require explicit approval
+- New sections or structural edits to AGENTS.md: require explicit approval
 - Rollbacks: apply after confirming which change to reverse
 
 ## Evaluate — the eval gate (#860)
 
 A change that mutates a review agent's effective behavior — a direct edit to
-`plugins/dev-team/agents/*.md` (when developing this repo) or a project-side
-`CLAUDE.md > Agent Overrides > <agent>` / `REVIEW-CONTEXT.md` entry — is a
+`agents/*.md` (when developing this repo) or a project-side
+`AGENTS.md > Agent Overrides > <agent>` / `REVIEW-CONTEXT.md` entry — is a
 harness edit, not a preference tweak. The paper this closes a gap against
 (*Code as Agent Harness*, §3.5.2–3.5.3) warns that a self-improving loop
 optimizing against "the diff looked reasonable" is optimizing against a weak
-verifier and can learn the wrong thing. `/agent-eval --agent <name>` is the
-falsifier; this step wires it into the mutation path.
+verifier and can learn the wrong thing. A targeted eval run against the
+touched agent is the falsifier; this step wires it into the mutation path. No
+eval runner or `evals/` fixtures ship in this package, so here the gate
+normally ends at step 1 with `not-applicable`. Steps 2-4 apply only when the
+project supplies its own `evals/` fixtures and eval runner.
 
 This gate sits between **Apply** and **Log**. It never blocks the edit
 itself — the file is already written by the time this step runs. What it
@@ -97,12 +100,11 @@ agent's name (the `component` field — see Audit Trail below) appears in any
 of them, the change is **gated**. Two graceful-degradation cases, neither of
 which blocks:
 
-- **No `evals/` directory at all** (the normal cache-only plugin-install
-  case — most users have the plugin as a read-only cache with no `evals/`
+- **No `evals/` directory at all** (the normal package-install
+  case — most users have the package as a read-only install with no `evals/`
   shipped). Write `eval_verdict: "not-applicable"` and tell the operator:
-  "This install has no `evals/` directory — eval-gating requires the plugin
-  repo. Run `/agent-eval --agent <name>` from a clone of
-  `bdfinst/agentic-dev-team` if you want a falsifier for this change."
+  "This install has no `evals/` directory — there is no eval gate for this
+  change."
 - **`evals/` exists but the agent has no fixtures.** Write
   `eval_verdict: "not-applicable"` and name the fixture gap in both the
   changelog entry and the chat reply (never silent — this is the
@@ -117,22 +119,19 @@ fixtures), skip straight to **Log** with `adoption_status: "adopted"` (or
 Read `evals/baseline.json`, filtered to pairs whose agent is the touched
 one. If baseline entries exist for this agent, that is `eval_pre` —
 `{"passed": <n>, "total": <n>, "source": "baseline"}` — no live run, no
-cost. Only when the agent has **zero** baseline entries, dispatch a fresh
-`/agent-eval --agent <name>` first to establish `eval_pre` (`source` becomes
+cost. Only when the agent has **zero** baseline entries, run the project's
+eval runner for that one agent first to establish `eval_pre` (`source` becomes
 the resulting transcript path instead of `"baseline"`).
 
 ### 3. Pause for approval, then dispatch the targeted eval
 
-Before dispatching *any* live `/agent-eval` run (pre-run or post-run), show
-the operator the cost estimate and wait for approval — consistent with the
-opt-in live-eval posture (#134). Once approved, dispatch:
-
-```
-/agent-eval --agent <name>
-```
+Before dispatching *any* live eval run (pre-run or post-run), show the
+operator the cost estimate and wait for approval — consistent with the
+opt-in live-eval posture (#134). Once approved, run the project's eval runner
+filtered to the touched agent.
 
 Always targeted, always cache-on. **Never** dispatch the full unfiltered
-`/agent-eval` suite from this gate — that is a distinct, much more expensive
+eval suite from this gate — that is a distinct, much more expensive
 operation the operator runs deliberately, not something a single config
 mutation should trigger.
 
@@ -151,12 +150,12 @@ default proposal to the human is `rejected`/`rolled-back`; the human may
 instead choose `overridden`, which requires a non-empty
 `override_rationale` (who decided, and why the regression is acceptable).
 Auto-rollback never fires without that logged human choice — this matches
-the plugin's Human-in-the-Loop principle and `/harness-audit`'s
+the package's Human-in-the-Loop principle and `/harness-audit`'s
 "do not auto-edit" posture.
 
 ## Audit Trail
 
-All changes are logged in `.claude/metrics/config-changelog.jsonl` (one JSON object per line, append-only).
+All changes are logged in `.pi/dev-team/metrics/config-changelog.jsonl` (one JSON object per line, append-only).
 
 ```json
 {
@@ -164,7 +163,7 @@ All changes are logged in `.claude/metrics/config-changelog.jsonl` (one JSON obj
   "type": "amend",
   "trigger": "user",
   "description": "Updated software engineer to prefer functional patterns",
-  "file_modified": "CLAUDE.md",
+  "file_modified": "AGENTS.md",
   "section_modified": "Agent Overrides > Software Engineer",
   "previous_value": "",
   "new_value": "- Prefer functional programming patterns over OOP",
@@ -197,7 +196,8 @@ checked, so `/harness-audit` can later close the loop instead of letting
 lessons accumulate on the strength of the approval that admitted them alone.
 
 **Structured case** — the lesson is expected to move a metric in
-`metrics/session-digest.jsonl`:
+`metrics/session-digest.jsonl` (no producer for this stream ships in this
+package; `/harness-audit` reads it when it exists):
 
 ```json
 "evidence": {
@@ -217,7 +217,7 @@ lessons accumulate on the strength of the approval that admitted them alone.
   "minimum 10 logged review runs" floor).
 
 **Unmeasurable case** — when no digest metric can plausibly reflect the
-lesson's effect (most prose `.claude/memory/` notes land here), write the literal
+lesson's effect (most prose `.pi/dev-team/memory/` notes land here), write the literal
 string instead of an object:
 
 ```json
@@ -230,10 +230,10 @@ reduce rework, so this is the default rather than refusing to log the
 lesson. Authors can still explicitly set a different metric, direction, or
 `"unmeasurable"`.
 
-**Prose lessons (`.claude/memory/` notes) are in scope.** The `evidence` field
+**Prose lessons (`.pi/dev-team/memory/` notes) are in scope.** The `evidence` field
 attaches at this changelog layer regardless of which resolution-order
 destination the lesson was written to; a memory-note lesson typically carries
-`"unmeasurable"`. Anything not logged to `.claude/metrics/config-changelog.jsonl`
+`"unmeasurable"`. Anything not logged to `.pi/dev-team/metrics/config-changelog.jsonl`
 is out of scope by construction.
 
 **Legacy entries** (written before this field existed) have no `evidence`
@@ -267,16 +267,16 @@ Evaluate above** — i.e. `component` names a review agent that has eval
 fixtures. Older entries and entries for ungated changes remain valid as-is;
 this is a backward-compatible, append-only extension, never a retroactive
 rewrite of prior lines. A reference validator lives at
-`plugins/dev-team/hooks/lib/config_changelog_schema.py`
+`hooks/lib/config_changelog_schema.py`
 (`validate_entry(entry, fixtured_agents)`).
 
 | Field | Required (gated only) | Type | Meaning |
 | --- | --- | --- | --- |
-| `component` | Yes | string | Artifact whose behavior changes (e.g. `agents/security-review.md` or `CLAUDE.md > Agent Overrides > security-review`) |
+| `component` | Yes | string | Artifact whose behavior changes (e.g. `agents/security-review.md` or `AGENTS.md > Agent Overrides > security-review`) |
 | `failure_mode_targeted` | Yes | string | The observed failure the change intends to fix |
 | `predicted_improvement` | Yes | string | Falsifiable prediction (e.g. "sec-xss-vulnerable stops flapping; no other pair regresses") |
 | `eval_pre` | Yes | object | `{passed, total, source}` — `source` is `"baseline"` (`evals/baseline.json`) or a transcript path |
-| `eval_post` | Yes | object | `{passed, total, transcript}` — transcript under `.claude/evals/transcripts/` |
+| `eval_post` | Yes | object | `{passed, total, transcript}` — transcript under `.pi/dev-team/evals/transcripts/` |
 | `eval_verdict` | Yes | string | `improved` \| `unchanged` \| `regressed` \| `not-applicable` (no fixtures) |
 | `adoption_status` | Yes | string | `pending-eval` \| `adopted` \| `rejected` \| `rolled-back` \| `overridden` |
 | `override_rationale` | Iff `adoption_status: "overridden"` | string | Names the human and the reason the regression was accepted |
@@ -301,7 +301,7 @@ mutation):
   "failure_mode_targeted": "sec-xss-vulnerable flapping",
   "predicted_improvement": "sec-xss-vulnerable stops flapping; no other pair regresses",
   "eval_pre": { "passed": 20, "total": 21, "source": "baseline" },
-  "eval_post": { "passed": 21, "total": 21, "transcript": ".claude/evals/transcripts/x.json" },
+  "eval_post": { "passed": 21, "total": 21, "transcript": ".pi/dev-team/evals/transcripts/x.json" },
   "eval_verdict": "improved",
   "adoption_status": "adopted",
   "rollback_pointer": "previous_value above"
@@ -311,14 +311,14 @@ mutation):
 ## Rollback
 
 ```
-amend: rollback the last change to CLAUDE.md
+amend: rollback the last change to AGENTS.md
 amend: rollback all changes from today
 ```
 
-1. Read `.claude/metrics/config-changelog.jsonl` to find the entry — fall back
+1. Read `.pi/dev-team/metrics/config-changelog.jsonl` to find the entry — fall back
    to the legacy `metrics/config-changelog.jsonl` if the new path doesn't
    exist (a downstream user's history may still be at the old path):
-   `log=".claude/metrics/config-changelog.jsonl"; [ -f "$log" ] || log="metrics/config-changelog.jsonl"`
+   `log=".pi/dev-team/metrics/config-changelog.jsonl"; [ -f "$log" ] || log="metrics/config-changelog.jsonl"`
 2. Restore `previous_value` to the target file and section
 3. Log the rollback as a new entry with `type: "rollback"`
 
@@ -346,7 +346,7 @@ The orchestrator also watches for patterns across tasks:
 
 | Signal | Possible action |
 | --- | --- |
-| 3+ user corrections on same topic | Propose a project CLAUDE.md update |
+| 3+ user corrections on same topic | Propose a project AGENTS.md update |
 | Agent consistently defers to another | Propose collaboration protocol tweak |
 | Skill results repeatedly rejected | Propose skill guideline override |
 | Context summarization triggered frequently | Propose loading profile adjustment |
@@ -355,7 +355,8 @@ When a pattern is detected (minimum 3 occurrences), propose the change with rati
 
 ## Pending-Review Queue Disposition
 
-When `/session-review` surfaces entries from `.claude/metrics/pending-review.jsonl`, this
+No producer for `.pi/dev-team/metrics/pending-review.jsonl` ships in this
+package. When that file holds entries (for example, older queued rows), this
 skill handles the approve or reject decision for each finding.
 
 ### Matching
@@ -366,17 +367,17 @@ content entries safely).
 ### Approval path
 
 1. Apply the proposed change (following the standard Processing Flow above).
-2. Append to `.claude/metrics/config-changelog.jsonl` as usual.
+2. Append to `.pi/dev-team/metrics/config-changelog.jsonl` as usual.
 3. Write `reviewed_at` (ISO-8601 UTC) and `approved_by` (the user identifier from
    `approved_by` in the existing audit schema) back into the matching entry in
-   `.claude/metrics/pending-review.jsonl`.
+   `.pi/dev-team/metrics/pending-review.jsonl`.
 
 ### Rejection path
 
 1. Do **not** apply the proposed change.
-2. Do **not** write to `.claude/metrics/config-changelog.jsonl`.
+2. Do **not** write to `.pi/dev-team/metrics/config-changelog.jsonl`.
 3. Write `rejected_at` (ISO-8601 UTC) and `rejected_by` (same format as
-   `approved_by`) into the matching entry in `.claude/metrics/pending-review.jsonl`.
+   `approved_by`) into the matching entry in `.pi/dev-team/metrics/pending-review.jsonl`.
 
 ### Queue entry schema (reference)
 
@@ -406,7 +407,7 @@ content entries safely).
 
 ## Constraints
 
-- Never edit plugin cache files — all changes go to project-local files
+- Never edit installed package files — all changes go to project-local files
 - Never auto-apply without user preview for structural modifications
 - Behavioral tweaks (tone, preferences) can be auto-applied; structural changes (new sections, removed overrides) require approval
 - The changelog is append-only — never delete entries

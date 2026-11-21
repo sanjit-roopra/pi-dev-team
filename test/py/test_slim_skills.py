@@ -1,29 +1,28 @@
-"""Tests for slim skill overrides: nothing lost, synced, and the code-review core keeps what upstream pins.
+"""Tests for the slim code-review skill: a short core SKILL.md plus step references, and the core keeps the rules
+and commands of its references.
 
 Run: python3 -m unittest discover -s test/py
 """
-import contextlib
-import hashlib
-import io
 import re
-import sys
-import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
 
-from _loader import ROOT, load_module
-
-sync = load_module("sync_upstream_for_slim_skills", ROOT / "sync" / "sync_upstream.py")
-splitter = load_module("split_skill_references", ROOT / "sync" / "split_skill_references.py")
+from _loader import ROOT
 
 
 def load_skill(skill):
-    """(core SKILL.md text, {reference file name: text}) of a slim override."""
-    override_dir = ROOT / "overrides" / "skills" / skill
-    core = (override_dir / "SKILL.md").read_text(encoding="utf-8")
-    references = {p.name: p.read_text(encoding="utf-8") for p in sorted((override_dir / "references").glob("*.md"))}
+    """(core SKILL.md text, {reference file name: text}) of a slim skill."""
+    skill_dir = ROOT / "skills" / skill
+    core = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    references = {p.name: p.read_text(encoding="utf-8") for p in sorted((skill_dir / "references").glob("*.md"))}
     return core, references
+
+
+def frontmatter(text):
+    """The frontmatter block of `text`, including its two `---` lines."""
+    match = re.match(r"---\n.*?^---\n", text, re.S | re.M)
+    if match is None:
+        raise AssertionError("no frontmatter")
+    return match.group(0)
 
 
 def text_between(text, start_marker, end_marker):
@@ -51,134 +50,9 @@ def paragraph_with(text, phrase):
     raise AssertionError(f"not found: {phrase!r}")
 
 
-class SlimSkillsLoseNothing(unittest.TestCase):
-    """Every skill in SPLITS: the references rebuild the pinned upstream file and the synced copy matches."""
-
-    def test_every_slim_skill_is_pinned(self):
-        for skill in splitter.SPLITS:
-            with self.subTest(skill=skill):
-                self.assertIn(splitter.base_key(skill), sync.OVERRIDE_BASES)
-
-    def test_references_rebuild_the_pinned_upstream_file(self):
-        for skill in splitter.SPLITS:
-            with self.subTest(skill=skill):
-                core, references = load_skill(skill)
-                self.assertTrue(references, f"overrides/skills/{skill}/references/ is empty")
-                rebuilt = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
-                digest = hashlib.sha256(rebuilt.encode("utf-8")).hexdigest()
-                self.assertEqual(digest, sync.OVERRIDE_BASES[splitter.base_key(skill)],
-                                 "references plus the core's frontmatter no longer rebuild upstream; the core's frontmatter must stay upstream's")
-
-    def test_references_match_the_splitter(self):
-        for skill in splitter.SPLITS:
-            with self.subTest(skill=skill):
-                core, references = load_skill(skill)
-                rebuilt = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
-                self.assertEqual(splitter.reference_files(skill, rebuilt), references)
-
-    def test_synced_copy_matches_the_override(self):
-        for skill in splitter.SPLITS:
-            with self.subTest(skill=skill):
-                core, references = load_skill(skill)
-                synced = ROOT / "skills" / skill
-                hint = "run npm run sync"
-                self.assertEqual((synced / "SKILL.md").read_text(encoding="utf-8"), core, hint)
-                for name, text in references.items():
-                    self.assertEqual((synced / "references" / name).read_text(encoding="utf-8"), text, f"{name}: {hint}")
-                self.assertEqual(sorted(p.name for p in (synced / "references").glob("*.md")), sorted(references), hint)
-
-
-TOY_BODY = "intro\n## One\nfirst\n## Two\nsecond\n"
-TOY_PLAN = [("0-intro.md", "intro", None), ("1-one.md", "one", "## One\n"), ("2-two.md", "two", "## Two\n")]
-
-
-class SplitterBehavior(unittest.TestCase):
-    def test_chunks_start_at_their_markers(self):
-        self.assertEqual(splitter.plan_chunks(TOY_PLAN, TOY_BODY),
-                         [("0-intro.md", "intro", "intro\n"), ("1-one.md", "one", "## One\nfirst\n"), ("2-two.md", "two", "## Two\nsecond\n")])
-
-    def test_marker_must_appear_exactly_once_at_a_line_start(self):
-        cases = {
-            "missing": "intro\n## Two\nsecond\n",
-            "duplicated": TOY_BODY + "## One\n",
-            "mid-line": "intro x## One\nfirst\n## Two\nsecond\n",
-            "out of order": "intro\n## Two\nsecond\n## One\nfirst\n",
-        }
-        for case, body in cases.items():
-            with self.subTest(case=case), self.assertRaises(ValueError):
-                splitter.plan_chunks(TOY_PLAN, body)
-
-    def test_plan_must_be_well_formed(self):
-        cases = {
-            "names not in plan order": [TOY_PLAN[0], ("9-one.md", "one", "## One\n"), TOY_PLAN[2]],
-            "duplicate name": [TOY_PLAN[0], ("1-one.md", "one", "## One\n"), ("1-one.md", "two", "## Two\n")],
-            "first chunk has a marker": [("0-intro.md", "intro", "intro\n")] + TOY_PLAN[1:],
-            "later chunk has no marker": [TOY_PLAN[0], ("1-one.md", "one", None), TOY_PLAN[2]],
-        }
-        for case, plan in cases.items():
-            with self.subTest(case=case), self.assertRaises(ValueError):
-                splitter.plan_chunks(plan, TOY_BODY)
-
-    def test_frontmatter_must_open_and_close(self):
-        self.assertEqual(splitter.split_frontmatter("---\na: 1\n---\nbody\n"), ("---\na: 1\n---\n", "body\n"))
-        self.assertEqual(splitter.split_frontmatter("---\n---\nbody\n"), ("---\n---\n", "body\n"))
-        for text in ("no frontmatter\n", "---\na: 1\nbody\n"):
-            with self.subTest(text=text), self.assertRaises(ValueError):
-                splitter.split_frontmatter(text)
-
-    def test_write_references_replaces_stale_files_and_writes_nothing_on_error(self):
-        core, references = load_skill("code-review")
-        upstream = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp)
-            (out / "stale.md").write_text("old", encoding="utf-8")
-            (out / "keep.txt").write_text("not a reference", encoding="utf-8")
-            splitter.write_references("code-review", upstream, out)
-            self.assertEqual({p.name: p.read_text(encoding="utf-8") for p in out.glob("*.md")}, references)
-            self.assertTrue((out / "keep.txt").exists())
-
-            (out / "stale.md").write_text("old", encoding="utf-8")
-            before = {p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}
-            with self.assertRaises(ValueError):
-                splitter.write_references("code-review", upstream.replace("### 2. Pre-flight gates\n", "### 2. Gates\n"), out)
-            self.assertEqual({p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}, before)
-
-    def run_main(self, upstream_text):
-        """Run the script on an upstream checkout holding `upstream_text` (None: no SKILL.md there)."""
-        with tempfile.TemporaryDirectory() as tmp:
-            upstream = Path(tmp) / "upstream"
-            source = upstream / splitter.PLUGIN_SUBDIR / splitter.base_key("code-review")
-            source.parent.mkdir(parents=True)
-            if upstream_text is not None:
-                source.write_text(upstream_text, encoding="utf-8")
-            stdout, stderr = io.StringIO(), io.StringIO()
-            argv = ["split_skill_references.py", "code-review", "--upstream", str(upstream)]
-            with mock.patch.object(splitter, "PKG", Path(tmp)), mock.patch.object(sys, "argv", argv), \
-                    contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                code = splitter.main()
-            written = sorted(p.name for p in (Path(tmp) / "overrides" / "skills" / "code-review" / "references").glob("*.md"))
-            return code, stdout.getvalue(), stderr.getvalue(), written
-
-    def test_main_writes_the_references_and_prints_the_pin(self):
-        core, references = load_skill("code-review")
-        upstream = splitter.rebuild(splitter.split_frontmatter(core)[0], references)
-        code, stdout, _stderr, written = self.run_main(upstream)
-        self.assertEqual(code, 0)
-        self.assertEqual(written, sorted(references))
-        self.assertIn(f'OVERRIDE_BASES["skills/code-review/SKILL.md"] = "{sync.OVERRIDE_BASES["skills/code-review/SKILL.md"]}"', stdout)
-
-    def test_main_reports_a_bad_split_or_a_missing_upstream_and_writes_nothing(self):
-        for case, text in (("bad split", "---\nname: x\n---\nno markers here\n"), ("no upstream file", None)):
-            with self.subTest(case=case):
-                code, _stdout, stderr, written = self.run_main(text)
-                self.assertEqual(code, 1)
-                self.assertIn("error:", stderr)
-                self.assertEqual(written, [])
-
-
 CORE, REFERENCES = load_skill("code-review")
 STEPS = CORE.split("## Steps", 1)[1]  # the core without its read-trigger table
-INVOKED_SCRIPT_RE = re.compile(r'(?:python3|py\.sh")\s+"\$\{?CLAUDE_PLUGIN_ROOT\}?/[\w./-]*?([\w-]+\.py)"')
+INVOKED_SCRIPT_RE = re.compile(r'(?:python3|py\.sh")\s+"\$\{?DEV_TEAM_ROOT\}?/[\w./-]*?([\w-]+\.py)"')
 # Scripts only a branch runs, and the reference that has their command; the core sends the model there.
 REFERENCE_FOR_BRANCH_SCRIPT = {
     "review_context_pack.py": "04b-context-pack.md",
@@ -188,8 +62,10 @@ REFERENCE_FOR_BRANCH_SCRIPT = {
 }
 # Scripts the core never runs because pi does that step another way.
 NOT_RUN_ON_PI = {"dispatch_waves.py"}
-# The core is meant to load at about a third of upstream's size; a regrowth past this means text moved back in.
+# The core is meant to load at about a third of the full text's size; a regrowth past this means text moved back in.
 CORE_SIZE_BUDGET_BYTES = 40_000
+# The core's intro paragraph opens with these words.
+INTRO_START = "**This file is the "
 # Reference -> words its "Read it when" row must contain, for the references a step must read.
 REQUIRED_READ_TRIGGERS = {
     "01-target-files.md": "documentation-only short-circuit",
@@ -220,20 +96,20 @@ class CodeReviewCoreRouting(unittest.TestCase):
                 self.assertIn(f"references/{name}", step, f"the step with the {name} trigger no longer points to it")
                 self.assertRegex(step, r"(?i)\bread\b", f"the step with the {name} trigger no longer says to read it")
 
-    def test_json_step_9_exception_still_matches_upstream(self):
-        # The core's first exception to "follow the reference"; drop it from the core once upstream fixes these lines.
+    def test_json_step_9_exception_still_matches_the_references(self):
+        # The core's first exception to "follow the reference"; drop it from the core once these reference lines are fixed.
         stale = {"05-aggregate.md": "**skipped entirely under `--json`**", "06-findings-and-fix-loop.md": "where step 9 never runs at all",
                  "07-report.md": "never runs under `--json`"}
         for name, phrase in stale.items():
             with self.subTest(reference=name):
                 self.assertIn(phrase, REFERENCES[name])
-        intro = text_between(CORE, "**This file is the pi core of the upstream skill.**", "| Reference |")
+        intro = text_between(CORE, INTRO_START, "| Reference |")
         for name in stale:
             self.assertIn(f"references/{name}", intro)
         self.assertIn("step 9 does run under `--json`", intro)
 
     def test_the_lean_fix_rule_is_the_second_exception(self):
-        intro = text_between(CORE, "**This file is the pi core of the upstream skill.**", "| Reference |")
+        intro = text_between(CORE, INTRO_START, "| Reference |")
         self.assertIn("Second, the lean fix rule in step 5b", intro)
         self.assertIn("| error or warning | high or medium | **Yes** — auto-apply |", REFERENCES["05-aggregate.md"])  # what it narrows
 
@@ -271,13 +147,13 @@ class CodeReviewCoreRouting(unittest.TestCase):
                 else:
                     self.assertIn(script, in_core, "the core names the script but no longer runs it")
 
-    def test_core_commands_are_whole_upstream_commands(self):
-        upstream = {block for text in REFERENCES.values() for block in bash_blocks(text)}
+    def test_core_commands_are_whole_reference_commands(self):
+        reference_blocks = {block for text in REFERENCES.values() for block in bash_blocks(text)}
         blocks = bash_blocks(CORE)
         self.assertTrue(blocks)
         for block in blocks:
             with self.subTest(block=block.splitlines()[0]):
-                self.assertIn(block, upstream)
+                self.assertIn(block, reference_blocks)
 
     def test_step_4_dispatches_once_and_classifies_the_saved_output(self):
         step = text_between(CORE, "### 4. Run each enabled agent", "\n### 5. Aggregate results")
@@ -300,14 +176,14 @@ class CodeReviewCoreRouting(unittest.TestCase):
         self.assertIn(overview.split("## Progress tracking", 1)[1], CORE)
 
 
-class CodeReviewUpstreamContentGuards(unittest.TestCase):
-    """The strings upstream's own tests pin in this SKILL.md (tests/skills/test_code_review_*.py and others)."""
+class CodeReviewContentGuards(unittest.TestCase):
+    """Phrases the code-review core must keep: arguments, step rules, dispatch, ledger and report contracts."""
 
     def test_parse_arguments_documents_expand(self):
         args = text_between(CORE, "## Parse Arguments", "## Progress tracking")
         for phrase in ("`--expand <finding-id>|all`", "Tier-2", "no-op under `--json`"):
             self.assertIn(phrase, args)
-        self.assertIn("--expand", splitter.split_frontmatter(CORE)[0])
+        self.assertIn("--expand", frontmatter(CORE))
 
     def test_sliced_mode_rules(self):
         step = text_between(CORE, "### 1. Determine target files", "### 2. Pre-flight gates")

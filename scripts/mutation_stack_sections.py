@@ -7,7 +7,7 @@ strictly relative to the repo's detected stack — a JS-only or Python-only
 repo must never probe for `dotnet`, `mvn`, or `node` outside its own stack.
 
 This helper makes that decision deterministically instead of leaving it to
-prose the agent can skip. It reads `.claude/project-stack.json`'s `stacks`
+prose the agent can skip. It reads `.pi/dev-team/project-stack.json`'s `stacks`
 array once and maps stack tokens to sections:
 
     typescript / node   -> js       (Stryker)
@@ -40,7 +40,7 @@ Usage:
     mutation_stack_sections.py --stacks typescript,node   # for testing
 
 PROJECT_DIR defaults to the current directory; the stack file is read from
-`<PROJECT_DIR>/.claude/project-stack.json`.
+`<PROJECT_DIR>/.pi/dev-team/project-stack.json`.
 
 Stdlib-only. See docs/python-hook-contract.md.
 """
@@ -103,12 +103,12 @@ def select_sections(stacks: list[str] | None) -> dict[str, object]:
 
 
 def read_stacks(project_dir: Path) -> list[str] | None:
-    """Return the `stacks` array from `<project_dir>/.claude/project-stack.json`.
+    """Return the `stacks` array from `<project_dir>/.pi/dev-team/project-stack.json`.
 
     Returns None when the file is missing, unreadable, not valid JSON, or has
     no `stacks` key — all of which collapse to the ambiguous outcome.
     """
-    stack_file = project_dir / ".claude" / "project-stack.json"
+    stack_file = project_dir / ".pi" / "dev-team" / "project-stack.json"
     try:
         data = json.loads(stack_file.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, ValueError):

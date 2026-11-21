@@ -5,19 +5,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/pending_review_notify.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/repo_review_nudge.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/repo_review_nudge.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/mcp_json_repowise_nudge.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/codegraph_bootstrap.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/codegraph_bootstrap.py\""
           }
         ]
       },
@@ -26,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/autocompact_setup_nudge.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/autocompact_setup_nudge.py\""
           }
         ]
       },
@@ -35,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/post_compact_state_reinject.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/post_compact_state_reinject.py\""
           }
         ]
       }
@@ -45,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/telemetry.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/telemetry.py\""
           }
         ]
       }
@@ -56,19 +48,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/pre_tool_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/pre_tool_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/contract_version_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/refactor_test_freeze_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/refactor_test_freeze_guard.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/boundary_events_write_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/boundary_events_write_guard.py\""
           }
         ]
       },
@@ -77,7 +65,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/verify_guard_edit_marker.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/verify_guard_edit_marker.py\""
           }
         ]
       },
@@ -86,51 +74,43 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/destructive_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/destructive_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/refactor_test_bash_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/refactor_test_bash_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/pre_pr_review.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/pre_pr_review.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/internal_double_gate.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/internal_double_gate.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/pre_commit_knowledge_index.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/telemetry.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/telemetry.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/verify_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/verify_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/bash_retry_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/bash_retry_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/stryker_xunit_shim_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/stryker_xunit_shim_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/mutation_testing_smoke_gate.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/mutation_testing_smoke_gate.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/scan_bash_command_for_banned_scripts.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/boundary_events_write_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/boundary_events_write_guard.py\""
           }
         ]
       },
@@ -139,7 +119,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/telemetry.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/telemetry.py\""
           }
         ]
       },
@@ -148,7 +128,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/code_intelligence_nudge.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/code_intelligence_nudge.py\""
           }
         ]
       },
@@ -157,7 +137,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/code_intelligence_nudge.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/code_intelligence_nudge.py\""
           }
         ]
       },
@@ -166,7 +146,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/code_intelligence_nudge.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/code_intelligence_nudge.py\""
           }
         ]
       },
@@ -175,11 +155,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/agent_dispatch_ledger.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/agent_dispatch_ledger.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent_skill_context.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/subagent_skill_context.py\""
           }
         ]
       }
@@ -190,27 +170,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/js_fp_review.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/js_fp_review.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/token_efficiency_review.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/token_efficiency_review.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/eval_compliance_check.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/tdd_guard.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/knowledge_index.py\""
-          },
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/skills_index.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/tdd_guard.py\""
           }
         ]
       },
@@ -219,11 +187,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/mutation_gate.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/mutation_gate.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/refactor_test_revert_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/refactor_test_revert_guard.py\""
           }
         ]
       },
@@ -232,7 +200,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/version_check.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/version_check.py\""
           }
         ]
       },
@@ -241,7 +209,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/code_intelligence_turn_mark.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/code_intelligence_turn_mark.py\""
           }
         ]
       },
@@ -250,7 +218,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/code_intelligence_turn_mark.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/code_intelligence_turn_mark.py\""
           }
         ]
       },
@@ -259,26 +227,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/phase_marker.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/scan_worktree_for_banned_scripts.py\""
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/session_learning_trigger.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/phase_marker.py\""
           }
         ]
       }
@@ -288,11 +237,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/cost_meter.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/cost_meter.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/task_completion_metrics.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/task_completion_metrics.py\""
           }
         ]
       }
@@ -302,19 +251,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/cost_meter.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/cost_meter.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/task_completion_metrics.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/task_completion_metrics.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/subagent_completion_guard.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/subagent_completion_guard.py\""
           },
           {
             "type": "command",
-            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/py.sh\" \"${CLAUDE_PLUGIN_ROOT}/hooks/review_verdict_recorder.py\""
+            "command": "sh \"${DEV_TEAM_ROOT}/hooks/py.sh\" \"${DEV_TEAM_ROOT}/hooks/review_verdict_recorder.py\""
           }
         ]
       }

@@ -109,8 +109,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 #: `internal_double_detector.py` lives under `skills/test-design/scripts/`;
-#: this script lives under `scripts/` — both are children of the plugin
-#: root (`plugins/dev-team/`), so `parents[1]` from this file reaches it.
+#: this script lives under `scripts/` — both are children of the package
+#: root, so `parents[1]` from this file reaches it.
 _DETECTOR_PATH = (
     Path(__file__).resolve().parents[1]
     / "skills"

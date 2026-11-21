@@ -10,10 +10,9 @@ cheaper tier for verification dispatches only, by declaring in its **body**:
     Verify-effort: medium
 
 Body declarations, not frontmatter: issue #1333 reserves agent frontmatter
-for the official Claude Code sub-agent contract recorded in
-`plugins/marketplace-dev/knowledge/agent-contract.json` (a dated snapshot of
-upstream docs, not a schema this plugin may extend). `Scope:`, `Cites:`, and
-`Enforcement:` follow the same rule. Claude Code silently ignores unknown
+for the fixed agent frontmatter contract (name, description, tools, model,
+...), not a schema this package may extend. `Scope:`, `Cites:`, and
+`Enforcement:` follow the same rule. The agent loader silently ignores unknown
 frontmatter keys, so a frontmatter typo would also have been invisible; a
 body declaration this script parses is checkable.
 
@@ -40,7 +39,7 @@ import re
 import sys
 from pathlib import Path
 
-# scripts/verify_tier.py -> scripts -> plugin root
+# scripts/verify_tier.py -> scripts -> package root
 _PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 _AGENTS_DIR = _PLUGIN_ROOT / "agents"
 

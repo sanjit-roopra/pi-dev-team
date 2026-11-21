@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Python port of hooks/verify-guard.sh (#608 / #572 Phase 3), escalated to a
+"""verify_guard — PreToolUse hook (#608 / #572 Phase 3), escalated to a
 hard stop for stuck loops (#708).
 
 PreToolUse Bash hook — detects repeated identical verify invocations
@@ -13,7 +13,7 @@ edit. Any edit observed since the previous verify run resets the counter,
 same as a different command does, so legitimate TDD repeats are never
 blocked.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin (hook_event_name, session_id,
             tool_input.command, cwd)
     Output: Warning on stdout below threshold; `[BLOCK]`-prefixed message
@@ -22,7 +22,7 @@ Contract (docs/python-hook-contract.md):
             2 (block) at/above threshold with threshold > 0
     Env   : DEV_TEAM_VERIFY_THRESHOLD (default 3), TMPDIR
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations
@@ -58,9 +58,7 @@ def emit_boundary_event(*args, **kwargs) -> None:
 
 
 # Verify-class command detector — mirrors
-# `session_log.classify.VERIFY_RE`, which
-# plugins/dev-team/scripts/session_report.py's `--profile maintainer`
-# aliases.
+# `scripts/lib/session_log/classify.py`'s `VERIFY_RE`.
 _VERIFY_RE = re.compile(
     r"\b("
     r"npm (run )?(test|lint|build)"

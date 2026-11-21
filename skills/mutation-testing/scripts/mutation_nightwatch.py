@@ -35,7 +35,7 @@ the run's duration on macOS (``caffeinate``) and Linux (``systemd-inhibit``);
 on Windows it calls ``SetThreadExecutionState`` directly (no subprocess to
 hold open). When none of those are available, the run proceeds but the
 missing coverage is always a printed/recorded NOTE, never a silent no-op —
-see the CLAUDE.md rule this mirrors: "a gate that cannot fail is worse than
+see the project rule this mirrors: "a gate that cannot fail is worse than
 no gate."
 
 Per-stack detection, mechanical repair, and measurement live in

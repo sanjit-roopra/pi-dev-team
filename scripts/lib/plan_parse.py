@@ -1,6 +1,6 @@
 """plan_parse — extract per-slice (id, depends_on, files) from a plan markdown.
 
-Python port of `plugins/dev-team/scripts/lib/plan-parse.sh` (#579).
+Parses plan markdown into per-slice rows (#579).
 
 Contract mirrors the bash: emit one TSV row per slice:
 

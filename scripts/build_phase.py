@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""build_phase.py — write `/build`'s phase record in one command (pi port).
+"""build_phase.py — write `/build`'s phase record in one command.
 
-`/build` keeps `.claude/memory/build-phase.json` (schema in `skills/build/SKILL.md`,
+`/build` keeps `.pi/dev-team/memory/build-phase.json` (schema in `skills/build/SKILL.md`,
 read by `hooks/lib/build_state.py` and `hooks/lib/test_file_classify.py`). Writing it
 by hand cost a model turn per phase transition. This helper writes the same record
 from one short command, so the write can share a message with real work or be
@@ -18,9 +18,9 @@ chained onto a test command with `&&`.
   exit code is 1.
 - `clear` deletes the record (the plan's last step is done).
 
-The record lands at `<git root of the cwd>/.claude/memory/build-phase.json`, the path the
+The record lands at `<git root of the cwd>/.pi/dev-team/memory/build-phase.json`, the path the
 guards read. Exit 0 on success, 1 when staging or writing fails, 2 on bad arguments.
-Port-owned (not in upstream); stdlib only.
+Stdlib only.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ def build_record(phase: str, step: str, plan_path: str, staged: list[str], now: 
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
-    ap = argparse.ArgumentParser(description="Write /build's .claude/memory/build-phase.json record.")
+    ap = argparse.ArgumentParser(description="Write /build's .pi/dev-team/memory/build-phase.json record.")
     ap.add_argument("phase", choices=PHASES + ("clear",))
     ap.add_argument("step", nargs="?", help="step id N.M (required unless clear)")
     ap.add_argument("--plan", help="repo-relative plan path (default: the current record's)")

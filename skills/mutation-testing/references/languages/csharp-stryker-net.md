@@ -67,11 +67,11 @@ If detected, take **all four** steps below. Missing any one recreates the fake-s
 
 4. In `stryker-config.json`, set `"additional-timeout": 30000` — headroom for ~5 hanging tests × 5 s `testTimeout` per mutant plus overhead. This is a **layered** cap on top of the per-mutant `timeout` documented in [`SKILL.md`](../../SKILL.md) Step 1b.
 
-The four steps above defend against the *fake-100 %-via-Timeout* variant of the MTP-runner incompatibility. The **complementary** *fake-0 %-via-Survived* variant (mutation-switch not observing mutations at runtime; every mutant reported `Survived`; final score `0.00 %`) is caught by [`SKILL.md`](../../SKILL.md) **Step 1c smoke gate** — run a single-file probe before any full run and parse `mutation-report.json` for `Killed > 0`. Do not skip Step 1c on xunit.v3 configurations; it is the specific safety net for issues [#554](https://github.com/bdfinst/agentic-dev-team/issues/554) and [#557](https://github.com/bdfinst/agentic-dev-team/issues/557). Inside a Claude Code session the [`mutation_testing_smoke_gate`](../../../../hooks/mutation_testing_smoke_gate.py) PreToolUse hook enforces this step automatically — see SKILL.md § Step 1c for the operator-facing contract.
+The four steps above defend against the *fake-100 %-via-Timeout* variant of the MTP-runner incompatibility. The **complementary** *fake-0 %-via-Survived* variant (mutation-switch not observing mutations at runtime; every mutant reported `Survived`; final score `0.00 %`) is caught by [`SKILL.md`](../../SKILL.md) **Step 1c smoke gate** — run a single-file probe before any full run and parse `mutation-report.json` for `Killed > 0`. Do not skip Step 1c on xunit.v3 configurations; it is the specific safety net for issues #554 and #557. Inside a pi session the [`mutation_testing_smoke_gate`](../../../../hooks/mutation_testing_smoke_gate.py) PreToolUse hook enforces this step automatically — see SKILL.md § Step 1c for the operator-facing contract.
 
 ## xunit.v3 shim-breaking features — detect and human-gate (before building the shim)
 
-The v2 shim is the only path that gives the mutant-kill **loop** per-test coverage on an xunit.v3 suite (under v2/VSTest `perTest` works, ~5–6× faster than `off` — see [#669](https://github.com/bdfinst/agentic-dev-team/issues/669)). Its weakness is compile fragility: any xunit-v3-only API breaks the shim's compile before Stryker runs a mutant (the `[Fact(Explicit = true)]` break that motivated [#1156](https://github.com/bdfinst/agentic-dev-team/issues/1156)). Rather than hand the operator an opaque C# compile error, scan for the breaking constructs first and let a human decide.
+The v2 shim is the only path that gives the mutant-kill **loop** per-test coverage on an xunit.v3 suite (under v2/VSTest `perTest` works, ~5–6× faster than `off` — see #669). Its weakness is compile fragility: any xunit-v3-only API breaks the shim's compile before Stryker runs a mutant (the `[Fact(Explicit = true)]` break that motivated #1156). Rather than hand the operator an opaque C# compile error, scan for the breaking constructs first and let a human decide.
 
 **Detector.** [`../../scripts/xunit_v3_feature_detector.py`](../../scripts/xunit_v3_feature_detector.py) scans the real xunit.v3 test `.cs` files for shim-breaking v3-only constructs (`[Fact/Theory(Explicit = true)]`, `Assert.Skip`/`SkipWhen`/`SkipUnless`, `TestContext.Current`/`ITestContext`, `ValueTask` async-lifetime signatures, `TheoryDataRow`) and classifies each on two axes:
 
@@ -79,12 +79,12 @@ The v2 shim is the only path that gives the mutant-kill **loop** per-test covera
 - **coverage impact** — `neutral` (excluding the test from the shim changes no coverage — e.g. `Explicit=true` tests are skipped by default, **provided the run does not enable explicit tests** via `-explicit` / `xunit.runner.json` `explicit=on`) vs `bearing` (the test runs and covers code, so excluding it inflates the loop's survivor set and makes it generate redundant tests).
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/xunit_v3_feature_detector.py" <test-project>/**/*.cs --json
+python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/xunit_v3_feature_detector.py" <test-project>/**/*.cs --json
 ```
 
 **Human gate — always ask, never auto-drop.** Present the full classified list every run, even when every hit is coverage-neutral. For each test the operator chooses whether to exclude it from the shim for the duration of the loop; nothing is deactivated silently. Coverage-bearing tests are flagged with the lines that go dark if excluded. The detector's `summary.recommendation` is **advisory** sizing only (few + neutral → shim path is reasonable; many or coverage-bearing → prefer skipping the loop for a single-pass `coverage-analysis: off` advisory) — the human always decides.
 
-**"Deactivate" means exclude from the shim's `<Compile Include>` set, never edit the real test suite** — so there is no crash-unsafe "restore after the loop" step. The operator-selected exclusions are applied to the shim project by the shim-generation path (see [#1159](https://github.com/bdfinst/agentic-dev-team/issues/1159)); the loop-vs-degrade decision that consumes this gate's outcome lives in [#1158](https://github.com/bdfinst/agentic-dev-team/issues/1158).
+**"Deactivate" means exclude from the shim's `<Compile Include>` set, never edit the real test suite** — so there is no crash-unsafe "restore after the loop" step. The operator-selected exclusions are applied to the shim project by the shim-generation path (see #1159); the loop-vs-degrade decision that consumes this gate's outcome lives in #1158.
 
 ### Stryker >= 5.0.0 — `-t mtp` + `coverage-analysis: perTest` restores real per-test coverage, no shim
 
@@ -94,7 +94,7 @@ Stryker.NET **5.0.0** (2026-09-11) shipped [stryker-net#3752](https://github.com
 dotnet stryker -t mtp --config-file stryker-config.json   # coverage-analysis: perTest, concurrency: 1
 ```
 
-**Pin `concurrency: 1` until [stryker-net#3832](https://github.com/stryker-mutator/stryker-net/issues/3832) closes** — an OPEN regression where 5.0.0 under-reports kills nondeterministically under MTP at concurrency > 1 (a proposed fix, #3724, was confirmed by the reporter NOT to resolve it; a minimal repro exists at `dclark-olm/stryker-3832-repro`). [#2192](https://github.com/bdfinst/agentic-dev-team/issues/2192) tracks removing this pin once #3832 ships a fix.
+**Pin `concurrency: 1` until [stryker-net#3832](https://github.com/stryker-mutator/stryker-net/issues/3832) closes** — an OPEN regression where 5.0.0 under-reports kills nondeterministically under MTP at concurrency > 1 (a proposed fix, #3724, was confirmed by the reporter NOT to resolve it; a minimal repro exists at `dclark-olm/stryker-3832-repro`). #2192 tracks removing this pin once #3832 ships a fix.
 
 `stryker_xunit_shim_guard.py` detects the installed version (`hooks/mutation_adapters/stryker_net.py::stryker_net_version()`) and silent-passes an xunit.v3 project run on >= 5.0.0 — it does not scaffold a shim or block, whichever runner flag the command uses. An undetermined version (no `dotnet` on PATH, or unparseable `--version` output) fails closed to the < 5.0.0 behavior below.
 
@@ -130,7 +130,7 @@ If a smoke probe (Step 1c) or full run reports `Killed: 0` alongside `Survived >
 
 For Stryker.NET projects that are **not** on xunit.v3 / the MTP runner (see the [xunit.v3 detection](#xunitv3-detection-do-this-before-configuring-runs) section above, which stays mandatory for those projects), default `"coverage-analysis": "perTest"` in `stryker-config.json` rather than `"off"`. Per-test coverage tracking lets each mutant run only the tests that actually exercise the mutated line, instead of the full suite — a significant speedup on large suites.
 
-[#669](https://github.com/bdfinst/agentic-dev-team/issues/669) validated this against an xunit.v2-shim repo (the shim workaround from #554/#557, described in the [SolutionPath trap](#solutionpath-trap) section below) at two points. It specifically checked the two failure modes a static-analysis-based coverage tool is prone to:
+#669 validated this against an xunit.v2-shim repo (the shim workaround from #554/#557, described in the [SolutionPath trap](#solutionpath-trap) section below) at two points. It specifically checked the two failure modes a static-analysis-based coverage tool is prone to:
 
 - **Reflection** (`MethodInfo.Invoke`) — a test invoking a private method via reflection correctly killed its target mutant under `perTest`.
 - **Container-resolution DI** (Autofac `container.Resolve<T>()`) — 14 tests building a real Autofac container and resolving decorated services were correctly attributed as covering the registration statements they exercise.
@@ -174,21 +174,21 @@ dotnet stryker -m "MyFolder/MyService.cs{10..100}"
 
 **The span is defined by character indices, not line numbers.** The docs are explicit: "the span of text that should be in- or excluded. A span is defined by the indices of the first character and the last character." A `mutation-kill` scaffold landed in #2053 assumed the opposite for the survivor-scoped confirm-run optimization (`mutation_kill_loop.make_confirm_scoped_config`) — that the `{start..end}` suffix takes *line* numbers, one span per previous-round survivor line (`"**/File.cs{10..10}"` for a survivor on line 10). That assumption is wrong: fed a line number where Stryker parses a character offset, the span points at an unrelated, essentially arbitrary character range near the start of the file, not the intended line.
 
-**Status: not wired into the loop.** Translating a survivor line number to the character-offset span Stryker.NET actually expects is mechanically computable (read the file, sum preceding line lengths), but the exact indexing convention — 0- vs 1-based, inclusive/exclusive end, how CRLF line endings count toward the offset — is not pinned by the documentation snippet alone, and confirming it needs a live `dotnet`/`dotnet-stryker` run against a probe file with a known survivor line. That toolchain was not available in the environment that did this investigation (`dotnet` not on `PATH`; general GitHub repository/source access beyond this plugin's own repo was also unavailable, so the Stryker.NET parser source itself could not be inspected directly — only the published docs). `make_confirm_scoped_config` therefore stays unwired from `_score_round` — pinned by `test_confirm_scoped_config_is_not_wired_into_the_default_loop_path` in `tests/scripts/test_mutation_kill_loop.py` — until a pass with a real Stryker.NET verifies the character-offset conversion end-to-end.
+**Status: not wired into the loop.** Translating a survivor line number to the character-offset span Stryker.NET actually expects is mechanically computable (read the file, sum preceding line lengths), but the exact indexing convention — 0- vs 1-based, inclusive/exclusive end, how CRLF line endings count toward the offset — is not pinned by the documentation snippet alone, and confirming it needs a live `dotnet`/`dotnet-stryker` run against a probe file with a known survivor line. That toolchain was not available in the environment that did this investigation (`dotnet` not on `PATH`; general GitHub repository/source access beyond this package's own repo was also unavailable, so the Stryker.NET parser source itself could not be inspected directly — only the published docs). `make_confirm_scoped_config` therefore stays unwired from `_score_round` — pinned by `test_confirm_scoped_config_is_not_wired_into_the_default_loop_path` in `tests/scripts/test_mutation_kill_loop.py` — until a pass with a real Stryker.NET verifies the character-offset conversion end-to-end.
 
 **To perform that verification:** pick a probe file with one known Survived mutant on a known line, hand-compute a `{start..end}` character span bracketing that line by a few conventions (0-based vs 1-based, inclusive vs exclusive end), run `dotnet stryker -m "<Probe>.cs{<start>..<end>}"` for each candidate, and confirm which one reports mutants on exactly that line — not the whole file, not an adjacent line, not zero mutants. Record the confirmed convention here and in `make_confirm_scoped_config`'s docstring, then wire the loop's terminal-round confirm through it.
 
 **Degenerate-narrowing guard already lands regardless.** `make_confirm_scoped_config` accepts an optional `total_file_lines` — when narrowing would touch too much of the file's own line count (default: 50%+) to be worth the extra `mutate` array entries, it degrades to the ordinary whole-file scoped config instead. This doesn't depend on resolving the character-offset question above, so it ships now, tested, ready for whichever span form eventually gets wired in.
 
-**JS Stryker is unaffected — no equivalent loop exists to verify.** `mutation_kill_loop.py` (the module this section documents) is Stryker.NET-specific — it imports `csharp_stryker_net_wrapper` directly and owns `.sln` hide/restore, which has no JS analogue. The Python/mutmut sibling (`mutation_kill_loop_python.py`) is Python-only per its own module docstring. No JS-Stryker survivor-scoped confirm-run loop exists in this plugin today, so #2031's span-syntax verification is Stryker.NET-only; there is no parallel JS `--mutate` span form this change needs to check.
+**JS Stryker is unaffected — no equivalent loop exists to verify.** `mutation_kill_loop.py` (the module this section documents) is Stryker.NET-specific — it imports `csharp_stryker_net_wrapper` directly and owns `.sln` hide/restore, which has no JS analogue. The Python/mutmut sibling (`mutation_kill_loop_python.py`) is Python-only per its own module docstring. No JS-Stryker survivor-scoped confirm-run loop exists in this package today, so #2031's span-syntax verification is Stryker.NET-only; there is no parallel JS `--mutate` span form this change needs to check.
 
 ### SolutionPath trap
 
-When `stryker-config.json` sets **both** `SolutionPath` and an explicit `test-projects` list, Stryker.NET evidently enumerates additional test projects from the solution and prefers them over the ones listed in `test-projects`. On a repo whose main test project is on xunit.v3 + MTP but whose configured `test-projects` points at a working xunit.v2 shim, this manifests as the shim's `InternalsVisibleTo` grant and successful smoke tests not helping — because Stryker isn't actually running the shim; it's running the main xunit.v3 test project it discovered via `SolutionPath`, and the fake-0 %-via-Survived MTP failure mode from #554 strikes anyway. The `--diag` output reveals this via a `Property TargetPath=` line naming the wrong test-project `.dll`. See issue [#557](https://github.com/bdfinst/agentic-dev-team/issues/557).
+When `stryker-config.json` sets **both** `SolutionPath` and an explicit `test-projects` list, Stryker.NET evidently enumerates additional test projects from the solution and prefers them over the ones listed in `test-projects`. On a repo whose main test project is on xunit.v3 + MTP but whose configured `test-projects` points at a working xunit.v2 shim, this manifests as the shim's `InternalsVisibleTo` grant and successful smoke tests not helping — because Stryker isn't actually running the shim; it's running the main xunit.v3 test project it discovered via `SolutionPath`, and the fake-0 %-via-Survived MTP failure mode from #554 strikes anyway. The `--diag` output reveals this via a `Property TargetPath=` line naming the wrong test-project `.dll`. See issue #557.
 
 Three remediation paths, in order of preference:
 
-1. **Remove `SolutionPath` from `stryker-config.json`.** Rely on `test-projects` only. Simplest fix; the plugin **recommends this path** for multi-project repos where the only reason `SolutionPath` was set was to help Stryker resolve source-project dependencies — the explicit `test-projects` list gives it what it needs. This is the path documented in the shipped wrapper.
+1. **Remove `SolutionPath` from `stryker-config.json`.** Rely on `test-projects` only. Simplest fix; the package **recommends this path** for multi-project repos where the only reason `SolutionPath` was set was to help Stryker resolve source-project dependencies — the explicit `test-projects` list gives it what it needs. This is the path documented in the shipped wrapper.
 2. **Add the shim project to the solution and exclude the main test project from Stryker's discovery.** Requires per-repo solution-file surgery and a Stryker-side exclusion rule; brittle and not documented upstream.
 3. **Downgrade the main test project to xunit.v2** for the mutation window. Nuclear option — invasive to the main test suite for the duration of a mutation-testing session; only use when path 1 is genuinely impossible.
 
@@ -332,7 +332,7 @@ done
 
 ## Shipped wrapper
 
-The plugin ships a Python wrapper + status loop under `plugins/dev-team/skills/mutation-testing/scripts/`:
+The package ships a Python wrapper + status loop under `skills/mutation-testing/scripts/`:
 
 - **`csharp_stryker_net_wrapper.py`** — hides `.sln` during the run + restores on any exit path, exports `DOTNET_ROOT` (auto-probed across all supported platforms; a pre-set value is respected), pre-builds `${SLN}` and optional `${SHIM_PROJECT}` **before** hiding, runs Stryker as a subprocess so SIGINT/SIGTERM kill the child too (no orphans), and redirects log via file descriptor (never a bare `| tee`).
 - **`csharp_stryker_net_status_loop.py`** — status + red-flag inspection loop invoked by the wrapper. Ticks every `STATUS_INTERVAL` seconds emitting one status record plus zero-or-more `[RED-FLAG]` lines when known-broken patterns are observed (mutation-switch not observing; CompileError count over threshold; SolutionPath trap; Stryker died mid-run; parser drift).
@@ -402,8 +402,8 @@ rather than rely on the computed default in those environments.
 
 ## Slice runner
 
-The plugin ships a third script, `csharp_stryker_net_slice_runner.py`, under
-`plugins/dev-team/skills/mutation-testing/scripts/`, layering first-class
+The package ships a third script, `csharp_stryker_net_slice_runner.py`, under
+`skills/mutation-testing/scripts/`, layering first-class
 slicing and configurable slice-level parallelism (#561) on top of the
 wrapper documented above. It imports `csharp_stryker_net_wrapper.py`
 directly and reuses its `hide_sln`/`restore_sln`/`build_project`/
@@ -415,7 +415,7 @@ around them.
 ### Invocation
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/csharp_stryker_net_slice_runner.py" \
+python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/csharp_stryker_net_slice_runner.py" \
   --slices-config mutation-slices.json \
   --slice <name>       # a single configured slice by name
   --slice all          # every configured slice, resuming past terminal ones
@@ -427,7 +427,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/csharp_stryker_ne
 ### `slices:` config block
 
 A top-level `slices` array in `mutation-slices.json` (JSON, not YAML — this
-plugin's shipped scripts are stdlib-only Python, and `json` is stdlib while
+package's shipped scripts are stdlib-only Python, and `json` is stdlib while
 YAML is not). Only `name` + `mutate` are required in this first cut; `kind`,
 `mutation-level`, and `exclude-converged` are accepted and passed through
 but reserved for #667's within-slice refinements — a typo in one of those
@@ -667,7 +667,7 @@ This drops the wall-clock time from 60–90 min (whole repo) to **5–15 min** (
 
 ### Batch improvement pipeline
 
-For the full improvement pipeline (not the per-test gate), use `stryker-pipeline.py` instead of bare `dotnet stryker`. It runs shards sequentially, fixes survivors with `mutation-agent.py` using the Claude Code CLI, and is the right tool for batch mutation-score improvement. Pre-build first, then invoke:
+For the full improvement pipeline (not the per-test gate), use `stryker-pipeline.py` instead of bare `dotnet stryker`. It runs shards sequentially, fixes survivors with `mutation-agent.py` using the pi CLI, and is the right tool for batch mutation-score improvement. Pre-build first, then invoke:
 
 ```bash
 export DOTNET_ROOT="${DOTNET_ROOT:-/opt/homebrew/opt/dotnet/libexec}"

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""repo_review_nudge — Claude Code SessionStart hook (#1739/#1743/#1746).
+"""repo_review_nudge — SessionStart hook (#1739/#1743/#1746).
 
 `/repo-review` (#1733/#1735) tracks drift in
-`.claude/memory/repo-review-state.json` (`{"last_commit", "last_run_at"}`)
+`.pi/dev-team/memory/repo-review-state.json` (`{"last_commit", "last_run_at"}`)
 but is invoked manually — nothing proactively tells the operator drift has
-crossed a threshold worth acting on. This hook is that proactive nudge,
-mirroring `pending_review_notify.py`'s shape: read a small state signal,
-print a one-line stdout notice, fail-open, stdlib-only.
+crossed a threshold worth acting on. This hook is that proactive nudge:
+read a small state signal, print a one-line stdout notice, fail-open,
+stdlib-only.
 
 Drift signal: **percentage of the codebase changed since `last_commit`**,
 not an absolute line count, commit count, or elapsed time (#1743). An
@@ -49,7 +49,7 @@ either side:
 - Between the two, the percentage rule applies as before.
 
 **`last_commit` is untrusted input, validated before touching any git
-command (#1743).** `.claude/memory/repo-review-state.json` is written by
+command (#1743).** `.pi/dev-team/memory/repo-review-state.json` is written by
 `/repo-review`, but nothing stops a hostile PR from committing its own copy
 with an arbitrary string (see `skills/repo-review/SKILL.md`'s own matching
 guard) — this hook reads the same file. `last_commit` is never
@@ -66,7 +66,7 @@ tight or too loose):
     DEV_TEAM_REPO_REVIEW_MIN_ADDED_LINES    anti-nagging floor, default 200
     DEV_TEAM_REPO_REVIEW_MAX_ADDED_LINES    anti-silence ceiling, default 5000
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : SessionStart JSON on stdin (hook_event_name, cwd, model, ...).
     Output: notification text on stdout. Exit 0 always.
     Posture: fail-open — a buggy notifier must never block a session; this
@@ -255,7 +255,7 @@ def _nudge_message(percent: float, added: int, total: int) -> str:
     return (
         f"\U0001f300 ~{percent:.1f}% of the codebase ({added:,} of {total:,} "
         "lines) has changed since the last /repo-review — consider running "
-        "it to catch drift no per-diff review sees (file/CLAUDE.md size, "
+        "it to catch drift no per-diff review sees (file/AGENTS.md size, "
         "verification debt, component duplication)\n"
     )
 

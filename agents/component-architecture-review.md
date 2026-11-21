@@ -30,7 +30,7 @@ component set, which is exactly what `/repo-review` (#1735) runs this agent
 against, unconditionally, every pass. Skip this agent entirely if the target
 has no frontend component files.
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=components are well factored, warn=extraction or composition opportunities, fail=duplicated render/behavior forcing multi-site edits
 Severity: error=semantic UI duplication (a behavioral rule copied across components), warning=high-value extraction or prop-drilling fix, suggestion=composition/API-consistency cleanup
@@ -40,7 +40,7 @@ Context needs: full-file
 
 ## Knowledge Files
 
-Read `${CLAUDE_PLUGIN_ROOT}/knowledge/frontend-component-architecture.md` before analysis.
+Read `${DEV_TEAM_ROOT}/knowledge/frontend-component-architecture.md` before analysis.
 Whole-file load: it is a short reference catalog the agent scans end-to-end —
 the detection categories, the rule-of-three / semantic-vs-incidental tests, and
 the framework mapping are independent indexes used together on every review.
@@ -102,7 +102,7 @@ it). Apply the rule of three — flag the third occurrence, not the second.
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these component-architecture-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these component-architecture-review-specific challenges:
 
 - For every duplication finding, did you apply the semantic-vs-incidental test and the rule of three before flagging?
 - Did you check whether an extraction candidate already exists as a shared component you should point the caller at?

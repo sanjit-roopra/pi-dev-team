@@ -64,9 +64,9 @@ Write a summary under 150 words following this template:
 
 ### 3. Save summary
 
-Write the summary to `.claude/review-summaries/<date>-<short-sha>.md`.
+Write the summary to `.pi/dev-team/review-summaries/<date>-<short-sha>.md`.
 
-Create the `.claude/review-summaries/` directory if it doesn't exist.
+Create the `.pi/dev-team/review-summaries/` directory if it doesn't exist.
 
 ### 4. Report
 

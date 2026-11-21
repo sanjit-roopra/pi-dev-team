@@ -17,7 +17,7 @@ You are deliberately adversarial. A plan that passes your review will not produc
 
 ## What you receive
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric). This agent's
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric). This agent's
 plan reading additionally covers each slice's Gherkin scenarios and
 Code-First Small Batches steps (implement, then test, then refactor) — the
 Gherkin was authored in this plan, not inherited from the spec, so you are
@@ -112,4 +112,4 @@ step accordingly, never assuming or requiring test-first ordering:
 
 ## Verdict rules
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).

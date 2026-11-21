@@ -1,5 +1,4 @@
-<!-- step 1 (target files, staging, sliced mode, documentation-only short-circuit), 1b, 1c. Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 1 (target files, staging, sliced mode, documentation-only short-circuit), 1b, 1c. Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 ## Steps
 
 ### 1. Determine target files
@@ -13,7 +12,7 @@ Priority order:
 
 **Stage auto-scoped changes now, before anything else (#1461).** When the auto-scope path found a non-empty file set, `git add` those files immediately — before pre-flight gates, static analysis, or any agent dispatch — so the staged content's hash is fixed from this point through step 9's gate write. This is not cosmetic: `agent_dispatch_ledger.py` stamps each review-agent dispatch's `subject_hash` with `review_gate_hash()` at **dispatch time** (step 4). If staging happened only at step 9 (after dispatch) as previously documented, the dispatch-time hash and the gate-write-time hash would differ whenever the auto-scope target was unstaged — the common case — and every genuine dispatch would silently fail to corroborate the gate, forcing a hard block on a fully legitimate review. Staging here, before dispatch, is what makes step 9's hash and the dispatch ledger's `subject_hash` the same value. An unstaged working-tree edit after this point does **not** by itself change the staged hash (`review_gate_hash()` hashes `git diff --cached`, not the working tree) — step 6a's fix loop explicitly re-stages (`git add`) each iteration's fixes for exactly this reason; see that step for how corroboration is re-established after a fix loop runs.
 
-**Never `Read` a directory path directly to enumerate its contents** — `Read` on a directory throws `EISDIR` (the same hazard step 3 avoids for agent-roster enumeration). This applies to `--path <dir>`, `--all`, and the full-repository fallback alike: always list files with `Glob` (e.g. `Glob("<dir>/**/*")`), never a bare `Read` on the directory itself. See `${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md` for the shared rule.
+**Never `Read` a directory path directly to enumerate its contents** — `Read` on a directory throws `EISDIR` (the same hazard step 3 avoids for agent-roster enumeration). This applies to `--path <dir>`, `--all`, and the full-repository fallback alike: always list files with `Glob` (e.g. `Glob("<dir>/**/*")`), never a bare `Read` on the directory itself. See `${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md` for the shared rule.
 
 **Scope validation** (full-repo paths only):
 
@@ -40,16 +39,16 @@ as before this feature. Sliced mode is **report-only** (no interactive fix loop)
 - any path under a `docs/` directory
 - a root doc: `README*`, `CHANGELOG*`, `CONTRIBUTING*`, `LICENSE*`, `NOTICE*`, `AUTHORS*`, `CODE_OF_CONDUCT*`
 
-…**except functional Claude-config markdown, which is never documentation** (it drives agent/skill/command behavior and must be reviewed): any path containing a `.claude/` segment, or under `agents/`, `skills/`, `prompts/`, `knowledge/`, or `templates/agents/`. Treat `CLAUDE.md` and `AGENTS.md` as functional config too, not documentation.
+…**except functional agent-config markdown, which is never documentation** (it drives agent/skill/command behavior and must be reviewed): any path containing a `.claude/` or `.pi/dev-team/` segment, or under `agents/`, `skills/`, `prompts/`, `knowledge/`, or `templates/agents/`. Treat `CLAUDE.md` and `AGENTS.md` as functional config too, not documentation.
 
 If **every** target file is documentation, short-circuit:
 
 1. Emit: `Documentation-only changeset ({N} files) — skipping code review. Re-run with --force --reason "<text>" to review anyway.`
 2. If the review was auto-scoped to uncommitted changes or scoped via `--since <base>` (issue #1904 Bug 2b — same extension as step 9's own gate condition, and for the same reason: `/pr`'s only path to `gh pr create` reviews via `--since <base>`), write the `.pr-review-passed` gate file (per step 9) so `hooks/pre_pr_review.py` allows the next `gh pr create`. **Contemporaneously** (before or immediately after that write), record the doc-only exemption as an explicit, auditable boundary event — the `.pr-review-passed` gate's dispatch-ledger corroboration (#1461, #1886) reads this event, bound to the gate's own hash, to let the doc-only path stay exempt from agent-dispatch evidence without being a silent, unaccountable code-path skip:
    ```bash
-   HASH=$(python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/review_gate_hash.py" --branch-diff)
-   mkdir -p .claude/memory && echo "$HASH" > .claude/memory/.pr-review-passed
-   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/boundary_events.py" --event doc-only --subject-hash "$HASH"
+   HASH=$(python3 "${DEV_TEAM_ROOT}/hooks/lib/review_gate_hash.py" --branch-diff)
+   mkdir -p .pi/dev-team/memory && echo "$HASH" > .pi/dev-team/memory/.pr-review-passed
+   python3 "${DEV_TEAM_ROOT}/hooks/lib/boundary_events.py" --event doc-only --subject-hash "$HASH"
    ```
 3. In `--json` mode, emit `{"status": "skipped", "reason": "documentation-only", "files": [<list>]}` instead.
 4. **Stop.** Do not run pre-flight gates, static analysis, or any agent.

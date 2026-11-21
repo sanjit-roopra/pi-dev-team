@@ -3,7 +3,7 @@
 
 Language detection itself is NOT implemented here. `SKILL.md` runs
 project-init's own stack-detection step first —
-`${CLAUDE_PLUGIN_ROOT}/skills/project-init/SKILL.md` § "Step 1: Detect the
+`${DEV_TEAM_ROOT}/skills/project-init/SKILL.md` § "Step 1: Detect the
 stack" — and passes its result into this module via `--language`. This
 module only decides, from that already-detected value, whether the skill
 can proceed: it never re-derives a language from project-init's own

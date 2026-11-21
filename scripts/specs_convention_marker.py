@@ -3,17 +3,17 @@
 
 `/specs` only persists spec artifacts to a GitHub issue (instead of writing
 `docs/specs/<slug>.md`) on a project that has *explicitly* opted into that
-convention. This script classifies whether a project's root `CLAUDE.md`
-declares the opt-in via a literal marker phrase, so no downstream consumer of
-the shipped plugin is silently switched to issue-based persistence just
+convention. This script classifies whether a project's root instructions
+file (`AGENTS.md`, else `CLAUDE.md`) declares the opt-in via a literal marker
+phrase, so no project using pi-dev-team is silently switched to issue-based persistence just
 because its origin happens to be GitHub.
 
 Prints exactly one of:
-    marker     — root CLAUDE.md exists and contains the marker phrase
+    marker     — the root instructions file exists and contains the marker phrase
                  ("Specs and plans are GitHub issues here, not files",
                  markdown emphasis stripped, case-insensitive)
-    no-marker  — root CLAUDE.md exists but does not contain the marker phrase
-    none       — no root CLAUDE.md found (fail-open: callers treat this
+    no-marker  — the root instructions file exists but does not contain the marker phrase
+    none       — no root AGENTS.md or CLAUDE.md found (fail-open: callers treat this
                  identically to "no-marker" — routes to file-based
                  persistence — never blocks)
 
@@ -24,11 +24,12 @@ before concluding "no marker" when this script reports `no-marker` or
 script or its tests (see plans/issue-986-specs-github-issue-persistence.md's
 Risks & Open Questions).
 
-Reads `<repo-root>/CLAUDE.md` (repo root resolved via
-`git rev-parse --show-toplevel`) unless a path is given as argv[1] (for
-testing, or to point at an arbitrary CLAUDE.md directly).
+Reads `<repo-root>/AGENTS.md`, or `<repo-root>/CLAUDE.md` when there is no
+AGENTS.md (pi loads only the first of these it finds; repo root resolved via
+`git rev-parse --show-toplevel`), unless a path is given as argv[1] (for
+testing, or to point at an arbitrary instructions file directly).
 
-Usage: specs_convention_marker.py [claude-md-path]
+Usage: specs_convention_marker.py [instructions-md-path]
 
 Stdlib-only. See docs/python-hook-contract.md.
 """
@@ -55,18 +56,21 @@ def has_marker(text: str) -> bool:
     return MARKER_PHRASE in normalized
 
 
-def classify(claude_md_path: Path | None) -> str:
-    """Return "marker", "no-marker", or "none" for a root CLAUDE.md path.
+INSTRUCTIONS_FILES = ("AGENTS.md", "CLAUDE.md")
+
+
+def classify(instructions_path: Path | None) -> str:
+    """Return "marker", "no-marker", or "none" for a root instructions file path.
 
     Fail-open: any read error (missing file, permission error, etc.) yields
     "none" rather than raising.
     """
-    if claude_md_path is None:
+    if instructions_path is None:
         return "none"
     try:
-        if not claude_md_path.is_file():
+        if not instructions_path.is_file():
             return "none"
-        text = claude_md_path.read_text(encoding="utf-8")
+        text = instructions_path.read_text(encoding="utf-8")
     except OSError:
         return "none"
     return "marker" if has_marker(text) else "no-marker"
@@ -89,13 +93,29 @@ def _resolve_repo_root() -> Path | None:
     return Path(root) if root else None
 
 
+def _root_instructions_file(root: Path) -> Path:
+    """Return the first of AGENTS.md / CLAUDE.md that exists under `root`.
+
+    When neither exists, return the AGENTS.md path, which `classify` reports
+    as "none". Fail-open: a stat error counts as "does not exist".
+    """
+    for name in INSTRUCTIONS_FILES:
+        candidate = root / name
+        try:
+            if candidate.is_file():
+                return candidate
+        except OSError:
+            continue
+    return root / INSTRUCTIONS_FILES[0]
+
+
 def main(argv: list) -> int:
     if len(argv) > 1 and argv[1]:
-        claude_md_path: Path | None = Path(argv[1])
+        instructions_path: Path | None = Path(argv[1])
     else:
         root = _resolve_repo_root()
-        claude_md_path = (root / "CLAUDE.md") if root is not None else None
-    print(classify(claude_md_path))
+        instructions_path = _root_instructions_file(root) if root is not None else None
+    print(classify(instructions_path))
     return 0
 
 

@@ -2,7 +2,7 @@
 name: continue
 description: >-
   Resume work from a prior session by reading phase progress files in
-  .claude/memory/ and active plans. Use this when starting a new session on in-progress work,
+  .pi/dev-team/memory/ and active plans. Use this when starting a new session on in-progress work,
   or when the user says "continue", "pick up where I left off", "resume",
   or "what was I working on".
 argument-hint: ""
@@ -12,14 +12,14 @@ allowed-tools: Read, Glob, Grep, Bash(git log *), Bash(git branch *), Bash(git s
 
 # Continue Session
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
 - Find the resume point in this order, and stop at the first hit. Do not search the tree, and skip step 1's glob list.
-  1. `.claude/memory/build-phase.json`, whatever its age: its `plan_path`, `step` and `phase` say where to resume (`between-steps`: start that step; otherwise resume that step at that phase). If `plan_path` is missing or gone, use 2. Run `grep -n` for that step in the plan (`## Build Progress` and the step's heading) and read only those lines.
-  2. Otherwise the newest `.claude/memory/*.md` handoff, plus `git status -sb`.
+  1. `.pi/dev-team/memory/build-phase.json`, whatever its age: its `plan_path`, `step` and `phase` say where to resume (`between-steps`: start that step; otherwise resume that step at that phase). If `plan_path` is missing or gone, use 2. Run `grep -n` for that step in the plan (`## Build Progress` and the step's heading) and read only those lines.
+  2. Otherwise the newest `.pi/dev-team/memory/*.md` handoff, plus `git status -sb`.
 - Step 4: do not ask "Resume from here?" and do not wait for an answer. Print `Resuming Step N.M of <plan>` and go on. When the arguments name a goal, resume that. When the state is unclear, for example two plans in progress, take the most recent one and name the other in one line, so the user can steer later.
-<!-- pi-port-notes -->
+<!-- pi-notes -->
 
 
 Role: orchestrator. This command resumes work from a prior session — it does not start new work.
@@ -30,7 +30,7 @@ You have been invoked with the `/continue` command.
 
 ## Orchestrator constraints
 
-1. Resume from .claude/memory/ progress files; do not restart completed phases.
+1. Resume from .pi/dev-team/memory/ progress files; do not restart completed phases.
 2. Summarize prior state; do not replay full history.
 3. **Be concise.** Report where work resumes, no narration.
 
@@ -38,18 +38,18 @@ You have been invoked with the `/continue` command.
 
 ### 1. Scan for in-progress work
 
-Find phase progress files with `Glob(".claude/memory/*.md")` — never `Read` the bare `.claude/memory/` directory to see what it contains (`${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md`). These follow the pattern:
+Find phase progress files with `Glob(".pi/dev-team/memory/*.md")` — never `Read` the bare `.pi/dev-team/memory/` directory to see what it contains (`${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md`). These follow the pattern:
 
-- `.claude/memory/research-progress-*.md` — Research phase output
-- `.claude/memory/plan-progress-*.md` — Plan phase output
-- `.claude/memory/implementation-progress-*.md` — Implementation phase output
-- `.claude/memory/decisions.md` — Accumulated decision log
+- `.pi/dev-team/memory/research-progress-*.md` — Research phase output
+- `.pi/dev-team/memory/plan-progress-*.md` — Plan phase output
+- `.pi/dev-team/memory/implementation-progress-*.md` — Implementation phase output
+- `.pi/dev-team/memory/decisions.md` — Accumulated decision log
 
 Also check (same rule — `Glob`, not a directory `Read`):
 
 - `plans/` directory for active plan files
 - `docs/specs/` for design documents without corresponding implementation — or, on a repo that opted into `/specs`' issue-first persistence convention, a `--spec-issue <url>` reference recorded in the active plan instead of a file
-- `.claude/review-summaries/` for recent review results
+- `.pi/dev-team/review-summaries/` for recent review results
 - `corrections/` for unapplied code review fixes
 
 ### 2. Check git state

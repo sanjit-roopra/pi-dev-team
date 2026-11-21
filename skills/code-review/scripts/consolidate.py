@@ -4,7 +4,7 @@
 Split into a **pure** ``consolidate(sections)`` (takes a list of section dicts,
 returns the aggregated object) and a thin ``main()`` that reads
 ``.dev-team-reports/code-review/raw/section-*.json`` and calls it — the same
-main-wraps-pure convention as ``check_version_drift.py``/``lesson_validate.py``,
+main-wraps-pure convention as ``lesson_validate.py``,
 so the aggregation logic is unit-tested with plain dicts and no filesystem.
 
 Consolidation:

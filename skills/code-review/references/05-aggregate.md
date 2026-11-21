@@ -1,5 +1,4 @@
-<!-- step 5 (aggregation, ACCEPTED-RISKS, health scoring, round 1 record, consolidation). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 5 (aggregation, ACCEPTED-RISKS, health scoring, round 1 record, consolidation). Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 ### 5. Aggregate results
 
 **Fold in dispatch failures first (issue #1752).** Before scoring or suppression, add every step 4 `dispatchFailures` entry (agents that failed dispatch, then failed their single retry) to the aggregation. They are not agent results — they carry no `issues[]` and never enter ACCEPTED-RISKS suppression or health scoring — but they are never dropped either: carry the full `dispatchFailures` list through to the report (step 7) and the `--json` object (`output-format.md`) unchanged, and remember it for step 9's gate condition.
@@ -39,7 +38,7 @@ Classify each issue by actionability:
 #### 5b-i. Record round 1 (#1624)
 
 The initial panel is **round 1**. Append its row to
-`.claude/metrics/review-value.jsonl` now, before any fix is applied — this
+`.pi/dev-team/metrics/review-value.jsonl` now, before any fix is applied — this
 stream is what makes #1623's "is this churn or value?" question answerable at
 all, and a row written only on the happy path would bias every derived metric:
 
@@ -53,7 +52,7 @@ all, and a row written only on the happy path would bias every derived metric:
 > value; nothing in this skill needs to run it.
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/review_round_log.py" \
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/review_round_log.py" \
   --round 1 --agents "<comma-separated agents dispatched>" \
   --findings <path-to-this-round's-findings.json> \
   --purpose discovery --outcome "<fixed|no-op|escalated>"

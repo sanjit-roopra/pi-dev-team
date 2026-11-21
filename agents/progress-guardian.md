@@ -14,9 +14,9 @@ Cites:
 - directory-enumeration
 Enforcement: script
 
-> **Implemented by:** ${CLAUDE_PLUGIN_ROOT}/scripts/progress_guardian.py
+> **Implemented by:** ${DEV_TEAM_ROOT}/scripts/progress_guardian.py
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=on track, warn=drift detected, fail=plan violation or scope creep
 Severity: error=skipped step or plan deviation, warning=uncommitted work accumulating, suggestion=consider committing
@@ -28,7 +28,7 @@ Context needs: full-file (reads plan + git state)
 
 Produces `{"status": "skip", "issues": [], "summary": "No active plan found"}` when:
 
-- No plan files exist in `plans/` or `.claude/memory/` — check with `Glob("plans/**")` / `Glob(".claude/memory/**")`, never a bare `Read` of the directory (`${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md`, Whole-file load: a short single-rule reference)
+- No plan files exist in `plans/` or `.pi/dev-team/memory/` — check with `Glob("plans/**")` / `Glob(".pi/dev-team/memory/**")`, never a bare `Read` of the directory (`${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md`, Whole-file load: a short single-rule reference)
 - The current task has no associated plan
 
 ## What the script detects
@@ -64,7 +64,7 @@ This agent is read-only — it cannot run tests itself, so it must never *infer*
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these progress-guardian-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these progress-guardian-specific challenges:
 
 - Did you check EVERY plan step's status against actual git state, not just the most recent one?
 - For each "step complete" claim, did you confirm fresh test evidence exists rather than trust the `[x]` mark? ("Marked complete" is not "demonstrated complete.")

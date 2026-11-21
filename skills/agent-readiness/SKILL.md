@@ -5,7 +5,7 @@ description: >-
   the Agent-Readiness Scorecard. Use when the user asks "how agent-ready is this
   repo", "score this repo for agents", "agent readiness", or wants a tiered
   readiness report. Scores YOUR project repo's readiness — not the dev-team
-  plugin's own review agents and routing (for that, use /harness-audit).
+  package's own review agents and routing (for that, use /harness-audit).
 argument-hint: "[repo-path] [--json <file>] [--markdown <file>]"
 user-invocable: true
 allowed-tools: >-
@@ -20,7 +20,7 @@ per-criterion evidence.
 
 > **Not `/harness-audit`.** This scores the **subject repository** (your
 > project's build, code quality, docs, and version-control hygiene) from a
-> static checkout. `/harness-audit` audits the **dev-team plugin's own harness**
+> static checkout. `/harness-audit` audits the **dev-team package's own harness**
 > (review-agent effectiveness, model tiers, orchestration) from accumulated
 > runtime metrics. Different subject, different input, different output.
 
@@ -82,7 +82,7 @@ Manual review only (never scored): C3, S3, D4, **D7_reference_implementation**
 ## Run
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/agent-readiness/scanner.py" [REPO_PATH] \
+python3 "${DEV_TEAM_ROOT}/skills/agent-readiness/scanner.py" [REPO_PATH] \
   [--json out.json] [--markdown out.md]
 ```
 

@@ -4,7 +4,7 @@ render `_Not applicable — <reason>._` so the shape of the report never changes
 between runs.
 
 **Template source.** Copy
-`plugins/dev-team/skills/test-improve/templates/executive-summary.md` to the
+`${DEV_TEAM_ROOT}/skills/test-improve/templates/executive-summary.md` to the
 output path.
 
 **Output path.** `.dev-team-reports/test-improve/<slug>/report-<date>.md` —
@@ -18,7 +18,7 @@ the git-tracked `.dev-team-reports/test-improve/<slug>/data/` directory
 `baseline-coverage.json`, `baseline-mutation.json` in `baseline+kill-loop`
 mode, and `coverage-history.json` — each already current there, written
 directly at the point of capture by Phase 2 and Phase 5 respectively), and the
-process/audit state still under `.claude/memory/test-improve/<slug>/`
+process/audit state still under `.pi/dev-team/memory/test-improve/<slug>/`
 (`phase-0.md`, `phase-1.md`, `phase-4.md`, `phase-5-review.json`,
 `phase-7-review.json` if Phase 7 ran, `waivers.json`, `phase-8.md`), plus
 `.dev-team-reports/test-improve/<slug>/refactor-backlog.md` if Phase 6 chose
@@ -49,14 +49,14 @@ are never omitted or hidden — this keeps the report shape stable across runs.
 **Parent-issue-or-FEATURE.md link update.** When the run used a **parent
 tracker** (Phase 0 selected `--parent <url>`), the parent issue is updated
 with a link to `.dev-team-reports/test-improve/<slug>/report-<date>.md`. When
-the run was **local-files-only**, `.claude/plans/test-improve/FEATURE.md` is
+the run was **local-files-only**, `.pi/dev-team/plans/test-improve/FEATURE.md` is
 updated with the same link.
 
 **Regeneratable-from-tracked-data contract.** The report is a **pure
 function** of the git-tracked `.dev-team-reports/test-improve/<slug>/data/`
 directory (the numbers, already current by construction — each file was
 written directly there at the point of capture) plus the process/audit
-narrative still under `.claude/memory/test-improve/<slug>/`. Deleting the
+narrative still under `.pi/dev-team/memory/test-improve/<slug>/`. Deleting the
 report file and re-invoking Phase 9 reproduces the report byte-for-byte —
 there is no copy step to re-run, and always exactly one place to read the
 numbers from; Phase 9 always reads `data/` directly, unconditionally.

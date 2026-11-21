@@ -81,8 +81,8 @@ FAST_PATH_AGENTS = [
 # Path segments marking the review/gate machinery itself. A change here is
 # exactly the case where a cheap, self-certifying review is a safety problem,
 # so it always disqualifies, regardless of size. Narrower than
-# `change_shape.py`'s "functional Claude-config" carve-out (agents/,
-# knowledge/, .claude/, templates/) — those stay eligible for the fast path
+# `change_shape.py`'s "functional agent-config" carve-out (agents/,
+# knowledge/, templates/, ...) — those stay eligible for the fast path
 # when small enough, since issue #1331's own motivating example touches
 # `knowledge/agent-registry.md` and an `agents/` file and is exactly the case
 # this gate must unblock.

@@ -25,7 +25,7 @@ replacement — see the issue's Non-goals). This is not a general-purpose
 shell parser.
 
 Fails OPEN on any internal error, with one audit line in
-`.claude/metrics/refactor-freeze.jsonl` (hook="bash-freeze") — a broken
+`.pi/dev-team/metrics/refactor-freeze.jsonl` (hook="bash-freeze") — a broken
 guard must never block work.
 """
 

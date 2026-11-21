@@ -1,14 +1,14 @@
 /**
- * Agent discovery and Claude Code -> pi mapping.
+ * Agent discovery and the mapping of agent frontmatter to pi.
  *
- * Agent files keep their upstream Claude Code frontmatter unchanged:
+ * Agent files use this frontmatter (tool names are the hook-protocol names: Read, Grep, Glob, Agent, ...):
  *   name, description, tools ("Read, Grep, Glob, ..."), model (opus|sonnet|haiku|fable|inherit|provider/id),
  *   effort (low|medium|high|...), skills (list), color, memory.
  * They are mapped to pi at dispatch time.
  *
  * Lookup order (first wins):
- *   <project>/.pi/agents, <project>/.claude/agents   (project overrides, e.g. /setup's activated templates)
- *   <package>/agents                                  (upstream dev-team agents + port-provided Explore/general-purpose)
+ *   <project>/.pi/agents   (project overrides, e.g. /setup's activated templates)
+ *   <package>/agents       (the package's agents, Explore and general-purpose included)
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -24,8 +24,8 @@ export { DEV_TEAM_SUBAGENT_TOOL };
 export interface AgentDef {
 	name: string;
 	description: string;
-	/** Raw Claude tool list from frontmatter (undefined = all default tools). */
-	claudeTools?: string[];
+	/** Raw tool list from frontmatter, hook-protocol names (undefined = all default tools). */
+	hookTools?: string[];
 	/** Tier name or explicit provider/model id. */
 	model?: string;
 	effort?: string;
@@ -44,7 +44,7 @@ type AgentFrontmatter = {
 	skills?: unknown;
 };
 
-/** Split a Claude tools string on top-level commas: "Read, Bash(npx playwright *), Grep". */
+/** Split a frontmatter tools string on top-level commas: "Read, Bash(npx playwright *), Grep". */
 export function splitToolList(value: unknown): string[] | undefined {
 	if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string").map((v) => v.trim());
 	if (typeof value !== "string") return undefined;
@@ -72,7 +72,7 @@ function toStringList(value: unknown): string[] {
 export function parseAgentFile(filePath: string, source: AgentSource): AgentDef | undefined {
 	let content = readSmallFile(filePath);
 	if (content === undefined) return undefined;
-	// Upstream files sometimes have a blank line right after the opening '---'.
+	// Some agent files have a blank line right after the opening '---'.
 	content = content.replace(/^---\r?\n\s*\r?\n/, "---\n");
 	let frontmatter: AgentFrontmatter;
 	let body: string;
@@ -85,7 +85,7 @@ export function parseAgentFile(filePath: string, source: AgentSource): AgentDef 
 	return {
 		name: frontmatter.name,
 		description: frontmatter.description,
-		claudeTools: splitToolList(frontmatter.tools),
+		hookTools: splitToolList(frontmatter.tools),
 		model: typeof frontmatter.model === "string" ? frontmatter.model.trim() : undefined,
 		effort: typeof frontmatter.effort === "string" ? frontmatter.effort.trim() : undefined,
 		skills: toStringList(frontmatter.skills),
@@ -111,13 +111,13 @@ function loadDir(dir: string, source: AgentSource): AgentDef[] {
 	return out;
 }
 
-/** Project agents (.pi/agents, .claude/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
+/** Project agents (.pi/agents) first, then the package's. Pass `includeProject: ctx.isProjectTrusted()`. */
 export function discoverAgents(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, AgentDef> {
 	return byName([...(opts.includeProject ? loadProjectAgents(cwd) : []), ...loadDir(path.join(packageRoot, "agents"), "package")]);
 }
 
 function loadProjectAgents(cwd: string): AgentDef[] {
-	return [...loadDir(path.join(cwd, ".pi", "agents"), "project"), ...loadDir(path.join(cwd, ".claude", "agents"), "project")];
+	return loadDir(path.join(cwd, ".pi", "agents"), "project");
 }
 
 /** First definition of each name wins. */
@@ -127,7 +127,7 @@ function byName(defs: AgentDef[]): Map<string, AgentDef> {
 	return map;
 }
 
-/** Requested agents that resolve to a project agent (.pi/agents, .claude/agents). */
+/** Requested agents that resolve to a project agent (.pi/agents). */
 export function projectAgentsRequested(agents: Map<string, AgentDef>, requested: string[]): AgentDef[] {
 	const out = new Map<string, AgentDef>();
 	for (const name of requested) {
@@ -155,7 +155,7 @@ export function discoverDispatchAgents(
 	return { agents: byName(packaged), skippedProjectAgents: projectAgentsRequested(all, requested.filter(Boolean)).map((d) => d.name) };
 }
 
-/** Accept Claude-style qualified names ("dev-team:security-review") and case differences. */
+/** Accept qualified names ("dev-team:security-review") and case differences. */
 export function resolveAgentName(agents: Map<string, AgentDef>, requested: string): AgentDef | undefined {
 	const bare = requested.trim().replace(/^[\w-]+:/, "");
 	if (agents.has(bare)) return agents.get(bare);
@@ -164,7 +164,7 @@ export function resolveAgentName(agents: Map<string, AgentDef>, requested: strin
 	return undefined;
 }
 
-const CLAUDE_TO_PI_TOOL: Record<string, string[]> = {
+const HOOK_TO_PI_TOOL: Record<string, string[]> = {
 	read: ["read"],
 	grep: ["grep"],
 	glob: ["find", "ls"],
@@ -185,15 +185,15 @@ const CLAUDE_TO_PI_TOOL: Record<string, string[]> = {
 
 export interface ToolMapping {
 	tools: string[];
-	/** Claude entries with no pi equivalent (reported, not fatal). */
+	/** Frontmatter entries with no pi equivalent (reported, not fatal). */
 	unmapped: string[];
 	/** Scoped Bash grants like "Bash(npx playwright *)" — pi cannot scope bash; recorded for the prompt. */
 	scopedBash: string[];
 }
 
-/** Rewrite a Claude-plugin MCP tool name to pi's `mcp__<server>__<tool>` naming. */
+/** Rewrite a plugin-namespaced MCP tool name to pi's `mcp__<server>__<tool>` naming. */
 function normaliseMcpName(name: string): string {
-	// Claude plugin-provided servers are named mcp__plugin_<plugin>_<server>__tool.
+	// Agent frontmatter may name a server as mcp__plugin_<plugin>_<server>__tool.
 	const m = name.match(/^mcp__plugin_[^_]+(?:_[^_]+)*?_([^_]+)__(.+)$/);
 	if (m) return `mcp__${m[1]}__${m[2]}`;
 	return name;
@@ -204,16 +204,16 @@ function globToRegex(glob: string): RegExp {
 }
 
 /**
- * Map a Claude tool list to pi tool names.
+ * Map a frontmatter tool list to pi tool names.
  * @param available names of tools registered in the parent pi session (for MCP pattern expansion)
  */
-export function mapTools(claudeTools: string[] | undefined, available: string[]): ToolMapping | undefined {
-	if (!claudeTools) return undefined;
+export function mapTools(hookTools: string[] | undefined, available: string[]): ToolMapping | undefined {
+	if (!hookTools) return undefined;
 	const tools = new Set<string>();
 	const unmapped: string[] = [];
 	const scopedBash: string[] = [];
 	let plainBash = false;
-	for (const raw of claudeTools) {
+	for (const raw of hookTools) {
 		const entry = raw.trim();
 		if (!entry) continue;
 		if (entry.startsWith("mcp__")) {
@@ -228,7 +228,7 @@ export function mapTools(claudeTools: string[] | undefined, available: string[])
 		if (scoped && base === "bash") scopedBash.push(scoped[2]);
 		// Plain Bash grants all of bash, so scoped grants no longer limit it.
 		else if (base === "bash") plainBash = true;
-		const mapped = CLAUDE_TO_PI_TOOL[base];
+		const mapped = HOOK_TO_PI_TOOL[base];
 		if (mapped === undefined) {
 			// Already a pi tool name?
 			if (available.includes(entry)) tools.add(entry);
@@ -289,7 +289,7 @@ export function shownModelId(id: unknown, isKnownModel: (id: string) => boolean 
 
 /**
  * One guide line naming the model each tier resolves to in this session, so the orchestrator can tell
- * whether a dispatch at a stronger tier would run on a different model (see the /build port note).
+ * whether a dispatch at a stronger tier would run on a different model (see the /build pi note).
  * Empty when the table names no known tier, or is not a table at all (a project file can set it).
  */
 export function tierModelsLine(tiers: unknown, sessionModel: string | undefined, isKnownModel?: (id: string) => boolean): string {

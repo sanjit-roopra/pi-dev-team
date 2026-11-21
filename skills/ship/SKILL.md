@@ -15,11 +15,11 @@ allowed-tools: Read, Glob, Grep, Bash(gh pr *), Bash(gh issue *), Bash(git branc
 
 # Ship
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
-**Pass the saved request on.** The extension saves the text after `/ship` only when it holds a feature description, not just issue numbers, URLs or flags. When the invocation names a saved request file (`.claude/memory/requests/ship-*.md`), add `Source request: <path>` to the arguments of every `/specs` and `/plan` call, so each phase reads the user's own words, not a summary of them. Flags in that file are command options, not requirements. When the invocation also names issues, their bodies are part of the request as well; the saved file does not replace them. With no saved file (the input is an issue reference), the issue body is the request and no `Source request:` is passed.
-<!-- pi-port-notes -->
+**Pass the saved request on.** The extension saves the text after `/ship` only when it holds a feature description, not just issue numbers, URLs or flags. When the invocation names a saved request file (`.pi/dev-team/memory/requests/ship-*.md`), add `Source request: <path>` to the arguments of every `/specs` and `/plan` call, so each phase reads the user's own words, not a summary of them. Flags in that file are command options, not requirements. When the invocation also names issues, their bodies are part of the request as well; the saved file does not replace them. With no saved file (the input is an issue reference), the issue body is the request and no `Source request:` is passed.
+<!-- pi-notes -->
 
 
 Role: orchestrator. This command chains the existing pipeline skills end to end; it
@@ -35,7 +35,7 @@ You have been invoked with the `/ship` command.
 2. **Honor the human gates.** Do not advance past a gate without explicit approval —
    this command sequences phases, it does not remove their review points.
 3. **Confirm the approach first.** Before planning, screen the request against
-   `${CLAUDE_PLUGIN_ROOT}/knowledge/decision-defaults.md` and confirm any ambiguous high-reversal-cost axis
+   `${DEV_TEAM_ROOT}/knowledge/decision-defaults.md` and confirm any ambiguous high-reversal-cost axis
    (replace-vs-merge, format fidelity, migrate-vs-edit-stub, scope) in one batch.
 4. **Be concise.** Report each phase's outcome and the next gate, nothing more.
 5. **Agent-dispatch capability is a pipeline-wide precondition, enforced by the delegated skills, not duplicated here (issue #1461).** `/plan` (Step 5b), `/build` (Steps 3, 4, 6), and `/code-review` (Step 4) each independently confirm the `Agent`/`Task` tool is present before dispatching any review agent, and each hard-fails — STOP, no self-applied review, no gate file written — when it is missing. `/ship` does not re-check or restate that logic; if a delegated phase halts on missing dispatch capability, `/ship` reports that halt and stops with it (per constraint 2, "Honor the human gates") rather than working around it or advancing past the phase that failed.
@@ -78,15 +78,15 @@ At the start of each phase below (2-6), append one state-transition event so
 even when a phase resumes/monitors rather than running fresh:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/workflow_state.py" record \
-  --workflow ship --prior-state <PRIOR> --new-state <NEW> --session "$CLAUDE_SESSION_ID"
+python3 "${DEV_TEAM_ROOT}/hooks/lib/workflow_state.py" record \
+  --workflow ship --prior-state <PRIOR> --new-state <NEW> --session "$DEV_TEAM_SESSION_ID"
 ```
 
 Map phases to canonical states: Spec→`SPEC`, Plan→`PLAN`, Build→`BUILD`,
 Review→`REVIEW`, PR→`PR` (an extra `COMMIT` transition is optional — most
 commits happen inside `/build`). Omit `--prior-state` only for the very first
 transition of a run. This is a model-authored, fail-open append (same
-convention as `.claude/metrics/review-value.jsonl`) — never let it block a phase.
+convention as `.pi/dev-team/metrics/review-value.jsonl`) — never let it block a phase.
 
 ## Iteration journal gate (#1168)
 
@@ -95,16 +95,16 @@ decision entry and confirm the gate allows advancement — a hard block,
 distinct from the advisory, plan-step-keyed `progress-guardian` gate:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/iteration_journal_gate.py" record \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/iteration_journal_gate.py" record \
   --round-id "<issue-identifier>" \
   --attempted "<short note: which phase just ran>" \
   --outcome "<short note: passed|failed|blocked>" \
   --next-action "<short note: next phase or stop>" \
-  --session "$CLAUDE_SESSION_ID"
+  --session "$DEV_TEAM_SESSION_ID"
 
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/iteration_journal_gate.py" check \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/iteration_journal_gate.py" check \
   --round-id "<issue-identifier>" \
-  --session "$CLAUDE_SESSION_ID"
+  --session "$DEV_TEAM_SESSION_ID"
 ```
 
 `<issue-identifier>` is the same identifier the Step 1a resume guard resolves
@@ -133,7 +133,7 @@ deterministic guard (issue numbers are separate argv elements, validated
 `^[0-9]+$`; the script rejects anything else):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ship_resume_guard.py" --issues <n1[,n2,...]>
+python3 "${DEV_TEAM_ROOT}/scripts/ship_resume_guard.py" --issues <n1[,n2,...]>
 ```
 
 It probes PR state (`Closes #N` bodies and `issue-<N>` / `issues-<n1>-<n2>-...`
@@ -157,7 +157,7 @@ Parse Arguments.
 #### 1b. Approach screen
 
 Once the guard confirms a genuine first run (or `--force-restart` was given),
-screen the request against `${CLAUDE_PLUGIN_ROOT}/knowledge/decision-defaults.md`. Surface any ambiguous
+screen the request against `${DEV_TEAM_ROOT}/knowledge/decision-defaults.md`. Surface any ambiguous
 axis to the user in a single batch and get the answers before proceeding. Stop here if
 a genuinely blocking ambiguity remains.
 
@@ -199,7 +199,7 @@ suite.
 First check whether `/build`'s checkpoints already reviewed this exact change:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ship_review_gate.py" --files <the branch's changed files>
+python3 "${DEV_TEAM_ROOT}/scripts/ship_review_gate.py" --files <the branch's changed files>
 ```
 
 `{"skip": true}` means every applicable lens has a ledger `pass` at each file's
@@ -225,7 +225,7 @@ lands once checks pass. **Human gate** — the PR is the final review artifact.
 When `--issues` was given, the resulting PR body must carry one `Closes #<N>`
 line per member issue — not just one — so merging it closes every batch
 member. `/pr`'s existing closing-keyword-lint guidance
-(`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_close_keyword_lint.py"`, see
+(`python3 "${DEV_TEAM_ROOT}/scripts/pr_close_keyword_lint.py"`, see
 `skills/pr/SKILL.md`) needs no change to support this: it already lints each
 `Closes #<N>` line independently, so a batch PR body simply carries more of
 them. `/ship` confirms the created PR body actually carries one such line

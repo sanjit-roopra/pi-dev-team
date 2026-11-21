@@ -62,7 +62,7 @@ Inventory tests by layer (unit / integration / component / contract / E2E). Deri
 Classify coverage across the four quadrants (`testing-quadrants.md`) as strong / thin / empty, and for each gap name the **business impact** of leaving it empty (e.g. empty Q3 → no human catches confusing flows; empty Q4 → non-functional failures reach prod).
 
 **Gherkin scenarios as a Q2 signal.** Run `python3
-${CLAUDE_PLUGIN_ROOT}/scripts/detect_bdd_convention.py` (the same detection
+${DEV_TEAM_ROOT}/scripts/detect_bdd_convention.py` (the same detection
 `/gherkin-derive` and `/plan` already use) to locate the project's
 `.feature` directory. When a directory is reported, enumerate its scenario
 titles (`Scenario:` / `Scenario Outline:` lines) and count them as an
@@ -195,7 +195,7 @@ When `--pdf` was passed, render that report to a sibling PDF per
 `knowledge/report-pdf-integration.md` (additive; non-fatal if no engine):
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/test-health-<date>.md
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/test-health-<date>.md
 ```
 
 ## Output
@@ -253,7 +253,7 @@ omit this section entirely when there are none>
 - Repository: `<repo path>`
 - Branch / SHA: `<branch>` / `<sha>`
 - Run parameters: `<flags — e.g. --path <dir>>`
-- `dev-team` plugin version: `<plugin_version>`
+- `dev-team` package version: `<plugin_version>`
 ```
 
 ## Integration

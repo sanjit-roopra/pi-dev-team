@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""bash_retry_guard — Claude Code PreToolUse hook (Python port of bash-retry-guard.sh).
+"""bash_retry_guard — PreToolUse hook.
 
 Detects repeated identical Bash commands within a session. After THRESHOLD
 consecutive identical commands, nudges the agent to vary its approach
 rather than re-running the same failing command.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin
     Output: advisory nudge on stdout when threshold reached
     Exit  : always 0 (advisory — never blocks)
@@ -105,7 +105,7 @@ def _cksum(text: str) -> str:
     stable stdlib hash — byte-parity with the .sh is NOT required here
     because the state file is a private per-session artifact never
     surfaced to the user or committed to the repo. Determinism within
-    the Python port is sufficient.
+    this hook is sufficient.
     """
     return str(zlib.crc32(text.encode("utf-8")) & 0xFFFFFFFF)
 

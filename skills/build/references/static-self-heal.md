@@ -8,7 +8,7 @@ mechanism — scoping, lanes, the shared fix loop, the attempt cap, detection
 and provider binding, granularity, ordering, and metrics. Language lanes
 (which tools, exact invocations, flags, adapters, install scripts) are
 registered separately in the [**Build-time lanes** registry](../../static-analysis-integration/references/tool-configs.md)
-(`${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/references/tool-configs.md`)
+(`${DEV_TEAM_ROOT}/skills/static-analysis-integration/references/tool-configs.md`)
 and must not restate anything specified here.
 
 This pass is additive to, and does not modify, `/code-review`'s existing
@@ -48,7 +48,7 @@ slots** — an optional **autofix** slot (mechanical pre-fix) and an optional
 **diagnostic** slot (verify) — each carrying an **ordered provider list**,
 plus a detection probe per candidate provider. Lanes are registered in the
 "Build-time lanes" section of
-`${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/references/tool-configs.md`.
+`${DEV_TEAM_ROOT}/skills/static-analysis-integration/references/tool-configs.md`.
 
 **Zero registered lanes make this pass a structural no-op**: every partition
 is empty, every lane skips, and the checkpoint proceeds unchanged. A language
@@ -101,7 +101,7 @@ tool-map. Per slot, probes walk the **ordered provider list** in order and
 later providers are not probed once one binds.
 
 **Bind, don't replace:** an existing, configured tool is never displaced by
-the plugin's default. The default heads each list and doubles as the
+the package's default. The default heads each list and doubles as the
 **last-resort provider** — the one the rung-3 install hint and
 `/project-init` install, and only when no recognized provider is found.
 `/build` itself never installs anything. (The default counts as configured by
@@ -237,7 +237,7 @@ always see a mechanically clean (or explicitly annotated) diff.
 
 ## Metrics — fold into the existing sensor
 
-Each checkpoint already appends one line to `.claude/metrics/review-value.jsonl`
+Each checkpoint already appends one line to `.pi/dev-team/metrics/review-value.jsonl`
 (step 4 sub-step 7). The static pass folds into that same record — no new
 file, one sensor: lane tools are appended to `agents_run`, deterministic
 findings/fixes are included in `issues_found`/`issues_fixed`, static attempts

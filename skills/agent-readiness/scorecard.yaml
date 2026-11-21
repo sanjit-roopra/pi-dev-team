@@ -85,4 +85,4 @@ source_extensions: [".py", ".js", ".ts", ".jsx", ".tsx", ".go", ".rs", ".java",
 # Directory names excluded from C4 (generated/vendored).
 exclude_dirs: [".git", "node_modules", "vendor", "dist", "build", "__pycache__",
                ".venv", "venv", "target", "out", ".next", "coverage",
-               ".claude/worktrees", "graphify-out", ".cache", ".dev-team-reports"]
+               ".pi/dev-team/worktrees", "graphify-out", ".cache", ".dev-team-reports"]

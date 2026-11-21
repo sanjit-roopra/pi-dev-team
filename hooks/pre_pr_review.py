@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""pre_pr_review — Claude Code PreToolUse:Bash hook (#1886).
+"""pre_pr_review — PreToolUse:Bash hook (#1886).
 
 Successor to `hooks/pre_commit_review.py`'s review-corroboration gate.
 Design decision (issue #1886, resolved): the gate moves from `git commit` to
@@ -43,14 +43,14 @@ WHAT CHANGED, MECHANICALLY, FROM THE COMMIT-TIME GATE:
   the window's only real question is "did genuine, distinct review-agent
   dispatches occur recently, for THIS exact branch-diff content" — not "did
   they happen within `WINDOW_SECONDS` of an arbitrary earlier file write".
-- **Gate file**: `.claude/memory/.pr-review-passed` (new; distinct from
-  `.claude/memory/.review-passed`, whose only remaining writer/reader is now
+- **Gate file**: `.pi/dev-team/memory/.pr-review-passed` (new; distinct from
+  `.pi/dev-team/memory/.review-passed`, whose only remaining writer/reader is now
   historical prose — see `pre_commit_review.py`'s docstring).
 - **Bypass**: `PR_GATE_BYPASS_REASON` (an env var, not a `--no-verify`/`-n`
   command-line flag — `gh pr create` has no such native flag to key off).
   Mirrors #709's pattern for the ORIGINAL commit-time gate: when set to a
   non-empty value, the PR is allowed and the bypass is durably logged to
-  `.claude/metrics/gate-bypass-audit.jsonl` (the SAME stream, distinguished
+  `.pi/dev-team/metrics/gate-bypass-audit.jsonl` (the SAME stream, distinguished
   by `triggeredBy: "PR_GATE_BYPASS_REASON"`); when unset, the ordinary gate
   evaluation applies — there is no separate "you tried to bypass but forgot
   the reason" message, because there is no separate flag to detect trying
@@ -70,7 +70,7 @@ internally, so requiring a SECOND, separate top-level dispatch on top of
 that bought no additional corroboration — it only produced false blocks on
 a legitimately-reviewed branch (e.g. a single `--agent <name>` review, or a
 session whose panel dispatch shape records fewer ledger rows than a prior
-plugin version did). The single-agent exemption event
+package version did). The single-agent exemption event
 (`single-agent-review-exempt`) is consequently now redundant with the
 ordinary count check for the case it was built for — kept anyway, since it
 is a harmless, already-audited alternate path, not because anything still
@@ -94,7 +94,7 @@ DELIBERATELY DROPPED, not carried forward from `pre_commit_review.py`
    already committed to the branch).
 
 CLOSED (#1886 follow-up, extended by #1904 Bug 2b): `skills/code-review/SKILL.md`
-step 9 WRITES `.claude/memory/.pr-review-passed` with a hash bound to the
+step 9 WRITES `.pi/dev-team/memory/.pr-review-passed` with a hash bound to the
 branch diff (`branch_diff_gate_hash(default_base_ref(cwd), cwd)`, via this
 module's own `review_gate_hash.py --branch-diff` CLI mode), for an
 auto-scoped uncommitted-changes review OR a `--since <base>`-scoped one
@@ -125,15 +125,13 @@ re-review now closes cleanly per the paragraph above, or the audited
 
 `gh_pr_create_detect.is_gh_pr_create_command`'s own docstring discloses its
 detection gap (no `<shell> -c` unwrapping, no command-substitution
-unwrapping, ...) — a much lighter heuristic than
-`pre_commit_detect.is_git_commit_command`'s five-round-hardened one; see
-that module's own docstring for why that difference is a deliberate,
-disclosed scope decision, not an oversight.
+unwrapping, ...) — a deliberately light heuristic; see that module's own
+docstring for why this is a disclosed scope decision, not an oversight.
 
-Contract (docs/python-hook-contract.md):
-    Input : JSON on stdin (Claude Code PreToolUse:Bash payload)
+Contract:
+    Input : JSON on stdin (PreToolUse:Bash payload)
     Exit 0: allow the tool call
-    Exit 2: block the tool call (feedback returned to Claude on stdout,
+    Exit 2: block the tool call (feedback returned to the model on stdout,
             mirrored to stderr — see `_emit_block`)
 
 Stdlib-only.
@@ -201,8 +199,7 @@ except ImportError:  # pragma: no cover - degraded-import fallback
     def _resolve_file(  # type: ignore[misc]
         category: str, filename: str, root=None, migrate: bool = True
     ) -> Path:
-        repo_root = Path(__file__).resolve().parents[3]
-        return repo_root / ".claude" / category / filename
+        return Path(root or Path.cwd()) / ".pi" / "dev-team" / category / filename
 
     def _emit_boundary_event(*_args, **_kwargs) -> None:  # type: ignore[misc]
         return None
@@ -327,15 +324,15 @@ _DIFFERENT_CONTENT_MESSAGE = (
 
 _READ_FAILURE_MESSAGE = (
     "BLOCKED: Could not read the dispatch ledger "
-    "(.claude/metrics/boundary-events.jsonl) — check hook registration; "
+    "(.pi/dev-team/metrics/boundary-events.jsonl) — check hook registration; "
     "this is an infra problem, not evidence that no review happened.\n"
     "\n" + _BYPASS_HINT
 )
 
 _GATE_SETUP_FAILURE_MESSAGE = (
     "BLOCKED: Could not determine the review-gate's own state (the branch "
-    "diff or the .claude/memory/.pr-review-passed path) — check that "
-    ".claude/memory is a writable directory and the git repository is "
+    "diff or the .pi/dev-team/memory/.pr-review-passed path) — check that "
+    ".pi/dev-team/memory is a writable directory and the git repository is "
     "healthy; this is an infra problem, not evidence that no review "
     "happened.\n"
     "\n" + _BYPASS_HINT
@@ -408,7 +405,7 @@ def _current_branch(cwd: str | None = None) -> str:
 
 
 def _plugin_version() -> str:
-    manifest = _HOOK_DIR / ".." / ".claude-plugin" / "plugin.json"
+    manifest = _HOOK_DIR / ".." / "package.json"
     try:
         data = json.loads(manifest.read_text())
         version = data.get("version")
@@ -421,7 +418,7 @@ def _plugin_version() -> str:
 
 def _record_bypass_audit(reason: str, file_count: int, cwd: str) -> None:
     """Append one accountability line to
-    <project-root>/.claude/metrics/gate-bypass-audit.jsonl — the SAME
+    <project-root>/.pi/dev-team/metrics/gate-bypass-audit.jsonl — the SAME
     stream `pre_commit_review.py`'s `--no-verify` bypass used, distinguished
     by `triggeredBy`. Fail-open: any failure to resolve the path, create the
     directory, or write the line logs a diagnostic to stderr and never

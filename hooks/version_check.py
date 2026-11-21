@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Python port of hooks/version-check.sh (#609 / #572 Phase 3).
+"""version_check — PostToolUse hook (#609 / #572 Phase 3).
 
-Claude Code PostToolUse hook — checks once per day whether the plugin repo
-has upstream updates. If updates are available, prints a notice suggesting
+PostToolUse hook — checks once per day whether the package's git checkout
+is behind its `origin` remote. If updates are available, prints a notice suggesting
 `/upgrade`.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PostToolUse JSON on stdin (ignored)
     Output: Update notice on stdout, or nothing if up-to-date
     Cache : /tmp/adt-version-check-<date> — daily cache prevents repeated
             checks; replays cached message if any
     Exit  : Always 0 (advisory, never blocks)
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def _cache_dir() -> Path:
     The bash script writes to `/tmp/adt-version-check-<date>` unconditionally
     — no `${TMPDIR:-/tmp}` fallback. Windows Git Bash treats `/tmp` as the
     MSYS-mounted temp directory, so the same literal is portable across the
-    three platforms this port targets. Byte-parity with the .sh requires
+    three platforms this hook targets. Byte-parity with the .sh requires
     the same literal here.
 
     ``DEV_TEAM_VERSION_CHECK_CACHE_DIR``, when set, overrides this — a
@@ -44,13 +44,13 @@ def _cache_dir() -> Path:
 
 def _today_cache_file() -> Path:
     # Local wall-clock date for a daily cache filename, not a comparison —
-    # mirrors the ported .sh's `date +%Y-%m-%d`, which also uses local time.
+    # mirrors the original .sh's `date +%Y-%m-%d`, which also uses local time.
     today = datetime.now().strftime("%Y-%m-%d")  # noqa: DTZ005
     return _cache_dir() / f"adt-version-check-{today}"
 
 
 def _plugin_dir() -> Path:
-    """The plugin's repo root — one level up from hooks/."""
+    """The package's repo root — one level up from hooks/."""
     return Path(__file__).resolve().parent.parent
 
 
@@ -151,7 +151,7 @@ def main() -> int:
 
     if behind > 0:
         msg = (
-            f"📦 dev-team@bfinster: {behind} update(s) available. "
+            f"📦 pi-dev-team: {behind} update(s) available. "
             "Run /upgrade to update."
         )
         try:

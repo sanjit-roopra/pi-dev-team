@@ -21,14 +21,14 @@ allowed-tools: >-
 
 # Autoship
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
 - Run each unit's `/ship` in an isolated child so `DEV_TEAM_AUTO_APPROVE=1` and its cost stay scoped to that unit: use the `headless-run` skill (`DEV_TEAM_AUTO_APPROVE=1 pi --mode json -p --no-session "/ship ..."`) rather than invoking `/ship` in this conversation.
-- `$CLAUDE_SESSION_ID` is set by the pi extension to the pi session id.
+- `$DEV_TEAM_SESSION_ID` is set by the pi extension to the pi session id.
 - The GitHub MCP fallback (`mcp__github__*`) only exists if the user configured a GitHub MCP server in `.pi/mcp.json`; otherwise `gh` is required.
 - Issue and comment text follows the "GitHub text style" from the system prompt. Keep every heading, section and marker that this skill's template requires, because later steps read them. Write the prose inside them plainly and briefly. If the template itself breaks a rule (for example a required list that is longer than the limit), send the same `gh` command again unchanged: the extension blocks it only once.
-<!-- pi-port-notes -->
+<!-- pi-notes -->
 
 
 Role: orchestrator. This skill runs one bounded round of automated issue
@@ -100,7 +100,7 @@ Check once, before Step 1: `command -v gh`.
   invoking `gh` directly (via `autoship_reclaim.py`/`autoship_group.py`'s
   live fetch, and the raw `gh issue edit`/`gh issue comment` calls in Steps
   3b/3d).
-- **gh absent** (a Claude Code web/cloud session — GitHub access there is
+- **gh absent** (a session without the CLI — GitHub access there is
   provided only through the `mcp__github__*` tools, never a `gh` binary):
   every step below that would otherwise shell out to `gh` instead uses the
   MCP-tool path called out in that step. The scripts themselves never gain a
@@ -146,7 +146,7 @@ and routing them to human triage before they sit invisibly forever.
 **gh present:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_reclaim.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_reclaim.py" \
   [--dry-run]           # pass when --dry-run was given
 ```
 
@@ -171,7 +171,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_reclaim.py" \
    itself given — dry-run alone already previews correctly with no gh calls):
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_reclaim.py" \
+   python3 "${DEV_TEAM_ROOT}/scripts/autoship_reclaim.py" \
      --input-file <scratch-file> --emit-actions-only \
      [--dry-run]           # pass when --dry-run was given
    ```
@@ -204,7 +204,7 @@ Step 2c (block-and-comment) run between them, against that scratch file's
 **gh present:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_group.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_group.py" \
   [--label "<label>"] [--max-batch-size "<max_batch_size>"] \
   > <scratch-grouping.json>
 ```
@@ -227,7 +227,7 @@ round can't silently drift from the documented rule) per candidate carrying
 `autoship:batch-confirmed`:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_proposals.py" parse-marker \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_proposals.py" parse-marker \
   --comments-file <scratch-comments.json> \
   --invoking-login "<login>"
 ```
@@ -257,7 +257,7 @@ this command silently fails to fetch the full eligible pool it claims to)
 with `confirmed_batch_members` merged onto the enriched subset:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_group.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_group.py" \
   --input-file <enriched-scratch-file> \
   [--label "<label>"] [--max-batch-size "<max_batch_size>"] \
   > <scratch-grouping.json>
@@ -341,7 +341,7 @@ absent` path worked before this pipeline replaced `autoship_discover.py`:
    producing `<scratch-grouping.json>` for Step 2b/2c below:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_group.py" \
+   python3 "${DEV_TEAM_ROOT}/scripts/autoship_group.py" \
      --input-file <scratch-file> \
      [--label "<label>"] [--max-batch-size "<max_batch_size>"] \
      > <scratch-grouping.json>
@@ -421,7 +421,7 @@ from this section's earlier prose so a future round can't silently drift
 from the documented rule):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_proposals.py" validate-proposals \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_proposals.py" validate-proposals \
   --agent-response-file <scratch-agent-response.json> \
   --ungrouped-file <scratch-grouping.json> \
   --max-batch-size "<max_batch_size>"
@@ -497,7 +497,7 @@ deterministic transform (#2072 — extracted so a future round can't silently
 drift from the documented rule) immediately after blocking:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_proposals.py" remove-blocked \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_proposals.py" remove-blocked \
   --ungrouped-file <scratch-grouping.json> \
   --batches-file <scratch-validated-batches.json>
 ```
@@ -621,7 +621,7 @@ with its second command below.
 **gh present:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_queue.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_queue.py" \
   --max-issues "<N>" --input-file <scratch-grouping.json>
 ```
 
@@ -629,7 +629,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_queue.py" \
 absent` variant of its own — run the identical command:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/autoship_queue.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/autoship_queue.py" \
   --max-issues "<N>" --input-file <scratch-grouping.json>
 ```
 
@@ -924,8 +924,8 @@ After a non-blocked `/ship` completes, record the start ISO timestamp that was
 captured just before invoking `/ship` in Step 3c, then run the classifier:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/classify_ship_outcome.py" \
-  --review-value .claude/metrics/review-value.jsonl \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/classify_ship_outcome.py" \
+  --review-value .pi/dev-team/metrics/review-value.jsonl \
   --verify-log   metrics/verify-log.jsonl \
   --since        <start_iso>
 ```
@@ -949,16 +949,16 @@ entry for this dispatch unit and confirm the gate allows advancement — this
 is a hard block, not the advisory `progress-guardian` gate:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/iteration_journal_gate.py" record \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/iteration_journal_gate.py" record \
   --round-id "<round_id>" \
   --attempted "<short note: what was attempted>" \
   --outcome "<short note: shipped|failed|blocked|unrecognized>" \
   --next-action "<short note: next dispatch unit or stop>" \
-  --session "$CLAUDE_SESSION_ID"
+  --session "$DEV_TEAM_SESSION_ID"
 
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/iteration_journal_gate.py" check \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/iteration_journal_gate.py" check \
   --round-id "<round_id>" \
-  --session "$CLAUDE_SESSION_ID"
+  --session "$DEV_TEAM_SESSION_ID"
 ```
 
 The `--attempted`/`--next-action` notes name the dispatch unit the same way
@@ -978,7 +978,7 @@ composition, applied here to this inline `record` invocation too.
 
 ### 3f — Append round record
 
-Append log entries to `.claude/metrics/autoship-log.jsonl` using the log
+Append log entries to `.pi/dev-team/metrics/autoship-log.jsonl` using the log
 library. The JSON shape differs by dispatch-unit type. Compose the record in
 a scratch file and pass it via `--json-file`, never inline `--json
 '{...}'` — `blocked_reason` is agent-derived free text (the extracted
@@ -993,8 +993,8 @@ break both the shell quoting and the JSON literal, matching the
 ```
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/autoship_log.py" \
-  --log-path .claude/metrics/autoship-log.jsonl \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/autoship_log.py" \
+  --log-path .pi/dev-team/metrics/autoship-log.jsonl \
   --json-file <scratch-log-file>
 ```
 
@@ -1006,8 +1006,8 @@ shape applies to EVERY outcome alike (`shipped`, `blocked`, and `failed`):
 ```
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/autoship_log.py" \
-  --log-path .claude/metrics/autoship-log.jsonl \
+python3 "${DEV_TEAM_ROOT}/hooks/lib/autoship_log.py" \
+  --log-path .pi/dev-team/metrics/autoship-log.jsonl \
   --json-file <scratch-log-file>
 ```
 
@@ -1061,7 +1061,7 @@ Status words used in the table and the log:
 - `blocked` — `requires-stakeholder-input` detected in `/ship` output
 - `skipped` — cost cap reached before this dispatch unit started
 
-The round summary is also written to `.claude/metrics/autoship-log.jsonl` as a final
+The round summary is also written to `.pi/dev-team/metrics/autoship-log.jsonl` as a final
 `round_summary` record (not written in dry-run mode):
 
 ```json

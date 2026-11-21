@@ -12,17 +12,17 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash(git *), Bash(gh *), Bash(npm 
 
 # Pull Request
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
 - Write the title and body in the "GitHub text style" from the system prompt. The extension blocks a `gh pr create` whose title or body breaks it, once.
-- If `.claude/memory/brief.json` exists and its `sessionId` is `$CLAUDE_SESSION_ID`, put its `text` right after the first sentence of the body. Then add `## Decide these`, one bullet each, for its `assuming` items when `approved` is `no answer`, and for spec Decision Log rows marked `assumed (timeout)`, `assumed (skipped)` or `assumed (no human)`. Remove the file once the PR exists.
+- If `.pi/dev-team/memory/brief.json` exists and its `sessionId` is `$DEV_TEAM_SESSION_ID`, put its `text` right after the first sentence of the body. Then add `## Decide these`, one bullet each, for its `assuming` items when `approved` is `no answer`, and for spec Decision Log rows marked `assumed (timeout)`, `assumed (skipped)` or `assumed (no human)`. Remove the file once the PR exists.
 - Body order: one sentence that says what changes and why, then `## Summary` (at most 3 bullets), then `## Test Plan`, then `## Quality Gate` with its results on one line (`Tests 42 passed · types clean · lint clean · review clean`).
 - Put `## Decisions & Assumptions` and the four Evidence Bundle headers at the end, inside one `<details><summary>Decisions and evidence</summary>` block. Keep all of their content. Only the place changes.
 - If the repository has `.github/PULL_REQUEST_TEMPLATE.md`, its sections come first and the same `<details>` block goes at the end.
 - End the visible part with one next step for the reviewer, for example "Review: start at `src/auth.ts:42`."
 - Before `gh pr create`, if `gh auth status` succeeds, file the run's `Skipped:` lines and the problems it noticed but did not fix as one issue (`gh issue create`, one bullet each with `file:line`, why and a suggested fix), then list it under **Residual risks** as `Follow-ups: #N`. Never ask. Skip this when there is nothing to file; if `gh` fails, say so in the report and go on.
-<!-- pi-port-notes -->
+<!-- pi-notes -->
 
 
 Role: orchestrator. This command enforces quality gates before creating a PR.
@@ -57,7 +57,7 @@ Verify:
 If a plan file is present (check `plans/` for the most recently modified approved or implemented plan), run the plan completion gate:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/progress_guardian.py" --pre-pr --plan <plan-file>
+python3 "${DEV_TEAM_ROOT}/scripts/progress_guardian.py" --pre-pr --plan <plan-file>
 ```
 
 A non-zero exit means incomplete steps remain; stop and surface the findings — do not open the PR until all steps are `[x]`.
@@ -92,12 +92,12 @@ Run each check sequentially. Stop on first failure:
      BRANCH=$(git branch --show-current)
      ```
 
-   - **Gate-retry scoping (#2087).** `/code-review`'s own round ledger (`finding_signature.py`, see `../code-review/SKILL.md` step 6a) only scopes findings *within* a single `/code-review` invocation — every fresh top-level call restarts at round 1 with the full branch diff. Left unmanaged, a second `/pr` run after a human fixes findings from the first pays full review cost again, even though only the fix delta is unreviewed. `${CLAUDE_PLUGIN_ROOT}/skills/pr/scripts/gate_retry_state.py` is the deterministic transition function that closes that gap by persisting phase/round state across `/pr` invocations. Drive it with this bounded loop — **never more than two `/code-review` calls in one `/pr` invocation**:
+   - **Gate-retry scoping (#2087).** `/code-review`'s own round ledger (`finding_signature.py`, see `../code-review/SKILL.md` step 6a) only scopes findings *within* a single `/code-review` invocation — every fresh top-level call restarts at round 1 with the full branch diff. Left unmanaged, a second `/pr` run after a human fixes findings from the first pays full review cost again, even though only the fix delta is unreviewed. `${DEV_TEAM_ROOT}/skills/pr/scripts/gate_retry_state.py` is the deterministic transition function that closes that gap by persisting phase/round state across `/pr` invocations. Drive it with this bounded loop — **never more than two `/code-review` calls in one `/pr` invocation**:
 
      ```bash
      # Call 1: decide this call's scope (no --last-outcome yet).
-     DECISION=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/pr/scripts/gate_retry_state.py" \
-       --state .claude/memory/pr-gate-state.json \
+     DECISION=$(python3 "${DEV_TEAM_ROOT}/skills/pr/scripts/gate_retry_state.py" \
+       --state .pi/dev-team/memory/pr-gate-state.json \
        --branch "$BRANCH" --base-sha "$BASE" --head-sha "$HEAD_SHA")
      SINCE_REF=$(echo "$DECISION" | jq -r '.since_ref')
      ESCALATE=$(echo "$DECISION" | jq -r '.escalate')
@@ -116,8 +116,8 @@ Run each check sequentially. Stop on first failure:
        OVERALL=$(echo "$RESULT" | jq -r 'if .status == "skipped" then "pass" else .overall end')
 
        # Call 2: record the outcome and get the next scope.
-       DECISION=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/pr/scripts/gate_retry_state.py" \
-         --state .claude/memory/pr-gate-state.json \
+       DECISION=$(python3 "${DEV_TEAM_ROOT}/skills/pr/scripts/gate_retry_state.py" \
+         --state .pi/dev-team/memory/pr-gate-state.json \
          --branch "$BRANCH" --base-sha "$BASE" --head-sha "$HEAD_SHA" \
          --last-outcome "$OVERALL")
        SINCE_REF=$(echo "$DECISION" | jq -r '.since_ref')
@@ -131,8 +131,8 @@ Run each check sequentially. Stop on first failure:
        if [ "$SINCE_REF" != "null" ]; then
          RESULT=$(/code-review --since "$SINCE_REF" --json)
          OVERALL=$(echo "$RESULT" | jq -r 'if .status == "skipped" then "pass" else .overall end')
-         DECISION=$(python3 "${CLAUDE_PLUGIN_ROOT}/skills/pr/scripts/gate_retry_state.py" \
-           --state .claude/memory/pr-gate-state.json \
+         DECISION=$(python3 "${DEV_TEAM_ROOT}/skills/pr/scripts/gate_retry_state.py" \
+           --state .pi/dev-team/memory/pr-gate-state.json \
            --branch "$BRANCH" --base-sha "$BASE" --head-sha "$HEAD_SHA" \
            --last-outcome "$OVERALL")
        fi
@@ -174,7 +174,7 @@ Analyze the diff against the base branch (`git diff <base>...HEAD`) and commit h
   classified `inferable`; `assumptions` entries from software-engineer step outputs;
   auto-applied review fixes with `confidence: medium`; and deferred follow-ups.
   Omit the section only when every gate had an interactive human approval.
-- **Evidence bundle**: Assemble per `${CLAUDE_PLUGIN_ROOT}/knowledge/evidence-bundle.md`
+- **Evidence bundle**: Assemble per `${DEV_TEAM_ROOT}/knowledge/evidence-bundle.md`
   from the Step 2 quality-gate results plus on-disk pipeline data — **no new
   checks, no re-execution**:
   - **Checks run**: the exact Step 2 commands (test/typecheck/lint/`/code-review
@@ -183,7 +183,7 @@ Analyze the diff against the base branch (`git diff <base>...HEAD`) and commit h
     `tsconfig.json` → type check skipped), plus `--skip-review` if passed.
   - **Untested regions**: read `baseline-coverage.json` / `coverage-history.json`
     if present; otherwise "not measured — no coverage tool detected."
-  - **Residual risks**: derived-first from `.claude/metrics/review-value.jsonl` entries
+  - **Residual risks**: derived-first from `.pi/dev-team/metrics/review-value.jsonl` entries
     with `outcome: "escalated"`, gate-bypass audit lines, and negative coverage
     deltas; "None identified" only when all derived sources are empty.
   - This command assembles from its own runtime's live data — it never reads a
@@ -205,7 +205,7 @@ is deferred to #124", "see #123 for the rest of this work" — never
 Before calling `gh pr create`, lint the drafted body for accidental matches:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_close_keyword_lint.py" --body-file <body-file>
+python3 "${DEV_TEAM_ROOT}/scripts/pr_close_keyword_lint.py" --body-file <body-file>
 ```
 
 This is advisory only (always exits 0). If it prints warnings, rephrase the
@@ -260,7 +260,7 @@ exactly as before:
 - [ ] <verification step 2>
 
 ## Evidence Bundle
-<!-- Per ${CLAUDE_PLUGIN_ROOT}/knowledge/evidence-bundle.md. All four headers always appear; a section with no data states why instead of being omitted. -->
+<!-- Per ${DEV_TEAM_ROOT}/knowledge/evidence-bundle.md. All four headers always appear; a section with no data states why instead of being omitted. -->
 **Checks run**
 - `<command>` — <result>
 

@@ -94,7 +94,7 @@ panel returned cleanly.
 `ledgerSkipped` (issue #2167, always present, empty array when none): one
 `{"lens", "file", "verdict"}` entry per `(lens, file)` pair
 `scripts/verdict_scope.py` matched to an exact, current-content `pass` row
-in `.claude/metrics/review-verdicts.jsonl` — that lens was never dispatched
+in `.pi/dev-team/metrics/review-verdicts.jsonl` — that lens was never dispatched
 against that file this run because an earlier dispatch already cleared this
 exact content. `verdict` is the matched ledger row verbatim (its own
 snake_case fields — `ts`/`file_content_hash`/`plugin_version`/`outcome`/
@@ -464,7 +464,7 @@ statement.
 
 ## Override audit log entry (step 2, `--force` path)
 
-Append to `.claude/metrics/override-audit.jsonl` (create if missing):
+Append to `.pi/dev-team/metrics/override-audit.jsonl` (create if missing):
 
 ```json
 {

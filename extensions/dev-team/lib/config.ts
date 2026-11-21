@@ -59,10 +59,16 @@ export interface DevTeamConfig {
 	skillIndexChars: number;
 	/** Compact the main session between runs once its context reaches this many tokens (0 = off). */
 	autocompactMaxTokens: number;
+	/**
+	 * Compact the main session between runs at this percentage of the context window: a whole number
+	 * 1-100, or the same as a string ("40"). Unset = off. Read by autocompact.ts straight from the files
+	 * (with DEV_TEAM_AUTOCOMPACT_PCT over them); never copied into the environment.
+	 */
+	autocompactPct?: number | string;
 	/** Replace a repeated read whose text is already in the context with a one-line note (read-dedup.ts). */
 	readDedup: boolean;
-	/** Put the `claude` -> `pi` CLI shim on PATH for scripts that call `claude -p`. */
-	claudeShim: boolean;
+	/** Put bin/dev-team-run (headless `-p` runs through pi) on PATH for the scripts that call it. Older configs name it `claudeShim`. */
+	cliShim: boolean;
 	/** Let the model use the pi-subagents package's tools; off, dev-team hides and blocks them (pi-subagents.ts). User file only. */
 	allowPiSubagents: boolean;
 	/** Seconds a question or destructive-command confirm waits for the human before the run goes on without them; 0 = never ask (as if no human were attached). */
@@ -78,11 +84,10 @@ export interface DevTeamConfig {
 }
 
 /**
- * Hooks off by default. See PORTING.md section 4.
+ * Hooks off by default (see docs/architecture.md).
  * - replaced natively by the extension: cost_meter, subagent_skill_context
- * - need Claude transcripts / Claude-only config: code_intelligence_*, phase_marker, session_learning_trigger,
- *   mcp_json_repowise_nudge, version_check
- * - only act inside the upstream monorepo: the rest
+ * - need data pi does not produce: code_intelligence_*, phase_marker
+ * - opt-in: version_check (a daily check of the package checkout against its git origin)
  */
 export const DEFAULT_DISABLED_HOOKS = [
 	"cost_meter",
@@ -90,16 +95,7 @@ export const DEFAULT_DISABLED_HOOKS = [
 	"code_intelligence_nudge",
 	"code_intelligence_turn_mark",
 	"phase_marker",
-	"session_learning_trigger",
-	"mcp_json_repowise_nudge",
 	"version_check",
-	"contract_version_guard",
-	"pre_commit_knowledge_index",
-	"knowledge_index",
-	"skills_index",
-	"scan_bash_command_for_banned_scripts",
-	"scan_worktree_for_banned_scripts",
-	"eval_compliance_check",
 ];
 
 export const DEFAULT_CONFIG: DevTeamConfig = {
@@ -115,7 +111,7 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 	skillIndexChars: 220,
 	autocompactMaxTokens: 200_000,
 	readDedup: true,
-	claudeShim: true,
+	cliShim: true,
 	allowPiSubagents: false,
 	askTimeoutSec: 120,
 	answerMode: "timeout",
@@ -249,7 +245,7 @@ export function mergeConfig<T>(base: T, override: unknown): T {
  * A project's config may set only these dev-team tuning settings, each to a plain number, word or
  * flag. pi asks about trust only when a repo has pi-protected files (.pi/settings.json, .pi/extensions,
  * ...), so a repo with just a .pi/dev-team.json is trusted without a prompt. Its env must therefore not
- * reach PATH, NODE_OPTIONS or PYTHONPATH, any file path the port reads or runs (DEV_TEAM_PY_CACHE is
+ * reach PATH, NODE_OPTIONS or PYTHONPATH, any file path dev-team reads or runs (DEV_TEAM_PY_CACHE is
  * executed by hooks/py.sh), a program choice, or a gate bypass (DEV_TEAM_AUTO_APPROVE,
  * DEV_TEAM_GUARD_OVERRIDE, *_SKIP, a threshold whose 0 disables a guard). Those stay available in the
  * user's own config and environment.
@@ -275,6 +271,16 @@ export function isProjectEnvSettingAllowed(key: string, value: unknown): boolean
 	return PROJECT_ENV_SETTINGS.has(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean") && PLAIN_SETTING_VALUE.test(String(value));
 }
 
+/**
+ * A valid autocompact percentage, else undefined: a whole number 1-100, or a string of one with no
+ * sign, whitespace, decimal point or leading zero ("40", not "040", " 40" or "40.0").
+ * hooks/lib/autocompact_config.py validates the same way.
+ */
+export function autocompactPctValue(raw: unknown): number | undefined {
+	if (typeof raw === "number") return Number.isInteger(raw) && raw >= 1 && raw <= 100 ? raw : undefined;
+	return typeof raw === "string" && /^(?:100|[1-9][0-9]?)$/.test(raw) ? Number(raw) : undefined;
+}
+
 /** Lowest context-token ceiling a project file may set; lower values would compact after nearly every run. */
 export const MIN_PROJECT_AUTOCOMPACT_TOKENS = 50_000;
 
@@ -297,6 +303,7 @@ export function isProjectParallelLimitAllowed(value: unknown): boolean {
  * user's own config), no `allowPiSubagents` (it lifts a block), no `askTimeoutSec` or `answerMode` (they decide whether and how long the human gates wait), no `notify` (it names where briefs are sent), `autocompactMaxTokens` only when isProjectAutocompactCeilingAllowed and
  * `maxParallelAgents` only when isProjectParallelLimitAllowed. `ignored` names everything left out, as
  * `env.KEY`, `env`, `hooks`, `allowPiSubagents`, `askTimeoutSec`, `answerMode`, `notify`, `autocompactMaxTokens` or `maxParallelAgents`.
+ * `autocompactPct` passes as is: it is a top-level key, never env (autocompact.ts reads and validates it).
  */
 export function filterProjectConfig(data: Record<string, unknown>): { data: Record<string, unknown>; ignored: string[] } {
 	const ignored: string[] = [];
@@ -340,6 +347,11 @@ export function loadConfig(
 		const raw = readJson(file);
 		if (!raw) continue;
 		const { data, ignored } = file === userFile ? { data: raw, ignored: [] } : filterProjectConfig(raw);
+		// The CLI helper's earlier key: kept for old configs, `cliShim` wins when both are set.
+		if ("claudeShim" in data) {
+			if (!("cliShim" in data)) data.cliShim = data.claudeShim;
+			delete data.claudeShim;
+		}
 		if ("githubStyle" in data && !(GITHUB_STYLE_MODES as readonly unknown[]).includes(data.githubStyle)) delete data.githubStyle;
 		if ("askTimeoutSec" in data && !(Number.isInteger(data.askTimeoutSec) && (data.askTimeoutSec as number) >= 0)) delete data.askTimeoutSec;
 		if ("answerMode" in data && !(ANSWER_MODES as readonly unknown[]).includes(data.answerMode)) delete data.answerMode;

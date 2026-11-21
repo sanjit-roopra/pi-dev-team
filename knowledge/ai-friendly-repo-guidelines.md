@@ -1,10 +1,10 @@
 # AI-Friendly Repository Guidelines
 
-Rubric of repo conventions that improve Claude Code's effectiveness. Canonical
+Rubric of repo conventions that improve pi's effectiveness. Canonical
 source for the `/agent-readiness` criteria `D5_claude_md_size`,
 `D6_layered_context`, `D7_reference_implementation` and
 `B5_composite_check_command`; the scanner's evidence strings link to the anchors
-below. Other agents (`claude-setup-review`, `setup`) can cite this file instead
+below. Other agents (`setup`) can cite this file instead
 of re-describing the rubric.
 
 These conventions are heuristics: they measure how cheaply an agent can load the
@@ -17,13 +17,13 @@ Agents pay for every line of always-loaded context and for every wrong guess mad
 without it. Keep the always-loaded layer small and push detail down to where it
 applies.
 
-- **Keep the root `CLAUDE.md` short (about 200 lines or fewer).** Every session
+- **Keep the root `AGENTS.md` short (about 200 lines or fewer).** Every session
   loads it in full; past the ceiling, rules compete for attention and later ones
   are followed less reliably. Scored by `D5_claude_md_size`.
 - **Layer context hierarchically.** Put directory-specific rules in nested
   `CLAUDE.md` files or `.claude/rules/*.md` so they load only when that area is
   touched. Scored by `D6_layered_context`.
-- **Move procedures and reference material out of `CLAUDE.md`.** Link to skills,
+- **Move procedures and reference material out of `AGENTS.md`.** Link to skills,
   knowledge files or docs loaded on demand rather than inlining them.
 - **Name a canonical reference implementation.** Point at one well-made module or
   test as the pattern to copy; agents imitate what they are shown. Flagged for
@@ -63,5 +63,5 @@ reads needed to locate the right file.
 
 ## Source
 
-Synthesized from Anthropic's published Claude Code guidance on memory files and
+Synthesized from published coding-agent guidance on memory files and
 verification loops and from this repo's own conventions. Tracked in issue #2178.

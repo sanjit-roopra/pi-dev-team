@@ -4,7 +4,7 @@
 implementation of the three-phase pipeline. This file records what it actually
 dispatches per phase, and every place where it diverges from — or does not yet
 implement — the agent-facing policy in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md`.
+`${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md`.
 
 Read it when running or working on that script. An interactive session following
 the phase policy does not need it: everything a divergence leaves unimplemented
@@ -44,7 +44,7 @@ spec's slices landed.
 
 **Script gap.** `orchestrator.py`'s `_default_phase_research` does not yet
 implement the freshness gate or the ordering in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#codebase-recon-dispatch` — it dispatches
+`${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#codebase-recon-dispatch` — it dispatches
 `codebase-recon` unconditionally on every `standard`/`complex`-classified
 task, concurrently with the other Research personas in one `asyncio.gather`
 wave with no barrier, so nothing reads the recon artifact from disk before
@@ -58,7 +58,7 @@ tracked against spec #1707's Plan-phase slice, not yet implemented.
 
 **Script approximation.** `orchestrator.py`'s `_touches_security` implements
 only the first of the dispatch signals in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#security-engineer-dispatch`, and only partially: a case-insensitive
+`${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#security-engineer-dispatch`, and only partially: a case-insensitive
 substring match against `SECURITY_KEYWORDS` (`auth`, `secret`, `crypto`,
 `password`, `token`, `credential`, `encrypt`) — a heuristic, not a precise
 classifier (deliberate false positives and negatives are documented and
@@ -81,14 +81,14 @@ unconditionally, with the Research phase's aggregated state as context;
 then the five `plan-review-*` critics (`DEFAULT_PERSONAS`), against the
 core trio's own results as the draft under review — unless every core-trio
 result failed, in which case critic dispatch is skipped entirely (an
-LLM-cost guard: with no usable draft, the five `claude -p` critic dispatches
+LLM-cost guard: with no usable draft, the five `dev-team-run -p` critic dispatches
 would only critique identical failure stubs — a deliberate degraded-path
 divergence from the agent-facing policy in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan`) and the persisted state
+`${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan`) and the persisted state
 records why (`critics_skipped_reason: "all_core_personas_failed"`).
 
 **Script gap.** The "Automated plan review" bullet in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan` describes
+`${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan` describes
 reviewer-set scaling by plan tier — that scaling is not implemented by the
 script: `_default_phase_plan` always dispatches all five critics
 (`DEFAULT_PERSONAS`) unconditionally, with no notion of plan tier in its
@@ -107,7 +107,7 @@ test/debug-only early-return paths, not part of this classification logic).
 See the Implement persona roster
 subsection below for what the script actually dispatches, and its Script
 gap paragraph for what the agent-facing policy in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-3-implement` still describes that
+`${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-3-implement` still describes that
 the script does not yet implement.
 
 ### Implement persona roster (`SOFTWARE_ENGINEER_PERSONA` / `TECH_WRITER_PERSONA`)
@@ -161,7 +161,7 @@ slice representing "the whole task," not real per-plan-step decomposition —
 Phase 2's persisted shape (`orchestrator-plan.json`) has no
 machine-parseable ordered list of implementation steps to derive
 `IMPLEMENT_WAVE_SLICES` from. The script also does not implement the
-three-stage inline review loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-3-implement`
+three-stage inline review loop in `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-3-implement`
 (`spec-reviewer` →
 `quality-reviewer` → browser verification), nor the final `/code-review`
 `fail`/`warn`/`pass` branching before its doc-review pass — the review
@@ -179,7 +179,7 @@ not something this script checks or compensates for. This phase's dispatch
 of `CODE_REVIEW_PANEL` is also the first place in this script where a
 `/code-review`-shaped fan-out is driven deterministically rather than by
 skill instructions. This is a deliberate, spec-#1707-scoped choice, not an
-oversight against [ADR 0013](../../../docs/adr/0013-llm-driven-orchestration-over-deterministic-workflow-scripts.md#amendment-2026-08-02-orchestratorpys-deterministic-code_review_panel-dispatch)'s
+oversight against ADR 0013's
 LLM-driven-orchestration preference — see that ADR's amendment for why this
 standalone script's fixed, judgment-free panel dispatch does not replace or
 contradict the interactive `/code-review` skill's own unchanged fan-out.

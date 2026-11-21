@@ -1,6 +1,6 @@
 # Grilling: resolve open decisions in rounds
 
-Loaded by Step C of [`../SKILL.md`](../SKILL.md). pi port addition, adapted from
+Loaded by Step C of [`../SKILL.md`](../SKILL.md). Adapted from
 Matt Pocock's `grilling` and `domain-modeling` skills
 (https://github.com/mattpocock/skills, MIT, Copyright (c) 2026 Matt Pocock).
 

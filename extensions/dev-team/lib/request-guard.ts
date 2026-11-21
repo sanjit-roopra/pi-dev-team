@@ -1,13 +1,14 @@
 /**
- * The write guard on the saved requests (REQUEST_DIR, `.claude/memory/requests/`) under the example check
+ * The write guard on the saved requests (REQUEST_DIR, `.pi/dev-team/memory/requests/`) under the example check
  * (gate profile, on unless `DEV_TEAM_EXAMPLES=off`). example_replay.py accepts a case only when its `source` is word for
  * word in a saved request, so the check is only as honest as that directory: dev-team code writes it (the
  * typed request, the examples a human approved), the model must not. The tool_call handler blocks a write,
- * edit or bash call that visibly writes, moves or deletes there, or the `.claude` and `.claude/memory`
- * folders above it. Reads stay allowed (`cat`, `ls`, `example_replay.py --requests`).
+ * edit or bash call that visibly writes, moves or deletes there, or the `.pi`, `.pi/dev-team` and
+ * `.pi/dev-team/memory` folders above it. Reads stay allowed (`cat`, `ls`, `example_replay.py --requests`).
  *
  * Not a sandbox: a program that builds the path at run time without naming the folder (`python -c` joining
- * strings, or a shell variable on a line that never mentions `.claude`) gets past this static scan.
+ * strings, or a shell variable on a line that names neither `.pi/dev-team` nor `.pi` itself) gets past this
+ * static scan.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -15,10 +16,31 @@ import { type BashCommand, bashCommands } from "./brief.ts";
 import { REQUEST_DIR } from "./skills.ts";
 
 export const REQUEST_DIR_BLOCK =
-	"Saved requests are written by dev-team code only (the example check takes them as the human's own words). Do not write, move or delete anything under `.claude/memory/requests/`. To make an example a case source, show it to the human with dev_team_approve_examples: an approval saves it there.";
+	"Saved requests are written by dev-team code only (the example check takes them as the human's own words). Do not write, move or delete anything under `.pi/dev-team/memory/requests/`. To make an example a case source, show it to the human with dev_team_approve_examples: an approval saves it there.";
 
 /** A command line that names the folder, also as joined parts (`'memory', 'requests'`). */
 const NAMES_REQUEST_DIR = /memory[\W_]{1,8}requests/i;
+
+/** What may stand right before `.pi`: the start, a non-word character, or an attached short flag (`-C.pi/dev-team`). */
+const BEFORE_PI = String.raw`(?:^|[^\w.]|(?<=(?:^|[\s'"])-[A-Za-z]+))`;
+
+/**
+ * A command line that names the state folder `.pi/dev-team` (also `.pi\\dev-team` and joined parts such as
+ * `'.pi', 'dev-team'` or `".pi" "dev-team"`). Not `.pi/dev-team.json`, `.pi/settings.json`, `.pi/agents`,
+ * `.pid` or `np.pi`.
+ */
+const NAMES_STATE_DIR = new RegExp(String.raw`${BEFORE_PI}\.pi[\\/'"\s,)]+dev-team(?![\w.-])`, "i");
+
+/**
+ * A command line that names `.pi` itself, the folder above the state folder, in any spelling a script can
+ * build a path from (`x=.pi; cd "$x"/dev-team`, `${D:-.pi}/dev-team`, `.pi/./dev-team`, `.pi/*`). Not the pi
+ * files that are not state: `.pi/settings.json`, `.pi/agents`, `~/.pi/agent`, `.pi/dev-team.json`,
+ * `.pi/dev-team-reports`; not `.pid`, `np.pi` or `x.pi.json`.
+ */
+const NAMES_PI_DIR = new RegExp(String.raw`${BEFORE_PI}\.pi(?![\w-]|\.\w)(?!/(?:settings\.json|agents?(?![\w-])|dev-team[.-]))`, "i");
+
+/** A line that names the state folder or the `.pi` folder above it. */
+const namesStateDir = (command: string) => NAMES_STATE_DIR.test(command) || NAMES_PI_DIR.test(command);
 
 /** Commands that only read, so a line that names the folder may still run them. */
 const READ_ONLY_COMMANDS: ReadonlySet<string> = new Set([
@@ -92,10 +114,10 @@ function cdBases(commands: BashCommand[], cwd: string): { bases: string[]; unkno
 /**
  * Whether a tool call writes REQUEST_DIR. write and edit: their path. bash: a visible write target there
  * (redirect, cp, mv, tee, ln, touch, rm, sed -i, ...), resolved against the project and every folder the
- * line `cd`s into; when the line names the folder or `cd`s into `.claude` or below, a computed target or
+ * line `cd`s into; when the line names the folder or `cd`s into `.pi` or below, a computed target or
  * any command that is not a known read (cat, ls, example_replay.py, ...); a computed target on any line
- * that mentions `.claude`; and any write after a `cd` the scan cannot follow on a line that mentions
- * `.claude`, `memory` or `requests`.
+ * that names `.pi/dev-team` or `.pi` itself; and any write after a `cd` the scan cannot follow on a line
+ * that names `.pi/dev-team`, `.pi` itself, `memory` or `requests`.
  */
 export function writesRequestDir(toolName: string, input: Record<string, unknown>, cwd: string): boolean {
     if (toolName === "write" || toolName === "edit") {
@@ -110,8 +132,8 @@ export function writesRequestDir(toolName: string, input: Record<string, unknown
     const { bases, unknown } = cdBases(commands, cwd);
     const targets = commands.flatMap((c) => c.writes);
     if (targets.some((t) => !t.dynamic && bases.some((b) => touchesRequestDir(path.resolve(b, t.text.replace(/^~(?=$|\/)/, process.env.HOME ?? "~")), cwd)))) return true;
-    if (targets.some((t) => t.dynamic) && /\.claude/i.test(command)) return true;
-    if (unknown && targets.length && /\.claude|memory|requests/i.test(command)) return true;
+    if (targets.some((t) => t.dynamic) && namesStateDir(command)) return true;
+    if (unknown && targets.length && (namesStateDir(command) || /memory|requests/i.test(command))) return true;
     const cdNear = bases.slice(1).some((b) => touchesRequestDir(b, cwd));
     if (!cdNear && !NAMES_REQUEST_DIR.test(command)) return false;
     return targets.some((t) => t.dynamic) || commands.some((c) => c.name !== "" && !READ_ONLY_COMMANDS.has(c.name) && !runsExampleReplay(c.words));

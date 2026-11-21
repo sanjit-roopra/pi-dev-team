@@ -87,3 +87,20 @@ test("hook run: DEV_TEAM_EXAMPLES from a config file's env never reaches a hook"
 	process.env.DEV_TEAM_EXAMPLES = "off";
 	assert.match((await bridge.runScript("env", "PreToolUse", {}, os.tmpdir())).advisories.join("\n"), /EXAMPLES=\[off\]/);
 });
+
+test("hook run: the hook sees DEV_TEAM_ROOT, DEV_TEAM_PROJECT_DIR and DEV_TEAM_SESSION_ID, no CLAUDE_* names", async (t) => {
+	const python = resolvePython();
+	if (!python) return t.skip("python >= 3.10 not found");
+	const root = hookRoot(t);
+	fs.writeFileSync(
+		path.join(root, "hooks", "env.py"),
+		"import os; print('|'.join([os.environ.get(k, '-') for k in ('DEV_TEAM_ROOT', 'DEV_TEAM_PROJECT_DIR', 'DEV_TEAM_SESSION_ID')] + sorted(k for k in os.environ if k.startswith('CLAUDE_'))))",
+	);
+	const saved = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith("CLAUDE_")));
+	for (const k of Object.keys(saved)) delete process.env[k];
+	t.after(() => Object.assign(process.env, saved));
+	const bridge = new HookBridge(root, () => DEFAULT_CONFIG, () => python, () => {});
+	const cwd = os.tmpdir();
+	const out = await bridge.runScript("env", "PreToolUse", { session_id: "sess-1" }, cwd);
+	assert.equal(out.advisories.join("\n"), `[env] ${root}|${cwd}|sess-1`);
+});

@@ -1,7 +1,7 @@
 # Telemetry Schema Reference
 
-Every `.claude/metrics/*.jsonl` and `.claude/metrics/*.json` file the dev-team plugin writes,
-in one place, so `session-analysis`, `/session-review`, `/harness-audit`,
+Every `.pi/dev-team/metrics/*.jsonl` and `.pi/dev-team/metrics/*.json` file the dev-team package writes,
+in one place, so `/harness-audit`,
 `/cost-report`, and future cross-machine aggregation (#178) compose against
 stable, named schemas instead of reverse-engineering emitters.
 
@@ -15,10 +15,14 @@ predates this doc and already carries a `reason` field with freeform text
 unchanged precedent — not a new exception.
 
 Each section below names: fields, types, emitter, consent gating, and
-consumers. A companion test
-(`tests/hooks/test_boundary_events.py::test_schema_doc_covers_all_metrics_paths`)
-cross-checks every `.claude/metrics/*.jsonl` / `.claude/metrics/*.json` path string referenced
-in shipped code against this doc's coverage and fails on omission.
+consumers.
+
+User-level paths below are written `<agentDir>/dev-team/...`: the dev-team
+folder in your pi agent directory (`~/.pi/agent/dev-team/` by default).
+
+`session-digest.jsonl` (read by `/harness-audit` and `/feedback-learning`) and
+`pending-review.jsonl` (read by `/feedback-learning`) are read when present.
+Neither has a producer in this package, so neither has a section here.
 
 ---
 
@@ -93,10 +97,10 @@ those are legitimate no-ops, not degenerate states.
 | `tool` | string | Hooked tool/event: `Bash`, `Write`, `Edit`, `Skill`, `Agent`, `UserPromptSubmit`, `SubagentStop` (#2188) |
 | `decision` | string enum | `block` \| `warn` \| `bypass` \| `intervention` \| `revert` \| `record` \| `dispatch-failure` |
 | `matched_rule` | string | Rule ID from a closed vocabulary (pattern ID, hook-defined constant, bypass flag name, intervention keyword, or — for `record`/`dispatch-failure` — the dispatched review-agent's registered name, or — for `subagent_completion_guard.py`'s `record` rows — `empty-final-turn`/`truncated-final-turn`, #2188, or — for `review_verdict_recorder.py`'s `record` rows — `missing-scope-marker`/`unparseable-result`, #2166 Fix #3, or — for `boundary_events_write_guard.py`'s `block` rows — `ledger-write-blocked`, #2171) — never free text |
-| `plugin_version` | string | From `.claude-plugin/plugin.json` |
-| `session_id` | string, optional | Opaque per-session ID, when present in the hook payload — enables joins with `session-digest.jsonl` |
+| `plugin_version` | string | From `package.json` |
+| `session_id` | string, optional | Opaque per-session ID, when present in the hook payload — enables per-session joins across streams |
 | `subject_hash` | string, optional | `review_gate_hash()` value (#1461) binding this event to the staged content it corroborates. A hex digest, not free text |
-| `subject_hash_normalized` | string, optional | `normalized_gate_hash()` value (#1627) — the same binding computed after doc-hunk and indentation normalization. Stamped by `agent_dispatch_ledger.py` alongside `subject_hash`, and read by the gate's cosmetic-delta carry-forward lens. Absent on events written before #1627, which therefore never match on the normalized path. **The digest ALGORITHM has changed twice since** — #1638 (heredoc-body marking plus whole-file `--unified=100000` context) and #1660/#1661/#1662/#1663 (further grammars, a hunk-start guard, and a payload cap), each of which changes the computed VALUE for any changeset touching an affected extension. An event recorded by an earlier plugin version therefore never matches after an upgrade. This fails closed — one lost carry-forward, one extra dispatch — and is not a correctness bug, but it is why a version bump can look like a spurious re-review |
+| `subject_hash_normalized` | string, optional | `normalized_gate_hash()` value (#1627) — the same binding computed after doc-hunk and indentation normalization. Stamped by `agent_dispatch_ledger.py` alongside `subject_hash`, and read by the gate's cosmetic-delta carry-forward lens. Absent on events written before #1627, which therefore never match on the normalized path. **The digest ALGORITHM has changed twice since** — #1638 (heredoc-body marking plus whole-file `--unified=100000` context) and #1660/#1661/#1662/#1663 (further grammars, a hunk-start guard, and a payload cap), each of which changes the computed VALUE for any changeset touching an affected extension. An event recorded by an earlier package version therefore never matches after an upgrade. This fails closed — one lost carry-forward, one extra dispatch — and is not a correctness bug, but it is why a version bump can look like a spurious re-review |
 
 **`cosmetic-delta-carry-forward` (#1627, historical).** `pre_commit_review.py`
 used to emit this `bypass`-decision event every time the OLD commit-time gate
@@ -109,10 +113,10 @@ PR-creation time, against the branch's cumulative diff, does not have that
 problem. `hooks/pre_pr_review.py` never emits this event. Existing rows in
 `boundary-events.jsonl` from before the migration remain valid history.
 
-- **Emitter:** `hooks/lib/boundary_events.py::emit_boundary_event()`, called from `destructive_guard.py`, `verify_guard.py`, `pre_pr_review.py` (#1886), `telemetry.py` (intervention keywords), `agent_dispatch_ledger.py` (decision `record`, #1461), `subagent_completion_guard.py` (decision `record`, `tool` `SubagentStop`, #2188), `review_verdict_recorder.py` (decision `record`, `tool` `SubagentStop`, `matched_rule` `missing-scope-marker`\|`unparseable-result`, #2166 Fix #3), `boundary_events_write_guard.py` (decision `block`, `tool` `Write`\|`Edit`\|`Bash`, `matched_rule` `ledger-write-blocked` — the PreToolUse guard blocking a direct Write/Edit/Bash write to this same ledger, #2171), the mechanically-adopted guards (`pre_tool_guard.py`, `bash_retry_guard.py`, `refactor_test_freeze_guard.py`, `refactor_test_bash_guard.py`, `refactor_test_revert_guard.py` (decision `revert`, #906), `contract_version_guard.py`, `mutation_testing_smoke_gate.py`, `mutation_gate.py`, `tdd_guard.py`), and `boundary_events.py`'s own CLI (`--event dispatch-failure`, decision `dispatch-failure`, #1763) invoked from `skills/code-review/SKILL.md` Step 4. `--event gate-ran --verdict {allow,block,errored}` (decision `record`, `matched_rule` of `gate-ran-<verdict>`, #2037) is invoked from the repo-root `.husky/pre-commit` git hook — the real, git-native pre-commit gate (distinct from `pre_pr_review.py`, a Claude-Code-level PreToolUse hook gating `gh pr create`) — at every exit point, success or failure alike, so `${CLAUDE_PLUGIN_ROOT}/scripts/session_report.py --profile maintainer` can correlate a commit-attempt Bash record against a nearby `gate_ran` event and classify the previously-unmeasured "the gate silently never ran" population (`gate_ran_absent`) apart from a genuine internal failure (`gate_ran_errored`). This event carries no `session_id` in practice — a real git hook has no Claude Code session_id to attach — so correlation is by time proximity, not session join; see `session_report.py`'s "gate-run correlation (#2037)" section.
+- **Emitter:** `hooks/lib/boundary_events.py::emit_boundary_event()`, called from `destructive_guard.py`, `verify_guard.py`, `pre_pr_review.py` (#1886), `telemetry.py` (intervention keywords), `agent_dispatch_ledger.py` (decision `record`, #1461), `subagent_completion_guard.py` (decision `record`, `tool` `SubagentStop`, #2188), `review_verdict_recorder.py` (decision `record`, `tool` `SubagentStop`, `matched_rule` `missing-scope-marker`\|`unparseable-result`, #2166 Fix #3), `boundary_events_write_guard.py` (decision `block`, `tool` `Write`\|`Edit`\|`Bash`, `matched_rule` `ledger-write-blocked` — the PreToolUse guard blocking a direct Write/Edit/Bash write to this same ledger, #2171), the mechanically-adopted guards (`pre_tool_guard.py`, `bash_retry_guard.py`, `refactor_test_freeze_guard.py`, `refactor_test_bash_guard.py`, `refactor_test_revert_guard.py` (decision `revert`, #906), `mutation_testing_smoke_gate.py`, `mutation_gate.py`, `tdd_guard.py`), and `boundary_events.py`'s own CLI (`--event dispatch-failure`, decision `dispatch-failure`, #1763) invoked from `skills/code-review/SKILL.md` Step 4. `--event gate-ran --verdict {allow,block,errored}` (decision `record`, `matched_rule` of `gate-ran-<verdict>`, #2037) is invoked from the repo-root `.husky/pre-commit` git hook — the real, git-native pre-commit gate (distinct from `pre_pr_review.py`, a pi-level PreToolUse hook gating `gh pr create`) — at every exit point, success or failure alike, so a session report can correlate a commit-attempt Bash record against a nearby `gate_ran` event and classify the previously-unmeasured "the gate silently never ran" population (`gate_ran_absent`) apart from a genuine internal failure (`gate_ran_errored`). This event carries no `session_id` in practice — a real git hook has no pi session_id to attach — so correlation is by time proximity, not session join.
 - **Consent:** ALWAYS-ON — not gated by `DEV_TEAM_TELEMETRY`. Local-only, rule-IDs-only safety/accountability channel; no observability holes by design.
 - **Fail-open:** every exception in the emit helper is swallowed — never changes the calling hook's exit code, stdout, or stderr.
-- **Consumers:** `skills/session-review/SKILL.md`, `skills/harness-audit/SKILL.md`, `agents/session-analysis.md`, `skills/cost-report/`, `skills/run-report/SKILL.md` (#1167), `hooks/lib/review_gate_corroboration.py` (#1461 `record` rows; #1763 also reads `dispatch-failure` rows as negative evidence for the gate veto), future `agent-telemetry` cross-machine aggregation (#178).
+- **Consumers:** `skills/harness-audit/SKILL.md`, `skills/cost-report/`, `skills/run-report/SKILL.md` (#1167), `hooks/lib/review_gate_corroboration.py` (#1461 `record` rows; #1763 also reads `dispatch-failure` rows as negative evidence for the gate veto), future `agent-telemetry` cross-machine aggregation (#178).
 
 ---
 
@@ -151,11 +155,11 @@ omniscient verification of review depth.
 | `file_path` | string | One file the dispatch prompt's scope marker declared in scope, in its canonical form: `cwd`-relative POSIX (forward-slash) path, not the raw form the scope marker carried — falls back to an absolute resolved POSIX path only when the file can't be expressed relative to `cwd` |
 | `file_content_hash` | string | sha256 hex digest of `file_path`'s content at the time the recorder ran (current content, not the content at dispatch time) |
 | `outcome` | string enum | `pass` \| `findings` — whether `file_path` appears in the agent's final `issues[]` |
-| `plugin_version` | string | From `.claude-plugin/plugin.json` |
+| `plugin_version` | string | From `package.json` |
 | `session_id` | string, optional | Opaque per-session ID, when present in the hook payload |
 
 - **Emitter:** `hooks/review_verdict_recorder.py` (a `SubagentStop` hook) via `hooks/lib/review_verdicts.emit_review_verdict()`. No-op (zero rows) for any `subagent_type` outside `hooks/lib/review_agent_registry`'s closed set of registered `agents/*-review.md` names, and fail-open throughout (missing/unreadable transcript, unresolved `subagent_type`, a missing/reformatted scope marker, or an unparseable final JSON result all degrade to zero rows, never an exception); a single deleted/unreadable in-scope file is skipped without affecting the other rows.
-- **Consent:** ALWAYS-ON — same posture as `boundary-events.jsonl` (Decision 2), not gated by `DEV_TEAM_TELEMETRY`/`~/.claude/telemetry.json`. Local-only, mechanical accountability data (lens/path/hash/outcome), no prose.
+- **Consent:** ALWAYS-ON — same posture as `boundary-events.jsonl` (Decision 2), not gated by `DEV_TEAM_TELEMETRY`/`<agentDir>/dev-team/telemetry.json`. Local-only, mechanical accountability data (lens/path/hash/outcome), no prose.
 - **Fail-open:** every exception in `emit_review_verdict()` is swallowed — never changes the calling hook's exit code, stdout, or stderr. `hooks/lib/review_verdicts.load_verdicts()` mirrors this on the read side: an absent file, a corrupted line, or a stale `plugin_version` row all degrade to "no usable rows", never an exception.
 - **Consumers:** none yet — this slice is deliberately writer-only (#2167 is the queued consumer slice).
 
@@ -172,11 +176,11 @@ the pre-commit review gate fired or was bypassed.
 | `event` | string enum | `command` \| `skill` \| `gate` |
 | `name` | string | Grammar-matched slash-command name, skill name, or `pre-pr-review` (#1886 — the gate moved from `git commit` to `gh pr create`) |
 | `outcome` | string | `invoked` \| `fired` \| `bypassed` |
-| `plugin_version` | string | From `.claude-plugin/plugin.json` |
+| `plugin_version` | string | From `package.json` |
 
-- **Emitter:** `hooks/telemetry.py::_emit()`. Written to `~/.claude/metrics/telemetry.jsonl` — home-scoped, out of the project entirely (#1405/#1406), never a project's own `metrics/`.
-- **Consent:** opt-in — `~/.claude/telemetry.json` `{"enabled": true}`, home-scoped only. `DEV_TEAM_TELEMETRY` and a project-scoped `<cwd>/.claude/telemetry.json` are now inert (one-time-per-session stderr notice only, no effect on consent). Off by default; nothing recorded, nothing leaves the machine.
-- **Consumers:** `skills/telemetry/SKILL.md`, `plugins/dev-team/scripts/session_report.py`.
+- **Emitter:** `hooks/telemetry.py::_emit()`. Written to `<agentDir>/dev-team/metrics/telemetry.jsonl` — user-scoped, out of the project entirely (#1405/#1406), never a project's own `metrics/`.
+- **Consent:** opt-in — `<agentDir>/dev-team/telemetry.json` `{"enabled": true}`, user-scoped only. `DEV_TEAM_TELEMETRY` and a project-scoped `<cwd>/.pi/dev-team/telemetry.json` are now inert (one-time-per-session stderr notice only, no effect on consent). Off by default; nothing recorded, nothing leaves the machine.
+- **Consumers:** `skills/telemetry/SKILL.md`.
 
 ---
 
@@ -195,7 +199,7 @@ transcript on each `Stop` hook fire.
 | `by_agent_type` | object | Per-agent-type slim breakdown, same shape as `by_model`: `main` for main-loop turns; sidechain turns keyed by subagent type via `attributionAgent` or the Task-dispatch join; honest `unattributed` bucket when neither signal exists (#1094) |
 
 - **Emitter:** `hooks/cost_meter.py` (wrapper) → `hooks/lib/cost_meter.py::cmd_record()`.
-- **Consent:** gated by `telemetry_consent.is_enabled()` (`~/.claude/telemetry.json` `{"enabled": true}`, home-scoped) — no longer unconditional as of Slice 2 (#1406).
+- **Consent:** gated by `telemetry_consent.is_enabled()` (`<agentDir>/dev-team/telemetry.json` `{"enabled": true}`, user-scoped) — no longer unconditional as of Slice 2 (#1406).
 - **Consumers:** `skills/cost-report/SKILL.md`, `skills/harness-audit/SKILL.md`, `cmd_regression`/`cmd_pace` in the same library, `skills/run-report/SKILL.md` (#1167, best-effort only — see that skill's Join limitations section: this stream has no `session_id` field).
 
 ---
@@ -232,8 +236,8 @@ every invocation.
 | `<skill_name>.last_used_at` | string | ISO-8601 UTC of the most recent invocation |
 | `<skill_name>.lifecycle` | string | `active` (set on creation; other lifecycle states are assigned externally by `/artifact-lifecycle`) |
 
-- **Emitter:** `hooks/telemetry.py::_upsert_artifact_usage()` (atomic rewrite via tempfile + `os.replace`). Written to `~/.claude/metrics/artifact-usage.json` — home-scoped, out of the project entirely (#1405/#1406), never a project's own `metrics/`.
-- **Consent:** follows `telemetry.jsonl`'s opt-in gate (`~/.claude/telemetry.json` `{"enabled": true}`, home-scoped). The project-scoped explicit-off switch this section used to document (a project-level `.claude/telemetry.json` `{"enabled": false}` disabling usage tracking specifically) no longer exists — project-scoped `.claude/telemetry.json` is inert entirely, same as `telemetry.jsonl`'s row above.
+- **Emitter:** `hooks/telemetry.py::_upsert_artifact_usage()` (atomic rewrite via tempfile + `os.replace`). Written to `<agentDir>/dev-team/metrics/artifact-usage.json` — user-scoped, out of the project entirely (#1405/#1406), never a project's own `metrics/`.
+- **Consent:** follows `telemetry.jsonl`'s opt-in gate (`<agentDir>/dev-team/telemetry.json` `{"enabled": true}`, user-scoped). The project-scoped explicit-off switch this section used to document (a project-level `.pi/dev-team/telemetry.json` `{"enabled": false}` disabling usage tracking specifically) no longer exists — project-scoped `.pi/dev-team/telemetry.json` is inert entirely, same as `telemetry.jsonl`'s row above.
 - **Consumers:** `skills/artifact-lifecycle/SKILL.md`.
 
 ---
@@ -255,7 +259,7 @@ are produced.
 | `triggeredBy` | string | `PR_GATE_BYPASS_REASON` (current); `--no-verify`/`-n` (historical, pre-#1886) |
 | `reason` | string | Value of `PR_GATE_BYPASS_REASON` (current) / `GATE_BYPASS_REASON` (historical) — human/agent-authored, required to be non-empty |
 | `stagedFileCount` | integer | Count of files in the branch diff at bypass time (historical rows: staged files at commit time) |
-| `pluginVersion` | string | From `.claude-plugin/plugin.json` |
+| `pluginVersion` | string | From `package.json` |
 
 - **Emitter:** `hooks/pre_pr_review.py::_record_bypass_audit()` (#1886). `hooks/pre_commit_review.py::_record_bypass_audit()` was the historical emitter, now removed along with the rest of that module's gating logic.
 - **Consent:** unconditional — accountability record for an actively-chosen bypass, not passive usage telemetry.
@@ -301,81 +305,6 @@ protocol events (approval / override / pause / stop).
 - **Emitter:** `/feedback-learning` skill (model-authored append) and `/human-oversight-protocol` skill.
 - **Consent:** unconditional (append-only governance record).
 - **Consumers:** `skills/feedback-learning/SKILL.md`, `skills/human-oversight-protocol/SKILL.md`, `skills/governance-compliance/SKILL.md`.
-
----
-
-## `session-digest.jsonl`
-
-Trend digest from `/session-review` (backed by `${CLAUDE_PLUGIN_ROOT}/scripts/session_report.py --profile maintainer`):
-aggregate counts only, no file names, prompts, command strings, or code.
-
-| Field | Type | Values / source |
-| --- | --- | --- |
-| `recorded_at` | string | UTC ISO-8601 of the run |
-| `plugin_version` | string | The `dev-team` plugin's `.claude-plugin/plugin.json` version active when this record was produced (`"unknown"` if the manifest couldn't be read), #1471. Lets consumers tell a friction already fixed in a newer version apart from one that's still current — see `--version-scope` below |
-| `sessions`, `transcripts` | integer | How many sessions/transcripts the digest covered |
-| `tokens` | object | Input/output/cache token totals |
-| `cost_usd`, `cache_hit_ratio` | number | Session cost and cache-read efficiency |
-| `rework` | object | `failed_edits`, `repeated_file_edits`, `retried_bash_commands`, `retried_bash_commands_by_skill`/`retried_bash_commands_by_agent` (#2110 — each retry attributed, at the moment it's detected, to whichever skill/agent is sticky-active; `retried_bash_commands` is the derived sum, never a second independent count), `repeated_verify_runs`, `permission_denials`, `compaction_events` |
-| `accuracy` | object | `tool_calls`, `tool_error_rate`, `user_correction_turns`, `by_skill`/`by_agent` (correction counts, double-bucketed against whichever skill/agent is sticky-active), `correction_rate_by_skill`/`correction_rate_by_agent` (corrections per skill invocation / agent dispatch — absent for a never-invoked name, never a misleading `0.0`), `correction_causes` (#2013, below) |
-| `utilization` | object | `skills_invoked`, `agents_invoked` (agent RUNS), `agent_dispatches` (Agent/Task tool calls), `never_observed_skills`, `never_observed_agents` |
-
-**`accuracy.correction_causes` (#2013).** Deterministic cause data for every
-detected correction turn — no model call, see
-`plugins/dev-team/scripts/lib/session_log/corrections.py`'s module
-docstring for the classifier. Present in BOTH `session-digest/v4` and
-`downstream-session-report/v4` (a correction's producing component is
-exactly the "which components generate the most corrections per dispatch"
-question the issue exists to answer, and that question is as live for a
-downstream user's own report as for this repo's own trend stream). Shape:
-
-| Field | Type | Values |
-| --- | --- | --- |
-| `by_what` | object | Counts by `code-edit` \| `plan` \| `review-finding` \| `tool-choice` \| `factual-claim` \| `other` |
-| `by_component` | object | Counts by `main-loop` or the single most-recently-dispatched skill/agent name (never double-bucketed, unlike `accuracy.by_skill`/`by_agent`) |
-| `by_shape` | object | Counts by `reverted` \| `redirected` \| `narrowed-scope` \| `flagged-wrong` \| `not-what-asked` \| `ambiguous` |
-| `ambiguous_share` | number | `by_shape["ambiguous"] / user_correction_turns` — the classifier's honest inference-share statistic, never hidden |
-
-Never the correction text itself — only these four closed-vocabulary labels.
-`test_session_log_corrections.py::test_classify_correction_never_leaks_correction_text`
-pins this the same way
-`test_session_report_golden.py::test_no_sentinel_leaks_in_either_golden`
-pins the rest of this stream.
-
-`session-digest/v2` (#1994) counts dispatched agents' own transcripts for the
-first time, so token/tool-call/rework totals jump against v1, and
-`retried_bash_commands` / `repeated_verify_runs` moved from a session-keyed to
-a per-thread basis. Records from the two eras are not comparable; split on
-`schema` before trending. `session-digest/v3` (#2046) is a schema-label-only
-bump: it is emitted by the new unified `session_report.py --profile
-maintainer` entry point, which every real consumer now runs (#2047) instead
-of the earlier monorepo-only extractor (retired in #2048). No data-shape
-change from v2 — a v2 and a v3 record trend together. `session-digest/v4`
-(#2018) changes what `plugin_version` MEANS on the per-session
-`session-sync/v4` records `--sync-out` writes (see "Version tagging" below)
-— a v3 sync record and a v4 sync record are not comparable on that field,
-though every other field is unchanged and they still trend together
-otherwise. The single-shot digest/trend record keeps its v2/v3 meaning for
-`plugin_version` (extraction-time) even under the v4 label — see below.
-
-- **Emitter:** `/session-review` skill via `${CLAUDE_PLUGIN_ROOT}/scripts/session_report.py --profile maintainer`.
-- **Consent:** unconditional (aggregate counts only, no file/prompt/command content).
-- **Enforcement (#2045):** every name/label-shaped field this stream (and the
-  shipped `session_report.py --profile downstream` report) emits passes
-  through `plugins/dev-team/scripts/lib/session_log/redact.redact()` — the
-  one function both extractors route file basenames, project labels, skill
-  names, agent names, and model ids through before writing them out.
-  Previously this line's promise was a convention restated independently at
-  each call site; `redact()` is the single enforcement point, pinned by
-  `tests/scripts/test_session_report_golden.py::test_no_sentinel_leaks_in_either_golden`
-  against a corpus seeding real prompt text, source code, a full shell
-  command string, and absolute POSIX/Windows paths.
-- **Consumers:** `skills/harness-audit/SKILL.md` (joins with self-reported task logs), `agents/session-analysis.md`.
-- **Version tagging (#1471, revised #2018):** `plugin_version` is also carried on the per-session `session-sync/v1`-`v4` records synced by `--sync-out` (used by `--rollup`/`--escalate`/`--correlate`) and on the single-shot digest itself. These are no longer the same value stamped two ways — as of `session-sync/v4` (#2018) the two paths diverge deliberately:
-  - **Per-session `--sync-out` records (`session-sync/v4`)** — the path that runs unattended at every `SessionStart` (`.claude/ensure_session_archive.py`) and accumulates into the durable, cross-release archive — carry the SESSION's OWN version, resolved by `resolve_session_plugin_version()` from that project's `<cwd>/.claude/metrics/boundary-events.jsonl` (a stream stamped live, at hook-dispatch time, by `hooks/lib/boundary_events.py`). When a session's boundary-events carry more than one plugin_version (e.g. an in-session `/dev-team:upgrade`), the EARLIEST by `ts` wins — documented, not solved, since a session spanning two releases has no single correct answer. A session with no matching boundary-events record (never dispatched anything through a hook that stamps `session_id`) is tagged the explicit string `"unknown"` — never silently the extractor's own checked-out version, which is the exact mislabeling #2018 was filed to close (5,562 archived records, all `plugin_version: null`, none of them attributable to a release).
-  - **The single-shot digest/trend record** (`--transcript`/`--project-dir`, no `--sync-out`) is UNCHANGED behavior: it still reflects the plugin version active on the machine *at extraction time*. It can aggregate many sessions into one record, and a single field cannot honestly attribute a multi-session aggregate to one session's version — this is a deliberate scope limitation, not an oversight. In the common case (`/session-review` run against the current project, right after the session it's summarizing) extraction-time and session-time coincide anyway; the divergence #2018 closes is specific to `--sync-out`'s day/weeks-later, unattended, cross-session runs.
-- **Version scoping (#1480):** `session_report.py --profile maintainer --rollup`/`--escalate`/`--correlate` accept `--version-scope {all,current-and-previous}` (default `all`, unbounded history). `current-and-previous` drops any record whose `plugin_version` isn't the currently-installed version or the version immediately before it *as observed in the digests being read* (there is no release-history lookup) — records with no `plugin_version` at all (pre-#1471 data), or tagged the explicit `"unknown"` string (#2018), are dropped too, since neither can be proven current. The result gains a `version_window` field (the concrete versions included; `[]` when unscoped). `/session-review` defaults to local-only; its `--cross-machine` opt-in always applies `current-and-previous` scoping (see its SKILL.md) — the skill itself never exposes an unscoped cross-machine mode. Unbounded history across every version remains available only via a direct `session_report.py --profile maintainer --rollup ... --version-scope all` invocation (the CLI default), outside the skill.
-- **Version-filtered downstream report coverage (#2018):** `session_report.py --profile downstream --plugin-version VERSION` scopes the report to sessions whose project recorded `VERSION` in `boundary-events.jsonl` (`sessions_matching_plugin_version`, best-effort, same source as above) — sessions with no matching event are excluded from the report's own counts exactly as before. What's new: the report's top-level `version_filter_coverage` field (present, non-null, only when `--plugin-version` was passed) states `requested_version`, `sessions_considered` (every distinct session in the report's own since/until window, ignoring the version filter), `sessions_attributed` (how many of those matched), `sessions_attributed_other_version` (recorded a DIFFERENT known `plugin_version` — `_sessions_with_known_plugin_version` — the filter correctly excluding them, not a data gap), and `sessions_unattributed` (no resolvable `plugin_version` at all — genuinely missing data) — so an operator can tell "belongs to another release" apart from "this repo's own instrumentation never saw it," instead of one conflated exclusion count. The exclusion behavior itself is unchanged; this only makes it observable and precise.
 
 ---
 
@@ -427,7 +356,7 @@ answerable. Written by `skills/code-review/scripts/review_round_log.py`.
 | `outcome` | string enum | `no-op` \| `fixed` \| `escalated` — same enum as the `/build` rows |
 
 - **Emitter:** `/code-review` (steps 5b-i and 6a) via `review_round_log.py`.
-- **Consent:** **unconditional** — written to `.claude/metrics/` like `boundary-events.jsonl`, *not* gated behind `~/.claude/telemetry.json` the way `/build`'s rows are. Rationale (#1624 design item 2): this is the same class of local, counts-only operational stream the commit gate itself already depends on, and consent-gating it would make #1623's success criteria depend on consent being enabled per dev machine. Rows carry counts, agent names, and enum values only — no file paths, code, or finding text.
+- **Consent:** **unconditional** — written to `.pi/dev-team/metrics/` like `boundary-events.jsonl`, *not* gated behind `<agentDir>/dev-team/telemetry.json` the way `/build`'s rows are. Rationale (#1624 design item 2): this is the same class of local, counts-only operational stream the commit gate itself already depends on, and consent-gating it would make #1623's success criteria depend on consent being enabled per dev machine. Rows carry counts, agent names, and enum values only — no file paths, code, or finding text.
 - **Consumers:** `skills/harness-audit/SKILL.md` Step 4a (churn ratio, per-agent discovery-vs-verification split, gate recidivism).
 - **Backstop rows (#1962).** `source: "build-backstop"` marks `/build`'s Step-6 pass — the one review layer whose files an inline checkpoint already reviewed in the same run. It is fix-applying (the `--internal` panel runs the review-fix loop), so it belongs in fix-rate analysis alongside `build-checkpoint`; what it exists to answer is whether that duplicated layer is ~all `no-op`, which is the evidence `/build`'s `--backstop-review=skip` flag waits on. `outcome: "skipped"` marks a backstop suppressed by that flag: recorded so the suppression is visible in the same stream, and excluded from every rate because it never ran.
 - **Reconciling the `source` values.** `build-checkpoint` and `build-backstop` rows are fix-applying and carry `plan`/`slice`/`step`/`checkpoint`/`complexity`/`issues_found`/`issues_fixed`/`fix_iterations`. `code-review` rows are read-only; those with a `round` field use the round schema above. A consumer wanting "how many issues did this row surface" should read `(.issues_found // .findings_new)`, which covers all three shapes.
@@ -453,7 +382,7 @@ lens that found nothing. This is the fix for the collection bias #2019/
 | `project`, `bug_id` | string | The benchmark case's identifiers (not a `/build` plan/slice/step — a structurally different key space) |
 
 - **Emitter:** `runner.emit_review_value_rows()`, called from `runner.run_case()` and `runner.run_recorded_diff_case()` after a dispatch's `--json` payload parses successfully. Never called for an unparseable dispatch — that failure is already captured by the harness's own `skipped.jsonl`.
-- **File location, deliberately not `.claude/metrics/`.** Rows land in the harness's own results directory (`evals/code-review-benchmark/results/review-value.jsonl` by default, `--results-dir` elsewhere) — never the live metrics tree. This is a structural guarantee against pooling, on top of the `source: "harness"` label itself: even a caller reading the wrong file could not accidentally merge harness rows into the live population, because they are not in the same file.
+- **File location, deliberately not `.pi/dev-team/metrics/`.** Rows land in the harness's own results directory (`evals/code-review-benchmark/results/review-value.jsonl` by default, `--results-dir` elsewhere) — never the live metrics tree. This is a structural guarantee against pooling, on top of the `source: "harness"` label itself: even a caller reading the wrong file could not accidentally merge harness rows into the live population, because they are not in the same file.
 - **Consumers:** `skills/harness-audit/SKILL.md` §4b, which reads this stream as a separate, explicitly-labelled population and must never merge it into Step 3/4's live-row computations.
 - **Recorded-diff adapter (#2051).** `evals/code-review-benchmark/adapters/recorded_diff_adapter.py` supplies `dataset: "recorded-diff"` cases from saved diffs (most usefully real `/test-improve` Phase-5 diffs) — the only source that can give this stream a genuine `diff_shape: "test-only"` row, since Defects4J/BugsJS are real production bug fixes and structurally cannot be test-only.
 
@@ -501,7 +430,7 @@ with a runtime surface was marked complete. Schema modeled on
 
 - **Emitter:** `/build` skill (model-authored append, sub-step 4.9).
 - **Consent:** unconditional.
-- **Consumers:** `${CLAUDE_PLUGIN_ROOT}/scripts/progress_guardian.py --pre-pr` (fails closed on a runtime-surface change with no matching entry), `skills/performance-metrics/SKILL.md`.
+- **Consumers:** `${DEV_TEAM_ROOT}/scripts/progress_guardian.py --pre-pr` (fails closed on a runtime-surface change with no matching entry), `skills/performance-metrics/SKILL.md`.
 
 ---
 
@@ -525,28 +454,9 @@ gates and the documentation-only short-circuit.
 
 ---
 
-## `eval-variance.jsonl`
-
-Multi-trial pass@k stability trend for `/agent-eval` fixtures.
-
-| Field | Type | Values / source |
-| --- | --- | --- |
-| `recorded_at` | string | ISO-8601 UTC |
-| `schema` | string | `eval-variance/v1` |
-| `trials` | integer | Number of trials in this run |
-| `pairs_evaluated` | integer | Fixture/agent pairs evaluated |
-| `flaky_count` | integer | Pairs that neither always passed nor always failed |
-| `mean_pass_at_k` | number | Mean pass@k across evaluated agents |
-
-- **Emitter:** `scripts/eval_variance.py --append`.
-- **Consent:** unconditional (eval infra, not user-session telemetry).
-- **Consumers:** `skills/agent-eval/SKILL.md`.
-
----
-
 ## `eval-ablation.jsonl`
 
-Causal per-agent ablation evidence from `/agent-eval --ablation <agent>` (#868):
+Causal per-agent ablation evidence from an operator-run agent ablation (#868; no live ablation runner ships in this package):
 a controlled baseline-vs-ablated integration-tier delta (issues caught,
 `testCommands` results, token cost), not accumulated usage data.
 
@@ -562,7 +472,7 @@ a controlled baseline-vs-ablated integration-tier delta (issues caught,
 | `delta` | object | `{issues_caught, test_commands_passed, tokens}` (ablated − baseline) |
 | `verdict` | string | e.g. `"no measured impact — supports drop"` / `"agent is load-bearing — retain"` / `"baseline failed — inconclusive"` |
 
-- **Emitter:** `plugins/dev-team/scripts/eval_ablation.py --mode agent` (moved from `scripts/` in #1653).
+- **Emitter:** `scripts/eval_ablation.py --mode agent`.
 - **Consent:** unconditional (eval infra, not user-session telemetry); opt-in/label-gated dispatch per the live-eval cost policy (#134) — the record is only ever written after an explicit operator-confirmed live run.
 - **Consumers:** `skills/harness-audit/SKILL.md` (Step 3 drop-candidate recommendations cite the measured delta/verdict when a record exists).
 
@@ -589,59 +499,7 @@ enforcement decision and any fail-open diagnostic. Extended by `#906` with
 
 ---
 
-## `contract-version-guard-audit.jsonl`
-
-Audit log for release-please's bypass of the security-primitives-contract
-version-bump requirement.
-
-| Field | Type | Values / source |
-| --- | --- | --- |
-| `ts` | string | ISO-8601 UTC |
-| `bypass` | boolean | Always `true` |
-| `reason` | string | Always `release-please-actor` |
-| `github_actor` | string | `$GITHUB_ACTOR` env value |
-| `git_email` | string | `$GIT_AUTHOR_EMAIL` env value |
-
-- **Emitter:** `hooks/contract_version_guard.py::_log_bypass()`.
-- **Consent:** unconditional.
-- **Consumers:** none automated yet; CI-only diagnostic trail.
-
----
-
-## `learning-loop-state.json`
-
-Not JSONL — a single current-value JSON file: a counter gating when
-`session_learning_trigger.py` dispatches background session analysis.
-
-| Field | Type | Values / source |
-|---|---|---|
-| `counter` | integer | Turns since the last dispatch |
-
-- **Emitter:** `hooks/session_learning_trigger.py::_write_state()`.
-- **Consent:** unconditional (internal scheduling state, no content).
-- **Consumers:** `hooks/session_learning_trigger.py` itself (read on next fire).
-
----
-
-## `pending-review.jsonl`
-
-Queued findings from the background session-analysis dispatch, before
-`/session-review` consumes them.
-
-| Field | Type | Values / source |
-| --- | --- | --- |
-| `queued_at` | string | ISO-8601 UTC |
-| `source` | string | Always `session-learning-trigger` |
-| `session_id` | string, optional | Session ID when available |
-| `findings` | array of object | Each: `lever`, `evidence`, `target_artifact`, `proposed_change`, `route` |
-
-- **Emitter:** background `claude --print` run dispatched by `hooks/session_learning_trigger.py::_dispatch_background_analysis()`, writing via `session-analysis` agent output.
-- **Consent:** unconditional (dispatch happens automatically; content is model-authored analysis, not raw session data).
-- **Consumers:** `/session-review` skill.
-
----
-
-## `.claude/metrics/{date}-task-log.jsonl` (e.g. `2026-02-20-task-log.jsonl`)
+## `.pi/dev-team/metrics/{date}-task-log.jsonl` (e.g. `2026-02-20-task-log.jsonl`)
 
 Self-reported per-task completion log, one file per calendar date.
 
@@ -651,8 +509,8 @@ Self-reported per-task completion log, one file per calendar date.
 | (task-specific fields) | — | Tokens, cost, agents used, rework cycles, hallucination events — see `skills/performance-metrics/SKILL.md` for the full field list |
 
 - **Emitter:** `hooks/task_completion_metrics.py`.
-- **Consent:** gated by `telemetry_consent.is_enabled()` (`~/.claude/telemetry.json` `{"enabled": true}`, home-scoped) — no longer unconditional as of Slice 2 (#1406).
-- **Consumers:** `skills/harness-audit/SKILL.md` (self-reported half of the harness-audit join, alongside `session-digest.jsonl`'s real-session half), `skills/governance-compliance/SKILL.md`.
+- **Consent:** gated by `telemetry_consent.is_enabled()` (`<agentDir>/dev-team/telemetry.json` `{"enabled": true}`, user-scoped) — no longer unconditional as of Slice 2 (#1406).
+- **Consumers:** `skills/harness-audit/SKILL.md` (self-reported half of the harness-audit join), `skills/governance-compliance/SKILL.md`.
 
 ---
 
@@ -675,7 +533,7 @@ are re-measured every convergence iteration.
 | `coverage_delta` | object, nullable | `{line_pct, branch_pct}` — workflow-level delta between the two coverage snapshots passed to the roll-up, not an isolated per-scenario attribution (no finer-grained mapping exists today) |
 | `mutation_delta` | object, nullable | `{survivors_after_delta}` — workflow-level survivor-count delta, same caveat as `coverage_delta` |
 
-- **Emitter:** `plugins/dev-team/scripts/gherkin_effectiveness_rollup.py`, invoked from `/quality-targets-converge` Step 6b after each convergence iteration's re-measure, when `gherkin.md` exists for the workflow slug.
+- **Emitter:** `scripts/gherkin_effectiveness_rollup.py`, invoked from `/quality-targets-converge` Step 6b after each convergence iteration's re-measure, when `gherkin.md` exists for the workflow slug.
 - **Consent:** unconditional (derived metrics only; no prompt/file-content capture).
 - **Consumers:** none yet — this is the roll-up a future `/harness-audit`-style review reads to compare BDD-derived vs. hand-written test effectiveness.
 
@@ -712,14 +570,14 @@ maintainer's machine after these emitters ship.
 | `subagent_skill_context.py` | No signal of injection or of a skill being loaded. | New `skill-injection.jsonl`; "loaded" is derived from subagent transcripts. |
 | `subagent_completion_guard.py` | Emits `empty-final-turn` / `truncated-final-turn` to `boundary-events.jsonl` (`decision: "record"`); `clean`/`unreadable` silent. | New `subagent-stops.jsonl` with every classification. |
 
-Consent gating: none beyond the existing per-project `.claude/metrics/`
+Consent gating: none beyond the existing per-project `.pi/dev-team/metrics/`
 location; rows are local files and are never transmitted.
 
 ---
 
 ## Adding a new stream
 
-1. Name it `.claude/metrics/<name>.jsonl` (or `.json` for a single-current-value
+1. Name it `.pi/dev-team/metrics/<name>.jsonl` (or `.json` for a single-current-value
    file) — one stream per concern, matching existing precedent.
 2. Append-only, compact JSON (`separators=(",", ":")`) + trailing newline for
    JSONL streams.
@@ -727,8 +585,7 @@ location; rows are local files and are never transmitted.
    contents, or incidental free text.
 4. Add a section to this file with the same shape as the ones above
    (fields/types, emitter, consent gating, consumers) in the same PR that
-   introduces the emitter — the coverage test in
-   `tests/hooks/test_boundary_events.py` enforces this.
+   introduces the emitter.
 
 ---
 
@@ -801,13 +658,13 @@ BUILD -> REVIEW -> COMMIT -> PR`.
 | `workflow` | string | Orchestrated flow name, e.g. `ship`, `autoship`, `build` |
 | `prior_state` | string, optional (`null` for the initial transition) | State the workflow was in before this transition |
 | `new_state` | string | State the workflow is entering |
-| `plugin_version` | string | From `.claude-plugin/plugin.json` |
+| `plugin_version` | string | From `package.json` |
 | `session_id` | string, optional | Opaque per-session ID — enables joins with `boundary-events.jsonl` and `cost-metering.jsonl` |
 
 - **Emitter:** `hooks/lib/workflow_state.py::emit_state_transition()`, invoked via its `record` CLI subcommand as a model-authored append at each phase boundary in `/ship`, `/autoship`, and `/build` (same convention as `review-value.jsonl`/`verify-log.jsonl`).
 - **Consent:** unconditional (workflow/state names + counts only — no prompt text or file contents).
 - **Derivation:** `hooks/lib/workflow_state.py::derive_current_state()` and `compute_dwell_times()` (also exposed via the `report` CLI subcommand) replay a session's transitions — never a stored snapshot.
-- **Consumers:** `skills/run-report/SKILL.md` (#1167), `skills/session-review/SKILL.md`, `skills/harness-audit/SKILL.md`, `skills/cost-report/SKILL.md`.
+- **Consumers:** `skills/run-report/SKILL.md` (#1167), `skills/harness-audit/SKILL.md`, `skills/cost-report/SKILL.md`.
 
 ---
 
@@ -827,7 +684,7 @@ entry is a durable, once-written decision note.
 | `attempted` | string | Short structured note — what was attempted this iteration (deliberate, agent-authored rationale, not incidental free text — same precedent as `config-changelog.jsonl`'s `description`) |
 | `outcome` | string | Short structured note — what happened |
 | `next_action` | string | Short structured note — what happens next |
-| `plugin_version` | string | From `.claude-plugin/plugin.json` |
+| `plugin_version` | string | From `package.json` |
 | `session_id` | string, optional | Opaque per-session ID — enables joins with `boundary-events.jsonl` / `cost-metering.jsonl` |
 
 - **Emitter:** `hooks/lib/iteration_journal_gate.py::record_iteration_entry()`, invoked via its `record` CLI subcommand as a model-authored append in `/autoship`'s per-issue loop (Step 3) and `/ship`'s per-phase loop, before the corresponding `check` subcommand gates advancement.

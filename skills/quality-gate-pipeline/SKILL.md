@@ -45,7 +45,7 @@ Every agent runs this checklist mentally before presenting output.
 
 - [ ] No contradictions within the output
 - [ ] Code samples compile/run conceptually (correct syntax, valid imports)
-- [ ] Referenced earlier decisions are accurately recalled (if unsure, re-read from .claude/memory/)
+- [ ] Referenced earlier decisions are accurately recalled (if unsure, re-read from .pi/dev-team/memory/)
 
 **Confidence Assessment**
 
@@ -179,6 +179,6 @@ Phase 3: Defect table (severity, scope, status: fixed/deferred/escalated).
 
 ## Integration
 
-- **Performance Metrics**: `hallucination_detected`, `rework_cycles`, `defects_found` are logged automatically by `hooks/task_completion_metrics.py` on task completion — no skill-level logging step needed. To surface non-default values, populate `.claude/session-metrics.json` with the relevant fields before the session ends.
+- **Performance Metrics**: `hallucination_detected`, `rework_cycles`, `defects_found` are logged automatically by `hooks/task_completion_metrics.py` on task completion — no skill-level logging step needed. To surface non-default values, populate `.pi/dev-team/session-metrics.json` with the relevant fields before the session ends.
 - **Context Summarization**: When context is high, increase Phase 1 rigor
 - **Human Oversight Protocol**: Escalation from Phase 3 feeds into the approval gate system

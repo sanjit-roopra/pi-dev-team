@@ -42,9 +42,8 @@ full-branch pass before the gate can close, issue #2087's requirement 3) ->
 
 Same four-trigger, precedence-ordered, "fails toward a reset" reset-trigger
 table; same round-cap posture; the TTL and round-cap constants below are
-independently defined and cross-checked for drift in
-`plugins/dev-team/tests/scripts/test_gate_retry_state.py`, exactly like
-`closing_pass.py`'s `MIN_DISTINCT_DISPATCHES` is checked against
+independently defined and meant to be cross-checked for drift, exactly like
+`closing_pass.py`'s `MIN_DISTINCT_DISPATCHES` against
 `hooks/pre_pr_review.py`. This script must not import across skill
 directories — a future change to either skill's constant fails a test rather
 than silently drifting the other.
@@ -79,8 +78,7 @@ from pathlib import Path
 #: invocation narrows the scope on its own. Same value and reasoning as
 #: `../code-review/scripts/finding_signature.py`'s `MAX_ROUNDS` (initial +
 #: 3 more); independently defined so a change to one doesn't silently
-#: desync from the other. Drift-tested in
-#: `plugins/dev-team/tests/scripts/test_gate_retry_state.py`.
+#: desync from the other.
 PR_GATE_MAX_ROUNDS = 4
 
 #: A stored gate-retry state older than this is discarded rather than
@@ -92,7 +90,7 @@ PR_GATE_STATE_TTL_SECONDS = 24 * 60 * 60
 
 _OUTCOMES = frozenset({"pass", "warn", "fail"})
 
-_DEFAULT_STATE_PATH = ".claude/memory/pr-gate-state.json"
+_DEFAULT_STATE_PATH = ".pi/dev-team/memory/pr-gate-state.json"
 
 
 def _now_iso() -> str:

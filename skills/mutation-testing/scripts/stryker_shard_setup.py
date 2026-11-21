@@ -38,7 +38,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 # skills/mutation-testing/scripts -> skills/mutation-testing -> skills
-# -> plugin root -> scripts
+# -> package root -> scripts
 _PLUGIN_SCRIPTS_DIR = Path(__file__).resolve().parents[3] / "scripts"
 if str(_PLUGIN_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_PLUGIN_SCRIPTS_DIR))

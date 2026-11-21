@@ -8,7 +8,7 @@ Exit codes:
   2 = warn (warnings only or LLM check skipped)
 
 Usage:
-  python3 ${CLAUDE_PLUGIN_ROOT}/scripts/progress_guardian.py --plan <path> [--pre-pr] [--skip-llm]
+  python3 ${DEV_TEAM_ROOT}/scripts/progress_guardian.py --plan <path> [--pre-pr] [--skip-llm]
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ STEP_PATTERN = re.compile(r"^-\s+\[( |x|X)\]\s+(?:Step\s+[\d.]+:\s+)?(.+)$")
 BACKTICK_PATH_RE = re.compile(r"`([^`\s]+\.[a-zA-Z0-9_]+)`")
 
 # Matches backtick-quoted directory declarations (trailing '/'), e.g.
-# `plugins/dev-team/skills/new-feature/`. Kept separate from
+# `skills/new-feature/`. Kept separate from
 # BACKTICK_PATH_RE so extension-less, non-path backtick tokens (e.g.
 # `runHook()`, `SomeClass`) are never mistaken for declared paths — see
 # issue #713.
@@ -746,7 +746,7 @@ def check_scope(plan_path: Path, repo_root: str, skip_llm: bool) -> list[dict]:
     )
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["dev-team-run", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=60,
@@ -776,7 +776,7 @@ def check_scope(plan_path: Path, repo_root: str, skip_llm: bool) -> list[dict]:
             make_issue(
                 "warning",
                 message=(
-                    f"LLM scope check unavailable (claude not on PATH or timed out): "
+                    f"LLM scope check unavailable (dev-team-run not on PATH or timed out): "
                     f"{len(out_of_plan)} file(s) not declared in plan — manual review needed."
                 ),
             )

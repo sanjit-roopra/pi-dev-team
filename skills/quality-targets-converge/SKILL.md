@@ -26,8 +26,8 @@ Arguments: $ARGUMENTS
 
 - Positional: `<repo-path>`.
 - `--parent <issue-url>` — parent issue URL (or empty).
-- `--repo-slug <slug>` — `.claude/memory/<workflow>/` namespace.
-- `--workflow <name>` — the workflow namespace under `.claude/memory/` and `.claude/plans/`. Defaults to `test-improve`. Callers pass their own namespace so parallel runs stay quarantined.
+- `--repo-slug <slug>` — `.pi/dev-team/memory/<workflow>/` namespace.
+- `--workflow <name>` — the workflow namespace under `.pi/dev-team/memory/` and `.pi/dev-team/plans/`. Defaults to `test-improve`. Callers pass their own namespace so parallel runs stay quarantined.
 - `--max-iterations <n>` — safety cap. Default 10. The operator can extend mid-run.
 - `--refactor-mode <no-refactor|refactor-allowed>` — gates whether Step 4's
   "coverage gap, no existing seam" action may propose a paired
@@ -69,7 +69,7 @@ In one pass before the loop body:
 - **Coverage** — invoke `/coverage-delta <repo> --workflow <workflow>` (no `--story`). Result lives in `.dev-team-reports/<workflow>/<slug>/data/coverage-history.json`.
 - **Mutation scope — branch-vs-base changed set (cumulative, NOT whole-repo).** Phase-8 validation measures mutation only over the code this branch changed, accumulated across every session on the branch — never the whole repo (issue #1208). Resolve the scope in three moves:
 
-  1. **Resolve the branch base** (same idiom as `/build`'s Farley-Score step — `skills/build/SKILL.md` Step 7 sub-step 1): `git merge-base HEAD origin/HEAD`, falling back to `origin/main`, then `main`, `master`, `develop`. **Degenerate-base guard (issue #916):** treat **base == HEAD, or every candidate ref unresolvable** (single-branch / no-remote repo where `merge-base` fails outright, or every commit landed directly on the fallback branch so `merge-base` resolves to HEAD) as a resolution **failure**, not a valid base. On resolution failure, fall back to the plan's recorded plan-start anchor — the same anchor `/build` resolves against (issue #865): `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/build_rollback_point.py get-by-symbolic --path .claude/memory/build-rollback.json --symbolic plan-start --repo <repo> --ancestor-of HEAD` (the `--repo`/`--ancestor-of` args reject a stale `plan-start` from an unrelated earlier build). If a qualifying entry is found, use its `sha` as `<base>`. If none is found, print `Branch-base resolution degraded — cannot bound the changed set; scoping to the full in-scope component list this run.` and scope to the full in-scope component list **only as a surfaced last resort** — so a widened run is visible in the output, never a silent whole-repo default.
+  1. **Resolve the branch base** (same idiom as `/build`'s Farley-Score step — `skills/build/SKILL.md` Step 7 sub-step 1): `git merge-base HEAD origin/HEAD`, falling back to `origin/main`, then `main`, `master`, `develop`. **Degenerate-base guard (issue #916):** treat **base == HEAD, or every candidate ref unresolvable** (single-branch / no-remote repo where `merge-base` fails outright, or every commit landed directly on the fallback branch so `merge-base` resolves to HEAD) as a resolution **failure**, not a valid base. On resolution failure, fall back to the plan's recorded plan-start anchor — the same anchor `/build` resolves against (issue #865): `python3 ${DEV_TEAM_ROOT}/scripts/build_rollback_point.py get-by-symbolic --path .pi/dev-team/memory/build-rollback.json --symbolic plan-start --repo <repo> --ancestor-of HEAD` (the `--repo`/`--ancestor-of` args reject a stale `plan-start` from an unrelated earlier build). If a qualifying entry is found, use its `sha` as `<base>`. If none is found, print `Branch-base resolution degraded — cannot bound the changed set; scoping to the full in-scope component list this run.` and scope to the full in-scope component list **only as a surfaced last resort** — so a widened run is visible in the output, never a silent whole-repo default.
   2. **Cumulative changed set:** `git diff --name-only <base>...HEAD` (three-dot — everything the branch added since it forked, across all sessions, not just the last commit).
   3. **Scope is the source covered by the changed TESTS, not just changed source files.** A test-improvement branch commonly changes no production source at all, so mapping only changed `*.ts`/`*.py`/etc. would scope to nothing. From the changed set, take every changed **test** file and resolve the production source it exercises: a co-located `X.spec.ts` / `X.test.ts` maps to its sibling `X.ts` (same basename, same directory); an a11y / contract / integration spec that names no co-located sibling maps to the first-party production modules it **imports** (parse the spec's import statements, drop third-party paths). Union that resolved-source set with any changed production source files. That union is the mutation `--scope`.
 
@@ -96,7 +96,7 @@ In one pass before the loop body:
 
 - **Wall-clock** — already captured as part of determinism. Take the median.
 
-Write the snapshot to `.claude/memory/<workflow>/<slug>/converge-<iteration>.json`:
+Write the snapshot to `.pi/dev-team/memory/<workflow>/<slug>/converge-<iteration>.json`:
 
 ```json
 {
@@ -157,14 +157,14 @@ For the picked gap, dispatch the smallest action — by emitting a recommendatio
 
 **Invariant refactors are skipped, not dispatched (issue #1208).** The "behavior-preserving (invariant) test refactor" row exists because a convergence loop scanning changed tests will encounter semantics-preserving migrations. They change no assertion and kill no mutant, so they close no target gap — proposing a Story for them only adds churn. Skip them and log the rationale to the backlog so the skip is auditable rather than silent.
 
-**Gherkin binding for proposed component tests.** When the smallest action is "add a component test" (the surviving-mutant rows, or the coverage-gap-with-existing-seam row above), first check `.claude/memory/<workflow>/<slug>/gherkin-bindings.json` for an approved Scenario covering that behavior at the relevant public surface:
+**Gherkin binding for proposed component tests.** When the smallest action is "add a component test" (the surviving-mutant rows, or the coverage-gap-with-existing-seam row above), first check `.pi/dev-team/memory/<workflow>/<slug>/gherkin-bindings.json` for an approved Scenario covering that behavior at the relevant public surface:
 
 - **Scenario exists** — the proposed Story extends the matching `[Component tests]` Story rather than creating a new one. The recommendation cites `<feature-file>::<scenario-name>` and the test added in `/build` binds to that scenario in the binding mode recorded in `phase-0.md`.
 - **Scenario is missing** — do NOT invent a Scenario inside a downstream Story. Pause the convergence loop and hand back to the orchestrator: the operator remains the single author of intent, and the Gherkin surface must be updated via the workflow's standard Phase-2 sign-off before this loop resumes. Do not open ad-hoc amendment Stories from inside this worker; that route would bypass the human gate and is intentionally not available here.
 
 This keeps the approved Gherkin as the single source of intended behavior even when convergence discovers a gap. The operator stays the only author of intent.
 
-Each recommendation lands as a new child issue on the parent (via the same CLI dispatch convention as `/issues-from-assessment`) or as a new file under `.claude/plans/<workflow>/phase-7/`. The orchestrator then drives `/build` against each.
+Each recommendation lands as a new child issue on the parent (via the same CLI dispatch convention as `/issues-from-assessment`) or as a new file under `.pi/dev-team/plans/<workflow>/phase-7/`. The orchestrator then drives `/build` against each.
 
 ### 5. Re-measure + decide whether to loop
 
@@ -195,20 +195,20 @@ Same CLI pattern as `/coverage-baseline` and `/coverage-delta`.
 
 ### 6b. Gherkin effectiveness roll-up (conditional)
 
-When `.claude/memory/<workflow>/<slug>/gherkin.md` exists (Phase 3 ran — see
+When `.pi/dev-team/memory/<workflow>/<slug>/gherkin.md` exists (Phase 3 ran — see
 `/gherkin-derive`), run the roll-up after every iteration's re-measure so
 there is a standing signal on whether the derived scenarios track real
 coverage/mutation movement (issue #1296):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_effectiveness_rollup.py" \
-  --gherkin-md .claude/memory/<workflow>/<slug>/gherkin.md \
-  --bindings-json .claude/memory/<workflow>/<slug>/gherkin-bindings.json \
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_effectiveness_rollup.py" \
+  --gherkin-md .pi/dev-team/memory/<workflow>/<slug>/gherkin.md \
+  --bindings-json .pi/dev-team/memory/<workflow>/<slug>/gherkin-bindings.json \
   --baseline-coverage .dev-team-reports/<workflow>/<slug>/data/baseline-coverage.json \
   --current-coverage <this iteration's coverage measurement> \
   --baseline-mutation .dev-team-reports/<workflow>/<slug>/data/baseline-mutation.json \
   --current-mutation <this iteration's mutation measurement> \
-  --out .claude/metrics/gherkin-derive-effectiveness.jsonl
+  --out .pi/dev-team/metrics/gherkin-derive-effectiveness.jsonl
 ```
 
 Omit any flag whose file doesn't exist for this run (e.g. no
@@ -225,7 +225,7 @@ gaps or which action Step 4 dispatches.
 If the operator chooses to waive a target:
 
 - Capture the reason verbatim.
-- Record it in `.claude/memory/<workflow>/<slug>/waivers.json`.
+- Record it in `.pi/dev-team/memory/<workflow>/<slug>/waivers.json`.
 - Append a `**Waived**: <target> — <reason> (<ISO-8601>)` line to the parent issue / `FEATURE.md`.
 
 A waiver counts as "met" for the loop's exit condition but is surfaced in the orchestrator's final Report.
@@ -238,11 +238,11 @@ Print:
 - Whether the loop converged, halted, or is mid-iteration.
 - Any waivers recorded.
 - The path to `converge-<iteration>.json` and to `waivers.json` (if any).
-- The path to `.claude/metrics/gherkin-derive-effectiveness.jsonl` when Step 6b ran.
+- The path to `.pi/dev-team/metrics/gherkin-derive-effectiveness.jsonl` when Step 6b ran.
 
 ## Examples / Integration
 
-- `/test-improve` invokes this worker from Phase 8 with `--workflow test-improve`; paths resolve as `.claude/memory/test-improve/<slug>/` and `.claude/plans/test-improve/phase-8/`, with tracked evidence (coverage/mutation history, baselines) under `.dev-team-reports/test-improve/<slug>/data/`.
+- `/test-improve` invokes this worker from Phase 8 with `--workflow test-improve`; paths resolve as `.pi/dev-team/memory/test-improve/<slug>/` and `.pi/dev-team/plans/test-improve/phase-8/`, with tracked evidence (coverage/mutation history, baselines) under `.dev-team-reports/test-improve/<slug>/data/`.
 - `/test-improve` invokes this worker from Phase 8 with `--workflow test-improve`; the same template resolves with `<workflow>` = `test-improve`.
 
 ## Notes

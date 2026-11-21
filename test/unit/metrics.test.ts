@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { test } from "node:test";
-import { buildCostRow } from "../../extensions/dev-team/lib/metrics.ts";
+import { buildCostRow, telemetryConsent, telemetryConsentPath } from "../../extensions/dev-team/lib/metrics.ts";
 import { SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry, type UsageTotals } from "../../extensions/dev-team/lib/subagent-types.ts";
 
 const usage = (input: number, cost: number): UsageTotals => ({ input, output: 1, cacheRead: 0, cacheWrite: 0, cost, turns: 1 });
@@ -34,11 +37,29 @@ test("cost row: entries written before nested crediting still count", () => {
 	assert.ok(row.by_agent_type["dev-team:a"]);
 });
 
-test("cost row: pi's own usage entries (cache warming) stay out of the upstream row shape", () => {
+test("cost row: pi's own usage entries (cache warming) stay out of the cost row shape", () => {
 	// The shape pi's SessionManager.appendUsage writes (UsageEntry in pi-coding-agent's session-manager.d.ts).
 	const cacheWarm = { type: "usage", kind: "cache_warm", provider: "p", model: "main", usage: { input: 500, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 5 } } };
 	const row = buildCostRow(ctxFrom([mainTurn, cacheWarm])) as { total: { input_tokens: number; cost_usd: number }; by_thread: Record<string, unknown> };
 	assert.equal(row.total.input_tokens, 10);
 	assert.equal(row.total.cost_usd, 0.1);
 	assert.deepEqual(Object.keys(row.by_thread), ["main"]);
+});
+
+test("telemetry consent is read from <agentDir>/dev-team/telemetry.json", (t) => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dt-consent-"));
+	const saved = process.env.PI_CODING_AGENT_DIR;
+	t.after(() => {
+		if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = saved;
+		fs.rmSync(dir, { recursive: true, force: true });
+	});
+	process.env.PI_CODING_AGENT_DIR = dir;
+	assert.equal(telemetryConsentPath(), path.join(dir, "dev-team", "telemetry.json"));
+	assert.equal(telemetryConsent(), false, "no file: no consent");
+	fs.mkdirSync(path.join(dir, "dev-team"));
+	fs.writeFileSync(path.join(dir, "dev-team", "telemetry.json"), JSON.stringify({ enabled: true }));
+	assert.equal(telemetryConsent(), true);
+	fs.writeFileSync(path.join(dir, "dev-team", "telemetry.json"), JSON.stringify({ enabled: "yes" }));
+	assert.equal(telemetryConsent(), false, "only enabled: true counts");
 });

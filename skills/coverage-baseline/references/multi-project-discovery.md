@@ -12,7 +12,7 @@ message templates because that is what reviewers and tests depend on; this
 file holds the mechanics — mirroring the
 `../../coverage-delta/references/mutation-gate.md` precedent (issue #1759).
 
-Every function named below lives in `${CLAUDE_PLUGIN_ROOT}/scripts/`:
+Every function named below lives in `${DEV_TEAM_ROOT}/scripts/`:
 `coverage_config.py` (shared: bootstrap, drift-check, weighted merge,
 measurement-basis notice, and the `read_and_screen_xml` entity-expansion
 screen every XML-parsing stack routes through), `coverage_discovery_dotnet.py`
@@ -23,9 +23,9 @@ screen every XML-parsing stack routes through), `coverage_discovery_dotnet.py`
 
 | Stack | Trigger | Call |
 | --- | --- | --- |
-| .NET | a `.sln` file exists at the repo root | `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_dotnet.py`'s `discover_dotnet_projects(repo_root)` |
-| JS/TS | root `package.json#workspaces`, or `pnpm-workspace.yaml`, or `lerna.json` is present | `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_js.py`'s `discover_js_packages(repo_root)` |
-| Java | root `pom.xml` declares `<modules>` (Maven), or `settings.gradle`/`settings.gradle.kts` declares `include(...)` (Gradle). Maven wins when both are present — no cross-merge | `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_java.py`'s `discover_java_modules(repo_root)` |
+| .NET | a `.sln` file exists at the repo root | `${DEV_TEAM_ROOT}/scripts/coverage_discovery_dotnet.py`'s `discover_dotnet_projects(repo_root)` |
+| JS/TS | root `package.json#workspaces`, or `pnpm-workspace.yaml`, or `lerna.json` is present | `${DEV_TEAM_ROOT}/scripts/coverage_discovery_js.py`'s `discover_js_packages(repo_root)` |
+| Java | root `pom.xml` declares `<modules>` (Maven), or `settings.gradle`/`settings.gradle.kts` declares `include(...)` (Gradle). Maven wins when both are present — no cross-merge | `${DEV_TEAM_ROOT}/scripts/coverage_discovery_java.py`'s `discover_java_modules(repo_root)` |
 
 Both return one of three shapes:
 
@@ -109,7 +109,7 @@ drift = coverage_config.drift_check(config, discovered)
 
 For each path in `config["included"]`, run the stack's coverage command
 **per included project/package** (never once for the whole repo), then parse
-its report with `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_report_parse.py`'s
+its report with `${DEV_TEAM_ROOT}/scripts/coverage_report_parse.py`'s
 `parse(report_path)` — it auto-detects the format (lcov, cobertura,
 jacoco-csv, istanbul-summary, istanbul-final, coverage-py, or **coverlet**)
 and returns one `CoverageRecord` per source file, already in `weighted_merge`'s

@@ -1,4 +1,4 @@
-"""Shared library for mutation-gate hook and adapters — Python port of lib.sh.
+"""Shared library for mutation-gate hook and adapters.
 
 Adapter contract (mirrors the bash lib.sh header):
 

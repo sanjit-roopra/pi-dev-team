@@ -19,6 +19,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 import { lintGhText } from "./github-style.ts";
 import { type ShellSegment, scanShell, unquotedView } from "./shell-scan.ts";
+import { STATE_DIR } from "./state-dir.ts";
 
 export const BRIEF_KINDS = ["question", "tiny", "feature", "vague", "resume"] as const;
 export type BriefKind = (typeof BRIEF_KINDS)[number];
@@ -42,7 +43,7 @@ export function bareSkillName(name: string): string {
 	return name.trim().replace(/^\//, "").replace(/^[\w-]+:/, "").toLowerCase();
 }
 
-export const BRIEF_FILE = path.join(".claude", "memory", "brief.json");
+export const BRIEF_FILE = path.join(STATE_DIR, "memory", "brief.json");
 export const TINY_MAX_FILES = 3;
 export const TINY_MAX_LINES = 150;
 export const MAX_GLANCE_LINES = 15;
@@ -230,7 +231,7 @@ function segmentCommands(segments: ShellSegment[]): BashCommand[] {
 function isStatePath(file: unknown, cwd: string): boolean {
 	if (typeof file !== "string" || !file) return false;
 	const rel = path.relative(cwd, path.resolve(cwd, file));
-	return /^(?:\.claude|\.dev-team-reports)(?:[\\/]|$)/.test(rel);
+	return /^(?:\.pi[\\/]dev-team|\.dev-team-reports)(?:[\\/]|$)/.test(rel);
 }
 
 /**
@@ -330,12 +331,12 @@ export class BriefGate {
 	}
 }
 
-/** Changed lines per file in the working tree, the team's own state (.claude/) left out. */
+/** Changed lines per file in the working tree, the team's own state (.pi/dev-team/) left out. */
 export type DiffSnapshot = Map<string, number>;
 
 /**
  * A snapshot from `git diff --numstat` output and the untracked files with their line counts. Paths
- * under .claude/ and .dev-team-reports/ are left out: the team writes them itself.
+ * under .pi/dev-team/ and .dev-team-reports/ are left out: the team writes them itself.
  */
 export function parseDiff(numstat: string, untracked: Record<string, number> = {}): DiffSnapshot {
 	const snapshot: DiffSnapshot = new Map();
@@ -488,7 +489,7 @@ export type FeatureAnswer = "go" | "change" | "stop" | "away" | "noHuman";
 
 export interface BriefToolDeps {
 	gate: BriefGate;
-	/** The session id /pr compares with $CLAUDE_SESSION_ID. */
+	/** The session id /pr compares with $DEV_TEAM_SESSION_ID. */
 	sessionId: (ctx: ExtensionContext) => string;
 	/** Asks the human to approve a feature brief. "away": nobody answered in time. "noHuman": nobody to ask. */
 	approveFeature: (ctx: ExtensionContext, glance: string, signal: AbortSignal | undefined) => Promise<{ answer: FeatureAnswer; change?: string }>;
@@ -508,7 +509,7 @@ export function registerBriefTool(pi: ExtensionAPI, deps: BriefToolDeps): void {
 		parameters: BriefParams,
 		executionMode: "sequential",
 		exposure: "model-only",
-		// It writes .claude/memory/brief.json.
+		// It writes .pi/dev-team/memory/brief.json.
 		annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
 		async execute(_id, params, signal, _onUpdate, ctx) {
 			const b = params as Brief;

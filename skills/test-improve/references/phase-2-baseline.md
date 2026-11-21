@@ -9,7 +9,7 @@ existing-baseline guard and persist step — see `../../coverage-baseline/SKILL.
 "Existing-baseline guard" and "Persist the baseline" steps for the full
 mechanics. The result lands directly and atomically at
 `.dev-team-reports/test-improve/<slug>/data/baseline-coverage.json`; there is
-no `.claude/memory/` write and no later copy step for this file — that skill
+no `.pi/dev-team/memory/` write and no later copy step for this file — that skill
 has no opt-in awareness of its own, and this write is **unconditional**.
 
 This is independent of the mutation mode: a coverage baseline is persisted in
@@ -24,7 +24,7 @@ coverage targeting input, independent of whether mutation work happens at
 all — and it is computed by script, never estimated in prose:
 
 ```
-sh "${CLAUDE_PLUGIN_ROOT}/hooks/py.sh" "${CLAUDE_PLUGIN_ROOT}/scripts/coverage_gap_ranking.py" \
+sh "${DEV_TEAM_ROOT}/hooks/py.sh" "${DEV_TEAM_ROOT}/scripts/coverage_gap_ranking.py" \
   --report <baseline raw_report> --repo-root <repo-path> \
   --target-line-pct <line target> --target-branch-pct <branch target> \
   --top 0 --json \

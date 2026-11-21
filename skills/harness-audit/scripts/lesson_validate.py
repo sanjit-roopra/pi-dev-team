@@ -2,7 +2,9 @@
 """Validated-outcome weighting for feedback-learning lessons (#866).
 
 Reads `metrics/config-changelog.jsonl` (written by `/feedback-learning`) and
-`metrics/session-digest.jsonl` (written by `/session-review`) and, for every
+`metrics/session-digest.jsonl` (no producer for it ships in this package; a
+missing file reads as zero records, so every lesson is `insufficient data`)
+and, for every
 adopted lesson that carries a structured `evidence` field and whose
 observation window has elapsed, compares the watched metric before vs. after
 adoption and records a verdict:

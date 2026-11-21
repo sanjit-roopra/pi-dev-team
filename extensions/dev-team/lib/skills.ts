@@ -1,11 +1,11 @@
 /**
- * dev-team skills as pi slash commands and as the `skill` tool (Claude Code's Skill tool).
+ * dev-team skills as pi slash commands and as the `skill` tool (the Skill tool dev-team instructions name).
  *
- * Claude Code semantics reproduced here:
+ * Semantics:
  *   - `/name args` loads the skill body with `$ARGUMENTS`, `$ARGUMENTS[N]` and `$N` (0-based) substituted.
  *     If the body has no placeholder, the arguments are appended as "ARGUMENTS: ...".
  *   - Qualified names ("dev-team:plan") resolve to the bare skill.
- *   - Project skills (.pi/skills, .claude/skills) override package skills with the same name
+ *   - Project skills (.pi/skills) override package skills with the same name
  *     (e.g. the project-specific /pr that /setup generates).
  */
 import * as fs from "node:fs";
@@ -14,6 +14,7 @@ import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-ag
 import type { DevTeamConfig } from "./config.ts";
 import { insertReviewProfileNote } from "./review-profile.ts";
 import { readSmallFile } from "./safe-read.ts";
+import { STATE_DIR } from "./state-dir.ts";
 
 export interface SkillDef {
 	name: string;
@@ -74,7 +75,7 @@ function loadDir(dir: string, source: SkillDef["source"]): SkillDef[] {
 }
 
 /**
- * Project skills (.pi/skills, .claude/skills) first, then the package's. Project skills are
+ * Project skills (.pi/skills) first, then the package's. Project skills are
  * repo-supplied instructions, so pass `includeProject: ctx.isProjectTrusted()` as pi does for its own.
  */
 export function discoverSkills(cwd: string, packageRoot: string, opts: { includeProject: boolean }): Map<string, SkillDef> {
@@ -88,7 +89,7 @@ export function discoverSkills(cwd: string, packageRoot: string, opts: { include
 }
 
 function loadProjectSkills(cwd: string): SkillDef[] {
-	return [...loadDir(path.join(cwd, ".pi", "skills"), "project"), ...loadDir(path.join(cwd, ".claude", "skills"), "project")];
+	return loadDir(path.join(cwd, ".pi", "skills"), "project");
 }
 
 /** First definition of each name wins. */
@@ -159,7 +160,7 @@ export function splitArgs(args: string): string[] {
 	return out;
 }
 
-/** Claude Code argument substitution. */
+/** Skill argument substitution: $ARGUMENTS, $ARGUMENTS[N], $N. */
 export function substituteArguments(body: string, args: string): string {
 	const positional = splitArgs(args);
 	let used = false;
@@ -189,7 +190,7 @@ export function expandSkill(skill: SkillDef, args: string, profileNote?: string)
 	if (raw === undefined) throw new Error(`Skill "${skill.name}" can no longer be read: ${skill.filePath}`);
 	const body = insertReviewProfileNote(stripFrontmatter(raw).trim(), profileNote);
 	const substituted = substituteArguments(body, args);
-	const header = `References are relative to ${skill.baseDir}. \${CLAUDE_PLUGIN_ROOT} is set in the shell environment.`;
+	const header = `References are relative to ${skill.baseDir}. \${DEV_TEAM_ROOT} is set in the shell environment.`;
 	return `<skill name="${skill.name}" location="${skill.filePath}">\n${header}\n\n${substituted}\n</skill>`;
 }
 
@@ -199,14 +200,14 @@ export function commandText(skill: SkillDef, args: string, profileNote?: string)
 }
 
 /**
- * Where /plan, /specs and /ship keep the user's request word for word. With no spec artifact, upstream /plan
+ * Where /plan, /specs and /ship keep the user's request word for word. With no spec artifact, /plan
  * writes its own criteria and every later gate checks against them, so a requirement the plan rewords passes
  * every review; /specs and /ship hand later phases a model's summary. The saved file gives every phase and its
  * reviewers the user's own text. Code writes it, not the model: a model copy can shorten it, and a model may
- * invoke a skill again with a summary as its arguments. The directory sits under .claude/memory/, which /setup
+ * invoke a skill again with a summary as its arguments. The directory sits under .pi/dev-team/memory/, which /setup
  * already git-ignores in user projects, like the plans that name it.
  */
-export const REQUEST_DIR = path.join(".claude", "memory", "requests");
+export const REQUEST_DIR = path.join(STATE_DIR, "memory", "requests");
 const SAVE_REQUEST_SKILLS: ReadonlySet<string> = new Set(["plan", "specs", "ship"]);
 
 /** An issue number or list (`12`, `#12`, `4,5`), a URL or a file path: names a source, is not request text. */
@@ -293,7 +294,7 @@ function truncate(text: string, max: number): string {
 	return (dot > max * 0.5 ? cut.slice(0, dot + 1) : `${cut.trimEnd()}…`).trim();
 }
 
-/** Skill index for the system prompt (Claude Code lists skills for its Skill tool the same way, budgeted). */
+/** Skill index for the system prompt (one budgeted line per skill, for the skill tool). */
 export function skillIndex(skills: Map<string, SkillDef>, mode: "compact" | "full", maxChars: number): string {
 	const lines = [...skills.values()]
 		.sort((a, b) => a.name.localeCompare(b.name))

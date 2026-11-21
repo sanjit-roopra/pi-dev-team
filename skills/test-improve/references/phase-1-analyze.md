@@ -55,7 +55,7 @@ need a production seam is still shown in the presented plan — labeled
 coverage left on the table instead of a plan that quietly reorders around it.
 
 **Output.** Persist the rolled-up analysis plus the ordered improvement plan to
-`.claude/memory/test-improve/<slug>/phase-1.md`.
+`.pi/dev-team/memory/test-improve/<slug>/phase-1.md`.
 
 **Test-count-by-type snapshot.** Independent of the `/test-health` call
 above (and of whether `/test-health`'s own trivial-suite short-circuit
@@ -76,7 +76,7 @@ never a legitimate outcome of classifying a test file; see its own
 counting rule below). Persist
 `.dev-team-reports/test-improve/<slug>/data/test-counts-before.json` — written
 **directly** to the git-tracked `data/` sibling (this file has no other
-consumer, so no separate `.claude/memory/` copy is needed) — with the six
+consumer, so no separate `.pi/dev-team/memory/` copy is needed) — with the six
 canonical snake_case keys, in this fixed order: `static_analysis`, `unit`,
 `component`, `contract`, `integration`, `end_to_end` — each key present
 even at zero, counting **test suites/files, not individual test cases or

@@ -1,7 +1,6 @@
 # pi-dev-team vs MinimumCD Agent-Assisted Specification
 
 Source: https://beyond.minimumcd.org/docs/agentic-cd/specification/agent-assisted-specification/ (page modified 2026-10-08, commit 43319b8)
-Port: upstream v14.0.0 @ 2bf3d9852 (`UPSTREAM.json:4-5`). Upstream main is v14.0.1, 7 commits ahead. The only spec change since is style-only (579a4e333). Upstream has no hypothesis, eval design or delivery contract either.
 
 ---
 
@@ -41,11 +40,11 @@ Spec stage dispatches no agent and invokes no skill (`skills/specs/SKILL.md`, `r
 | Agent does not write the spec | ✅ | `skills/specs/SKILL.md:92` | `design-doc` breaks this: agent drafts (`skills/design-doc/SKILL.md:48-79`). |
 | Small scope: next thin slice, >15 min = split | 🟡 | `skills/specs/SKILL.md:88,171-187` | One whole feature per spec on purpose; slicing happens in /plan. No time or AC cap. Real plan 617 lines, 5 slices. |
 | Stage 1 Intent | ✅ | `skills/specs/SKILL.md:100` | Free-form, 1-3 paragraphs. |
-| Stage 1 hypothesis "We believe X → Y because Z" | ❌ | — | Missing in port and upstream. "hypothes" grep hits only debugging, PBT lib, `gherkin-derive:207`. |
+| Stage 1 hypothesis "We believe X → Y because Z" | ❌ | — | Missing. "hypothes" grep hits only debugging, PBT lib, `gherkin-derive:207`. |
 | Stage 1 hypothesis pressure-test (measurable, causal, alternatives) | ❌ | — | `design-doc:59-63` alternatives are solution alternatives, not alternative causes. |
 | Stage 1 ambiguity / assumptions / missing constraints | ✅+ | `skills/specs/SKILL.md:126-159` | Stronger than MinimumCD: predictability check + classification + log. |
 | Stage 1 suggest splits | 🟡 | `skills/specs/SKILL.md:182-187` | Only for unrelated features, never for size. |
-| Stage 2 Gherkin: success/error/edge | 🟡 | `skills/plan/SKILL.md:66-75` | Moved to /plan per slice (upstream design choice). |
+| Stage 2 Gherkin: success/error/edge | 🟡 | `skills/plan/SKILL.md:66-75` | Moved to /plan per slice. |
 | Stage 2 rationale per scenario | ❌ | — | No `# why:` convention. |
 | Stage 2 missing: boundary/concurrency/failure | ✅ | `skills/plan/SKILL.md:68-75` | |
 | Stage 2 missing: interaction with existing behaviour | ❌ | `skills/plan/SKILL.md:66-75` | Category not listed. |
@@ -94,7 +93,7 @@ Beyond MinimumCD (already in pi-dev-team): predictability check, inferable/stake
 | superpowers brainstorming / writing-plans (https://github.com/obra/superpowers) | 200-300 word playback; 2-5 min tasks; plan "not much longer than spec"; multi-project split | ❌ playback; 🟡 step size | **Yes**: playback brief = fix for the visibility problem |
 | mattpocock grilling / grill-with-docs (https://github.com/mattpocock/skills) | Asks the frontier of unblocked questions per round, numbered, recommended answer; glossary + ADRs written as a side effect | 🟡 `design-interrogation` (one at a time) | **Yes**: frontier round = natural 3-5 question cap; decision log as a side effect |
 | anthropic doc-coauthoring (https://raw.githubusercontent.com/anthropics/skills/main/skills/doc-coauthoring/SKILL.md) | Reader test: fresh no-context subagent answers predicted questions | ❌ | **Yes**: G07 implementation |
-| Claude Code plan mode (https://code.claude.com/docs/en/best-practices) | Interview with AskUserQuestion → SPEC.md → fresh session; skip planning if the diff fits in one sentence | 🟡 | Quick-path rule |
+| Plan-mode interview pattern (vendor best-practices page) | Interview with AskUserQuestion → SPEC.md → fresh session; skip planning if the diff fits in one sentence | 🟡 | Quick-path rule |
 | Traycer (https://docs.traycer.ai/guides/plan-a-feature.md) | Epic brief first; anchored comments; artifact-critique; plan-vs-impl verify | 🟡 spec-compliance-review | Brief-first pattern |
 | zero-pi (https://pi.dev/packages/@gonrocca/zero-pi) | pi SDD pipeline, `.sdd/<slug>/` trail, clarify stops only on blocking ambiguity | ✅ similar | No; pi-dev-team is a superset |
 | @dreki-gg/pi-plan-mode (https://pi.dev/packages/@dreki-gg/pi-plan-mode) | PLAN.md + self-contained START-PROMPT.md; `[DONE:n]` markers; plans.jsonl | 🟡 build-phase.json | START-PROMPT = MinimumCD context handoff: maybe |
@@ -141,7 +140,7 @@ No hypothesis-driven agent skill and no feature-level eval-design skill found an
   - Result: user may never see the plan before code exists.
 - Nothing reads build-phase.json or Build Progress (0 hits in `extensions/`), so there is no live "Step 2.3/11: <title>" anywhere.
 - /build "no narration" rule (`build/SKILL.md:52`) plus the Farley/evidence report (`:350-375`): process evidence, not "what now works".
-- /continue port note prints `Resuming Step N.M of <plan>` (`continue/SKILL.md:18-21`). The Session State template (`:62-83`) is still in the file but likely skipped in practice. Verifier: the "shrunk" claim is partly overstated.
+- /continue pi note prints `Resuming Step N.M of <plan>` (`continue/SKILL.md:18-21`). The Session State template (`:62-83`) is still in the file but likely skipped in practice. Verifier: the "shrunk" claim is partly overstated.
 - Most important human info (auto-approvals, inferred ambiguities, worker assumptions) sits collapsed in the PR `<details>`.
 - Anthropic RCT (https://www.anthropic.com/news/AI-assistance-coding-skills): AI users scored 17% lower on comprehension; question-askers ≥65%, delegators <40%. More output does not fix this; explain-back does.
 
@@ -172,9 +171,8 @@ Lower priority (not top 8):
 - G09: plan-review-acceptance discrimination check, reusing the predictability-check pattern; add an "existing behaviour" Gherkin category; `# why:` per scenario.
 - G11: per-step `Inputs:`/`Outputs:`, ≤1 scenario per step.
 - G12: 5-line authority-order rule in /build escalation.
-- G05: soft size signal (AC > ~5 → offer a split). Keep feature-per-spec; don't fight the upstream design.
+- G05: soft size signal (AC > ~5 → offer a split). Keep feature-per-spec; don't fight the existing design.
 - G20: `/explain-build` tour.
-- Upstream sync of 579a4e333 (documentation style) is trivial.
 
 Dropped or adjusted per verifiers:
 - G08 severity levels: dropped, contradicts `specs/SKILL.md:216`.

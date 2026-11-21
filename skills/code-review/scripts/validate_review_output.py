@@ -15,7 +15,7 @@ This module is the deterministic half of the fix: given an agent's raw text
 output, decide whether it satisfies the contract and, when it doesn't,
 classify *why* and log a diagnostic — agent name, a redacted prefix of the
 raw output, and the specific validation error — to
-`.claude/metrics/contract-failures.jsonl`. Per this repo's CLAUDE.md:
+`.pi/dev-team/metrics/contract-failures.jsonl`. Per this repo's own rule:
 "instrument before fixing... the failure shapes are currently unknown, so a
 fix written first would be a guess." Fixing by shape (a tolerant extractor
 for the recoverable cases, a schema fix, a hard error for the unusable ones)
@@ -51,7 +51,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# skills/code-review/scripts -> skills/code-review -> skills -> plugin root
+# skills/code-review/scripts -> skills/code-review -> skills -> package root
 _PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 _HOOKS_LIB_DIR = _PLUGIN_ROOT / "hooks" / "lib"
 if str(_HOOKS_LIB_DIR) not in sys.path:
@@ -335,11 +335,11 @@ def classify_and_validate(raw_text: str) -> dict:
 def _resolve_stream(cwd: Path, *, migrate: bool = True) -> Path:
     if artifact_paths is not None:
         return artifact_paths.resolve_file("metrics", _STREAM_NAME, cwd, migrate=migrate)
-    return cwd / ".claude" / "metrics" / _STREAM_NAME
+    return cwd / ".pi" / "dev-team" / "metrics" / _STREAM_NAME
 
 
 def _normalize_agent(agent: str) -> str:
-    """Strip this plugin's own `dev-team:` dispatch qualifier so this
+    """Strip this package's own `dev-team:` dispatch qualifier so this
     stream's `agent` field matches `boundary-events.jsonl`'s `matched_rule`
     vocabulary — the field `contract_failure_report.py` joins against.
     Without this, an orchestrator passing the real dispatch form
@@ -380,11 +380,11 @@ def build_failure_entry(agent: str, raw_text: str, diagnostic: dict, timestamp: 
 
 
 def log_failure(entry: dict, cwd: Path | None = None) -> Path | None:
-    """Append one diagnostic row to `.claude/metrics/contract-failures.jsonl`.
+    """Append one diagnostic row to `.pi/dev-team/metrics/contract-failures.jsonl`.
 
-    Delegates to `atomic_state.append_line_locked` — the plugin's hardened,
+    Delegates to `atomic_state.append_line_locked` — the package's hardened,
     symlink-safe, lock-serialized JSONL append (#1889) every other metrics
-    emitter in this plugin uses (`boundary_events.py`, `review_round_log.py`,
+    emitter in this package uses (`boundary_events.py`, `review_round_log.py`,
     et al.) — rather than a bare `open(..., "a")`, which would reintroduce
     the exact symlink-follow / unsynchronized-write gap #1889 closed
     elsewhere. Passes `fail_open=False` so a write rejected inside the lock

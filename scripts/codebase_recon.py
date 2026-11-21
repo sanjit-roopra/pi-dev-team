@@ -2,11 +2,11 @@
 """codebase_recon.py — seven-step codebase reconnaissance harness.
 
 Orchestrates deterministic steps (via deterministic_recon.py) and optional
-LLM steps (via `claude -p`) into a schema-validated RECON envelope, then
+LLM steps (via `dev-team-run -p`) into a schema-validated RECON envelope, then
 writes it atomically to the output directory.
 
 Usage:
-    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/codebase_recon.py <repo-root>
+    python3 ${DEV_TEAM_ROOT}/scripts/codebase_recon.py <repo-root>
                                                              [--output-dir <path>]
                                                              [--skip-llm]
                                                              [--inventory-script <path>]
@@ -34,7 +34,7 @@ from lib.review_result import build_result, main_exit
 from lib.slug import derive_slug
 
 # jsonschema is a dev-only dependency (requirements-dev.txt) — not guaranteed on
-# a plugin user's interpreter. Degrade to a skipped-validation warning rather
+# a user's interpreter. Degrade to a skipped-validation warning rather
 # than crash the whole recon run when it's absent (ADR 0014: shipped scripts
 # must work on stdlib alone).
 try:
@@ -92,7 +92,7 @@ def step3_entry_points(
         # from meta if any were found, so no placeholder object is needed.
         return []
 
-    # LLM path: call `claude -p`
+    # LLM path: call `dev-team-run -p`
     lang_summary = ", ".join(lg.get("name", "?") for lg in lang_stats[:5]) or "unknown"
     prompt = (
         f"Analyze the repository at {root}. "
@@ -104,7 +104,7 @@ def step3_entry_points(
     )
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["dev-team-run", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=60,
@@ -161,7 +161,7 @@ def step4_architecture(
     )
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["dev-team-run", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=60,
@@ -219,7 +219,7 @@ def step5_security_surface(
     )
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["dev-team-run", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=60,
@@ -507,7 +507,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output-dir",
         default=None,
         help=(
-            "Directory to write artifacts (default: .claude/memory/ relative "
+            "Directory to write artifacts (default: .pi/dev-team/memory/ relative "
             "to CWD, matching agents/codebase-recon.md's Contract section)."
         ),
     )
@@ -533,12 +533,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Default output dir matches the documented artifact contract
     # (agents/codebase-recon.md's Contract section: always
-    # .claude/memory/recon-<slug>.json) — the same path orchestrator.py's
+    # .pi/dev-team/memory/recon-<slug>.json) — the same path orchestrator.py's
     # _recon_artifact_path() reads. Prior default (memory/recon-<slug>/,
-    # relative to CWD) was the pre-.claude/ legacy location plus an extra
+    # relative to CWD) was the pre-.pi/dev-team/ legacy location plus an extra
     # per-slug directory level nothing reads (#2069).
     if args.output_dir is None:
-        output_dir = Path.cwd() / ".claude" / "memory"
+        output_dir = Path.cwd() / ".pi" / "dev-team" / "memory"
     else:
         output_dir = Path(args.output_dir)
 

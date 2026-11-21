@@ -23,7 +23,7 @@ function tempDir(t: TestContext, prefix: string): string {
 }
 
 function seedProjectAgents(dir: string): void {
-	const agentDir = path.join(dir, ".claude", "agents");
+	const agentDir = path.join(dir, ".pi", "agents");
 	fs.mkdirSync(agentDir, { recursive: true });
 	const md = (name: string) => `---\nname: ${name}\ndescription: d\n---\nbody\n`;
 	fs.writeFileSync(path.join(agentDir, "security-review.md"), md("security-review"));
@@ -71,8 +71,8 @@ test("child trust: granted covers exactly the session directory", () => {
 });
 
 test("child trust: a worktree inherits only when it was made from the session directory", () => {
-	assert.deepEqual(trustArgs(trusted, "/repo/.claude/worktrees/x", "/repo"), ["--approve"]);
-	assert.deepEqual(trustArgs({ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo"), []);
+	assert.deepEqual(trustArgs(trusted, "/repo/.pi/dev-team/worktrees/x", "/repo"), ["--approve"]);
+	assert.deepEqual(trustArgs({ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.pi/dev-team/worktrees/x", "/repo"), []);
 });
 
 test("childTrusted: only the session directory or its own worktree, and only when trusted", () => {
@@ -81,8 +81,8 @@ test("childTrusted: only the session directory or its own worktree, and only whe
 		[trusted, "/repo", undefined, true],
 		[trusted, "/repo/sub", undefined, false],
 		[trusted, "/repo-sibling", undefined, false],
-		[trusted, "/repo/.claude/worktrees/x", "/repo", true],
-		[{ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.claude/worktrees/x", "/repo", false],
+		[trusted, "/repo/.pi/dev-team/worktrees/x", "/repo", true],
+		[{ projectTrusted: true, sessionDir: "/repo/sub" }, "/repo/.pi/dev-team/worktrees/x", "/repo", false],
 	];
 	for (const [trust, cwd, wt, expected] of cases) {
 		const label = `${cwd} (worktree of ${wt ?? "none"}, trusted ${trust.projectTrusted})`;
@@ -112,7 +112,7 @@ test("childTrustOf: the session's decision for its canonical directory", (t) => 
 	assert.equal(childTrustOf({ cwd: dir, isProjectTrusted: () => false }).projectTrusted, false);
 });
 
-test("claude shim trust env: root only when trusted, --no-approve only when declined", () => {
+test("CLI helper trust env: root only when trusted, --no-approve only when declined", () => {
 	assert.deepEqual(shimTrustEnv(trusted, ["-e", "x"]), { piArgs: ["-e", "x"], trustedDir: "/repo" });
 	assert.deepEqual(shimTrustEnv(declined, ["-e", "x"]), { piArgs: ["-e", "x", "--no-approve"] });
 });
@@ -287,7 +287,7 @@ test("toUsageTotals projects pi usage onto the cost-meter shape", () => {
 });
 
 test("describeWorktree: a kept worktree lists path, branch, commits and uncommitted changes", () => {
-	assert.equal(describeWorktree({ path: "/r/.claude/worktrees/a", branch: "dev-team/a", kept: true, dirty: true, commits: 2 }), "kept: /r/.claude/worktrees/a on branch dev-team/a, 2 commit(s), uncommitted changes");
+	assert.equal(describeWorktree({ path: "/r/.pi/dev-team/worktrees/a", branch: "dev-team/a", kept: true, dirty: true, commits: 2 }), "kept: /r/.pi/dev-team/worktrees/a on branch dev-team/a, 2 commit(s), uncommitted changes");
 });
 
 test("describeWorktree: a removed worktree says there were no changes", () => {
@@ -295,7 +295,7 @@ test("describeWorktree: a removed worktree says there were no changes", () => {
 });
 
 test("SessionStart matchers are applied to the session source", (t) => {
-	// Synthetic wiring, so the semantics do not depend on upstream hook names.
+	// Synthetic wiring, so the semantics do not depend on the package's hook names.
 	const root = tempDir(t, "dt-hooks-");
 	fs.mkdirSync(path.join(root, "hooks"));
 	const group = (matcher: string | undefined, script: string) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: `python3 hooks/${script}` }] });
@@ -328,12 +328,12 @@ function runResult(overrides: Partial<SubagentRunResult>): SubagentRunResult {
 const removedWorktree = { path: "/r/w", branch: "b", kept: false, dirty: false, commits: 0 };
 
 const treeWriter = { agent: "software-engineer", cwd: "/repo" };
-const treeReviewer = { agent: "test-review", cwd: "/repo", claudeTools: ["Read", "Grep"] };
+const treeReviewer = { agent: "test-review", cwd: "/repo", hookTools: ["Read", "Grep"] };
 
 test("shared tree: a writer run at once with another agent in its directory is warned about", () => {
 	const warning = sharedTreeWarning([treeWriter, treeReviewer]);
 	assert.match(warning ?? "", /software-engineer.*\/repo.*test-review/);
-	assert.equal(sharedTreeWarning([{ ...treeWriter, claudeTools: ["Read", "Edit"] }, treeReviewer]), warning);
+	assert.equal(sharedTreeWarning([{ ...treeWriter, hookTools: ["Read", "Edit"] }, treeReviewer]), warning);
 });
 
 test("shared tree: no warning when the writer has its own worktree, or nothing writes", () => {
@@ -368,7 +368,12 @@ test("result text: one agent's model note comes before the skipped project agent
 	assert.ok(text.startsWith("out\n\n[model p/m]\n\n[project agents not run"), text);
 });
 
-const readBuildNote = () => fs.readFileSync(path.join(import.meta.dirname, "..", "..", "overrides", "notes", "build.md"), "utf-8");
+/** The pi notes of skills/build/SKILL.md: the text between its two `<!-- pi-notes -->` markers. */
+const readBuildNote = () => {
+	const text = fs.readFileSync(path.join(import.meta.dirname, "..", "..", "skills", "build", "SKILL.md"), "utf-8");
+	const [, notes = ""] = text.split("<!-- pi-notes -->");
+	return notes;
+};
 
 /** Text the code wrote for model p/m on tier sonnet, with the placeholders the note uses for them. */
 const asNotePlaceholders = (text: string) => text.replace("p/m", "<provider/id>").replace("sonnet", "<tier>");

@@ -24,7 +24,7 @@ Skip this agent entirely if the project has no `@angular/core` dependency in
 Covers Zone.js-based Angular (Angular 2–17) and Angular Signals (Angular 16+
 `signal()`, `computed()`, `effect()`).
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=no reactivity issues, warn=potential concerns, fail=likely silent reactivity breakage
 Severity: error=silent change-detection failure or subscription leak; warning=potential reactivity concern; suggestion=defensive improvement
@@ -41,7 +41,7 @@ Return `{"status": "skip", "issues": [], "summary": "No Angular files in target"
 
 ## Detect
 
-Whole-file load: `${CLAUDE_PLUGIN_ROOT}/knowledge/reactive-effect-patterns.md` for cross-framework effect/watcher patterns shared with React and Vue agents before running the Angular-specific checks below.
+Whole-file load: `${DEV_TEAM_ROOT}/knowledge/reactive-effect-patterns.md` for cross-framework effect/watcher patterns shared with React and Vue agents before running the Angular-specific checks below.
 
 Zone.js change-detection pitfalls:
 
@@ -69,7 +69,7 @@ Async pipe alternatives not used:
 
 Angular Signals pitfalls (Angular 16+):
 
-- `effect()` that writes to a signal it also reads — causes an infinite update loop (same pattern as Svelte `$effect` self-write; see `${CLAUDE_PLUGIN_ROOT}/knowledge/reactive-effect-patterns.md#effect-self-writes-infinite-loop`)
+- `effect()` that writes to a signal it also reads — causes an infinite update loop (same pattern as Svelte `$effect` self-write; see `${DEV_TEAM_ROOT}/knowledge/reactive-effect-patterns.md#effect-self-writes-infinite-loop`)
 - `computed()` with side effects (network calls, `console.log`, DOM writes) — computed signals must be pure
 - Reading a signal value (`.()`) outside a reactive context (not inside `computed`, `effect`, or template) and storing it in a plain variable — loses live tracking
 - `signal()` wrapping a mutable object mutated in-place — Angular only tracks the signal reference, not deep object mutations; use `update()` with a new object or `mutate()` (Angular 16 only)
@@ -80,7 +80,7 @@ ExpressionChangedAfterItHasBeenCheckedError patterns:
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these angular-reactivity-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these angular-reactivity-review-specific challenges:
 
 - Did you confirm `@angular/core` is actually in the project's dependency tree before flagging any finding?
 - For each OnPush finding, did you verify the component actually uses `ChangeDetectionStrategy.OnPush` (not the default `Default` strategy)?

@@ -16,7 +16,7 @@ skipped; the rest of the panel still runs.
 
 **Fail-safe by construction.** A file is "no runtime surface" only when it is
 *provably* documentation or config (matches an explicit allowlist). Anything
-else — an unknown extension, a source file, functional Claude-config markdown —
+else — an unknown extension, a source file, functional agent-config markdown —
 counts as runtime surface, so the lenses run. A misclassification can only ever
 *add* a lens, never silently drop one on real code.
 
@@ -77,7 +77,7 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
-# skills/code-review/scripts -> skills/code-review -> skills -> plugin root
+# skills/code-review/scripts -> skills/code-review -> skills -> package root
 # -> hooks/lib
 _HOOKS_LIB_DIR = Path(__file__).resolve().parents[3] / "hooks" / "lib"
 if str(_HOOKS_LIB_DIR) not in sys.path:
@@ -93,7 +93,7 @@ if str(_HOOKS_LIB_DIR) not in sys.path:
 # source file could pass as a test. The whole suite stayed green, because every
 # other test exercised the import path that succeeds.
 #
-# `hooks/lib/` ships inside this same plugin, so an unreachable one is a broken
+# `hooks/lib/` ships inside this same package, so an unreachable one is a broken
 # install or a moved file, not a supported degraded mode. Failing here — loudly,
 # naming the path that was searched — surfaces that immediately instead of
 # silently answering classification questions from a divergent copy.
@@ -105,8 +105,8 @@ def _require_shared(module: str) -> ImportError:
     bare `No module named ...` to be reverse-engineered.
     """
     return ImportError(
-        f"{__name__} requires the shared classifier {module!r} from the "
-        f"dev-team plugin's hooks/lib, which could not be imported.\n"
+        f"{__name__} requires the shared classifier {module!r} from "
+        f"pi-dev-team's hooks/lib, which could not be imported.\n"
         f"  searched: {_HOOKS_LIB_DIR}\n"
         f"  exists:   {_HOOKS_LIB_DIR.is_dir()}\n"
         "This module deliberately has no fallback copy of the classifier "
@@ -135,8 +135,8 @@ except ImportError as exc:  # pragma: no cover - broken install, not a supported
 LOW_YIELD_LENSES = ["performance-review", "correctness-review"]
 
 # Lenses to skip when EVERY changed file is provably prose (`.md`/`.mdx`),
-# including functional Claude-config markdown (#2104). `has_runtime_surface`
-# correctly treats agents/skills/knowledge/.claude markdown as runtime
+# including functional agent-config markdown (#2104). `has_runtime_surface`
+# correctly treats agents/skills/knowledge markdown as runtime
 # surface — it drives agent behavior, so `performance-review` and
 # `correctness-review` still run against it above. But a handful of lenses
 # review a *code-level* property no markdown file, functional or not, can
@@ -285,7 +285,7 @@ def is_prose_only(files: Iterable[str]) -> bool:
     """True when *every* changed file is `.md`/`.mdx` prose (#2104).
 
     Unlike `has_runtime_surface`, this makes no exception for functional
-    Claude-config markdown: a `.md` file cannot exhibit an injection
+    agent-config markdown: a `.md` file cannot exhibit an injection
     vulnerability, a domain-boundary leak, a test-coverage gap, or an N+1
     query regardless of whether it also drives agent behavior. An empty
     changeset is not prose-only, matching the other predicates' empty-case
@@ -303,7 +303,7 @@ def lenses_to_skip(files: Iterable[str]) -> list[str]:
     Empty when the changeset has any runtime surface and is not prose-only.
     A doc/config-only changeset (no runtime surface) skips `performance-review`
     and `correctness-review`; a prose-only changeset (every file `.md`/`.mdx`,
-    including functional Claude-config markdown) additionally skips
+    including functional agent-config markdown) additionally skips
     `security-review`, `domain-review`, and `test-review` (#2104) — the two
     sets are independent and union together, since a prose-only diff is
     always also a no-runtime-surface diff unless it is functional config.

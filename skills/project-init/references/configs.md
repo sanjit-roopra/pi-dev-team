@@ -111,7 +111,7 @@ Thumbs.db
 *.log
 npm-debug.log*
 
-# dev-team plugin: shared human-invoked report output (/review-agent,
+# dev-team package: shared human-invoked report output (/review-agent,
 # /code-review, /triage) — local-only, regenerated per run. Anchored
 # deny-all + re-included tracked exception for /test-improve's
 # git-tracked report data/ sibling directory (issue #1412). The

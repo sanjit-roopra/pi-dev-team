@@ -7,8 +7,7 @@ code, file contents, or full command strings", and
 module existed, that promise was enforced only by every call site
 individually remembering to run a name/path through
 ``classify.safe_name``/``classify.basename`` — a convention restated at (at
-last count) seventeen call sites across ``scripts/session_extract.py``,
-``plugins/dev-team/scripts/extract_session_report.py``, and
+last count) seventeen call sites across ``session_extract.py``, ``extract_session_report.py``, and
 ``session_log/signals.py``. That is exactly the shape that produced this
 epic (#1990/#1991/#1994: the same defect landing independently in both
 forked extractors because nothing forced a shared choke point). This module

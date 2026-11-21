@@ -7,12 +7,12 @@ harness intercepts — there is no hook-registration point distinct from any
 other `Skill` invocation to gate specifically. This mirrors the same
 constraint `workflow_state.py` (#1166) already documents for its
 model-authored `record` append: enforcement lives in a library the skill's
-prose invokes via CLI before it may advance, not in `settings.json`.
+prose invokes via CLI before it may advance, not in `hooks/hooks.json`.
 
 Two operations:
     record  — append a structured decision entry (what was attempted, the
               outcome, the next action) for the current round/iteration to
-              `.claude/metrics/iteration-journal.jsonl`. Fail-open: an append error
+              `.pi/dev-team/metrics/iteration-journal.jsonl`. Fail-open: an append error
               never raises into the calling skill.
     check   — hard-block: exit 1 (and emit a `boundary-events.jsonl` "block"
               record via `emit_boundary_event`) unless at least one entry
@@ -64,12 +64,12 @@ def record_iteration_entry(
 ) -> None:
     """Append one compact JSON line recording this iteration's decision.
 
-    Fail-open: any error (bad `cwd`, unwritable `.claude/metrics/`, disk
+    Fail-open: any error (bad `cwd`, unwritable `.pi/dev-team/metrics/`, disk
     full, etc.) is swallowed silently — an append failure must never crash
     the autonomous loop calling this.
 
     Args:
-        cwd: Directory whose `.claude/metrics/` subdirectory receives the
+        cwd: Directory whose `.pi/dev-team/metrics/` subdirectory receives the
             entry.
         round_id: Identifier for the current round/iteration (e.g.
             `/autoship`'s round_id, `/ship`'s issue identifier).

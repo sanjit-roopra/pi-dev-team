@@ -23,7 +23,7 @@ You have been invoked with the `/apply-fixes` skill. Load correction prompt JSON
 2. **Validate after each fix.** Run lint/build/tests unless skipped.
    If validation fails, report and move on — do not attempt
    cascading fixes.
-3. **Follow repository rules.** Read CLAUDE.md, .clinerules,
+3. **Follow repository rules.** Read AGENTS.md, CLAUDE.md, .clinerules,
    CONTRIBUTING.md before applying fixes.
 4. **One concern per fix.** Each correction prompt addresses one
    issue. Do not combine or reorder fixes.
@@ -51,6 +51,7 @@ Optional:
 
 Detect and read rules from the target repository:
 
+- `AGENTS.md`
 - `CLAUDE.md`
 - `.clinerules`
 - `.claude/rules/index.md`
@@ -132,7 +133,7 @@ Unless skipped, run after each fix:
 2. **Build** — run the project's build command
 3. **Tests** — run the project's test command
 
-If validation fails, read `${CLAUDE_PLUGIN_ROOT}/knowledge/failure-routing.md` and classify the failing output/exit code by its regex table — deterministic pattern match only, no LLM call. This skill has neither `Agent` nor `Skill` in `allowed-tools`, so a non-inline route (test-generation, security-engineer, human arbitration) is never dispatched — **annotate only**: report the failure's class and recommended route in the Fix Summary (e.g. "security-finding — route to security-engineer via orchestrator") and continue to the next fix. `unclassified` failures report exactly as before, with no added text.
+If validation fails, read `${DEV_TEAM_ROOT}/knowledge/failure-routing.md` and classify the failing output/exit code by its regex table — deterministic pattern match only, no LLM call. This skill has neither `Agent` nor `Skill` in `allowed-tools`, so a non-inline route (test-generation, security-engineer, human arbitration) is never dispatched — **annotate only**: report the failure's class and recommended route in the Fix Summary (e.g. "security-finding — route to security-engineer via orchestrator") and continue to the next fix. `unclassified` failures report exactly as before, with no added text.
 
 ### 5. Track and report
 
@@ -167,5 +168,3 @@ unclear names), the
 [refactoring](https://github.com/elifiner/refactoring) plugin provides
 incremental, verified refactorings one at a time — better suited for
 complex structural changes than batch correction prompts.
-Install it with `claude plugin install refactoring@refactoring` (or the
-`marketplace-dev` plugin's `/add-plugin refactoring@refactoring --repo elifiner/refactoring`).

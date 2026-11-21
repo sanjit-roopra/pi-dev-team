@@ -50,7 +50,7 @@ a report — if at all. Once recorded, the choice drives the outcome: `exclude`
 scaffolds with `--compile-exclude` on the flagged files, `port`/`skip` block
 until the sources are clean, `degrade` hands back the no-shim floor command.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin
     Output: exit 2 + `[BLOCK]`-prefixed body on stdout to BLOCK
             exit 0 + no stdout for SILENT-PASS
@@ -101,7 +101,7 @@ try:
         is_stryker_invocation as _is_stryker_invocation,
     )
 except ImportError:  # pragma: no cover - degraded fallback, hooks/lib unreachable
-    # `dotnet stryker`, `dotnet-stryker`, or the plugin's wrapper — mirror the
+    # `dotnet stryker`, `dotnet-stryker`, or the package's wrapper — mirror the
     # smoke-gate's pre-#2185 fallback so both gates degrade identically.
     _STRYKER_TRIGGER_FALLBACK = re.compile(
         r"(?:^|[^a-zA-Z0-9])dotnet[ \t-]+stryker(?:\b|$)|csharp[_-]stryker[_-]net[_-]wrapper"
@@ -516,7 +516,7 @@ def main() -> int:
     if _uses_mtp_runner(command):
         return 0
 
-    cwd = event.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
+    cwd = event.get("cwd") or os.environ.get("DEV_TEAM_PROJECT_DIR") or os.getcwd()
     run_dir = _resolve_run_dir(command, cwd)
     if not run_dir.is_dir():
         return 0

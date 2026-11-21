@@ -1,71 +1,66 @@
 /**
- * Autocompact: dev-team v14 replaced its context ceiling guard with the harness's own compaction at
- * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE percent (written by /setup via scripts/set_autocompact_env.py).
+ * Autocompact: dev-team compacts the main session at a configured percentage of the context window
+ * (`autocompactPct`, written by /setup via scripts/set_autocompact_env.py, or DEV_TEAM_AUTOCOMPACT_PCT).
  * pi only compacts at `contextWindow - reserveTokens`, so the extension lowers that to the configured
  * percentage, measured with ctx.getContextUsage(), which knows every model's window.
  *
- * The port adds a token ceiling (`autocompactMaxTokens`) on top. Every turn re-reads the whole
+ * A token ceiling (`autocompactMaxTokens`) applies on top. Every turn re-reads the whole
  * context, so a 1M-token window that grows to 400k+ makes each turn cost several times more, and
  * a cache miss after a long human wait rewrites all of it. The ceiling applies whether or not a
  * percentage is configured; whichever is reached first compacts.
  */
-import * as os from "node:os";
-import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { autocompactPctValue, projectConfigPath, userConfigPath } from "./config.ts";
 import { readSmallFile } from "./safe-read.ts";
 
-export const AUTOCOMPACT_KEY = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
-/** Plain integer 1-100: no sign, no whitespace, no decimal point, no leading zero (as upstream). */
-const PCT_RE = /^(?:100|[1-9][0-9]?)$/;
+export const AUTOCOMPACT_KEY = "DEV_TEAM_AUTOCOMPACT_PCT";
+/** The top-level key in dev-team.json, dev-team.local.json and the user's dev-team.json. */
+export const AUTOCOMPACT_CONFIG_KEY = "autocompactPct";
 
 export interface AutocompactSetting {
 	/** Valid threshold 1-100, or undefined when absent or invalid. */
 	thresholdPct?: number;
-	/** Where the first definition was found, as upstream labels it (shown in diagnostics and tests). */
+	/** Where the first definition was found (shown in diagnostics and tests; hooks/lib/autocompact_config.py uses the same labels). */
 	origin?: string;
 }
 
-function envBlock(file: string): Record<string, unknown> | undefined {
+/** The file's top-level object, or undefined when it is missing, too big or not a JSON object. */
+function configObject(file: string): Record<string, unknown> | undefined {
 	const text = readSmallFile(file);
 	if (text === undefined) return undefined;
 	try {
 		const data = JSON.parse(text);
-		return data && typeof data === "object" && data.env && typeof data.env === "object" && !Array.isArray(data.env) ? data.env : undefined;
+		return data && typeof data === "object" && !Array.isArray(data) ? data : undefined;
 	} catch {
 		return undefined;
 	}
 }
 
 /**
- * Same precedence as upstream hooks/lib/autocompact_config.py `detect`: process env,
- * `.claude/settings.local.json`, `.claude/settings.json`, then user settings. The first source that
- * defines the key decides. Project files are skipped when the project is not trusted in pi.
+ * Same precedence as hooks/lib/autocompact_config.py `detect`: process env DEV_TEAM_AUTOCOMPACT_PCT,
+ * then `autocompactPct` in `.pi/dev-team.local.json`, `.pi/dev-team.json`, then the user's
+ * `<agentDir>/dev-team.json`. The first source that defines the key decides. Project files are
+ * skipped when the project is not trusted in pi.
  */
 export function autocompactSetting(
 	projectDir: string,
-	opts: { env?: NodeJS.ProcessEnv; projectTrusted: boolean },
+	opts: { env?: NodeJS.ProcessEnv; projectTrusted: boolean; userConfigFile?: string },
 ): AutocompactSetting {
 	const env = opts.env ?? process.env;
-	const settingFrom = (raw: unknown, origin: string): AutocompactSetting => ({
-		thresholdPct: typeof raw === "string" && PCT_RE.test(raw) ? Number(raw) : undefined,
-		origin,
-	});
+	const settingFrom = (raw: unknown, origin: string): AutocompactSetting => ({ thresholdPct: autocompactPctValue(raw), origin });
 	if (env[AUTOCOMPACT_KEY] !== undefined) return settingFrom(env[AUTOCOMPACT_KEY], "process env");
-	const userSettings = env.CLAUDE_CONFIG_DIR
-		? path.join(env.CLAUDE_CONFIG_DIR, "settings.json")
-		: path.join(env.HOME || os.homedir(), ".claude", "settings.json");
 	const candidates: [string, string][] = [
 		...(!opts.projectTrusted
 			? []
 			: ([
-					["settings.local.json", path.join(projectDir, ".claude", "settings.local.json")],
-					["settings.json", path.join(projectDir, ".claude", "settings.json")],
+					["dev-team.local.json", projectConfigPath(projectDir, true)],
+					["dev-team.json", projectConfigPath(projectDir)],
 				] as [string, string][])),
-		["user settings.json", userSettings],
+		["user dev-team.json", opts.userConfigFile ?? userConfigPath()],
 	];
 	for (const [label, file] of candidates) {
-		const block = envBlock(file);
-		if (block && AUTOCOMPACT_KEY in block) return settingFrom(block[AUTOCOMPACT_KEY], label);
+		const data = configObject(file);
+		if (data && AUTOCOMPACT_CONFIG_KEY in data) return settingFrom(data[AUTOCOMPACT_CONFIG_KEY], label);
 	}
 	return {};
 }
@@ -86,10 +81,10 @@ export interface AutocompactDue {
  */
 export function autocompactDue(
 	ctx: Pick<ExtensionContext, "cwd" | "getContextUsage" | "isProjectTrusted">,
-	opts: { env?: NodeJS.ProcessEnv; maxContextTokens?: number } = {},
+	opts: { env?: NodeJS.ProcessEnv; maxContextTokens?: number; userConfigFile?: string } = {},
 ): AutocompactDue | undefined {
-	const { env = process.env, maxContextTokens = 0 } = opts;
-	const { thresholdPct } = autocompactSetting(ctx.cwd, { env, projectTrusted: ctx.isProjectTrusted() });
+	const { env = process.env, maxContextTokens = 0, userConfigFile } = opts;
+	const { thresholdPct } = autocompactSetting(ctx.cwd, { env, projectTrusted: ctx.isProjectTrusted(), userConfigFile });
 	const max = Number.isFinite(maxContextTokens) && maxContextTokens > 0 ? maxContextTokens : undefined;
 	if (thresholdPct === undefined && max === undefined) return undefined;
 	const usage = ctx.getContextUsage();

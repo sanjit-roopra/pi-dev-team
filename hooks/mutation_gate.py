@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mutation_gate.py — PostToolUse hook (Python port of mutation-gate.sh).
+"""mutation_gate.py — PostToolUse hook.
 
 After each RED-to-GREEN test transition, runs mutation testing scoped to
 the affected test file and blocks tests that kill zero mutants.
@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 
 _HOOK_DIR = Path(__file__).resolve().parent
-# Add the plugin hooks dir to sys.path so the mutation_adapters package resolves.
+# Add the package hooks dir to sys.path so the mutation_adapters package resolves.
 sys.path.insert(0, str(_HOOK_DIR))
 sys.path.insert(0, str(_HOOK_DIR / "lib"))
 
@@ -50,8 +50,8 @@ _JQ_MISSING_MESSAGE = (
 def _emit_advisory_pretty(message: str) -> None:
     """Emit an advisory in bash `jq -n`'s pretty format (2-space indent + \\n).
 
-    `mutation-gate.sh` prints its advisories with `jq -n` so downstream Claude
-    Code output stays visually indented. This matches that shape byte-for-byte
+    `mutation-gate.sh` prints its advisories with `jq -n` so downstream
+    harness output stays visually indented. This matches that shape byte-for-byte
     for the paths the mutation-gate hook itself dispatches; the adapters still
     print compact JSON (their internal `emit_advisory` returns compact),
     tracked for the next release cycle when the settings-toggle flips

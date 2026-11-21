@@ -1,6 +1,6 @@
 ---
 name: performance-metrics
-description: Schema reference for .claude/metrics/. Hooks log task data, so do not invoke it at task end. Fields: tokens, cost, agents used, rework cycles, and hallucination events. Also use for periodic reporting to identify efficiency and quality trends.
+description: Schema reference for .pi/dev-team/metrics/. Hooks log task data, so do not invoke it at task end. Fields: tokens, cost, agents used, rework cycles, and hallucination events. Also use for periodic reporting to identify efficiency and quality trends.
 role: worker
 user-invocable: true
 ---
@@ -9,18 +9,18 @@ user-invocable: true
 
 ## Overview
 
-Schema and procedures for capturing performance data in `.claude/metrics/`. Metrics enable evidence-based evaluation of agent effectiveness, cost efficiency, and quality outcomes.
+Schema and procedures for capturing performance data in `.pi/dev-team/metrics/`. Metrics enable evidence-based evaluation of agent effectiveness, cost efficiency, and quality outcomes.
 
 ## Constraints
 
 - Never log credentials, API keys, or PII in metric entries
 - Log entries are append-only; do not modify or delete existing JSONL records
-- Log at task completion, not mid-task; mid-task state belongs in `.claude/memory/` progress files
+- Log at task completion, not mid-task; mid-task state belongs in `.pi/dev-team/memory/` progress files
 - Use the defined JSONL schema; do not invent new top-level fields without updating the reference
 
 ## Metric Categories
 
-> **Targets discipline.** Per CLAUDE.md → "Claims discipline", a numeric target
+> **Targets discipline.** A numeric target
 > may only ship if an instrument measures it. The instrumented metrics below cite
 > their sensor; the rest read "Aspirational — no sensor yet" until one exists
 > (tracked by #102 cost metering and #106 telemetry). Do not reintroduce bare
@@ -56,15 +56,15 @@ Schema and procedures for capturing performance data in `.claude/metrics/`. Metr
 
 ## Log Format
 
-Metrics are stored in `.claude/metrics/` as JSONL files (one JSON object per line).
+Metrics are stored in `.pi/dev-team/metrics/` as JSONL files (one JSON object per line).
 
 ### File Naming
 
 ```
-.claude/metrics/{date}-task-log.jsonl
+.pi/dev-team/metrics/{date}-task-log.jsonl
 ```
 
-Example: `.claude/metrics/2026-02-20-task-log.jsonl`
+Example: `.pi/dev-team/metrics/2026-02-20-task-log.jsonl`
 
 ### Task Completion Entry
 
@@ -120,7 +120,7 @@ Logged at the end of each task:
 
 The `Stop`/`SubagentStop` hook (`hooks/cost_meter.py` →
 `hooks/lib/cost_meter.py record`) appends one entry per fire to
-`.claude/metrics/cost-metering.jsonl` — the running per-session token/cost summary
+`.pi/dev-team/metrics/cost-metering.jsonl` — the running per-session token/cost summary
 parsed from the transcript. Full schema reference:
 `knowledge/telemetry-schema.md`.
 
@@ -146,7 +146,7 @@ parsed from the transcript. Full schema reference:
 
 **Privacy:** token counts, dollar amounts, model identifiers, and thread/
 agent-type identifiers only — never prompt text, code, file paths, or tool
-payloads. Attribution reads only fields the Claude Code harness itself writes
+payloads. Attribution reads only fields the harness itself writes
 to the transcript; the meter never guesses (see #170 for the buckets removed
 because the harness records no signal for them). Disable with
 `DEV_TEAM_COST_METER=off`. Report it with `/cost-report`.
@@ -154,7 +154,7 @@ because the harness records no signal for them). Disable with
 ### Review Value Entry (#348)
 
 `/build` appends one entry per **inline review checkpoint** to
-`.claude/metrics/review-value.jsonl` so the pipeline's review overhead becomes
+`.pi/dev-team/metrics/review-value.jsonl` so the pipeline's review overhead becomes
 *measurable* — distinguishing a build where review caught and fixed a real defect
 from one where every loop passed no-op. This is the sensor that lets the plan/step
 tiering (the `/plan` plan-tier and `/build` per-step complexity routing) be
@@ -222,13 +222,13 @@ first place.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `branch` | string | Current branch name — `${CLAUDE_PLUGIN_ROOT}/scripts/progress_guardian.py --pre-pr` matches on this |
+| `branch` | string | Current branch name — `${DEV_TEAM_ROOT}/scripts/progress_guardian.py --pre-pr` matches on this |
 | `files` | string[] | The slice's changed runtime files the verification was scoped to |
 | `outcome` | string | `ran` (the verification ran and passed), `skipped` (no runtime surface — see `reason`), or `failed-then-fixed` (the verification failed at least once before the fix landed) |
 | `reason` | string \| null | Required when `outcome` is `skipped` (e.g. `"tests-only"`, `"docs-only"`); `null` otherwise |
 
 **Not disableable.** Unlike Review Value logging (`DEV_TEAM_REVIEW_VALUE=off`),
-there is no env var to turn this off — `${CLAUDE_PLUGIN_ROOT}/scripts/progress_guardian.py --pre-pr`
+there is no env var to turn this off — `${DEV_TEAM_ROOT}/scripts/progress_guardian.py --pre-pr`
 fails closed on a branch with runtime-surface changes and no matching entry,
 and that gate is a correctness control, not a metrics-collection nicety.
 
@@ -238,21 +238,21 @@ and that gate is a correctness control, not a metrics-collection nicety.
 > on every `Stop` / `SubagentStop` event — skills no longer need a manual
 > "log this on completion" step. To surface task-specific values (task type,
 > agents used, hallucination flag, rework count, defect count, or a config
-> change), populate `.claude/session-metrics.json` before the session ends; the
+> change), populate `.pi/dev-team/session-metrics.json` before the session ends; the
 > hook reads and clears it. Leave the file absent for a minimal heartbeat entry.
 
 | Event | Action |
 | --- | --- |
 | Task completed | Logged automatically by `hooks/task_completion_metrics.py` (no manual step needed) |
-| `/build` inline review checkpoint | Append a Review Value entry to `.claude/metrics/review-value.jsonl` (#348) |
+| `/build` inline review checkpoint | Append a Review Value entry to `.pi/dev-team/metrics/review-value.jsonl` (#348) |
 | `/build` slice with a runtime surface | Append a Verify Log entry to `metrics/verify-log.jsonl` (#727) |
-| Configuration change | Add `config_change` to `.claude/session-metrics.json`; hook writes `.claude/metrics/config-changelog.jsonl` |
-| Hallucination detected | Set `hallucination_detected: true` in `.claude/session-metrics.json` |
+| Configuration change | Add `config_change` to `.pi/dev-team/session-metrics.json`; hook writes `.pi/dev-team/metrics/config-changelog.jsonl` |
+| Hallucination detected | Set `hallucination_detected: true` in `.pi/dev-team/session-metrics.json` |
 | Context summarization triggered | Increment counter in current task entry |
 
 ## Output
 
-JSONL log entries written to `.claude/metrics/` and/or a summary report of metric trends. Be concise — report anomalies and trend signals; omit entries within normal range.
+JSONL log entries written to `.pi/dev-team/metrics/` and/or a summary report of metric trends. Be concise — report anomalies and trend signals; omit entries within normal range.
 
 ## Reporting
 

@@ -1,6 +1,6 @@
 # project-init
 
-A Claude Code skill that gets a repository ready for the dev-team toolchain
+A pi-dev-team skill that gets a repository ready for the dev-team toolchain
 in one command: it detects the project's tech stack (JS/TS, Python, C#,
 Java), inventories the static-analysis tools the project already has,
 confirms a three-column plan, and installs only what's missing — repo-level,
@@ -10,7 +10,7 @@ and modern tooling.
 
 ## Usage
 
-In any Claude Code session, say:
+In any pi session, say:
 
 ```
 /project-init
@@ -20,7 +20,7 @@ Or describe what you need:
 
 - "set up my project's toolchain"
 - "install the linters for this repo"
-- "get this repo ready for the plugin"
+- "get this repo ready for dev-team"
 - "init a new project"
 - "set up a JS project"
 - "create a new node app"
@@ -54,11 +54,11 @@ or installing anything.
 | JS/TS | oxlint (existing repo) or the full greenfield scaffold below | `package.json` devDependencies |
 | Python | ruff + mypy (+ pytest if no test runner) | `pyproject.toml` dev group or `requirements-dev.txt` |
 | C# | nothing — verifies the .NET SDK (honoring `global.json`) and `dotnet format` | — |
-| Java | pinned PMD via the plugin's installer script | gitignored `.pmd/` |
+| Java | pinned PMD via the package's installer script | gitignored `.pmd/` |
 
 The manual commands stay documented in the static-analysis-integration
 skill's per-language setup guide
-(`${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/references/language-setup.md`);
+(`${DEV_TEAM_ROOT}/skills/static-analysis-integration/references/language-setup.md`);
 this skill automates them.
 
 ## Greenfield JavaScript scaffold
@@ -137,5 +137,5 @@ The scaffold supports these customizations when prompted:
 On a repo that already has sources, the skill runs in tools-only mode: it
 never overwrites existing configs (`eslint.config.js`, `pyproject.toml`
 sections, `.editorconfig`, …) and never displaces a bound provider (black +
-flake8, biome, a demoted ESLint, checkstyle) with the plugin's default. The
+flake8, biome, a demoted ESLint, checkstyle) with the package's default. The
 plan's *found and keeping* column reports exactly what was left alone.

@@ -12,7 +12,7 @@ Every finding lands in exactly one of three actionable **gap classes**, plus
 one non-actionable class:
 
 - **`NO_REFACTOR`** — fixable by test edits alone. Written as **Phase-5
-  Stories** to `.claude/plans/test-improve/` (or the configured parent tracker
+  Stories** to `.pi/dev-team/plans/test-improve/` (or the configured parent tracker
   when `--parent` was supplied at Phase 0).
 - **`REFACTOR_REQUIRED`** — needs a production-code seam before a test can reach the behavior. REFACTOR_REQUIRED items are **deferred to Phase 7** and are **not written as Phase-5 Stories**; they surface with rationale for the operator, who decides at Phase 6 whether to enter Phase 7. Under `refactor-mode: no-refactor` they are labeled **out-of-scope (skipped-in-no-refactor)** in the plan — informational context, never an actionable Story this run will execute.
 - **`LOW_VALUE`** — tests that are cheap to have but not worth fixing (e.g. duplicate coverage, trivial getters, dead-code assertions). LOW_VALUE findings are **advisory-only**: enumerated in the report, no PR is opened to delete a test flagged this way.
@@ -28,7 +28,7 @@ survivor count nor a finding's position in `/test-health`'s prose reorders the
 set.
 
 **Persistence.** Persist the classified finding set to
-`.claude/memory/test-improve/<slug>/phase-4.md`.
+`.pi/dev-team/memory/test-improve/<slug>/phase-4.md`.
 
 **Human gate.** Present the Phase-5 Story set (NO_REFACTOR only) to the
 operator. **Phase 5 does not run** until the operator approves the set.

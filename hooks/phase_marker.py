@@ -17,9 +17,9 @@ gets ignored). PostToolUse hooks carry no token usage, but they DO carry
 `transcript_path`, and the cost-meter library derives resident/spent by parsing
 the transcript — the same mechanism the Stop-hook cost meter uses.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PostToolUse:Skill JSON on stdin
-    Output: appends .claude/metrics/phase-markers.jsonl; no stdout. Exit 0.
+    Output: appends .pi/dev-team/metrics/phase-markers.jsonl; no stdout. Exit 0.
     Posture: record-only and fail-open. Any error → exit 0 silently.
     Opt-out: DEV_TEAM_COST_METER=off disables (shares the cost meter's switch).
 

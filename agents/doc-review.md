@@ -18,11 +18,11 @@ Verify-effort: medium
 <!-- Verification-mode opt-in (#1628): confirming a doc line now matches the
      code it describes is a comparison, not an inference. Already haiku for
      discovery; this drops effort high -> medium for confirmations only.
-     Contract: ${CLAUDE_PLUGIN_ROOT}/knowledge/verification-mode.md
+     Contract: ${DEV_TEAM_ROOT}/knowledge/verification-mode.md
      (Whole-file load: short shared contract, no anchors). -->
 Cites: [adversarial-review-protocol]
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status (derive from the highest-severity finding, do not let finding *volume* alone change the tier): `fail` when any finding is `error` (actively misleading — wrong behavior, removed feature still documented) or `warning` (stale, incomplete, or a detached doc comment); `warn` when the only findings are `suggestion`; `pass` when there are no findings. Comment-hygiene / tracker-ID findings are `suggestion` and on their own never raise status above `warn`.
 Severity: error=documentation actively misleads (wrong behavior, removed feature still documented); warning=documentation is stale or incomplete; suggestion=docs could be clearer or more complete
@@ -41,9 +41,9 @@ spurious tool-error finding instead of a real one.
 
 Before asserting that a frontmatter or tool-grant pattern (e.g. an MCP
 wildcard grant like `mcp__<server>__*`) is invalid syntax, verify the claim
-against `plugins/marketplace-dev/knowledge/agent-contract.json`'s `tools`
-field spec — that file is the authoritative external contract for what
-Claude Code's own sub-agent frontmatter schema permits. A repo-internal
+against the `tools` mapping in `${DEV_TEAM_ROOT}/extensions/dev-team/lib/agents.ts`
+(`mapTools`) — that file is the authoritative contract for what
+the sub-agent frontmatter schema permits. A repo-internal
 checker script's expectation-list constant (e.g. `mcp_tool_grants.py`'s
 `BASE_MCP_TOOLS`) enforces a narrower convention layered on top of the
 contract; it never redefines what the contract allows, and it may be stale.
@@ -111,13 +111,13 @@ across any language and comment syntax (`//`, `#`, `/* */`, `--`):
 - `docs/agent-architecture.md` does not reflect structural changes made in source
 - `README.md` workflow section describes a workflow that differs from current implementation
 - `docs/agent-architecture.md` references a configuration or governance detail that is no longer current
-- Agent or skill files changed without corresponding update to `CLAUDE.md` registry tables
+- Agent or skill files changed without corresponding update to `AGENTS.md` registry tables
 
 ### External claim verification
 
 - When reviewed content asserts specific behavior of an external API, tool, or
   library (version numbers, endpoint behavior, config defaults, documented
-  flags), follow `${CLAUDE_PLUGIN_ROOT}/skills/source-verification/SKILL.md`'s
+  flags), follow `${DEV_TEAM_ROOT}/skills/source-verification/SKILL.md`'s
   (Whole-file load: the full extraction/verification procedure, not one
   section) claim-extraction/verification procedure over it. This agent has no
   `Bash`/`Skill`/`WebFetch` grant, so it applies the procedure's heuristic
@@ -147,11 +147,11 @@ Whole-file load: each linked SKILL.md is loaded in full when invoked.
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these doc-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these doc-review-specific challenges:
 
 - Did you compare EVERY changed public signature against its doc comment, not just the ones with obvious drift?
 - For each "README describes removed feature" finding, did you confirm the feature is actually gone from source (grep), not assume?
-- Did you check whether agent/skill changes require a CLAUDE.md registry-table update — a common silent omission?
+- Did you check whether agent/skill changes require an AGENTS.md registry-table update — a common silent omission?
 - Are there new architectural patterns or dependencies with no ADR-trigger finding — a suspicious absence?
 - For each finding, did you distinguish a doc that is WRONG (flag) from one that merely differs in style (do not flag)?
 - Did you scan every comment (any language/delimiter) for tracker/epic/ticket IDs, and frame the fix as "describe purpose, move the ref to the commit message" rather than just deleting the number?

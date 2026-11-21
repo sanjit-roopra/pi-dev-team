@@ -9,7 +9,7 @@ Phase 4. Each item is shown with three columns:
   the specific refactor.
 
 **Phase 6 branches on the Phase-0 `refactor-mode`.** Read `refactor-mode`
-from `.claude/memory/test-improve/<slug>/phase-0.md` **before** rendering any prompt.
+from `.pi/dev-team/memory/test-improve/<slug>/phase-0.md` **before** rendering any prompt.
 Entering Phase 7 *is* refactoring, so the choice made at Phase 0 governs
 whether Phase 6 is a branch point at all.
 

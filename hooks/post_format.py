@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""post_format.py — Claude Code PostToolUse hook (Python port of post-format.sh).
+"""post_format.py — PostToolUse hook.
 
 Runs after Write and Edit tool calls. Auto-formats the changed file using the
 appropriate formatter for the detected language. All formatter invocations are
@@ -9,7 +9,7 @@ Input : JSON on stdin with `tool_input.file_path`.
 Output: silent on success (all formatters redirect stdout/stderr to devnull);
         exits 0 even when a formatter is missing or fails.
 
-Ported per docs/python-hook-contract.md — stdlib-only,.
+Stdlib-only.
 """
 
 from __future__ import annotations

@@ -167,10 +167,10 @@ pmd check -d . -R <resolved-ruleset> -f sarif --no-progress
 - **Language-conditional**: dispatch pmd, and surface its missing-tool
   install hint, only when `.java` files are in the target set — a non-Java
   repo never sees a "pmd missing" warning (graceful-degradation constraint).
-- **Install**: repo-level, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/install-java-static-analysis.py`
+- **Install**: repo-level, `python3 ${DEV_TEAM_ROOT}/scripts/install-java-static-analysis.py`
   — installs the pinned PMD distribution into the target repo's gitignored
   `.pmd/` directory (`PMD_INSTALL_DIR` overrides). Never user-level/global.
-- **Install hint**: `pmd — Java code quality. install: python3 ${CLAUDE_PLUGIN_ROOT}/scripts/install-java-static-analysis.py` (surfaced only for Java target sets)
+- **Install hint**: `pmd — Java code quality. install: python3 ${DEV_TEAM_ROOT}/scripts/install-java-static-analysis.py` (surfaced only for Java target sets)
 - **Detection**: repo-local first — the `.pmd/pmd-bin-*/bin/pmd` launcher
   (`pmd.bat` on Windows) — then `command -v pmd`; verify with `pmd --version`.
 - **Capability tier**: Java code quality
@@ -193,8 +193,8 @@ about what a violation is:
    matching the repo-root convention (`ruff.toml`, `.editorconfig`) the
    other lanes honor. A custom `pmd-ruleset.xml` carries its own
    `<exclude-pattern>` entries.
-2. Otherwise the **plugin's quickstart-wrapping default**:
-   `${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/rulesets/pmd-quickstart.xml`,
+2. Otherwise the **package's quickstart-wrapping default**:
+   `${DEV_TEAM_ROOT}/skills/static-analysis-integration/rulesets/pmd-quickstart.xml`,
    which references PMD's documented quickstart set
    (`rulesets/java/quickstart.xml`) and ships `<exclude-pattern>` entries
    for generated-output directories — `target/`, `build/`, `out/`,
@@ -217,7 +217,7 @@ ruff check --output-format sarif .
 - **Detection**: `command -v ruff`
 - **Capability tier**: Python lint + autofix
 - **Presence**: language-conditional, never `[REQUIRED]` — dispatch ruff, and surface its missing-tool install hint, only when `.py` files are in the target set. A non-Python repo never sees a "ruff missing" warning, consistent with the skill's "absence is never a pipeline failure" constraint.
-- **Config resolution**: the project's own `ruff.toml`/`pyproject.toml` wins when present (Ruff's default config discovery — no override flags); Ruff's defaults otherwise. The plugin pins no curated rule set — the project owns its **gating** bar. The convention probe below is a separate, non-gating invocation and does not change that.
+- **Config resolution**: the project's own `ruff.toml`/`pyproject.toml` wins when present (Ruff's default config discovery — no override flags); Ruff's defaults otherwise. The package pins no curated rule set — the project owns its **gating** bar. The convention probe below is a separate, non-gating invocation and does not change that.
 - **Adapter**: none; consumed raw by the shared SARIF parser.
 
 #### Convention probe (naming + magic values)
@@ -441,7 +441,7 @@ provider named by install hints — and each provider's detection probe
 Everything else — what a lane is, scoping, the shared fix loop, the
 2-attempt cap, detection/provider binding, the provider qualification
 contract, the degradation ladder, granularity, and ordering — is specified
-once, in `${CLAUDE_PLUGIN_ROOT}/skills/build/references/static-self-heal.md`.
+once, in `${DEV_TEAM_ROOT}/skills/build/references/static-self-heal.md`.
 Rows registered here must satisfy that contract and must not restate the
 mechanism. User-facing setup for each lane lives in
 [`language-setup.md`](language-setup.md).
@@ -456,7 +456,7 @@ the self-heal pass with one info line — never a failure.
   1. **ruff** (default, last-resort provider) — probe `command -v ruff`. Qualification: qualified.
      - Fix (mechanical pre-fix): `ruff check --fix <scoped-files>`
      - Verify (check mode): `ruff check <scoped-files>`
-     - Honors the project's `ruff.toml`/`pyproject.toml` when present; Ruff defaults otherwise — no plugin-curated rule set.
+     - Honors the project's `ruff.toml`/`pyproject.toml` when present; Ruff defaults otherwise — no package-curated rule set.
   2. **black + flake8** — qualifies only as a **combined pair**: black fills the format-autofix half (`black <scoped-files>`), flake8 the lint-diagnostic half (`flake8 <scoped-files>`). Probes `command -v black` **and** `command -v flake8`; both must be present for the pair to bind. Qualification: qualified as a pair, with a recorded caveat — a **partial mapping**, not 1:1 with ruff's rule surface; the binding info line must say so.
 - **Diagnostic slot** — ordered provider list:
   1. **mypy** (default, last-resort provider) — probe `command -v mypy`. Qualification: qualified; diagnostic-only — no autofix, no mechanical pre-fix; findings go to the coding agent inside the shared fix loop.
@@ -502,7 +502,7 @@ Rebinding the slot from eslint to oxlint (dropping ESLint) is decided by the che
   entry above for the flag and caveats) — not a separate scoped invocation.
   Scoping is post-hoc filtering to the changed set and freshness is
   build-then-filter, per the C# accommodation in
-  `${CLAUDE_PLUGIN_ROOT}/skills/build/references/static-self-heal.md` — not
+  `${DEV_TEAM_ROOT}/skills/build/references/static-self-heal.md` — not
   restated here.
 - **Detection probe** (one probe covers both slots): `command -v dotnet`.
 
@@ -596,7 +596,7 @@ Registered by #810.
 - **Ruleset**: identical to the `/code-review` invocation — see
   [Ruleset resolution](#ruleset-resolution-shared-by-both-pmd-invocations)
   under the Tier 1 pmd entry.
-- **Install**: repo-level, `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/install-java-static-analysis.py`
+- **Install**: repo-level, `python3 ${DEV_TEAM_ROOT}/scripts/install-java-static-analysis.py`
   (pinned PMD into the gitignored `.pmd/` dir; `PMD_INSTALL_DIR` overrides).
 
 **checkstyle (recognized equivalent provider)**

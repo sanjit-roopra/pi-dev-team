@@ -215,14 +215,16 @@ test("isMutatingBash flags a redirect whose target is computed by a substitution
 	assert.equal(isMutatingBash('echo x > "$(pwd)/a"', CWD), true);
 });
 
-for (const command of ["echo x > .claude/a", "mkdir -p .dev-team-reports/r", "touch .claude/memory/x.json", `echo x > ${path.join(CWD, ".claude", "m")}`]) {
+for (const command of ["echo x > .pi/dev-team/a", "mkdir -p .dev-team-reports/r", "touch .pi/dev-team/memory/x.json", `echo x > ${path.join(CWD, ".pi", "dev-team", "m")}`]) {
 	test(`isMutatingBash lets ${JSON.stringify(command)} pass: it writes the team's own state`, () => {
 		assert.equal(isMutatingBash(command, CWD), false);
 	});
 }
 
 test("isMutatingBash flags a lookalike of the state folders", () => {
-	assert.equal(isMutatingBash("touch .claudex", CWD), true);
+	assert.equal(isMutatingBash("touch .pi/dev-teamx", CWD), true);
+	assert.equal(isMutatingBash("touch .pi/dev-team.json", CWD), true);
+	assert.equal(isMutatingBash("touch .pi/agents/a.md", CWD), true);
 	assert.equal(isMutatingBash("echo x > .dev-team-reports-old/a", CWD), true);
 });
 
@@ -345,11 +347,13 @@ test("BriefGate lets read, grep and read-only bash through while closed", () => 
 	assert.equal(gate.check("bash", { command: "git status" }, CWD), undefined);
 });
 
-test("BriefGate lets writes to the team's .claude state through while closed", () => {
+test("BriefGate lets writes to the team's .pi/dev-team state through while closed", () => {
 	const gate = new BriefGate();
-	assert.equal(gate.check("write", { path: ".claude/memory/x.json" }, CWD), undefined);
-	assert.equal(gate.check("edit", { path: path.join(CWD, ".claude", "plan.md") }, CWD), undefined);
-	assert.ok(gate.check("write", { path: ".claudex/a" }, CWD), "a lookalike directory is not state");
+	assert.equal(gate.check("write", { path: ".pi/dev-team/memory/x.json" }, CWD), undefined);
+	assert.equal(gate.check("edit", { path: path.join(CWD, ".pi", "dev-team", "plan.md") }, CWD), undefined);
+	assert.ok(gate.check("write", { path: ".pi/dev-teamx/a" }, CWD), "a lookalike directory is not state");
+	assert.ok(gate.check("write", { path: ".pi/dev-team.json" }, CWD), "the committed config file is not state");
+	assert.ok(gate.check("write", { path: ".pi/agents/a.md" }, CWD), "project agents are not state");
 });
 
 for (const kind of ["tiny", "feature"] as const) {
@@ -400,7 +404,7 @@ test("BriefGate closes again on a new request and forgets kind and the size warn
 
 for (const [name, bare] of [
 	["/dev-team:build", "build"],
-	["agentic-dev-team:ship", "ship"],
+	["pi-dev-team:ship", "ship"],
 	[" Build ", "build"],
 	["/Ship", "ship"],
 	["specs", "specs"],
@@ -411,7 +415,7 @@ for (const [name, bare] of [
 }
 
 test("BriefGate opens for a namespaced or padded flow skill name", () => {
-	for (const name of ["/dev-team:build", "agentic-dev-team:ship", " Build "]) {
+	for (const name of ["/dev-team:build", "pi-dev-team:ship", " Build "]) {
 		const gate = new BriefGate();
 		gate.noteSkill(name);
 		assert.equal(gate.open, true, name);
@@ -594,7 +598,7 @@ test("a tiny brief after a question replaces the kind", () => {
 
 test("BriefGate.check lets bash writes to state and outside paths pass and blocks a substitution that writes", () => {
 	const gate = new BriefGate();
-	assert.equal(gate.check("bash", { command: "echo x > .claude/a" }, CWD), undefined);
+	assert.equal(gate.check("bash", { command: "echo x > .pi/dev-team/a" }, CWD), undefined);
 	assert.equal(gate.check("bash", { command: "echo x > /tmp/a" }, CWD), undefined);
 	assert.ok(gate.check("bash", { command: "echo $(rm src/a)" }, CWD));
 });
@@ -616,15 +620,16 @@ test("parseDiff reads numstat rows and untracked files with their line counts, b
 	assert.equal(parseDiff("").size, 0);
 });
 
-test("parseDiff leaves out .claude and .dev-team-reports, tracked or untracked", () => {
-	const snapshot = parseDiff("1\t0\t.claude/memory/brief.json\n2\t0\t.dev-team-reports/r.md\n3\t0\tsrc/a.ts", {
-		".claude/plan.md": 40,
+test("parseDiff leaves out .pi/dev-team and .dev-team-reports, tracked or untracked", () => {
+	const snapshot = parseDiff("1\t0\t.pi/dev-team/memory/brief.json\n2\t0\t.dev-team-reports/r.md\n3\t0\tsrc/a.ts\n4\t0\t.pi/dev-team.json", {
+		".pi/dev-team/plan.md": 40,
 		".dev-team-reports/x/y.md": 9,
-		".claudex/a": 1,
+		".pi/dev-teamx/a": 1,
 	});
 	assert.deepEqual([...snapshot], [
 		["src/a.ts", 3],
-		[".claudex/a", 1],
+		[".pi/dev-team.json", 4],
+		[".pi/dev-teamx/a", 1],
 	]);
 });
 
@@ -731,17 +736,17 @@ test("diffSnapshot counts a new untracked file over 1 MB as one line too many fo
 	assert.deepEqual([...(diffSnapshot(dir) ?? [])], [["big.txt", 151]]);
 });
 
-test("diffSnapshot leaves out .claude and .dev-team-reports files, tracked or untracked", (t) => {
+test("diffSnapshot leaves out .pi/dev-team and .dev-team-reports files, tracked or untracked", (t) => {
 	const dir = gitRepo(t);
-	fs.mkdirSync(path.join(dir, ".claude", "memory"), { recursive: true });
+	fs.mkdirSync(path.join(dir, ".pi", "dev-team", "memory"), { recursive: true });
 	fs.mkdirSync(path.join(dir, ".dev-team-reports"));
-	fs.writeFileSync(path.join(dir, ".claude", "memory", "brief.json"), "{}\n");
+	fs.writeFileSync(path.join(dir, ".pi", "dev-team", "memory", "brief.json"), "{}\n");
 	fs.writeFileSync(path.join(dir, ".dev-team-reports", "r.md"), "a\nb\n");
 	fs.writeFileSync(path.join(dir, "src.ts"), "x\n");
 	assert.deepEqual([...(diffSnapshot(dir) ?? [])], [["src.ts", 1]]);
 	execFileSync("git", ["add", "-A"], { cwd: dir, env: cleanGitEnv(t), stdio: "ignore" });
 	execFileSync("git", ["commit", "-q", "-m", "state"], { cwd: dir, env: cleanGitEnv(t), stdio: "ignore" });
-	fs.writeFileSync(path.join(dir, ".claude", "memory", "brief.json"), "{\n}\n");
+	fs.writeFileSync(path.join(dir, ".pi", "dev-team", "memory", "brief.json"), "{\n}\n");
 	assert.equal(diffSnapshot(dir)?.size, 0);
 });
 
@@ -831,7 +836,7 @@ function tempDir(t: TestContext): string {
 	return dir;
 }
 
-test("saveBrief writes .claude/memory/brief.json with the brief, extras and rendered text", (t) => {
+test("saveBrief writes .pi/dev-team/memory/brief.json with the brief, extras and rendered text", (t) => {
 	const dir = tempDir(t);
 	saveBrief(dir, tiny, { approved: "tiny" });
 	const saved = JSON.parse(fs.readFileSync(path.join(dir, BRIEF_FILE), "utf-8"));
@@ -852,7 +857,7 @@ test("saveBrief replaces an older brief.json and leaves no temp file", (t) => {
 	saveBrief(dir, tiny, { approved: "tiny" });
 	saveBrief(dir, { ...tiny, building: "Second" }, { approved: "user" });
 	assert.equal(JSON.parse(fs.readFileSync(path.join(dir, BRIEF_FILE), "utf-8")).building, "Second");
-	assert.deepEqual(fs.readdirSync(path.join(dir, ".claude", "memory")), ["brief.json"]);
+	assert.deepEqual(fs.readdirSync(path.join(dir, ".pi", "dev-team", "memory")), ["brief.json"]);
 });
 
 test("saveBrief removes its temp file when the rename fails", (t) => {
@@ -860,13 +865,13 @@ test("saveBrief removes its temp file when the rename fails", (t) => {
 	fs.mkdirSync(path.join(dir, BRIEF_FILE), { recursive: true });
 	fs.writeFileSync(path.join(dir, BRIEF_FILE, "keep"), "x");
 	assert.doesNotThrow(() => saveBrief(dir, tiny, { approved: "tiny" }));
-	assert.deepEqual(fs.readdirSync(path.join(dir, ".claude", "memory")), ["brief.json"]);
+	assert.deepEqual(fs.readdirSync(path.join(dir, ".pi", "dev-team", "memory")), ["brief.json"]);
 	assert.deepEqual(fs.readdirSync(path.join(dir, BRIEF_FILE)), ["keep"]);
 });
 
 test("saveBrief gives each write its own temp file, so a stale one does not stop it", (t) => {
 	const dir = tempDir(t);
-	const memory = path.join(dir, ".claude", "memory");
+	const memory = path.join(dir, ".pi", "dev-team", "memory");
 	fs.mkdirSync(memory, { recursive: true });
 	fs.writeFileSync(path.join(memory, "brief.json.tmp"), "stale");
 	saveBrief(dir, tiny, { approved: "tiny" });
@@ -879,7 +884,7 @@ function linkedBrief(t: TestContext): { dir: string; outside: string; target: st
 	const outside = tempDir(t);
 	const target = path.join(outside, "victim.txt");
 	fs.writeFileSync(target, "keep me");
-	fs.mkdirSync(path.join(dir, ".claude", "memory"), { recursive: true });
+	fs.mkdirSync(path.join(dir, ".pi", "dev-team", "memory"), { recursive: true });
 	fs.symlinkSync(target, path.join(dir, BRIEF_FILE));
 	return { dir, outside, target };
 }
@@ -889,11 +894,11 @@ test("saveBrief refuses a brief.json that is a link and leaves its target untouc
 	saveBrief(dir, tiny, { approved: "tiny" });
 	assert.equal(fs.readFileSync(target, "utf-8"), "keep me");
 	assert.ok(fs.lstatSync(path.join(dir, BRIEF_FILE)).isSymbolicLink());
-	assert.deepEqual(fs.readdirSync(path.join(dir, ".claude", "memory")), ["brief.json"]);
+	assert.deepEqual(fs.readdirSync(path.join(dir, ".pi", "dev-team", "memory")), ["brief.json"]);
 	assert.deepEqual(fs.readdirSync(outside), ["victim.txt"]);
 });
 
-for (const linked of [".claude", path.join(".claude", "memory")]) {
+for (const linked of [".pi", path.join(".pi", "dev-team"), path.join(".pi", "dev-team", "memory")]) {
 	test(`saveBrief writes nothing through a linked ${linked} folder`, (t) => {
 		const dir = tempDir(t);
 		const outside = tempDir(t);

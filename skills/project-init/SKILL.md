@@ -1,6 +1,6 @@
 ---
 name: project-init
-description: "Get a repository ready for the dev-team toolchain in one command — detect the tech stack (JS/TS, Python, C#, Java), inventory the static-analysis tools the project already has, confirm a plan, and install only what's missing, repo-level. This is the canonical source of truth for tech-stack detection and toolchain installation — NOT dev-team-specific config (CLAUDE.md generation, agent template activation, PostToolUse hooks, the generated `/pr` command all live in `/setup`, which invokes this skill first for the stack signal). Also installs the detection-gated capability tools other skills depend on — semgrep, Playwright + Chromium, adr, gh, and the docker scanners (hadolint/trivy/grype). For JavaScript it scaffolds a new project with ES modules, functional style, prettier, oxlint, editorconfig, vitest, and gitignore."
+description: "Get a repository ready for the dev-team toolchain in one command — detect the tech stack (JS/TS, Python, C#, Java), inventory the static-analysis tools the project already has, confirm a plan, and install only what's missing, repo-level. This is the canonical source of truth for tech-stack detection and toolchain installation — NOT dev-team-specific config (AGENTS.md generation, agent template activation, PostToolUse hooks, the generated `/pr` command all live in `/setup`, which invokes this skill first for the stack signal). Also installs the detection-gated capability tools other skills depend on — semgrep, Playwright + Chromium, adr, gh, and the docker scanners (hadolint/trivy/grype). For JavaScript it scaffolds a new project with ES modules, functional style, prettier, oxlint, editorconfig, vitest, and gitignore."
 role: worker
 user-invocable: true
 argument-hint: "[--yes] [--force]"
@@ -8,14 +8,13 @@ argument-hint: "[--yes] [--force]"
 
 # Project Initializer
 
-<!-- pi-port-notes -->
-## pi port notes (read first — these override the steps below)
+<!-- pi-notes -->
+## pi notes (read first — these override the steps below)
 
 - **MCP servers (Step 4c):** pi reads project MCP servers from `.pi/mcp.json` (user level: `~/.pi/agent/mcp.json`), not `.mcp.json`. Register CodeGraph/Repowise there, or with `pi mcp add -l <name> -- <command>`. Tell the user to run `/reload`.
-- **Settings/hook guards (Step 4c, #1367):** there is no `.claude/settings.json` hook registration in pi; the settings.json guard reports `n/a (pi)`.
+- **Settings/hook guards (Step 4c, #1367):** pi has no settings.json hook registration; the settings.json guard reports `n/a (pi)`.
 - **`CLAUDE.md` guard around `graphify install`:** apply the same guard to `AGENTS.md`.
-- The `claude` CLI is not required; ignore checks for it.
-<!-- pi-port-notes -->
+<!-- pi-notes -->
 
 
 One command to get a repository ready for the dev-team toolchain, whatever
@@ -28,13 +27,13 @@ scanners — see Step 4b), which are user/system-level CLIs by nature.
 
 Supported stacks: **JS/TS**, **Python**, **C#**, **Java** — the four lanes
 registered in
-`${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/references/tool-configs.md`
+`${DEV_TEAM_ROOT}/skills/static-analysis-integration/references/tool-configs.md`
 § Build-time lanes. Tool facts (choice, versions, install mechanism) follow
 that registry; provider-binding semantics (capability slots, ordered
 provider lists, bind-don't-replace, the qualification contract) follow
-`${CLAUDE_PLUGIN_ROOT}/skills/build/references/static-self-heal.md`. The
+`${DEV_TEAM_ROOT}/skills/build/references/static-self-heal.md`. The
 manual commands stay documented in
-`${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/references/language-setup.md`;
+`${DEV_TEAM_ROOT}/skills/static-analysis-integration/references/language-setup.md`;
 this skill automates them.
 
 ## Arguments
@@ -44,7 +43,7 @@ Arguments: $ARGUMENTS
 - `--yes`: Run unattended — auto-confirm each gate below with its **safe**
   default and never wait for input. `/setup --yes` passes this through.
 - `--force`: Bypass Step 0's idempotency short-circuit and force the full
-  Step 1-6 sequence even when `.claude/init-state.json` records a matching
+  Step 1-6 sequence even when `.pi/dev-team/init-state.json` records a matching
   `last_run` (#1778). Independent of `--yes` — combine them to force a full
   unattended re-check.
 
@@ -75,7 +74,7 @@ surprise):
   (unlike the generated git hooks themselves, which are). It also writes a
   `## graphify` section into the tracked `.claude/CLAUDE.md`. Print
   `Graphify: skipped under --yes (repo-writing; run /project-init without --yes to add it)`
-  and do **not** record a durable decline in `.claude/init-state.json`, so a
+  and do **not** record a durable decline in `.pi/dev-team/init-state.json`, so a
   later interactive run still offers it.
 - **Step 4c Repowise** — skipped for this run, because `repowise init` writes
   a `## Codebase Intelligence for <project> (Repowise)` section into the
@@ -86,7 +85,7 @@ surprise):
   that file IS gitignored by the standing check below — it is the tracked
   CLAUDE.md write, not the `.mcp.json` write, that puts Repowise here. Print
   `Repowise: skipped under --yes (repo-writing; run /project-init without --yes to add it)`
-  and do **not** record a durable decline in `.claude/init-state.json`, so a
+  and do **not** record a durable decline in `.pi/dev-team/init-state.json`, so a
   later interactive run still offers it as part of the keyless-pair prompt.
   CodeGraph, the other half of that same prompt, is unaffected — it stays in
   the Affirmative bucket above and installs under `--yes` regardless.
@@ -118,7 +117,7 @@ proves there is nothing to install.
    what they just found, per this file's own stale-state override rule
    (§ "Detect which are already present").
 2. **Short-circuit** only when `--force` was **not** passed AND the just-run
-   detection shows: the stack list matches `.claude/init-state.json`'s
+   detection shows: the stack list matches `.pi/dev-team/init-state.json`'s
    `last_run.stack` (if the key is absent, this condition fails and step 3
    below never fires — first run always takes the full path), Step 2's
    fresh inventory has every lane's capability slot bound (Step 3's own
@@ -142,7 +141,7 @@ proves there is nothing to install.
    short-circuit's own report.
 4. Print exactly one line reporting both the short-circuit and the standing
    checks' outcomes — e.g. `Project already initialized for <stack> —
-   nothing changed since the last run (.claude/init-state.json); .mcp.json
+   nothing changed since the last run (.pi/dev-team/init-state.json); .mcp.json
    hygiene: <outcome>; Graphify path check: <outcome or "not applicable">.
    Re-run with --force to re-check anyway.` — and stop. Do not proceed to
    Step 3's plan presentation or any install step.
@@ -155,7 +154,7 @@ proves there is nothing to install.
    in the Arguments section above).
 
 On a normal, successful completion, Step 6 writes the `last_run` snapshot
-into `.claude/init-state.json` — see its final bullet below. A run that
+into `.pi/dev-team/init-state.json` — see its final bullet below. A run that
 stops early (Step 1's zero/ambiguous-stack exit, an install failure) does
 not write `last_run`, so the next invocation naturally re-checks from
 scratch rather than caching a failed or incomplete state as "done."
@@ -203,7 +202,7 @@ signal classes, still cheap and deterministic — no builds, no network:
 
 Binding follows **bind-don't-replace**: an existing, configured tool that
 passes the qualification contract is bound as its slot's provider, and the
-plugin's default is never installed over it. A bound equivalent — black +
+package's default is never installed over it. A bound equivalent — black +
 flake8 as a pair, biome, an ESLint kept under demotion, checkstyle —
 satisfies its slot; nothing is installed for it.
 
@@ -265,11 +264,11 @@ pipx install, never `npm install -g`.
   Verify the SDK is present — honoring a `global.json` pin when one
   exists — and that `dotnet format --version` responds.
 - **Java** — verify a JDK is present (`java` on PATH), then run the
-  plugin's pinned-PMD installer — the user never locates or invokes it by
+  package's pinned-PMD installer — the user never locates or invokes it by
   hand:
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/install-java-static-analysis.py"
+  python3 "${DEV_TEAM_ROOT}/scripts/install-java-static-analysis.py"
   ```
 
   It installs a pinned PMD distribution into the repo-local, gitignored
@@ -343,7 +342,7 @@ single all-or-none group of #1108):
 - **Graphify — full extraction is the target; `--code-only` is a degraded
   fallback, not the goal.** `graphify extract .` is Graphify's documented
   headless full extraction (**AST + semantic LLM pass**) — it is what indexes
-  this plugin's multi-modal target (code + docs + schemas + infra) into the
+  this package's multi-modal target (code + docs + schemas + infra) into the
   `graph.json` that `graphify query`/`path`/`explain` traverse. Only the
   **AST pass** builds with **no model/API key**; the **semantic pass** is what
   pulls docs and images into the graph at all — with no working backend, that
@@ -371,16 +370,16 @@ scopes to the *missing* set):
 - Repowise — the Repowise MCP server is registered / `.repowise/` exists.
 - Graphify — `command -v graphify` succeeds, `graphify-out/graph.json` exists,
   **and** it is not a degraded build waiting on a key that has since shown up:
-  if `.claude/init-state.json` has `graphify.code_only_build == true` **and** a
+  if `.pi/dev-team/init-state.json` has `graphify.code_only_build == true` **and** a
   provider key is now present, treat Graphify as still in the missing set (so
   the opt-in re-offers full extraction) rather than as already present — a
   `--code-only` graph must not permanently block ever reaching the full index
   (issue #1483). Otherwise, present.
 
-Also read `.claude/init-state.json`: honor any prior **explicit decline**
+Also read `.pi/dev-team/init-state.json`: honor any prior **explicit decline**
 (e.g. `codegraph.install_declined == true`) — a declined tool is excluded from
 the "missing" set rather than silently re-offered, and the existing unstick
-instruction still applies (`remove the <tool> key from .claude/init-state.json
+instruction still applies (`remove the <tool> key from .pi/dev-team/init-state.json
 to re-prompt`).
 
 **The keyless group prompt.** Compute the *missing* set = the keyless tools
@@ -390,7 +389,7 @@ to re-prompt`).
   `Code-lookup tools: keyless pair present (or previously declined) — nothing to install.`
   and continue. No prompt.
 - Otherwise, first show the user the "When to use which" section of
-  `${CLAUDE_PLUGIN_ROOT}/knowledge/codegraph-vs-graphify.md`, then prompt
+  `${DEV_TEAM_ROOT}/knowledge/codegraph-vs-graphify.md`, then prompt
   **once**, listing the missing tools by name (this is an explicit `y`/`n`, and
   the recommended default is **yes** when anything is missing):
 
@@ -415,19 +414,19 @@ Repowise moved to the Conservative bucket (Arguments section, #1690) because
 gated the same way below. Install CodeGraph without waiting (its recommended
 default is already yes); skip Repowise for this run, print `Repowise:
 skipped under --yes (repo-writing; run /project-init without --yes to add
-it)`, and do **not** record a durable decline in `.claude/init-state.json`,
+it)`, and do **not** record a durable decline in `.pi/dev-team/init-state.json`,
 so a later interactive run still offers it as part of this same prompt.
 
 - On **yes** (interactive only — see the `--yes` split above): install
   **every** tool in the missing set by running its sub-section below
   (CodeGraph, Repowise), recording each tool's accept in
-  `.claude/init-state.json`.
+  `.pi/dev-team/init-state.json`.
   - **Partial failure is surfaced, never hidden.** If one tool's install
     errors after another already succeeded, print the failing tool's error,
-    record per-tool success/failure in `.claude/init-state.json`, and report
+    record per-tool success/failure in `.pi/dev-team/init-state.json`, and report
     the group as *partially installed* — do not claim both succeeded.
 - On **no** (or empty): install nothing, record the group decline for each
-  missing tool in `.claude/init-state.json`, and print a terminal-visible
+  missing tool in `.pi/dev-team/init-state.json`, and print a terminal-visible
   confirmation so the operator knows the choice was durable and reversible:
   `Code-lookup tools: skipped — agents fall back to Read/Grep/Glob (re-run /project-init to be offered again).`
 
@@ -462,7 +461,7 @@ in the missing set (regardless of key presence — its AST graph builds keyless)
 3. **On yes:** run the Graphify sub-section below (install + guarded native
    integration + build the graph — full extraction when a working backend is
    available, `--code-only` fallback otherwise), recording the accept in
-   `.claude/init-state.json`.
+   `.pi/dev-team/init-state.json`.
 4. **Full extraction vs. `--code-only` fallback.** Detect a provider key —
    `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `MOONSHOT_API_KEY`,
    `OPENAI_API_KEY` (`GEMINI_API_KEY` and `GOOGLE_API_KEY` both select the
@@ -484,7 +483,7 @@ in the missing set (regardless of key presence — its AST graph builds keyless)
      not indexed). Set a provider key (e.g. ANTHROPIC_API_KEY) and re-run
      /project-init for the full index.` Merge
      `{"graphify": {"enrichment_skipped_no_key": true, "code_only_build":
-     true}}` into `.claude/init-state.json` — the latter is what keeps this
+     true}}` into `.pi/dev-team/init-state.json` — the latter is what keeps this
      run from being mistaken for a completed build once a key shows up.
 5. **Semantic enrichment (key-gated add-on, on top of a successful full
    extraction).** `graphify label` (community naming) and
@@ -518,7 +517,7 @@ command -v codegraph > /dev/null 2>&1 && echo "installed" || echo "not-installed
 [ -d "${PWD}/.codegraph" ] && echo "initialized" || echo "not-initialized"
 ```
 
-Read `.claude/init-state.json` if it exists (top-level `codegraph` key holds
+Read `.pi/dev-team/init-state.json` if it exists (top-level `codegraph` key holds
 the four state booleans: `install_accepted`, `install_declined`,
 `init_accepted`, `init_declined`).
 
@@ -539,7 +538,7 @@ filesystem/PATH check supersedes the recorded preference.
 **Install prompt branch** (installed=false, initialized=false):
 
 - If `.codegraph.install_declined == true`: print
-  `CodeGraph: previously declined install (remove the codegraph key from .claude/init-state.json to re-prompt)`
+  `CodeGraph: previously declined install (remove the codegraph key from .pi/dev-team/init-state.json to re-prompt)`
   and continue.
 - Otherwise prompt: `Install CodeGraph for code intelligence? (y/N)`
   - On `y`/`Y`: install the CodeGraph CLI (machine-level, keyless — nothing is
@@ -550,7 +549,7 @@ filesystem/PATH check supersedes the recorded preference.
     ```
 
     - On success: merge `{"codegraph": {"install_accepted": true}}` into
-      `.claude/init-state.json` and **fall through to the init step below**
+      `.pi/dev-team/init-state.json` and **fall through to the init step below**
       (`codegraph init .`) so the index is built in this same run — this is
       what issue #1134 requires (install *and* build, not just instructions).
     - **Non-fatal on failure** (npm missing, or the install errors): print
@@ -564,7 +563,7 @@ filesystem/PATH check supersedes the recorded preference.
 **Init prompt branch** (installed=true, initialized=false):
 
 - If `.codegraph.init_declined == true`: print
-  `CodeGraph: previously declined init (remove the codegraph key from .claude/init-state.json to re-prompt)`
+  `CodeGraph: previously declined init (remove the codegraph key from .pi/dev-team/init-state.json to re-prompt)`
   and continue.
 - Otherwise prompt:
   `CodeGraph is installed but not initialized in this project. Initialize now? (y/N)`
@@ -575,29 +574,29 @@ filesystem/PATH check supersedes the recorded preference.
        the user.
     3. On exit 0: print `CodeGraph: initialized ✓`, merge
        `{"codegraph": {"init_accepted": true}}` into
-       `.claude/init-state.json`, then register the MCP server (below).
+       `.pi/dev-team/init-state.json`, then register the MCP server (below).
     4. On non-zero exit N: print
        `CodeGraph init failed (exit code N). See output above. Continuing without CodeGraph.`
-       Do NOT modify `.claude/init-state.json`.
+       Do NOT modify `.pi/dev-team/init-state.json`.
   - On any other response: merge `{"codegraph": {"init_declined": true}}`
     and continue silently.
 
 **Register the MCP server at user scope (never a repo file).** After a
 successful init, CodeGraph must be registered the same way any personal MCP
-server is added for this Claude Code installation — **not** written into a
+server is added for this pi installation — **not** written into a
 project's `.mcp.json`, and no `.codegraph/` directory is ever committed.
 Print the manual command for the user to run themselves at user scope:
 
 ```
-claude mcp add codegraph -- codegraph serve --mcp
+pi mcp add codegraph -- codegraph serve --mcp
 ```
 
-Note the exact CLI flag for user-scope registration may vary by Claude Code
-version — point the user at `claude mcp add --help` if the command above is
+Note the exact CLI flag for user-scope registration may vary by pi
+version — point the user at `pi mcp add --help` if the command above is
 rejected. Do not attempt to write `.mcp.json` in the project root, and do
 not run `git add`/`git commit` for anything under `.codegraph/`.
 
-`.claude/init-state.json` uses a top-level `codegraph` key so future plugins
+`.pi/dev-team/init-state.json` uses a top-level `codegraph` key so future tools
 can claim sibling keys without collision. Always merge into existing JSON
 rather than overwriting it.
 
@@ -651,14 +650,14 @@ the Graphify sub-section's own Standing check (#1367) makes below.
    third-party-tool-generated content landing in an agent-loaded file, so
    the normal PR review before merge is what actually vets it, not this
    note alone.
-3. Register the MCP server for this Claude Code installation (user scope), the
+3. Register the MCP server for this pi installation (user scope), the
    same way any personal MCP server is added — point the user at
-   `claude mcp add --help` for the exact invocation. **Server-name caveat:**
+   `pi mcp add --help` for the exact invocation. **Server-name caveat:**
    the agents' grants assume the server name `plugin_repowise_repowise`; if a
    different name is used the grants are inert and agents fall back to
    `Read`/`Grep`/`Glob`.
 4. On success, merge `{"repowise": {"install_accepted": true}}` into
-   `.claude/init-state.json`. On failure, surface the error and merge
+   `.pi/dev-team/init-state.json`. On failure, surface the error and merge
    `{"repowise": {"install_failed": true}}` — do not claim the group fully
    installed (see the partial-failure rule above).
 
@@ -702,11 +701,9 @@ else
 fi
 ```
 
-This check is intentionally **not** scoped to the downstream-only, Step 2
-`in-repo`-skip case the way `/setup`'s own backstop check is — a
+This check is intentionally **not** scoped to any kind of repo — a
 machine-specific path in `.mcp.json` breaks every clone or teammate
-regardless of whether the repo is this plugin's own checkout or a downstream
-project, so this standing check applies in both.
+in any repo, so this standing check always applies.
 
 **If `.mcp.json` is already tracked by git** (`git ls-files --error-unmatch
 .mcp.json` exits 0), gitignoring the whole file isn't viable — a team that
@@ -715,15 +712,17 @@ legitimately commits `.mcp.json` to distribute other MCP servers (e.g.
 falling back to the operator, try the finer-grained fix (#1747):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/mcp_json_repowise.py" relocate --cwd .
+python3 "${DEV_TEAM_ROOT}/hooks/lib/mcp_json_repowise.py" relocate --cwd .
 ```
 
 This strips only the `repowise` key from the tracked `.mcp.json`'s
 `mcpServers` object — every other entry is left untouched — and re-registers
-it at `local` scope (`claude mcp add repowise --scope local -- repowise mcp
-"$(pwd)" --transport stdio`) instead, in that order (register succeeds
+it at a local, untracked scope instead, in that order (register succeeds
 before the tracked entry is ever removed, so a failed registration never
-leaves `.mcp.json` with no working entry at all). It prints one of
+leaves `.mcp.json` with no working entry at all). pi has no local,
+untracked MCP scope, so under pi the registration always fails: a tracked
+`repowise` entry gives `relocate-failed` and `.mcp.json` is left
+untouched. It prints one of
 `not-tracked`, `no-repowise-entry`, `relocated`, or `relocate-failed`.
 Record the outcome as `{"mcp_hygiene": {"repowise_relocated": "<that
 string>"}}`.
@@ -735,7 +734,7 @@ operator to run `git rm --cached .mcp.json` themselves, same posture as
 #1376, and record that outcome too. Merge one of `{"mcp_hygiene":
 {"gitignore": "added"}}`, `{"mcp_hygiene": {"gitignore":
 "already-covered"}}`, or (when this residual fallback fires) `{"mcp_hygiene":
-{"gitignore": "added-but-tracked"}}` into `.claude/init-state.json` — a
+{"gitignore": "added-but-tracked"}}` into `.pi/dev-team/init-state.json` — a
 top-level key rather than nested under `repowise`, since this check runs
 independently of Repowise's own install state. Report both outcomes as their
 own lines in Step 6's summary below (and the caller's own report, when
@@ -791,11 +790,8 @@ over-delete, taking unrelated pre-existing content with it. Guard every run:
    hand.)
 4. **On detected corruption:** restore the snapshot, then append the
    canonical `## graphify` section text at EOF yourself. Source the
-   canonical text either by capturing graphify's own generated section from
-   a clean scratch-dir install first, or by reusing the fixed template that
-   matches this repo's own root `CLAUDE.md` `## graphify` section (see
-   `/home/user/agentic-dev-team/CLAUDE.md` for the canonical section this
-   repo already carries).
+   canonical text by capturing graphify's own generated section from
+   a clean scratch-dir install first.
 5. **On no corruption detected:** leave the installer's output as-is —
    nothing further to do.
 
@@ -853,7 +849,7 @@ baked-in path: no re-install, no opt-in prompt, just a scan-and-relocate.
 **Build the graph — full extraction is the target (issue #1224, revised by
 #1483).** `graphify extract .` is documented in its own `--help` as headless
 full extraction (**AST + semantic LLM**) and is the invocation to run: it is
-what indexes this plugin's multi-modal target (code + docs + schemas + infra)
+what indexes this package's multi-modal target (code + docs + schemas + infra)
 into `graph.json`, the graph the agents actually traverse (`graphify
 query`/`path`/`explain`). Whether the semantic pass actually runs is gated on
 **backend health, not just key presence** — `extract` dispatches the semantic
@@ -914,7 +910,7 @@ produce no `graph.json` at all despite a clean AST run.
   indexed.`
 - **Non-fatal:** if extraction fails outright (the AST pass itself errors),
   print the error, merge `{"graphify": {"build_failed": true}}` into
-  `.claude/init-state.json`, and continue — never abort the rest of setup,
+  `.pi/dev-team/init-state.json`, and continue — never abort the rest of setup,
   and never claim the group fully installed (the partial-failure rule).
   Agents that consume graphify fall back to `Read`/`Grep`/`Glob` when
   `graphify-out/` is absent (see `knowledge/codegraph-vs-graphify.md`).
@@ -1013,7 +1009,7 @@ After every configured lane probes green, give the user:
 **Persist the idempotency snapshot (#1778).** On successful completion of
 this step — never on an early exit (Step 1's zero/ambiguous-stack branch,
 or an install failure) — merge (never overwrite the rest of the file, per
-the merge convention every other `.claude/init-state.json` write in this
+the merge convention every other `.pi/dev-team/init-state.json` write in this
 skill already follows) this top-level key:
 
 ```json

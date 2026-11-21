@@ -42,7 +42,7 @@ You are a systems thinker who sees every local decision in the context of the br
 
 ## Graph tools
 
-Before reasoning about structure or dependencies from scratch, check whether the target repo has a code-intelligence index built and prefer it: `.codegraph/` (CodeGraph — an MCP server, `mcp__codegraph__*` tools, best for fast callers/callees/impact lookups); a Repowise MCP server (`mcp__plugin_repowise_repowise__{get_context,get_symbol,search_codebase,get_risk,get_why}` — verified skeletons, modification risk, and the recorded rationale behind a design via `get_why`); and/or `graphify-out/graph.json` (Graphify — invoked as `graphify query "<question>"`, `graphify path "A" "B"`, `graphify explain "<concept>"`, best for architecture and cross-artifact questions spanning code, docs, and infra). See `${CLAUDE_PLUGIN_ROOT}/knowledge/codegraph-vs-graphify.md` for the full comparison and when to use which. Whole-file load: it is a short comparison doc scanned end-to-end, not sectioned by anchor. **None is required** — fall back to Read/Grep/Glob when none is present.
+Before reasoning about structure or dependencies from scratch, check whether the target repo has a code-intelligence index built and prefer it: `.codegraph/` (CodeGraph — an MCP server, `mcp__codegraph__*` tools, best for fast callers/callees/impact lookups); a Repowise MCP server (`mcp__plugin_repowise_repowise__{get_context,get_symbol,search_codebase,get_risk,get_why}` — verified skeletons, modification risk, and the recorded rationale behind a design via `get_why`); and/or `graphify-out/graph.json` (Graphify — invoked as `graphify query "<question>"`, `graphify path "A" "B"`, `graphify explain "<concept>"`, best for architecture and cross-artifact questions spanning code, docs, and infra). See `${DEV_TEAM_ROOT}/knowledge/codegraph-vs-graphify.md` for the full comparison and when to use which. Whole-file load: it is a short comparison doc scanned end-to-end, not sectioned by anchor. **None is required** — fall back to Read/Grep/Glob when none is present.
 
 ## Skills
 
@@ -58,8 +58,8 @@ Before reasoning about structure or dependencies from scratch, check whether the
 
 ## Knowledge Files
 
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/database-change-management.md` — Whole-file load: schema evolution that keeps every release deployable and reversible (expand/contract, versioned migrations, decouple DB change from app change).
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/release-strategies.md` — Whole-file load: blue-green, canary, rolling, rollback-as-practiced, decouple deploy from release, feature toggles, branch by abstraction — design changes so mainline stays releasable at every step.
+- `${DEV_TEAM_ROOT}/knowledge/database-change-management.md` — Whole-file load: schema evolution that keeps every release deployable and reversible (expand/contract, versioned migrations, decouple DB change from app change).
+- `${DEV_TEAM_ROOT}/knowledge/release-strategies.md` — Whole-file load: blue-green, canary, rolling, rollback-as-practiced, decouple deploy from release, feature toggles, branch by abstraction — design changes so mainline stays releasable at every step.
 
 ## Behavioral Guidelines
 

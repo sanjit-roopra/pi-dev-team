@@ -11,7 +11,7 @@ advances 1-9 monotonically).
 **Binding mode `xunit-with-annotations` — .feature files without a runner.**
 Invoke `/gherkin-derive --workflow test-improve --mode xunit-with-annotations`.
 The skill merges scenarios into `.feature` files under gherkin-derive's
-resolved destination (recorded in `.claude/memory/test-improve/<slug>/gherkin.md` —
+resolved destination (recorded in `.pi/dev-team/memory/test-improve/<slug>/gherkin.md` —
 typically `features/test-improve/`, but dynamically resolved per the repo's
 own BDD convention, not a fixed path — see `/gherkin-derive`'s Step 2)
 — an existing file's prior content (hand-authored, or enriched by
@@ -30,11 +30,11 @@ selects the native parser (`cucumber-js` for JS/TS, `SpecFlow` / `Reqnroll` for
 - generates pending step-definition stubs,
 - merges scenarios into `.feature` files under its resolved destination
   (same dynamic resolution as `xunit-with-annotations` mode, recorded in
-  `.claude/memory/test-improve/<slug>/gherkin.md`), preserving any existing
+  `.pi/dev-team/memory/test-improve/<slug>/gherkin.md`), preserving any existing
   enrichment the same way that mode does (issue #1420).
 
 **Persistence.** Record the surface inventory and (in `bdd-runner` mode) the
-parser wiring to `.claude/memory/test-improve/<slug>/gherkin.md`.
+parser wiring to `.pi/dev-team/memory/test-improve/<slug>/gherkin.md`.
 
 **Human gate.** After Phase 3 produces `.feature` files (or parser wiring in
 `bdd-runner` mode), present them to the operator for review — including

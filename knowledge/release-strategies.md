@@ -3,7 +3,7 @@
 Reference for releasing changes with low risk and zero downtime. Source:
 *Continuous Delivery* (Humble & Farley) Ch.10, plus the version-control
 techniques from Ch.14 that keep mainline releasable. This file is advisory — the
-plugin recommends and plans for these patterns; it does not execute deployments.
+package recommends and plans for these patterns; it does not execute deployments.
 
 The governing distinction: **deploy ≠ release.** Deploying puts code on a server;
 releasing exposes behavior to users. Keep them separate so you can deploy

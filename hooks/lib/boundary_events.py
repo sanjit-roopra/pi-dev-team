@@ -1,6 +1,6 @@
 """boundary_events.py — shared boundary-level telemetry emit helper (#859).
 
-Records the decision process of the plugin's guard hooks (policy-gateway
+Records the decision process of dev-team's guard hooks (policy-gateway
 events, per *Code as Agent Harness* §3.5.1): which hook, on which tool,
 decided what, because of which rule. Complements `telemetry.py`
 (command/skill/gate invocation counts) and `cost_meter.py` (per-agent
@@ -13,7 +13,7 @@ command text, prompt text, file paths, or reasons must never appear in a
 `matched_rule` value — only rule IDs from closed vocabularies.
 
 Fail-open: every exception is swallowed. A full disk, read-only
-`.claude/metrics/`, or malformed state must never change the calling
+`.pi/dev-team/metrics/`, or malformed state must never change the calling
 hook's stdout, stderr, or exit code.
 
 Stdlib only. See ADR 0014 / ADR 0015.
@@ -60,7 +60,7 @@ def _append_line_locked(log: Path, line: str) -> None:
     to its own append (a pre-planted symlink at this stream's path would
     otherwise redirect every append). Delegating gives this stream that same
     hardening for free, and leaves exactly ONE hardened append
-    implementation in the plugin rather than two that can drift out of sync.
+    implementation in the package rather than two that can drift out of sync.
 
     `fail_open=True` (the default) matches this module's own fail-open
     write-side contract (OSError swallowed); `delay_env_var=_TEST_DELAY_ENV`
@@ -95,14 +95,14 @@ def emit_boundary_event(
     subject_hash_normalized: str | None = None,
 ) -> None:
     """Append one compact JSON line to
-    `<cwd>/.claude/metrics/boundary-events.jsonl`.
+    `<cwd>/.pi/dev-team/metrics/boundary-events.jsonl`.
 
-    Fail-open: any error (bad `cwd`, unwritable `.claude/metrics/`, disk
+    Fail-open: any error (bad `cwd`, unwritable `.pi/dev-team/metrics/`, disk
     full, etc.) is swallowed silently — this must never affect the
     caller's exit code, stdout, or stderr.
 
     Args:
-        cwd: Directory whose `.claude/metrics/` subdirectory receives the
+        cwd: Directory whose `.pi/dev-team/metrics/` subdirectory receives the
             event. Accepts `str` or `Path`.
         hook: Emitting hook's module name (e.g. "destructive_guard").
         tool: Hooked tool / event name (e.g. "Bash", "UserPromptSubmit").
@@ -221,7 +221,7 @@ _CLI_AGENT_EVENTS = {
     "dispatch-failure": ("code-review", "Skill", "dispatch-failure"),
 }
 
-# Verdict values a real, external (non-Claude-Code) gate can report about
+# Verdict values a real, external (non-harness) gate can report about
 # its own run (#2037): "allow" (ran, allowed the commit), "block" (ran,
 # rejected the commit for a legitimate reason), "errored" (ran, but hit an
 # internal/infra failure rather than evaluating the commit's own content —
@@ -243,13 +243,12 @@ _GATE_RAN_VERDICTS = frozenset({"allow", "block", "errored"})
 # notes that the gate ran at all; its OWN internal outcome lives in
 # `matched_rule`, not in `decision`. Unlike every other CLI event here, this
 # one has no `session_id` to attach in the ordinary case — `.husky/pre-commit`
-# is a REAL git hook invoked by git itself, outside Claude Code's own
-# PreToolUse machinery entirely, so it never receives a Claude Code
+# is a REAL git hook invoked by git itself, outside the harness's own
+# PreToolUse machinery entirely, so it never receives a harness
 # session_id to pass through. `--session-id`/`--subject-hash` remain accepted
 # (a future caller that DOES have one can still supply it); the shipped
-# caller simply omits both — see `session_report.py`'s "gate-run
-# correlation (#2037)" section for why correlation is by TIME PROXIMITY
-# instead.
+# caller simply omits both — correlation is by TIME PROXIMITY instead
+# (gate-run correlation, #2037).
 _CLI_VERDICT_EVENTS = {
     "gate-ran": ("pre-commit-gate", "Bash", "record"),
 }
@@ -316,7 +315,7 @@ def _main() -> int:
     silently accepted: this fail-open posture is deliberately safe for
     `"record"` (a lost POSITIVE-evidence write only over-blocks the gate)
     but inverts for `"dispatch-failure"` — a lost NEGATIVE-evidence write
-    (a full disk, an unwritable `.claude/metrics/`, a registry read that
+    (a full disk, an unwritable `.pi/dev-team/metrics/`, a registry read that
     happens to fail exactly at write time, or an unregistered/mistyped
     `--agent` value) means a genuine dispatch failure produces no evidence
     at all, and the gate then evaluates on the other agents' `"record"`s
@@ -380,8 +379,7 @@ def _main() -> int:
             # callers that merely import `emit_boundary_event` (every guard
             # hook) never pay for it, and copy-into-tmp-dir test harnesses
             # that stage a minimal subset of hooks/lib/ alongside the hook
-            # under test (see test_contract_version_guard.py::_run_hook_from,
-            # which stages boundary_events.py + artifact_paths.py +
+            # under test (staging boundary_events.py + artifact_paths.py +
             # atomic_state.py) keep working unmodified. Inside the
             # try/except below so an ImportError from a partial install
             # degrades the same way a broken registry
@@ -403,7 +401,7 @@ def _main() -> int:
         # Normalize the plugin-qualified form ("dev-team:security-review")
         # to the bare stem the registry's closed set uses, matching
         # agent_dispatch_ledger.py's own normalization exactly — otherwise
-        # the plugin's normal, installed invocation form would be silently
+        # dev-team's normal, installed invocation form would be silently
         # dropped as "unregistered".
         agent = review_agent_registry.strip_plugin_prefix(args.agent)
         hook, tool, decision = _CLI_AGENT_EVENTS[args.event]

@@ -5,9 +5,9 @@
 `/test-improve --from-phase <n>` used to require an explicit phase number.
 This helper makes the number optional: when `--from-phase` is passed with no
 argument, the orchestrator calls this script to auto-detect the resume point
-from the run's memory directory `.claude/memory/test-improve/<slug>/`. A
+from the run's memory directory `.pi/dev-team/memory/test-improve/<slug>/`. A
 pre-existing top-level `memory/test-improve/` tree (from before this
-directory moved under `.claude/`) is migrated file-by-file on the first
+directory moved under `.pi/dev-team/`) is migrated file-by-file on the first
 resume that resolves the memory directory; git-tracked files and
 `refactor-backlog.md` are left in place (see `artifact_paths.migrate_dir()`).
 
@@ -19,7 +19,7 @@ issue #1422 so Baseline and Derive-Gherkin land before Analyze):
   derive — is conditional and tracked via `gherkin.md`, not a numbered
   progress file; see below). The slug derives from the `<repo-path>` (last
   path segment), so a run is never conflated with an unrelated slug under the
-  same `.claude/memory/test-improve/` root.
+  same `.pi/dev-team/memory/test-improve/` root.
 - Find the HIGHEST-completed phase, ordered by the pipeline's EXECUTION
   sequence `0, 2, 1, 4, 5, 6, 7, 8, 9` (phase identities keep their historical
   numbers — Phase 1 is still Analyze, Phase 2 is still Baseline — only the
@@ -222,7 +222,7 @@ def resolve_memory_dir(args: argparse.Namespace) -> Path:
     # slug at once, not just the one being resumed) before resolving this
     # run's directory. refactor-backlog.md is a user-facing report, not
     # phase-state — excluded from this sweep; it moves to neither
-    # .claude/memory/ nor .dev-team-reports/ automatically (disclosed
+    # .pi/dev-team/memory/ nor .dev-team-reports/ automatically (disclosed
     # limitation, see plan Slice 5 AC18).
     artifact_paths.migrate_dir(
         "memory", "test-improve", exclude={"refactor-backlog.md"}

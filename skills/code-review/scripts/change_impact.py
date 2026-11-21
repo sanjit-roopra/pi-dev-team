@@ -115,7 +115,7 @@ _INFRA_NAMES = frozenset(
 )
 _INFRA_SUFFIXES = (".tf", ".tfvars")
 
-#: Import / dependency-edge declarations across the languages this plugin
+#: Import / dependency-edge declarations across the languages this package
 #: supports. Matched against ADDED and REMOVED lines only — a changed import
 #: is a changed dependency edge, which is precisely arch-review's subject.
 _IMPORT_RE = re.compile(
@@ -155,7 +155,7 @@ _INTERFACE_RE = re.compile(
 
 _ADR_RE = re.compile(r"(^|/)(docs/)?adr/|(^|/)adr-\d|(^|/)\d{4}-.*\.md$", re.IGNORECASE)
 
-#: Concurrency primitives across the languages this plugin supports (#1975).
+#: Concurrency primitives across the languages this package supports (#1975).
 #: Matched against ADDED and REMOVED lines alike: *removing* a lock is a
 #: concurrency change precisely as much as adding one, and it is the shape
 #: most likely to introduce a race.

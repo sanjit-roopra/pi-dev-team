@@ -7,11 +7,11 @@ user-invocable: true
 
 # Mutation Testing
 
-<!-- pi-port-notes -->
-## pi port notes
+<!-- pi-notes -->
+## pi notes
 
-- Scripts in this skill that shell out to `claude --print` / `claude -p` run through the pi port's `claude` CLI shim (on `PATH` inside pi), which executes `pi --mode json -p --no-session` and returns a Claude-style result envelope. `CLAUDE_BIN` / `CLAUDE_CLI` may point at it explicitly.
-<!-- pi-port-notes -->
+- Scripts in this skill that shell out to `dev-team-run --print` / `dev-team-run -p` run through the `dev-team-run` CLI shim (on `PATH` inside pi), which executes `pi --mode json -p --no-session` and returns a JSON result envelope. `DEV_TEAM_RUN_BIN` may point at it explicitly.
+<!-- pi-notes -->
 
 
 Role: worker. This command runs the mutation tool and triages survivors
@@ -75,7 +75,7 @@ For tool-specific flag names and config-file keys (e.g. Stryker's `timeoutMS`, p
 
 ## Step 1c: Smoke gate — verify the tool is actually observing mutations
 
-Before running the full scan, run the tool against **one covered file** and confirm the mutation-switch mechanism is actually observing mutations at runtime. On some tool + test-framework combinations (issue [#554](https://github.com/bdfinst/agentic-dev-team/issues/554), [#557](https://github.com/bdfinst/agentic-dev-team/issues/557) on Stryker.NET + xunit.v3 + MTP), the tool cheerfully runs to completion but reports **every mutant as `Survived`** because the injected `ActiveMutation` env var never reaches the test host — the score looks like `0.00 %` but the run wasted hours. This gate catches that failure mode in one file's worth of wall-clock time.
+Before running the full scan, run the tool against **one covered file** and confirm the mutation-switch mechanism is actually observing mutations at runtime. On some tool + test-framework combinations (issue #554, #557 on Stryker.NET + xunit.v3 + MTP), the tool cheerfully runs to completion but reports **every mutant as `Survived`** because the injected `ActiveMutation` env var never reaches the test host — the score looks like `0.00 %` but the run wasted hours. This gate catches that failure mode in one file's worth of wall-clock time.
 
 **Deterministic parse source.** Parse the tool's **report JSON** (Stryker's `StrykerOutput/<run>/reports/mutation-report.json`, pitest's `target/pit-reports/mutations.xml`, mutmut's `mutmut junitxml` output, etc.). **Do not parse stdout, the ANSI progress reporter output, or any log tail** — those are lossy, reporter-config-dependent, and don't survive redirection (see `## Capturing run output safely`). The gate is deterministic only when it reads the same artifact downstream steps read.
 
@@ -97,7 +97,7 @@ Before running the full scan, run the tool against **one covered file** and conf
 
 Per-language commands (which probe file to pick, how to invoke the tool with a single-file mutate glob, and where the report JSON lands) live in each [`references/languages/<lang>.md`](references/languages/). This step's decision procedure is language-agnostic; the mechanics are language-specific.
 
-**Mechanical enforcement (Claude Code sessions).** Inside a Claude Code session, the `PreToolUse` hook [`hooks/mutation_testing_smoke_gate.py`](../../hooks/mutation_testing_smoke_gate.py) enforces this step automatically — it intercepts `dotnet stryker` and shipped-wrapper invocations, checks for a smoke report at the fixed convention path `StrykerOutput/smoke/reports/mutation-report.json`, and blocks whole-scope runs until a probe report reports at least one `Killed` mutant. Run your smoke probe with `-O StrykerOutput/smoke` so the report lands where the hook looks; a single-file `--mutate` value (no glob metacharacters, no `;`) is recognized as the probe itself and never blocked. To bypass the gate for a legitimate one-off, set `MUTATION_SMOKE_GATE_SKIP=1` in the environment — every bypass appends one JSONL audit line to `.claude/metrics/gate-bypass.jsonl` recording the timestamp, cwd, and a sha256 hash of the command (the raw command is never logged). Direct-terminal and CI operators — outside Claude Code — rely on this step's prose plus the shipped wrapper's own defenses; the hook is Claude-Code-only.
+**Mechanical enforcement (pi sessions).** Inside a pi session, the `PreToolUse` hook [`hooks/mutation_testing_smoke_gate.py`](../../hooks/mutation_testing_smoke_gate.py) enforces this step automatically — it intercepts `dotnet stryker` and shipped-wrapper invocations, checks for a smoke report at the fixed convention path `StrykerOutput/smoke/reports/mutation-report.json`, and blocks whole-scope runs until a probe report reports at least one `Killed` mutant. Run your smoke probe with `-O StrykerOutput/smoke` so the report lands where the hook looks; a single-file `--mutate` value (no glob metacharacters, no `;`) is recognized as the probe itself and never blocked. To bypass the gate for a legitimate one-off, set `MUTATION_SMOKE_GATE_SKIP=1` in the environment — every bypass appends one JSONL audit line to `.pi/dev-team/metrics/gate-bypass.jsonl` recording the timestamp, cwd, and a sha256 hash of the command (the raw command is never logged). Direct-terminal and CI operators — outside pi — rely on this step's prose plus the shipped wrapper's own defenses; the hook is pi-only.
 
 ## Step 2: Run the tool (scoped to target)
 
@@ -107,7 +107,7 @@ Run scoped to user-specified files or changed files. Capture full output and not
 
 ### Capturing run output safely
 
-Do **not** wrap the mutation tool in a bare `<tool> 2>&1 | tee run.log` pipeline. Bash pipeline exit status defaults to the last command's — `tee` always exits 0 on a successful write — so any Stryker / mutmut / pitest / go-mutesting startup failure (missing tool manifest, invalid config key, wrong `DOTNET_ROOT`, compile-error abort) is silently masked. Downstream automation (background tasks, CI wrappers, this plugin's own monitor loops) then sees "success" and moves on, and the failure is discovered only when the report JSON is missing.
+Do **not** wrap the mutation tool in a bare `<tool> 2>&1 | tee run.log` pipeline. Bash pipeline exit status defaults to the last command's — `tee` always exits 0 on a successful write — so any Stryker / mutmut / pitest / go-mutesting startup failure (missing tool manifest, invalid config key, wrong `DOTNET_ROOT`, compile-error abort) is silently masked. Downstream automation (background tasks, CI wrappers, this package's own monitor loops) then sees "success" and moves on, and the failure is discovered only when the report JSON is missing.
 
 Two safe patterns — pick by whether you need live tail:
 
@@ -153,10 +153,10 @@ Real mutation runs take 15 min – several hours. During that window the tool em
 
 **Default cadence: 10 minutes** (600 s). Short enough to catch a stall or config error within one cycle, long enough not to spam operator output. Runs shorter than ~15 min don't need this — the summary at the end is sufficient. Cadence should be configurable.
 
-**This is a contract, not a mandated implementation.** Two examples the plugin ships:
+**This is a contract, not a mandated implementation.** Two examples the package ships:
 
-- **Portable Python wrapper** — a Python script that runs the tool as a subprocess, polls the log file, and emits one status + zero-or-more `[RED-FLAG]` lines per tick. Cross-platform via Python 3.10+ stdlib; works outside Claude Code (CI, direct terminal). The Stryker.NET reference in [`references/languages/csharp-stryker-net.md`](references/languages/csharp-stryker-net.md) documents the shipped wrapper (`csharp_stryker_net_wrapper.py`) + status loop (`csharp_stryker_net_status_loop.py`).
-- **In-session Monitor** — inside a Claude Code session, a `Monitor` tool call on the log file stream that emits an event on each recognized red-flag pattern. Cleaner integration but no coverage for out-of-session (CI, direct-terminal) operators.
+- **Portable Python wrapper** — a Python script that runs the tool as a subprocess, polls the log file, and emits one status + zero-or-more `[RED-FLAG]` lines per tick. Cross-platform via Python 3.10+ stdlib; works outside pi (CI, direct terminal). The Stryker.NET reference in [`references/languages/csharp-stryker-net.md`](references/languages/csharp-stryker-net.md) documents the shipped wrapper (`csharp_stryker_net_wrapper.py`) + status loop (`csharp_stryker_net_status_loop.py`).
+- **In-session Monitor** — inside an agent session with a monitor tool, a `Monitor` tool call on the log file stream that emits an event on each recognized red-flag pattern. Cleaner integration but no coverage for out-of-session (CI, direct-terminal) operators.
 
 Whichever you pick, never implement the cadence as a foreground `sleep` loop. If the tick is driven by a scheduled wake-up rather than a stream monitor, see [`knowledge/long-run-waiting.md`](../../knowledge/long-run-waiting.md) for the calling contract — a wake-up armed without its replay instruction fails validation and schedules nothing, so the "inspection loop" stops inspecting after tick one.
 
@@ -195,7 +195,7 @@ Equivalent and Accepted are not the same classification, even though both end in
 2. **Survived** next (assertion or coverage fix — see the mutation-type-aware guidance below).
 3. **Equivalent** and **Accepted this pass** last (documentation only; no test to write — each still requires its own `reason` string).
 
-**Cluster survivors by source line before filling in "Recommended Test Additions."** Group survivors by calling `survivors_by_line()` in `mutation_report.py` (or `python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/mutation_report_cli.py" --survivors-by-line`) rather than re-deriving the grouping and sort yourself — its `clusters` key holds one entry per exact source line, sorted by survivors-per-line descending (not total mutants-per-line; the ranking targets what still needs killing), ties broken by line ascending; no adjacent-line merging is performed, even for clusters on adjacent lines sharing one expression — merging those is your own judgment call, not the tool's. Design one test per cluster where feasible, rather than one per mutant: the same line-clustering approach [`mutation-kill.md`'s generation guidance](../../agents/mutation-kill.md#target-mutation-types-in-priority-order) applies for autonomous test generation, here guiding a human filling the triage table. `survivors_by_line()`/its CLI wrapper reads Stryker/Stryker.NET's native JSON report shape only — for mutmut/pitest/go-mutesting reports this function is not yet wired up.
+**Cluster survivors by source line before filling in "Recommended Test Additions."** Group survivors by calling `survivors_by_line()` in `mutation_report.py` (or `python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/mutation_report_cli.py" --survivors-by-line`) rather than re-deriving the grouping and sort yourself — its `clusters` key holds one entry per exact source line, sorted by survivors-per-line descending (not total mutants-per-line; the ranking targets what still needs killing), ties broken by line ascending; no adjacent-line merging is performed, even for clusters on adjacent lines sharing one expression — merging those is your own judgment call, not the tool's. Design one test per cluster where feasible, rather than one per mutant: the same line-clustering approach [`mutation-kill.md`'s generation guidance](../../agents/mutation-kill.md#target-mutation-types-in-priority-order) applies for autonomous test generation, here guiding a human filling the triage table. `survivors_by_line()`/its CLI wrapper reads Stryker/Stryker.NET's native JSON report shape only — for mutmut/pitest/go-mutesting reports this function is not yet wired up.
 
 ### Mutation-type-aware triage
 
@@ -283,7 +283,7 @@ expect(db.save).toHaveBeenCalledWith(order);  // catches removed save()
 
 ## Output format
 
-Report the **honest** figure as the operator's primary signal. Tool-claimed scoring counts timeouts as kills and inflates — on a real Stryker.NET run, 999 of 1305 headline "kills" were timeouts (~23 % honest vs. ~61 % as Stryker reported it). Show both, honest above claimed, and emit the timeout warning when it fires. Formulas and rationale are canonical in `${CLAUDE_PLUGIN_ROOT}/knowledge/mutation-score-formulas.md` (shared with the `mutation-kill` agent); derivation for the machine-readable field names is in the [Machine-readable output](#machine-readable-output) section below.
+Report the **honest** figure as the operator's primary signal. Tool-claimed scoring counts timeouts as kills and inflates — on a real Stryker.NET run, 999 of 1305 headline "kills" were timeouts (~23 % honest vs. ~61 % as Stryker reported it). Show both, honest above claimed, and emit the timeout warning when it fires. Formulas and rationale are canonical in `${DEV_TEAM_ROOT}/knowledge/mutation-score-formulas.md` (shared with the `mutation-kill` agent); derivation for the machine-readable field names is in the [Machine-readable output](#machine-readable-output) section below.
 
 The illustrative counts below are self-consistent under those formulas (verify: `100 / (100+200+135) = 23.0 %`; `(100+430) / (100+200+430+135) = 61.3 %`; `430 / (100+200+430) = 58.9 %`). Do not tune wording without re-checking the arithmetic.
 

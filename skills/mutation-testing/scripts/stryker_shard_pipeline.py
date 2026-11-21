@@ -19,7 +19,7 @@ Stryker process and marks the shard failed — timeouts are non-deterministic
 noise that would otherwise inflate the score, so we refuse to score them.
 
 Generic, stdlib-only, cross-platform (macOS, Linux, Windows). The only
-non-stdlib imports are the three sibling plugin modules in this same
+non-stdlib imports are the three sibling modules in this same
 ``scripts/`` directory.
 """
 

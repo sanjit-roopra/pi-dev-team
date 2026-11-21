@@ -180,10 +180,10 @@ def is_git_commit_argv(tokens: list[str]) -> bool:
 
 
 def strip_ns(name: str) -> str:
-    """Drop known plugin namespace prefixes so invoked names match the
+    """Drop known skill namespace prefixes so invoked names match the
     registry (registry entries are bare dir/file stems). `dev-team:plan` ->
-    `plan`; `agentic-dev-team:plan` -> `plan`; other names pass through."""
-    for prefix in ("agentic-dev-team:", "dev-team:"):
+    `plan`; other names pass through."""
+    for prefix in ("dev-team:",):
         if name.startswith(prefix):
             return name[len(prefix) :]
     return name
@@ -222,7 +222,7 @@ def basename(path_str: str) -> str:
     whole — an absolute path, username included, in a field both extractors'
     docstrings promise is a basename. Reachable whenever Windows-written
     transcripts are read under WSL, a devcontainer, or a bind-mounted
-    `~/.claude`. #1991 fixed this in the shipped extractor first; #1994's
+    home directory. #1991 fixed this in the shipped extractor first; #1994's
     port to session_extract.py initially left it behind (the same defect
     class crossing the fork twice) but a later fix closed the gap — both
     copies compute the same `re.split` before this module unified them (see

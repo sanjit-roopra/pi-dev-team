@@ -66,7 +66,7 @@ Resolve the pair with the shared helper, never by reading frontmatter
 directly:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/scripts/verify_tier.py" --agent <name>
+python3 "$DEV_TEAM_ROOT/scripts/verify_tier.py" --agent <name>
 ```
 
 It prints `{"agent", "model", "effort", "opted_in"}` — the tier to dispatch
@@ -75,15 +75,13 @@ tier when no opt-in is declared.
 
 ### Why a body declaration, not frontmatter
 
-Issue #1333 established that this plugin's own tooling metadata lives in the
-agent **body**, because frontmatter is reserved for the official Claude Code
-sub-agent contract recorded in
-`plugins/marketplace-dev/knowledge/agent-contract.json` — a dated snapshot of
-upstream documentation, not a schema this plugin may extend. `Scope:`,
+Issue #1333 established that this package's own tooling metadata lives in the
+agent **body**, because frontmatter is reserved for the
+sub-agent contract the harness reads, not a schema this package may extend. `Scope:`,
 `Cites:`, and `Enforcement:` all follow that rule; these two join them.
-(Claude Code silently ignores unknown frontmatter keys, so putting them in
+(The harness silently ignores unknown frontmatter keys, so putting them in
 frontmatter would also have made a typo invisible.) See
-[`docs/agent_info.md`](../docs/agent_info.md) § Non-standard body
+`docs/agent_info.md` § Non-standard body
 declarations.
 
 ### Initial opt-ins

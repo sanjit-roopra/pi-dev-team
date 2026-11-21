@@ -39,10 +39,10 @@ class BuildPhase(unittest.TestCase):
         (self.repo / "a.py").write_text("x = 1\n")
         git(self.repo, "add", "plans", "a.py")
         git(self.repo, "commit", "-qm", "base")
-        self.state_file = self.repo / ".claude" / "memory" / "build-phase.json"
+        self.state_file = self.repo / ".pi" / "dev-team" / "memory" / "build-phase.json"
 
     def run_helper(self, *args, cwd=None):
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        env = {k: v for k, v in os.environ.items() if k != "DEV_TEAM_PROJECT_DIR"}
         return subprocess.run([sys.executable, str(SCRIPT), *args], cwd=cwd or self.repo, env=env, capture_output=True, text=True)
 
     def record(self):
@@ -64,7 +64,7 @@ class BuildPhase(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(self.record()["plan_path"], "plans/p.md")
         self.assertEqual(self.record()["phase"], "test")
-        self.assertFalse((self.repo / "tests" / ".claude").exists())
+        self.assertFalse((self.repo / "tests" / ".pi").exists())
 
     def test_refactor_stages_the_tests_and_the_guards_enforce_the_freeze(self):
         self.run_helper("test", "1.1", "--plan", "plans/p.md")
@@ -107,7 +107,7 @@ class BuildPhase(unittest.TestCase):
         green = f"set -o pipefail; true | tail -1 && {helper} implement 1.2"
         for command in (red, green):
             self.assertEqual(bash_guard.evaluate(command, self.repo)[0], 0, command)
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+        env = {k: v for k, v in os.environ.items() if k != "DEV_TEAM_PROJECT_DIR"}
         subprocess.run(["bash", "-c", red], cwd=self.repo, env=env, capture_output=True)
         self.assertEqual(self.record()["phase"], "refactor", "a red piped run must not leave REFACTOR")
         subprocess.run(["bash", "-c", green], cwd=self.repo, env=env, capture_output=True)

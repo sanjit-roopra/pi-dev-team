@@ -1,5 +1,5 @@
 /**
- * Small tools the dev-team content expects from Claude Code:
+ * Small tools the dev-team content expects:
  *   ask_user  — AskUserQuestion (human gates in /plan, /specs, /build, /setup, ...)
  *   web_fetch — WebFetch (source-verification, competitive-analysis)
  */
@@ -27,7 +27,7 @@ const AskParams = Type.Object({
 	why: Type.Optional(Type.String({ description: "One line: why the answer matters" })),
 	options: Type.Optional(Type.Array(Type.Union([Type.String(), OptionSchema]))),
 	multiSelect: Type.Optional(Type.Boolean()),
-	questions: Type.Optional(Type.Array(QuestionSchema, { description: "Several questions (Claude AskUserQuestion shape)" })),
+	questions: Type.Optional(Type.Array(QuestionSchema, { description: "Several questions (AskUserQuestion shape)" })),
 });
 
 type Q = PlainQuestion & { multiSelect?: boolean };
@@ -103,7 +103,7 @@ export function registerAskUser(pi: ExtensionAPI, getConfig: () => DevTeamConfig
 		name: "ask_user",
 		label: "Ask user",
 		description:
-			"Ask the human one or more questions (Claude Code's AskUserQuestion). Use for dev-team human gates: approvals, ambiguity resolution, choices. Mark the option you would pick with (recommended). If no human is attached or no answer comes in time, it says so; then take that option or the documented non-interactive default.",
+			"Ask the human one or more questions (AskUserQuestion in dev-team instructions). Use for dev-team human gates: approvals, ambiguity resolution, choices. Mark the option you would pick with (recommended). If no human is attached or no answer comes in time, it says so; then take that option or the documented non-interactive default.",
 		promptSnippet: "Ask the human a question (AskUserQuestion equivalent)",
 		parameters: AskParams,
 		executionMode: "sequential",
@@ -204,7 +204,7 @@ export function registerWebFetch(pi: ExtensionAPI): void {
 		name: "web_fetch",
 		label: "Web fetch",
 		description:
-			"Fetch a URL and return its text (Claude Code's WebFetch). HTML is converted to plain text; output is capped. `prompt` states what you are looking for; extract it yourself from the returned text.",
+			"Fetch a URL and return its text (WebFetch in dev-team instructions). HTML is converted to plain text; output is capped. `prompt` states what you are looking for; extract it yourself from the returned text.",
 		promptSnippet: "Fetch a web page as text (WebFetch equivalent)",
 		parameters: Type.Object({
 			url: Type.String({ description: "http(s) URL" }),

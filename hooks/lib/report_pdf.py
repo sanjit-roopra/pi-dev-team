@@ -156,7 +156,7 @@ def install_hint() -> str:
 
 
 def default_css_path() -> Path:
-    """The bundled print stylesheet shipped with the plugin."""
+    """The bundled print stylesheet shipped with the package."""
     return Path(__file__).resolve().parents[2] / "knowledge" / "report-print.css"
 
 

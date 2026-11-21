@@ -14,7 +14,7 @@ description: Debug or measure how pi-dev-team behaved in recorded pi sessions �
 | Command | Answers |
 |---|---|
 | `python3 devtools/pi_session_report.py projects` | Which projects have pi sessions, and how many used dev-team |
-| `… sessions -p <project>` | One row per session: start, first prompt, turns, compactions, skills loaded, dispatches, failed dispatches, tool errors, hook blocks, parent, subagent and overhead cost, port version |
+| `… sessions -p <project>` | One row per session: start, first prompt, turns, compactions, skills loaded, dispatches, failed dispatches, tool errors, hook blocks, parent, subagent and overhead cost, dev-team version |
 | `… timeline <session> [-p <project>] [--tools]` | The ordered events of one session. `<session>` is a file path, a unique part of the id (the `session` column above), or `latest` with `-p` |
 | `… skills -p <project>` | Each skill's load count, average size, median turns it stayed in context, and `tokensTimesTurns` |
 | `… tools -p <project> [--large-output-tokens 3500]` | Tool-output tokens by tool, and how much came from large outputs |

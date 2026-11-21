@@ -16,7 +16,7 @@ counter; ``edited`` is set true by verify_guard_edit_marker.py whenever an
 Edit/Write/NotebookEdit tool call is observed, and consumed (reset to
 false) by verify_guard.py on its next run.
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations

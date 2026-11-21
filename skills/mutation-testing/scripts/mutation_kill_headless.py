@@ -7,14 +7,14 @@ agent-driven (default, interactive) path never touches this module — the
 mutation-kill agent calls :func:`mutation_kill_loop.run_for_file` directly
 with its own ``generate`` hook.
 
-The ``claude --print`` invocation glue itself (``run_claude_headless``,
-``resolve_model``, ``strip_code_fences``, ``claude_cli_available``,
-``CLAUDE_CLI``) lives in ``mutation_kill_shared.py``, not here (#1601) — it's
+The ``dev-team-run --print`` invocation glue itself (``run_headless``,
+``resolve_model``, ``strip_code_fences``, ``headless_cli_available``,
+``DEV_TEAM_RUN_BIN``) lives in ``mutation_kill_shared.py``, not here (#1601) — it's
 reused verbatim by ``mutation_kill_loop_python.py``, and none of it is
 C#-specific. This module only builds the C#-flavored prompt
 (``build_generation_prompt``) and imports the handful of shared names it
-actually calls (``CLAUDE_CLI``, ``resolve_model``, ``claude_cli_available``,
-``run_claude_headless``); ``mutation_kill_loop_python.py`` now imports the
+actually calls (``DEV_TEAM_RUN_BIN``, ``resolve_model``, ``headless_cli_available``,
+``run_headless``); ``mutation_kill_loop_python.py`` now imports the
 same names directly from ``mutation_kill_shared`` too, rather than through
 this module, which previously dragged the whole C#/Stryker.NET stack
 (``mutation_kill_loop`` and everything it imports) into the Python loop just
@@ -40,11 +40,11 @@ from mutation_kill_retry import (
     make_retrying_headless_call,
 )
 from mutation_kill_shared import (
-    CLAUDE_CLI,
+    DEV_TEAM_RUN_BIN,
     RevertFailed,
-    claude_cli_available,
+    headless_cli_available,
     resolve_model,
-    run_claude_headless,  # noqa: F401 — re-exported for tests (headless.run_claude_headless identity check); make_headless_generator now calls it indirectly via make_retrying_headless_call (#1908)
+    run_headless,  # noqa: F401 — re-exported for tests (headless.run_headless identity check); make_headless_generator now calls it indirectly via make_retrying_headless_call (#1908)
 )
 
 # The exact message the bare-CLI startup preflight prints. Pinned so the
@@ -54,13 +54,12 @@ NO_GENERATOR_MESSAGE = (
     "or pass --headless"
 )
 
-# Printed when --headless is requested but the Claude CLI can't be reached.
+# Printed when --headless is requested but the dev-team-run helper can't be reached.
 # Names exactly how to install and authenticate it, and mutates no files.
-MISSING_CLAUDE_MESSAGE = (
-    f"--headless requires the Claude CLI but '{CLAUDE_CLI}' is not available. "
-    "Install Claude Code (`npm install -g @anthropic-ai/claude-code`) and "
-    "authenticate it (run `claude` once to log in, or set ANTHROPIC_API_KEY) — "
-    "or set CLAUDE_BIN to the CLI's path."
+MISSING_CLI_MESSAGE = (
+    f"--headless requires the dev-team-run helper but '{DEV_TEAM_RUN_BIN}' is not available. "
+    "It ships in pi-dev-team's bin/ and is on PATH inside pi; log in to pi "
+    "(run `pi` once) — or set DEV_TEAM_RUN_BIN to the helper's path."
 )
 
 
@@ -124,13 +123,13 @@ def make_headless_generator(
     sleep: Callable[[float], None] = time.sleep,
 ) -> Generator:
     """Return a :data:`mutation_kill_loop.Generator` that shells to
-    ``claude --print``.
+    ``dev-team-run --print``.
 
     The returned callable builds the prompt from the existing test file (the
     pattern) plus the survivor summary, then delegates everything else to
     :func:`mutation_kill_retry.make_retrying_headless_call` (#1908) — the
     3-consecutive-gateway-class-failures/1-same-model-retry/at-most-once-
-    per-file-downgrade wrapper around :func:`run_claude_headless`.
+    per-file-downgrade wrapper around :func:`run_headless`.
 
     The retry/downgrade state (consecutive-failure counter, model in use,
     whether this file already spent its one downgrade) lives in the
@@ -176,7 +175,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         prog="mutation_kill_loop.py",
         description=(
             "Config-driven survivor-kill loop. Agent-driven by default; "
-            "--headless enables unattended generation via the Claude CLI."
+            "--headless enables unattended generation via the dev-team-run helper."
         ),
     )
     p.add_argument("--config", default="stryker-config.json", help="stryker-config.json path")
@@ -192,13 +191,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     p.add_argument(
         "--headless",
         action="store_true",
-        help="Unattended generation via `claude --print` (CI / shard pipeline).",
+        help="Unattended generation via `dev-team-run --print` (CI / shard pipeline).",
     )
     p.add_argument(
         "--model",
         help=(
             "Generation model for --headless. Default: DEV_TEAM_MUTATION_MODEL "
-            "env var, else omitted so `claude --print` uses its own default."
+            "env var, else omitted so `dev-team-run --print` uses its own default."
         ),
     )
     p.add_argument("--test-file", help="Test file to extend (required with --headless)")
@@ -239,9 +238,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     before resolving config, probing DOTNET_ROOT, running Stryker, or
     touching any file.
 
-    With ``--headless`` the generator shells to ``claude --print``. The Claude
-    CLI is preflight-checked *before* any file argument validation, so a
-    missing CLI fails cleanly at startup and mutates nothing.
+    With ``--headless`` the generator shells to ``dev-team-run --print``. The
+    helper is preflight-checked *before* any file argument validation, so a
+    missing helper fails cleanly at startup and mutates nothing.
     """
     argv = list(sys.argv[1:] if argv is None else argv)
     args = parse_args(argv)
@@ -254,8 +253,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # Preflight the CLI first — a missing CLI must fail before we touch any
     # file or validate run arguments.
-    if not claude_cli_available():
-        sys.stderr.write(f"error: {MISSING_CLAUDE_MESSAGE}\n")
+    if not headless_cli_available():
+        sys.stderr.write(f"error: {MISSING_CLI_MESSAGE}\n")
         return 3
 
     if not (args.file and args.test_file and args.source_path):

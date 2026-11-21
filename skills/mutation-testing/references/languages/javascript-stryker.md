@@ -38,7 +38,7 @@ from the survivor list handed to **the generation step only**, for that
 round. The filter itself is computed by calling `survivors_by_mutator(...,
 skip_static=True)` in `mutation_report.py` — invoke it through its CLI
 wrapper,
-`python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/mutation_report_cli.py"
+`python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/mutation_report_cli.py"
 --survivors-by-mutator --skip-static --report <path> --file <path>`, rather
 than re-deriving it here or importing the library directly: the CLI is
 where the inapplicable-skip notice below lives — a bare library call

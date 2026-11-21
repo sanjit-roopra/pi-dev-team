@@ -412,7 +412,7 @@ def first_prompt(s: Session) -> str:
 
 
 def dispatched_agents(args: dict) -> list[str]:
-    """Agent names of one dispatch call; the tool accepts Claude's subagent_type for agent (subagent.ts)."""
+    """Agent names of one dispatch call; the tool also accepts the alias subagent_type for agent (subagent.ts)."""
     tasks = args.get("tasks")
     items = [t for t in tasks if isinstance(t, dict)] if isinstance(tasks, list) else [args]
     return [str(t.get("agent") or t.get("subagent_type") or "?") for t in items]

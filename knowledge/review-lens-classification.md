@@ -12,7 +12,7 @@ both the same way misreads one of them:
   is the **wrong** metric here: a verification gate that mostly passes is a
   gate doing its job, not evidence of low value (see #2007's own framing —
   pricing silence as waste is the mirror image of the "gate that cannot
-  fail" failure `CLAUDE.md` warns about). The meaningful measure for this
+  fail" failure the project rules warn about). The meaningful measure for this
   class is **escape rate**: how often something the gate should have caught
   reached a later stage anyway.
 
@@ -34,7 +34,6 @@ and attempting the recomputation, not acting on either yet").
 | a11y-review | discovery-lens | Scans WCAG/ARIA/keyboard-nav for an open set of possible violations — no single fixed contract to confirm against. |
 | ai-provenance-review | discovery-lens | Surfaces unverified AI-authored assertions and regeneration-risk candidates — an open detection surface. |
 | arch-review | discovery-lens | Scans layer boundaries, dependency direction, and pattern consistency broadly; its ADR-compliance sub-check is verification-flavored, but the majority of its surface is open-ended discovery. |
-| claude-setup-review | discovery-lens | Scans for an open set of CLAUDE.md/rule/path gaps, not one pass/fail check. |
 | component-architecture-review | discovery-lens | Scans for reusable-component extraction, duplication, and prop-drilling — open-ended. |
 | concurrency-review | discovery-lens | Scans for race conditions, async pitfalls, shared state — open-ended. |
 | correctness-review | discovery-lens | Named explicitly as discovery in `skills/code-review/SKILL.md` ("an inverted assertion is exactly its subject"). |
@@ -49,7 +48,6 @@ and attempting the recomputation, not acting on either yet").
 | quality-reviewer | verification-gate (coordinator caveat) | Coordinates the Inline Review Checkpoint's fix loop to convergence rather than producing its own domain findings — its meaningful measure is "did the checkpoint converge," closer to a gate's pass/fail than a lens's per-finding cost. |
 | refactor-opportunity-review | discovery-lens | Scans for post-GREEN refactoring opportunities — open-ended. |
 | security-review | discovery-lens | Named explicitly as a discovery lens in `skills/code-review/SKILL.md`, and explicitly excluded from the test-only-diff skip candidates precisely because it finds real issues (credentials, injection payloads) across every diff shape. |
-| session-analysis | discovery-lens (analysis-only) | Surfaces ranked improvement suggestions from a session digest — no pass/fail verdict, but an open discovery surface, not a fixed-contract check. |
 | spec-compliance-review | **verification-gate** | The paradigm case named directly in #2007: confirms the implementation matches the spec. A gate that usually passes ("145 of 248 runs are pure pass") is doing its job — `$/finding` prices that silence as waste, which is the wrong metric for this class. |
 | spec-reviewer | verification-gate | Same family as `spec-compliance-review`, narrower — spec-to-diff matching for a single freshly-implemented unit (Stage 1 of the three-stage inline review). |
 | structure-review | discovery-lens | Scans SRP violations, DRY, coupling, file organization, nesting depth, cognitive load, and async-pattern pitfalls (folds `complexity-review`, retired #2093) — open-ended. |
@@ -86,18 +84,18 @@ verification-gate, 1 not-applicable — 29 agents total, matching
 blocked on principle. Attempted here against whatever data this checkout
 actually has:
 
-- `.claude/metrics/review-value.jsonl` — **absent**. No `/build`/`/code-review`
+- `.pi/dev-team/metrics/review-value.jsonl` — **absent**. No `/build`/`/code-review`
   review rounds have been logged in this checkout.
-- `.claude/metrics/contract-failures.jsonl` (#1998's own instrumentation,
+- `.pi/dev-team/metrics/contract-failures.jsonl` (#1998's own instrumentation,
   the repaired denominator `$/finding` needs) — **absent**. No JSON-contract
   failures have been logged either.
-- `.claude/metrics/boundary-events.jsonl` — present, but 17 lines, all
+- `.pi/dev-team/metrics/boundary-events.jsonl` — present, but 17 lines, all
   `hook: "pre-commit-gate"` records from this session's own git commits (the
   #2051/#1983 work above). Zero `dispatch-evidence-*`/`agent_dispatch_ledger`
   records for any review agent.
 
 **Verdict: no recomputation is possible from this checkout's data — not "a
-thin sample," an empty one.** `.claude/metrics/` is deny-by-default
+thin sample," an empty one.** `.pi/dev-team/metrics/` is deny-by-default
 gitignored (`**/metrics/*`, with an explicit allowlist for a handful of
 files that does not include `review-value.jsonl` or
 `contract-failures.jsonl`), so a fresh checkout or worktree starts with

@@ -4,7 +4,7 @@ description: Generate a runnable property-based test for a target function from 
 role: worker
 user-invocable: true
 argument-hint: "<module_path> <function_name>"
-allowed-tools: Read, Write, Bash(python3 "${CLAUDE_PLUGIN_ROOT}/skills/property-based-testing/scripts/detect_and_dispatch.py" *, python3 "${CLAUDE_PLUGIN_ROOT}/skills/property-based-testing/scripts/hypothesis_scaffold.py" *, npm install *, npx vitest *)
+allowed-tools: Read, Write, Bash(python3 "${DEV_TEAM_ROOT}/skills/property-based-testing/scripts/detect_and_dispatch.py" *, python3 "${DEV_TEAM_ROOT}/skills/property-based-testing/scripts/hypothesis_scaffold.py" *, npm install *, npx vitest *)
 ---
 
 # Property-Based Testing
@@ -19,7 +19,7 @@ documented invariant can be found.
 ### Step 1: Detect the target language (reuse project-init — never re-derive)
 
 Run project-init's own stack detection —
-`${CLAUDE_PLUGIN_ROOT}/skills/project-init/SKILL.md` § "Step 1: Detect the
+`${DEV_TEAM_ROOT}/skills/project-init/SKILL.md` § "Step 1: Detect the
 stack" — over the target project. That section is this repo's canonical,
 single source of truth for stack detection (its own frontmatter says so);
 this skill reuses its result and never re-implements the filesystem-signal
@@ -40,7 +40,7 @@ Pass the detected language (or nothing, when Step 1 found none) to
 [`scripts/detect_and_dispatch.py`](scripts/detect_and_dispatch.py):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/property-based-testing/scripts/detect_and_dispatch.py" --language "<detected language>"
+python3 "${DEV_TEAM_ROOT}/skills/property-based-testing/scripts/detect_and_dispatch.py" --language "<detected language>"
 ```
 
 This script decides support — it does not detect anything itself (see its
@@ -83,7 +83,7 @@ states for every lane and capability tool.
 - **Python** — invoke Step 4.1's scaffold directly:
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/skills/property-based-testing/scripts/hypothesis_scaffold.py" <module_path> <function_name> [--out-dir <dir>]
+  python3 "${DEV_TEAM_ROOT}/skills/property-based-testing/scripts/hypothesis_scaffold.py" <module_path> <function_name> [--out-dir <dir>]
   ```
 
   It derives a round-trip property (a literal `encode`/`decode` pair) or an

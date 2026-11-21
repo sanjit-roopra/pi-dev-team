@@ -1,7 +1,7 @@
 """slug — shared repo-root slug derivation.
 
 Single source of truth for the kebab-safe, lowercase slug both
-`codebase_recon.py` (its `.claude/memory/recon-<slug>.json` artifact naming)
+`codebase_recon.py` (its `.pi/dev-team/memory/recon-<slug>.json` artifact naming)
 and `orchestrator.py` (its `_recon_artifact_path` lookup of that same
 artifact) must agree on byte-for-byte — a drifted copy in either script
 would silently compute the wrong artifact path. Promoted from two

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""boundary_events_write_guard.py — Claude Code PreToolUse hook (#2171).
+"""boundary_events_write_guard.py — PreToolUse hook (run by the dev-team extension; #2171).
 
-`.claude/metrics/boundary-events.jsonl` is the plugin's boundary-level
+`.pi/dev-team/metrics/boundary-events.jsonl` is dev-team's boundary-level
 accountability ledger (`hooks/lib/boundary_events.py`, #859) — every guard
 hook's block/warn/bypass decision is recorded there, and that module's own
 docstring states rows must never carry free text (command text, prompt
@@ -18,10 +18,10 @@ path-match guard. Step 1.2 extends this same module to also inspect Bash
 `sed -i`, `cp`/`mv`/`rm`/`truncate`/`dd`, or a write/append/exclusive-mode
 Python `open()`) that target the ledger by filename, in any path form —
 see `bash_command_writes_to_ledger()` and `_BASH_WRITE_SHAPE_PATTERNS`
-below. The hook is registered in `settings.json`'s existing `Write|Edit`
+below. The hook is registered in `hooks/hooks.json`'s existing `Write|Edit`
 and `Bash` `PreToolUse` matcher groups.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin — for Write/Edit, `tool_input.file_path`
             or `tool_input.path`, resolved relative to `cwd` when not
             absolute; for Bash, `tool_input.command`
@@ -30,7 +30,7 @@ Contract (docs/python-hook-contract.md):
             remedy — a Python-only function unreachable from a shell
             command. The Bash-path message instead names the
             `hooks/lib/boundary_events.py` CLI's actual invocable shape
-            (`python3 plugins/dev-team/hooks/lib/boundary_events.py --event
+            (`python3 ${DEV_TEAM_ROOT}/hooks/lib/boundary_events.py --event
             <event> --subject-hash <hash> ...`, #1461) — the message
             interpolates the live `<event>` choice set from
             `boundary_events.cli_event_names()` rather than restating it
@@ -106,7 +106,7 @@ def targets_ledger(file_path: str, cwd: str) -> bool:
     """True when `file_path` (joined against `cwd` if not absolute) names
     the same on-disk path `emit_boundary_event()` itself resolves and
     writes to — `artifact_paths.resolve_file("metrics", ...)` under the
-    repo root, not a bare `.claude/metrics/` prefix match (so
+    repo root, not a bare `.pi/dev-team/metrics/` prefix match (so
     `review-verdicts.jsonl`, Slice 2's own store, is unaffected) — OR the
     pre-migration legacy path `<project-root>/metrics/boundary-events.jsonl`
     (review finding, #2171): `resolve_file(..., migrate=True)`, the default
@@ -170,7 +170,7 @@ def _extract_command(tool_input: object) -> str:
 
 # Any prefix of path characters ending in the ledger's literal filename.
 # Matches the filename in every ordinary path form the plan requires
-# (relative, absolute, "./"-prefixed, bare after a `cd .claude/metrics`
+# (relative, absolute, "./"-prefixed, bare after a `cd .pi/dev-team/metrics`
 # prefix, `~/`-prefixed, `$VAR`/`${VAR}`-expanded, or a quoted path
 # containing a space), since all of those literally end in this substring.
 # Widening this class is not an attempt at obfuscation-grade path matching
@@ -257,9 +257,9 @@ def _block(
     own decision (every sibling guard does — see the module docstring),
     print the block explanation, and return the block exit code.
 
-    Mirrors every line to stderr in addition to stdout (docs/python-hook-
-    contract.md § stderr, "Exception — exit-2 (block) messages"): some
-    Claude Code hook-error wrappers surface only stderr on a nonzero hook
+    Mirrors every line to stderr in addition to stdout (the hook contract's
+    stderr rule, "Exception — exit-2 (block) messages"): some
+    hook-error wrappers surface only stderr on a nonzero hook
     exit, so a stdout-only block message can go unseen there. Stdout stays
     the canonical channel; stderr is additive duplication for this exit-2
     path only — this is a new hook, so it converges to the documented
@@ -292,9 +292,9 @@ def _handle_bash_tool(payload: dict, cwd: str, session_id: str | None) -> int:
         cwd,
         "Bash",
         session_id,
-        f"BLOCKED: This Bash command writes to '.claude/metrics/{_LEDGER_NAME}', "
+        f"BLOCKED: This Bash command writes to '.pi/dev-team/metrics/{_LEDGER_NAME}', "
         "which is not allowed.",
-        "Use 'python3 plugins/dev-team/hooks/lib/boundary_events.py "
+        "Use 'python3 ${DEV_TEAM_ROOT}/hooks/lib/boundary_events.py "
         f"--event <{events}> "
         "--subject-hash <hash> ...' instead of writing to it from Bash — "
         "an arbitrary row isn't CLI-constructible by design (that CLI only "
@@ -318,7 +318,7 @@ def _handle_write_edit_tool(
         tool,
         session_id,
         f"BLOCKED: Direct write to '{file_path}' is not allowed.",
-        "Use emit_boundary_event() in plugins/dev-team/hooks/lib/boundary_events.py "
+        "Use emit_boundary_event() in ${DEV_TEAM_ROOT}/hooks/lib/boundary_events.py "
         "instead of writing to it directly.",
     )
 

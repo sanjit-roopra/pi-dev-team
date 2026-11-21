@@ -1,7 +1,7 @@
 """instrument_log — fail-open JSONL rows for benefit-measurement streams (#2201).
 
 The smallest logging addition that makes a number exist: each caller appends
-one compact row to a named ``.claude/metrics/<stream>.jsonl`` and nothing
+one compact row to a named ``.pi/dev-team/metrics/<stream>.jsonl`` and nothing
 else changes — no stdout, no exit code, no control flow. Any failure (bad
 cwd, unwritable directory, disk full) is swallowed. Streams and row shapes
 are documented in ``knowledge/telemetry-schema.md``.
@@ -10,7 +10,7 @@ Kept separate from ``boundary_events.py`` on purpose: a ``record`` row there
 is read by the review-gate corroboration path, so observational measurement
 rows must not share that stream.
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ STREAMS = frozenset({
 def append_row(stream: str, row: dict, cwd: str | Path | None = None,
                session_id: str | None = None) -> bool:
     """Append ``row`` (plus ``ts``/``plugin_version``/``session_id``) to
-    ``.claude/metrics/<stream>.jsonl``. Returns whether a row was written;
+    ``.pi/dev-team/metrics/<stream>.jsonl``. Returns whether a row was written;
     never raises."""
     if stream not in STREAMS:
         return False

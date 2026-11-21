@@ -33,7 +33,7 @@ function script(steps) {
 
 /** Two project agents: one of its own, one overriding the package's security-review. */
 function seedProjectAgents(env) {
-	const agentDir = path.join(env.repo, ".claude", "agents");
+	const agentDir = path.join(env.repo, ".pi", "agents");
 	fs.mkdirSync(agentDir, { recursive: true });
 	fs.writeFileSync(path.join(agentDir, "local-only.md"), "---\nname: local-only\ndescription: probe\ntools: Read\n---\nLOCAL_AGENT_PROMPT\n");
 	fs.writeFileSync(path.join(agentDir, "security-review.md"), "---\nname: security-review\ndescription: override\ntools: Read\n---\nPROJECT_OVERRIDE_PROMPT\n");
@@ -54,11 +54,15 @@ function projectAgentCall() {
 	return script([{ tools: [{ tool: "dev_team_subagent", args: { tasks } }] }]);
 }
 
-/** The isolated user config (~/.pi/agent/dev-team.json); routing is off unless `settings` says otherwise. */
+/**
+ * The isolated user config (~/.pi/agent/dev-team.json); routing is off unless `settings` says otherwise.
+ * autocompactPct 40 is a user who ran /setup: it keeps the autocompact_setup_nudge advisory out of the
+ * echoed prompt (`autocompactPct: undefined` leaves it unset).
+ */
 function writeUserConfig(home, settings) {
 	const agentDir = path.join(home, ".pi", "agent");
 	fs.mkdirSync(agentDir, { recursive: true });
-	fs.writeFileSync(path.join(agentDir, "dev-team.json"), JSON.stringify({ routing: "off", ...settings }));
+	fs.writeFileSync(path.join(agentDir, "dev-team.json"), JSON.stringify({ routing: "off", autocompactPct: 40, ...settings }));
 }
 
 function setupRepo() {
@@ -66,10 +70,9 @@ function setupRepo() {
 	const repo = path.join(root, "repo");
 	const home = path.join(root, "home");
 	fs.mkdirSync(repo);
-	fs.mkdirSync(path.join(home, ".claude"), { recursive: true });
-	fs.writeFileSync(path.join(home, ".claude", "telemetry.json"), '{"enabled": true}');
-	// a user who ran /setup: keeps the autocompact_setup_nudge advisory out of the echoed prompt
-	fs.writeFileSync(path.join(home, ".claude", "settings.json"), '{"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"}}');
+	// telemetry consent (<agentDir>/dev-team/telemetry.json): the cost meter writes rows only with it
+	fs.mkdirSync(path.join(home, ".pi", "agent", "dev-team"), { recursive: true });
+	fs.writeFileSync(path.join(home, ".pi", "agent", "dev-team", "telemetry.json"), '{"enabled": true}');
 	// routing off: scenarios that write from a plain prompt test their own subject, not the brief gate
 	writeUserConfig(home, {});
 	const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "pipe" });
@@ -82,7 +85,7 @@ function setupRepo() {
 	return { root, repo, home, git };
 }
 
-/** The developer's environment minus anything that would leak their own Claude/pi config into a scenario. */
+/** The developer's environment minus anything that would leak their own pi or other agent-tool config into a scenario. */
 function isolatedEnv(env) {
 	const out = { ...process.env, HOME: env.home, PI_CODING_AGENT_DIR: path.join(env.home, ".pi", "agent") };
 	for (const k of Object.keys(out)) if (/^(DEV_TEAM_|CLAUDE_)/.test(k)) delete out[k];
@@ -225,11 +228,11 @@ const scenarios = {
 	},
 
 	"autocompact_setup_nudge reaches the model only when autocompact is unconfigured"(env) {
-		fs.rmSync(path.join(env.home, ".claude", "settings.json"));
+		writeUserConfig(env.home, { autocompactPct: undefined });
 		let r = pi(env, "hello");
 		assert(r.out.includes("context autocompact is not configured"), `nudge missing: ${r.out.slice(0, 300)} ${r.err}`);
-		fs.mkdirSync(path.join(env.repo, ".claude"), { recursive: true });
-		fs.writeFileSync(path.join(env.repo, ".claude", "settings.json"), '{"env": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "40"}}');
+		fs.mkdirSync(path.join(env.repo, ".pi"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), '{"autocompactPct": 40}');
 		r = pi(env, "hello");
 		assert(!r.out.includes("context autocompact"), `nudge shown when configured: ${r.out.slice(0, 300)}`);
 		assert(r.out.includes("ECHO:hello"), r.out.slice(0, 300));
@@ -286,12 +289,40 @@ const scenarios = {
 		assert(r.out.includes("Review profile: gate"), "a config file removed the gate section");
 	},
 
-	"bash sees plugin env, shim on PATH, non-interactive"(env) {
-		const r = pi(env, script([{ tool: "bash", args: { command: 'echo "root=$CLAUDE_PLUGIN_ROOT"; command -v claude; echo "i=[$DEV_TEAM_INTERACTIVE]"; echo "sid=$CLAUDE_SESSION_ID"' } }]));
+	"bash sees dev-team env, the dev-team-run helper on PATH, non-interactive"(env) {
+		const r = pi(env, script([{ tool: "bash", args: { command: 'echo "root=$DEV_TEAM_ROOT"; command -v dev-team-run; echo "i=[$DEV_TEAM_INTERACTIVE]"; echo "sid=$DEV_TEAM_SESSION_ID"; echo "proj=$DEV_TEAM_PROJECT_DIR"; echo "old=[$CLAUDE_PLUGIN_ROOT$CLAUDE_PROJECT_DIR$CLAUDE_SESSION_ID]"' } }]));
 		assert(r.out.includes(`root=${PKG}`), r.out);
-		assert(r.out.includes(path.join(PKG, "bin", "claude")), "shim not on PATH");
+		assert(r.out.includes(path.join(PKG, "bin", "dev-team-run")), "dev-team-run not on PATH");
+		assert(r.out.includes(`proj=${env.repo}`) || r.out.includes(`proj=${fs.realpathSync(env.repo)}`), `DEV_TEAM_PROJECT_DIR is not the project: ${r.out.slice(0, 600)}`);
+		assert(r.out.includes("old=[]"), "an old CLAUDE_* name is still exported");
 		assert(r.out.includes("i=[]"), "DEV_TEAM_INTERACTIVE should be unset in print mode");
-		assert(/sid=\S+/.test(r.out), "CLAUDE_SESSION_ID unset");
+		assert(/sid=\S+/.test(r.out), "DEV_TEAM_SESSION_ID unset");
+	},
+
+	"old .claude/ state moves to .pi/dev-team/ once at session start, before the SessionStart hooks; .claude/agents stays"(env) {
+		// Unconfigured autocompact: autocompact_setup_nudge (a SessionStart hook) speaks unless it sees its
+		// opt-out marker, which starts in .claude/memory and is only in .pi/dev-team/memory after the move.
+		writeUserConfig(env.home, { autocompactPct: undefined });
+		fs.mkdirSync(path.join(env.repo, ".claude", "memory"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".claude", "memory", "notes.md"), "old notes\n");
+		fs.writeFileSync(path.join(env.repo, ".claude", "memory", "autocompact-nudge-off"), "");
+		fs.mkdirSync(path.join(env.repo, ".claude", "agents"), { recursive: true });
+		const r = pi(env, "hello");
+		assert(r.out.includes("ECHO:hello"), `${r.out.slice(0, 300)} ${r.err}`);
+		assert(fs.readFileSync(path.join(env.repo, ".pi", "dev-team", "memory", "notes.md"), "utf-8") === "old notes\n", "memory not moved");
+		assert(!fs.existsSync(path.join(env.repo, ".claude", "memory")), "the old memory folder is still there");
+		assert(fs.existsSync(path.join(env.repo, ".claude", "agents")), ".claude/agents was touched");
+		assert(fs.existsSync(path.join(env.repo, ".pi", "dev-team", ".migrated-from-claude")), "no migration marker");
+		assert(!r.out.includes("context autocompact"), `the SessionStart hook ran before the move: ${r.out.slice(0, 300)}`);
+	},
+
+	"a nested run (DEV_TEAM_NESTED) leaves the old .claude/ state alone"(env) {
+		fs.mkdirSync(path.join(env.repo, ".claude", "memory"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".claude", "memory", "notes.md"), "old notes\n");
+		const r = pi(env, "hello", { vars: { DEV_TEAM_NESTED: "1" } });
+		assert(r.out.includes("ECHO:hello"), `${r.out.slice(0, 300)} ${r.err}`);
+		assert(fs.existsSync(path.join(env.repo, ".claude", "memory", "notes.md")), "a nested run moved the state");
+		assert(!fs.existsSync(path.join(env.repo, ".pi", "dev-team", "memory", "notes.md")), "a nested run moved the state");
 	},
 
 	"a repeated read in a later turn returns a note; parallel reads in one turn return the text"(env) {
@@ -324,7 +355,7 @@ const scenarios = {
 		const results = toolResults(r.out);
 		assert(results.length === 2 && results.every((x) => !x.isError), `brief then write failed: ${JSON.stringify(results)} ${r.err}`);
 		assert(fs.existsSync(path.join(env.repo, "ok.txt")), "ok.txt not written after the brief");
-		assert(fs.existsSync(path.join(env.repo, ".claude", "memory", "brief.json")), "brief.json not saved");
+		assert(fs.existsSync(path.join(env.repo, ".pi", "dev-team", "memory", "brief.json")), "brief.json not saved");
 	},
 
 	"destructive_guard blocks reset --hard on the default branch"(env) {
@@ -373,8 +404,8 @@ const scenarios = {
 	},
 
 	"freeze mode limits writes to allowed patterns"(env) {
-		fs.mkdirSync(path.join(env.repo, ".claude", "hooks"), { recursive: true });
-		fs.writeFileSync(path.join(env.repo, ".claude", "hooks", "freeze-state.json"), JSON.stringify({ active: true, allowed_patterns: ["src/**"] }));
+		fs.mkdirSync(path.join(env.repo, ".pi", "dev-team", "hooks"), { recursive: true });
+		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team", "hooks", "freeze-state.json"), JSON.stringify({ active: true, allowed_patterns: ["src/**"] }));
 		const r = pi(env, script([{ tools: [{ tool: "write", args: { path: "docs/x.md", content: "x" } }, { tool: "write", args: { path: "src/ok.ts", content: "export {}\n" } }] }]), { json: true });
 		const results = toolResults(r.out);
 		const blocked = results.find((x) => x.text.includes("docs/x.md") || x.isError);
@@ -428,11 +459,11 @@ const scenarios = {
 		);
 		const results = toolResults(r.out).filter((x) => x.tool === "dev_team_subagent");
 		assert(results.length === 2 && results.every((x) => !x.isError), JSON.stringify(results).slice(0, 500));
-		const verdicts = readJsonl(path.join(env.repo, ".claude", "metrics", "review-verdicts.jsonl"));
+		const verdicts = readJsonl(path.join(env.repo, ".pi", "dev-team", "metrics", "review-verdicts.jsonl"));
 		const byLens = Object.fromEntries(verdicts.map((v) => [v.lens, v.outcome]));
 		assert(byLens["security-review"] === "pass" && byLens["test-review"] === "findings", JSON.stringify(verdicts));
 		assert(verdicts.every((v) => v.plugin_version && v.plugin_version !== "unknown"), "plugin_version not stamped");
-		const ledger = readJsonl(path.join(env.repo, ".claude", "metrics", "boundary-events.jsonl")).filter((e) => e.hook === "agent_dispatch_ledger");
+		const ledger = readJsonl(path.join(env.repo, ".pi", "dev-team", "metrics", "boundary-events.jsonl")).filter((e) => e.hook === "agent_dispatch_ledger");
 		assert(ledger.length === 2 && ledger.every((e) => e.subject_hash), JSON.stringify(ledger));
 	},
 
@@ -478,7 +509,7 @@ const scenarios = {
 		assert(dispatch.usage.totalTokens >= childInput + childOutput, `totalTokens ${dispatch.usage.totalTokens}`);
 	},
 
-	"subagent usage entry records the package version, so a session report can tell port versions apart"(env) {
+	"subagent usage entry records the package version, so a session report can tell package versions apart"(env) {
 		const sessionDir = path.join(env.root, "sessions");
 		const r = pi(env, script([{ tool: "dev_team_subagent", args: { subagent_type: "Explore", prompt: script([{ text: "a" }]) } }]), { sessionDir });
 		assert(r.code === 0, `dispatch failed: ${r.err}`);
@@ -515,7 +546,7 @@ const scenarios = {
 		assert(/CHILD_TRUST: args=.*"--no-approve".* root=\[\]/.test(d.text), `child not told trust was declined: ${d.text.slice(-600)}`);
 	},
 
-	"--dev-team-agent (claude shim agent mode) uses project agents only when trust was not declined"(env) {
+	"--dev-team-agent (dev-team-run agent mode) uses project agents only when trust was not declined"(env) {
 		seedProjectAgents(env);
 		const probe = script([{ inspect: "runtime" }]);
 		let r = pi(env, probe, { extra: ["--dev-team-agent", "security-review"] });
@@ -545,7 +576,7 @@ const scenarios = {
 		const child = script([{ tool: "dev_team_subagent", args: { agent: "Explore", task: grandchild } }]);
 		// orchestrator's tools include Agent, so it can dispatch in turn.
 		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "orchestrator", task: child } }]));
-		const row = readJsonl(path.join(env.repo, ".claude", "metrics", "cost-metering.jsonl")).at(-1);
+		const row = readJsonl(path.join(env.repo, ".pi", "dev-team", "metrics", "cost-metering.jsonl")).at(-1);
 		const byAgent = row?.by_agent_type ?? {};
 		assert(byAgent["dev-team:orchestrator"]?.input_tokens > 0, `child missing: ${JSON.stringify(byAgent)}`);
 		assert(byAgent["dev-team:Explore"]?.input_tokens > 0, `grandchild not credited to its own agent: ${JSON.stringify(byAgent)}`);
@@ -569,18 +600,18 @@ const scenarios = {
 
 	"cost meter row includes main and subagent spend by agent type"(env) {
 		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "security-review", task: script([{ text: "{}" }]) } }]));
-		const rows = readJsonl(path.join(env.repo, ".claude", "metrics", "cost-metering.jsonl"));
+		const rows = readJsonl(path.join(env.repo, ".pi", "dev-team", "metrics", "cost-metering.jsonl"));
 		const row = rows.at(-1);
 		assert(row?.session_id && row.by_agent_type?.main && row.by_agent_type["dev-team:security-review"], JSON.stringify(row));
 		assert(row.by_thread.subagent.input_tokens > 0 && row.total.messages >= 3, JSON.stringify(row.total));
 	},
 
-	"claude -p shim runs an agent through pi and returns a Claude envelope"(env) {
-		const inner = script([{ text: '{"status":"pass","issues":[],"summary":"via shim"}' }]);
-		const cmd = `claude -p --agent dev-team:security-review --model opus --output-format json '${inner}'`;
+	"dev-team-run -p runs an agent through pi and returns a result envelope"(env) {
+		const inner = script([{ text: '{"status":"pass","issues":[],"summary":"via helper"}' }]);
+		const cmd = `dev-team-run -p --agent dev-team:security-review --model opus --output-format json '${inner}'`;
 		const r = pi(env, script([{ tool: "bash", args: { command: cmd } }]));
 		const json = JSON.parse(r.out.replace(/^ECHO:/, "").trim());
-		assert(json.type === "result" && json.is_error === false && json.result.includes("via shim"), r.out);
+		assert(json.type === "result" && json.is_error === false && json.result.includes("via helper"), r.out);
 	},
 
 	"subagent collision: dev-team loaded before external extension"(env) {
@@ -624,7 +655,7 @@ const scenarios = {
 			assertAgentAfterGuide(runtime.systemPrompt, "Inspect the runtime tools and prompt.", "child");
 			return runtime;
 		};
-		assert(inspectChild().tools.includes("dev_team_subagent"), "Claude Agent/Task did not enable namespaced child dispatch");
+		assert(inspectChild().tools.includes("dev_team_subagent"), "Agent/Task did not enable namespaced child dispatch");
 		fs.writeFileSync(path.join(env.repo, ".pi", "dev-team.json"), JSON.stringify({ maxSubagentDepth: 1 }));
 		assert(!inspectChild().tools.includes("dev_team_subagent"), "namespaced dispatch remains active at the depth limit");
 		const child = pi(env, script([{ tool: "dev_team_subagent", args: { agent: "collision-probe", task: script([{ tool: "subagent", args: { task: "depth-probe" } }]) } }]), { ...options, json: true });
@@ -646,7 +677,8 @@ const scenarios = {
 		const devTeam = pi(env, "/dev-team status", trusted);
 		assert(devTeam.out.includes("ECHO:/dev-team status"), `dev-team still loaded: ${devTeam.out.slice(0, 300)}`);
 		const declined = pi(env, "/dev-team status", { usePackageFlag: false, extra: ["--no-approve"] });
-		assert(`${declined.out}${declined.err}`.includes("pi-dev-team (upstream"), `an untrusted project's filter applied: ${declined.out.slice(0, 300)} ${declined.err.slice(0, 300)}`);
+		const { version } = JSON.parse(fs.readFileSync(path.join(PKG, "package.json"), "utf-8"));
+		assert(`${declined.out}${declined.err}`.includes(`pi-dev-team ${version}`), `an untrusted project's filter applied: ${declined.out.slice(0, 300)} ${declined.err.slice(0, 300)}`);
 	},
 
 	"installed package (no -e) subagent collision keeps child hooks"(env) {

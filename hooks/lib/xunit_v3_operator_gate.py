@@ -62,7 +62,7 @@ rather than trying to retrofit an audit onto it. The store's location is
 always ``artifact_paths.resolve_file(DECISION_CATEGORY, DECISION_FILENAME,
 cwd)``.
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ except ImportError:  # pragma: no cover - degraded fallback, hooks/lib unreachab
         return None
 
 
-#: Where a recorded choice lives, relative to `.claude/`.
+#: Where a recorded choice lives, relative to `.pi/dev-team/`.
 DECISION_CATEGORY = "metrics"
 DECISION_FILENAME = "xunit-v3-shim-decisions.json"
 

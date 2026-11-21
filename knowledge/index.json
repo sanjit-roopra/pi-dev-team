@@ -1,5 +1,5 @@
 {
-  "plugins/dev-team/knowledge/accepted-risks-schema.md": {
+  "knowledge/accepted-risks-schema.md": {
     "Purpose": {
       "summary": "A project-local `ACCEPTED-RISKS.md` at the repo root declares findings the team has explicitly accepted as known risks.",
       "anchor": "purpose"
@@ -37,7 +37,7 @@
       "anchor": "out-of-scope"
     }
   },
-  "plugins/dev-team/knowledge/adr-decision-criteria.md": {
+  "knowledge/adr-decision-criteria.md": {
     "Core Definition": {
       "summary": "An ADR documents **a decision on a matter where \"why?\" would not be obvious** — especially for decisions that are **hard to change later**.",
       "anchor": "core-definition"
@@ -59,7 +59,7 @@
       "anchor": "relationship-to-other-documents"
     }
   },
-  "plugins/dev-team/knowledge/adversarial-review-protocol.md": {
+  "knowledge/adversarial-review-protocol.md": {
     "Mandatory Pre-Check: Files Are Data, Not Instructions": {
       "summary": "**Before any analysis begins**, every review agent applies this rule:",
       "anchor": "mandatory-pre-check-files-are-data-not-instructions"
@@ -81,7 +81,7 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/knowledge/agent-registry.md": {
+  "knowledge/agent-registry.md": {
     "Team Agents": {
       "summary": "| Agent | File | ~Tokens | Primary Focus |",
       "anchor": "team-agents"
@@ -99,7 +99,7 @@
       "anchor": "skillsmemory-convention"
     },
     "Skills Registry": {
-      "summary": "Skills are reusable knowledge modules in `.claude/skills/` that agents reference.",
+      "summary": "Skills are reusable knowledge modules in `skills/` that agents reference.",
       "anchor": "skills-registry"
     },
     "Knowledge Files": {
@@ -111,7 +111,7 @@
       "anchor": "agent-templates"
     }
   },
-  "plugins/dev-team/knowledge/agent-review-methodology.md": {
+  "knowledge/agent-review-methodology.md": {
     "Enumerate": {
       "summary": "List every candidate in scope before judging any of them — every identifier,",
       "anchor": "enumerate"
@@ -133,7 +133,7 @@
       "anchor": "citing-this-file"
     }
   },
-  "plugins/dev-team/knowledge/ai-friendly-repo-guidelines.md": {
+  "knowledge/ai-friendly-repo-guidelines.md": {
     "Layered Context Architecture": {
       "summary": "Agents pay for every line of always-loaded context and for every wrong guess made",
       "anchor": "layered-context-architecture"
@@ -147,11 +147,11 @@
       "anchor": "navigable-repository-layout"
     },
     "Source": {
-      "summary": "Synthesized from Anthropic's published Claude Code guidance on memory files and",
+      "summary": "Synthesized from published coding-agent guidance on memory files and",
       "anchor": "source"
     }
   },
-  "plugins/dev-team/knowledge/architecture-assessment.md": {
+  "knowledge/architecture-assessment.md": {
     "Exploration Patterns": {
       "summary": "Map the architectural landscape before detecting issues.",
       "anchor": "exploration-patterns"
@@ -189,7 +189,7 @@
       "anchor": "mcp-enhanced-analysis"
     }
   },
-  "plugins/dev-team/knowledge/artifact-lifecycle.md": {
+  "knowledge/artifact-lifecycle.md": {
     "States": {
       "summary": "An artifact used within the last 30 days.",
       "anchor": "states"
@@ -211,15 +211,15 @@
       "anchor": "lifecycle-thresholds"
     },
     "Pinned Exemption": {
-      "summary": "Artifacts listed under `## Pinned Skills` in `CLAUDE.md` are exempt from all",
+      "summary": "Artifacts listed under `## Pinned Skills` in `AGENTS.md` are exempt from all",
       "anchor": "pinned-exemption"
     },
-    "~/.claude/metrics/artifact-usage.json Schema": {
+    "`artifact-usage.json` Schema": {
       "summary": "The `lifecycle` field is initialised to `\"active\"` on first write and preserved",
-      "anchor": "claudemetricsartifact-usagejson-schema"
+      "anchor": "artifact-usagejson-schema"
     }
   },
-  "plugins/dev-team/knowledge/cd-maturity-model.md": {
+  "knowledge/cd-maturity-model.md": {
     "The six practice areas": {
       "summary": "Maturity is read per area, not as a single number — a team is usually uneven.",
       "anchor": "the-six-practice-areas"
@@ -245,7 +245,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/cd-test-architecture.md": {
+  "knowledge/cd-test-architecture.md": {
     "The Six Test Types": {
       "summary": "| Type | Verifies | Dependencies | Deterministic?",
       "anchor": "the-six-test-types"
@@ -303,7 +303,7 @@
       "anchor": "the-e2e-justification-gate"
     }
   },
-  "plugins/dev-team/knowledge/ci-cd-file-scope.md": {
+  "knowledge/ci-cd-file-scope.md": {
     "Glob list": {
       "summary": "The canonical glob list for \"files that carry CI/CD pipeline configuration.\"",
       "anchor": "glob-list"
@@ -313,7 +313,7 @@
       "anchor": "empty-scan-reporting"
     }
   },
-  "plugins/dev-team/knowledge/codegraph-vs-graphify.md": {
+  "knowledge/codegraph-vs-graphify.md": {
     "What each tool is": {
       "summary": "Third-party tool (<https://github.com/colbymchenry/codegraph>).",
       "anchor": "what-each-tool-is"
@@ -343,7 +343,7 @@
       "anchor": "repowise-1"
     },
     "Graphify (2)": {
-      "summary": "A repo-level tool with its own native `/graphify` skill",
+      "summary": "A repo-level tool with its own native `/graphify` skill, not part of the",
       "anchor": "graphify-1"
     },
     "When to use which": {
@@ -359,7 +359,7 @@
       "anchor": "none-is-guaranteed-to-be-present"
     }
   },
-  "plugins/dev-team/knowledge/component-test-patterns.md": {
+  "knowledge/component-test-patterns.md": {
     "Identify the Component's Pattern": {
       "summary": "| If the component… | Pattern | Group |",
       "anchor": "identify-the-components-pattern"
@@ -413,7 +413,7 @@
       "anchor": "quick-reference-isolation-strategy-by-pattern"
     }
   },
-  "plugins/dev-team/knowledge/database-change-management.md": {
+  "knowledge/database-change-management.md": {
     "Everything is a versioned, scripted migration": {
       "summary": "The database has a **version** (a row in a `schema_version` / `migrations`",
       "anchor": "everything-is-a-versioned-scripted-migration"
@@ -439,7 +439,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/database-test-patterns.md": {
+  "knowledge/database-test-patterns.md": {
     "First question: does this test need a real database at all?": {
       "summary": "Most logic that *uses* data does not need to test the *database engine*.",
       "anchor": "first-question-does-this-test-need-a-real-database-at-all"
@@ -465,7 +465,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/decision-defaults.md": {
+  "knowledge/decision-defaults.md": {
     "Destructive shape: replace vs. merge": {
       "summary": "Trigger: a request writes config, settings, dotfiles, or installer output where prior",
       "anchor": "destructive-shape-replace-vs-merge"
@@ -491,7 +491,7 @@
       "anchor": "re-capture-keep-vs-overwrite-an-existing-tracked-artifact"
     }
   },
-  "plugins/dev-team/knowledge/dependency-breaking-techniques.md": {
+  "knowledge/dependency-breaking-techniques.md": {
     "How to choose": {
       "summary": "---",
       "anchor": "how-to-choose"
@@ -533,7 +533,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/deployment-pipeline.md": {
+  "knowledge/deployment-pipeline.md": {
     "The stages": {
       "summary": "A change flows through ordered stages; success in one triggers the next.",
       "anchor": "the-stages"
@@ -551,7 +551,7 @@
       "anchor": "infrastructure-and-environments-ch11"
     },
     "Scope note (advisory boundary)": {
-      "summary": "This plugin **designs and assesses** pipelines and **plans** changes to fit them.",
+      "summary": "This package **designs and assesses** pipelines and **plans** changes to fit them.",
       "anchor": "scope-note-advisory-boundary"
     },
     "How this connects to the rest of the toolkit": {
@@ -559,7 +559,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/design-smells.md": {
+  "knowledge/design-smells.md": {
     "Design Smells → Pattern Mapping": {
       "summary": "| Smell | Signature in code | Remediation pattern |",
       "anchor": "design-smells-pattern-mapping"
@@ -605,7 +605,7 @@
       "anchor": "what-not-to-flag-1"
     }
   },
-  "plugins/dev-team/knowledge/directory-enumeration.md": {
+  "knowledge/directory-enumeration.md": {
     "The rule": {
       "summary": "**Never `Read` a directory path to check whether something exists or to see",
       "anchor": "the-rule"
@@ -619,7 +619,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/domain-modeling.md": {
+  "knowledge/domain-modeling.md": {
     "Exploration Patterns": {
       "summary": "Map the project structure before detecting issues.",
       "anchor": "exploration-patterns"
@@ -677,7 +677,7 @@
       "anchor": "ubiquitous-language-drift"
     }
   },
-  "plugins/dev-team/knowledge/evidence-bundle.md": {
+  "knowledge/evidence-bundle.md": {
     "The four fixed sections": {
       "summary": "Always present, in this order, with these exact headers.",
       "anchor": "the-four-fixed-sections"
@@ -699,11 +699,11 @@
       "anchor": "assembly-is-per-command-not-handed-off"
     },
     "Boundaries": {
-      "summary": "Does not persist to `.claude/metrics/` or `.claude/memory/` — every underlying datum already",
+      "summary": "Does not persist to `.pi/dev-team/metrics/` or `.pi/dev-team/memory/` — every underlying datum already",
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/exploratory-testing-field-guide.md": {
+  "knowledge/exploratory-testing-field-guide.md": {
     "1. Charter Quality (§2.3–2.4)": {
       "summary": "**Format**: `Explore [target] with [approach] to discover [concern]`",
       "anchor": "1-charter-quality-2324"
@@ -725,7 +725,7 @@
       "anchor": "5-implicit-expectations"
     }
   },
-  "plugins/dev-team/knowledge/failure-routing.md": {
+  "knowledge/failure-routing.md": {
     "Classification Table": {
       "summary": "| Signature pattern | Class | Route | Escalation |",
       "anchor": "classification-table"
@@ -735,7 +735,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/knowledge/fixture-construction.md": {
+  "knowledge/fixture-construction.md": {
     "1. Construction patterns (how the fixture object is built)": {
       "summary": "| Pattern | What it is | Use when | Cost / risk |",
       "anchor": "1-construction-patterns-how-the-fixture-object-is-built"
@@ -753,7 +753,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/frontend-component-architecture.md": {
+  "knowledge/frontend-component-architecture.md": {
     "When to extract (and when not to)": {
       "summary": "**Rule of three.** Two occurrences are not yet duplication — they may diverge.",
       "anchor": "when-to-extract-and-when-not-to"
@@ -803,7 +803,7 @@
       "anchor": "what-not-to-flag"
     }
   },
-  "plugins/dev-team/knowledge/gherkin-quality-review-dispatch.md": {
+  "knowledge/gherkin-quality-review-dispatch.md": {
     "Dispatch": {
       "summary": "Spawn **two** independent instances of the `gherkin-quality-critic` agent as",
       "anchor": "dispatch"
@@ -833,7 +833,7 @@
       "anchor": "scope-of-this-doc"
     }
   },
-  "plugins/dev-team/knowledge/internal-collaborator-doubling.md": {
+  "knowledge/internal-collaborator-doubling.md": {
     "The rule": {
       "summary": "In any test at or below the component layer, **a collaborator declared in",
       "anchor": "the-rule"
@@ -863,7 +863,7 @@
       "anchor": "see-also"
     }
   },
-  "plugins/dev-team/knowledge/legacy-test-strategy.md": {
+  "knowledge/legacy-test-strategy.md": {
     "1. Reason about effects": {
       "summary": "Every functional change has a chain of effects that propagates outward — through the methods that call the changed code — until it reaches a place you can observe, or stops because nothing downstream depends on it.",
       "anchor": "1-reason-about-effects"
@@ -889,7 +889,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/long-run-waiting.md": {
+  "knowledge/long-run-waiting.md": {
     "Pick the waiting mechanism first": {
       "summary": "| Situation | Mechanism |",
       "anchor": "pick-the-waiting-mechanism-first"
@@ -903,7 +903,7 @@
       "anchor": "re-arming-loops"
     }
   },
-  "plugins/dev-team/knowledge/microservice-testing.md": {
+  "knowledge/microservice-testing.md": {
     "The Layers (per service)": {
       "summary": "| Layer | Scope | What it verifies | Doubles |",
       "anchor": "the-layers-per-service"
@@ -925,7 +925,7 @@
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/mutation-score-formulas.md": {
+  "knowledge/mutation-score-formulas.md": {
     "Honest vs. reported score": {
       "summary": "Mutation tools count **timed-out** mutations as \"killed.\" They are not — a",
       "anchor": "honest-vs-reported-score"
@@ -939,7 +939,7 @@
       "anchor": "nocoverage-is-a-first-class-signal"
     }
   },
-  "plugins/dev-team/knowledge/object-calisthenics.md": {
+  "knowledge/object-calisthenics.md": {
     "The Rules": {
       "summary": "If a method has nested `if`/`for`/`while`, extract the inner block into a named method.",
       "anchor": "the-rules"
@@ -985,7 +985,7 @@
       "anchor": "applying-pragmatically"
     }
   },
-  "plugins/dev-team/knowledge/oracle-provenance.md": {
+  "knowledge/oracle-provenance.md": {
     "Purpose": {
       "summary": "Classifies each test's expected value by how that value was determined.",
       "anchor": "purpose"
@@ -1035,7 +1035,7 @@
       "anchor": "relationship-to-farley-score"
     }
   },
-  "plugins/dev-team/knowledge/orchestrator-script-implementation.md": {
+  "knowledge/orchestrator-script-implementation.md": {
     "Phase 1: Research": {
       "summary": "**Implementation status.** `orchestrator.py`'s `run_pipeline` dispatches the",
       "anchor": "phase-1-research"
@@ -1069,7 +1069,7 @@
       "anchor": "implement-persona-roster-softwareengineerpersona-techwriterpersona"
     }
   },
-  "plugins/dev-team/knowledge/owasp-detection.md": {
+  "knowledge/owasp-detection.md": {
     "A01: Broken Access Control": {
       "summary": "| Pattern | Language | Grep Signal | Category |",
       "anchor": "a01-broken-access-control"
@@ -1115,7 +1115,7 @@
       "anchor": "a10-ssrf"
     }
   },
-  "plugins/dev-team/knowledge/plan-review-rubric.md": {
+  "knowledge/plan-review-rubric.md": {
     "What you receive": {
       "summary": "The implementation plan (goal, acceptance criteria, and slices/steps —",
       "anchor": "what-you-receive"
@@ -1129,7 +1129,7 @@
       "anchor": "verdict-rules"
     }
   },
-  "plugins/dev-team/knowledge/proxy-connectivity.md": {
+  "knowledge/proxy-connectivity.md": {
     "Root cause": {
       "summary": "Sessions that route Anthropic API traffic (or Bash-invoked tools like `curl`,",
       "anchor": "root-cause"
@@ -1139,7 +1139,7 @@
       "anchor": "connection-refused"
     }
   },
-  "plugins/dev-team/knowledge/reactive-effect-patterns.md": {
+  "knowledge/reactive-effect-patterns.md": {
     "Effect self-writes (infinite loop)": {
       "summary": "**Pattern**: A reactive effect / watcher reads a reactive value *and* writes",
       "anchor": "effect-self-writes-infinite-loop"
@@ -1157,7 +1157,7 @@
       "anchor": "computed-derived-values-with-side-effects"
     }
   },
-  "plugins/dev-team/knowledge/release-strategies.md": {
+  "knowledge/release-strategies.md": {
     "Decouple deployment from release": {
       "summary": "| Technique | What it does | Use when |",
       "anchor": "decouple-deployment-from-release"
@@ -1183,7 +1183,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/report-output-location.md": {
+  "knowledge/report-output-location.md": {
     "Write-scope rule": {
       "summary": "Only a **top-level human invocation** writes to `.dev-team-reports/`:",
       "anchor": "write-scope-rule"
@@ -1209,7 +1209,7 @@
       "anchor": "related"
     }
   },
-  "plugins/dev-team/knowledge/report-pdf-integration.md": {
+  "knowledge/report-pdf-integration.md": {
     "Contract": {
       "summary": "When a skill is invoked with `--pdf`:",
       "anchor": "contract"
@@ -1219,7 +1219,7 @@
       "anchor": "per-skill-report-path-and-no-file-modes"
     }
   },
-  "plugins/dev-team/knowledge/report-template.md": {
+  "knowledge/report-template.md": {
     "Reference sentence": {
       "summary": "Every report-writing skill that adopts this contract points at it with this",
       "anchor": "reference-sentence"
@@ -1245,7 +1245,7 @@
       "anchor": "related"
     }
   },
-  "plugins/dev-team/knowledge/report-to-pdf.md": {
+  "knowledge/report-to-pdf.md": {
     "Recipe": {
       "summary": "`report.pdf` is written to the current directory.",
       "anchor": "recipe"
@@ -1259,7 +1259,7 @@
       "anchor": "related"
     }
   },
-  "plugins/dev-team/knowledge/request-processing-flow.md": {
+  "knowledge/request-processing-flow.md": {
     "Request Processing Flow": {
       "summary": "For trivial tasks (typo fix, simple query), the Orchestrator routes directly to a single agent.",
       "anchor": "request-processing-flow"
@@ -1289,7 +1289,7 @@
       "anchor": "multi-agent-coordination"
     }
   },
-  "plugins/dev-team/knowledge/result-verification.md": {
+  "knowledge/result-verification.md": {
     "Verification style: state vs behavior": {
       "summary": "| Style | What it checks | Use when |",
       "anchor": "verification-style-state-vs-behavior"
@@ -1307,7 +1307,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/review-agent-output-contract.md": {
+  "knowledge/review-agent-output-contract.md": {
     "Canonical schema": {
       "summary": "`category` is optional per finding — omit it rather than emit an empty",
       "anchor": "canonical-schema"
@@ -1337,7 +1337,7 @@
       "anchor": "aggregation"
     }
   },
-  "plugins/dev-team/knowledge/review-lens-classification.md": {
+  "knowledge/review-lens-classification.md": {
     "Classification": {
       "summary": "| Agent | Class | Rationale |",
       "anchor": "classification"
@@ -1351,7 +1351,7 @@
       "anchor": "finding-recomputation-attempt-2007-post-1998"
     }
   },
-  "plugins/dev-team/knowledge/review-rubric.md": {
+  "knowledge/review-rubric.md": {
     "The review-agent panel is the primary quality gate": {
       "summary": "The review-agent panel is the primary quality gate for structural quality",
       "anchor": "the-review-agent-panel-is-the-primary-quality-gate"
@@ -1373,7 +1373,7 @@
       "anchor": "confidence-and-actionability"
     }
   },
-  "plugins/dev-team/knowledge/review-template.md": {
+  "knowledge/review-template.md": {
     "Report Structure": {
       "summary": "Use these consistently:",
       "anchor": "report-structure"
@@ -1387,11 +1387,7 @@
       "anchor": "health-score-icons"
     }
   },
-  "plugins/dev-team/knowledge/security-primitives-contract.md": {
-    "Bypass path": {
-      "summary": "Edits to this file are guarded by `hooks/contract_version_guard.py`.",
-      "anchor": "bypass-path"
-    },
+  "knowledge/security-primitives-contract.md": {
     "Registries": {
       "summary": "Agents that produce or consume contract envelopes.",
       "anchor": "registries"
@@ -1425,11 +1421,11 @@
       "anchor": "envelope-3-disposition-register"
     },
     "Envelope 4 — Accepted-risks log (added in v1.3.0)": {
-      "summary": "Per-target suppression log emitted by `scripts/apply-accepted-risks.sh` in the companion plugin.",
+      "summary": "Per-target suppression log emitted by `scripts/apply-accepted-risks.sh` in the companion package.",
       "anchor": "envelope-4-accepted-risks-log-added-in-v130"
     },
     "Envelope 5 — Severity-floors log (added in v1.3.0)": {
-      "summary": "Per-target floor-application log emitted by `scripts/apply-severity-floors.sh` in the companion plugin.",
+      "summary": "Per-target floor-application log emitted by `scripts/apply-severity-floors.sh` in the companion package.",
       "anchor": "envelope-5-severity-floors-log-added-in-v130"
     },
     "Severity mapping (added in v1.1.0)": {
@@ -1445,7 +1441,7 @@
       "anchor": "out-of-contract"
     },
     "Conformance": {
-      "summary": "Schemas live at `plugins/dev-team/knowledge/schemas/{recon-envelope,unified-finding,disposition-register}-v1.json` and must validate using any Draft 2020-12 JSON Schema validator.",
+      "summary": "Schemas live at `knowledge/schemas/{recon-envelope,unified-finding,disposition-register}-v1.json` and must validate using any Draft 2020-12 JSON Schema validator.",
       "anchor": "conformance"
     },
     "Versioning lifecycle": {
@@ -1477,13 +1473,13 @@
       "anchor": "100-2026-04-21"
     }
   },
-  "plugins/dev-team/knowledge/skills-registry.md": {
+  "knowledge/skills-registry.md": {
     "Command Table": {
       "summary": "| Command | File | Role | What It Does |",
       "anchor": "command-table"
     }
   },
-  "plugins/dev-team/knowledge/task-size-classifier.md": {
+  "knowledge/task-size-classifier.md": {
     "Inputs": {
       "summary": "Collect these signals before classifying.",
       "anchor": "inputs"
@@ -1513,11 +1509,11 @@
       "anchor": "bias-rule"
     },
     "Decision log entry": {
-      "summary": "After classifying, append to `.claude/memory/decisions.md`:",
+      "summary": "After classifying, append to `.pi/dev-team/memory/decisions.md`:",
       "anchor": "decision-log-entry"
     }
   },
-  "plugins/dev-team/knowledge/telemetry-schema.md": {
+  "knowledge/telemetry-schema.md": {
     "`boundary-events.jsonl`": {
       "summary": "**Added by #859.** The boundary-level (policy-gateway) channel: every guard",
       "anchor": "boundary-eventsjsonl"
@@ -1554,10 +1550,6 @@
       "summary": "Audit trail for `/feedback-learning` config changes and human-oversight",
       "anchor": "config-changelogjsonl"
     },
-    "`session-digest.jsonl`": {
-      "summary": "Trend digest from `/session-review` (backed by `${CLAUDE_PLUGIN_ROOT}/scripts/session_report.py --profile maintainer`):",
-      "anchor": "session-digestjsonl"
-    },
     "`review-value.jsonl`": {
       "summary": "Whether a `/build` inline review checkpoint actually changed anything —",
       "anchor": "review-valuejsonl"
@@ -1582,33 +1574,17 @@
       "summary": "Audit trail for `/code-review --force --reason \"<text>\"`, which skips all",
       "anchor": "override-auditjsonl"
     },
-    "`eval-variance.jsonl`": {
-      "summary": "Multi-trial pass@k stability trend for `/agent-eval` fixtures.",
-      "anchor": "eval-variancejsonl"
-    },
     "`eval-ablation.jsonl`": {
-      "summary": "Causal per-agent ablation evidence from `/agent-eval --ablation <agent>` (#868):",
+      "summary": "Causal per-agent ablation evidence from an operator-run agent ablation (#868; no live ablation runner ships in this package):",
       "anchor": "eval-ablationjsonl"
     },
     "`refactor-freeze.jsonl`": {
       "summary": "Audit log for the tests-frozen-during-REFACTOR invariant (`#813`) — both the",
       "anchor": "refactor-freezejsonl"
     },
-    "`contract-version-guard-audit.jsonl`": {
-      "summary": "Audit log for release-please's bypass of the security-primitives-contract",
-      "anchor": "contract-version-guard-auditjsonl"
-    },
-    "`learning-loop-state.json`": {
-      "summary": "Not JSONL — a single current-value JSON file: a counter gating when",
-      "anchor": "learning-loop-statejson"
-    },
-    "`pending-review.jsonl`": {
-      "summary": "Queued findings from the background session-analysis dispatch, before",
-      "anchor": "pending-reviewjsonl"
-    },
-    "`.claude/metrics/{date}-task-log.jsonl` (e.g. `2026-02-20-task-log.jsonl`)": {
+    "`.pi/dev-team/metrics/{date}-task-log.jsonl` (e.g. `2026-02-20-task-log.jsonl`)": {
       "summary": "Self-reported per-task completion log, one file per calendar date.",
-      "anchor": "claudemetricsdate-task-logjsonl-eg-2026-02-20-task-logjsonl"
+      "anchor": "pidev-teammetricsdate-task-logjsonl-eg-2026-02-20-task-logjsonl"
     },
     "`gherkin-derive-effectiveness.jsonl`": {
       "summary": "Per-scenario roll-up correlating a `/gherkin-derive`-discovered surface with",
@@ -1643,7 +1619,7 @@
       "anchor": "xunit-v3-shim-decisionsjson"
     }
   },
-  "plugins/dev-team/knowledge/test-automation-maturity.md": {
+  "knowledge/test-automation-maturity.md": {
     "Maturity scale (diagnose from evidence, lowest rung first)": {
       "summary": "| Rung | Signal in the suite | Risk |",
       "anchor": "maturity-scale-diagnose-from-evidence-lowest-rung-first"
@@ -1669,7 +1645,7 @@
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/test-automation-principles.md": {
+  "knowledge/test-automation-principles.md": {
     "Goals — what the suite is *for*": {
       "summary": "A test is worth its maintenance cost only if it advances these.",
       "anchor": "goals-what-the-suite-is-for"
@@ -1687,7 +1663,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/test-cadence-tradeoffs.md": {
+  "knowledge/test-cadence-tradeoffs.md": {
     "The standing default: Code-First Small Batches": {
       "summary": "**Code-First Small Batches** (IMPLEMENT → TEST → REFACTOR per behavior,",
       "anchor": "the-standing-default-code-first-small-batches"
@@ -1701,11 +1677,11 @@
       "anchor": "the-decision-rule"
     },
     "Local measurement, once you have a result": {
-      "summary": "Use `.claude/metrics/` (see `skills/performance-metrics/SKILL.md`) to keep",
+      "summary": "Use `.pi/dev-team/metrics/` (see `skills/performance-metrics/SKILL.md`) to keep",
       "anchor": "local-measurement-once-you-have-a-result"
     }
   },
-  "plugins/dev-team/knowledge/test-doubles.md": {
+  "knowledge/test-doubles.md": {
     "The Five Doubles": {
       "summary": "| Double | What it does | Verification style | Use when |",
       "anchor": "the-five-doubles"
@@ -1739,13 +1715,13 @@
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/test-file-indicators.md": {
+  "knowledge/test-file-indicators.md": {
     "Indicators by language": {
       "summary": "| Language | A file is a test when it… |",
       "anchor": "indicators-by-language"
     }
   },
-  "plugins/dev-team/knowledge/test-layer-gates.md": {
+  "knowledge/test-layer-gates.md": {
     "The gates (before pyramid placement)": {
       "summary": "**Gate A — user-facing dynamic.** The user acts and must *see* a rendered result.",
       "anchor": "the-gates-before-pyramid-placement"
@@ -1755,7 +1731,7 @@
       "anchor": "redundancy-check-business-critical-only-after-placement"
     }
   },
-  "plugins/dev-team/knowledge/test-organization.md": {
+  "knowledge/test-organization.md": {
     "The Four-Phase Test (the anchor)": {
       "summary": "Every test follows four phases, visibly separated:",
       "anchor": "the-four-phase-test-the-anchor"
@@ -1781,7 +1757,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/test-pyramid.md": {
+  "knowledge/test-pyramid.md": {
     "The Layers": {
       "summary": "| Layer | Scope | Speed | Doubles | What it proves |",
       "anchor": "the-layers"
@@ -1811,7 +1787,7 @@
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/test-refactoring.md": {
+  "knowledge/test-refactoring.md": {
     "1. Goals & Principles (the criteria a refactoring moves toward)": {
       "summary": "**Goals — a good automated test is:**",
       "anchor": "1-goals-principles-the-criteria-a-refactoring-moves-toward"
@@ -1829,7 +1805,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/test-review-division-of-labor.md": {
+  "knowledge/test-review-division-of-labor.md": {
     "The two roles": {
       "summary": "**`test-review`** owns the **tactical per-file gate**: an assertion is missing",
       "anchor": "the-two-roles"
@@ -1847,7 +1823,7 @@
       "anchor": "test-smell-review-test-design-advisor-remedy-division"
     }
   },
-  "plugins/dev-team/knowledge/test-smells.md": {
+  "knowledge/test-smells.md": {
     "Smell Categories": {
       "summary": "xUnit Test Patterns groups smells into three levels.",
       "anchor": "smell-categories"
@@ -1873,7 +1849,7 @@
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/test-strategy.md": {
+  "knowledge/test-strategy.md": {
     "1. Test Fixture Strategy": {
       "summary": "The fixture is everything the test needs in place before it acts.",
       "anchor": "1-test-fixture-strategy"
@@ -1891,7 +1867,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/testability-patterns.md": {
+  "knowledge/testability-patterns.md": {
     "\"I Can't Test This Class\" Decision Flow": {
       "summary": "> **Legacy code (no tests yet)?** Don't make the design change cold.",
       "anchor": "i-cant-test-this-class-decision-flow"
@@ -1937,7 +1913,7 @@
       "anchor": "references"
     }
   },
-  "plugins/dev-team/knowledge/testing-quadrants.md": {
+  "knowledge/testing-quadrants.md": {
     "The Four Quadrants": {
       "summary": "| Q | Facing × Stance | Tests | Mode |",
       "anchor": "the-four-quadrants"
@@ -1955,7 +1931,7 @@
       "anchor": "boundaries"
     }
   },
-  "plugins/dev-team/knowledge/three-phase-workflow.md": {
+  "knowledge/three-phase-workflow.md": {
     "Phase 1: Research": {
       "summary": "**Goal**: Understand how the system works, identify all relevant files, locate the problem or feature surface area",
       "anchor": "phase-1-research"
@@ -1997,7 +1973,7 @@
       "anchor": "phase-transitions"
     }
   },
-  "plugins/dev-team/knowledge/value-patterns.md": {
+  "knowledge/value-patterns.md": {
     "The four value sources": {
       "summary": "| Pattern | What it is | Use when | Risk if misused |",
       "anchor": "the-four-value-sources"
@@ -2015,7 +1991,7 @@
       "anchor": "how-this-connects-to-the-rest-of-the-toolkit"
     }
   },
-  "plugins/dev-team/knowledge/verification-mode.md": {
+  "knowledge/verification-mode.md": {
     "The problem": {
       "summary": "When a fix loop re-dispatches an agent to confirm a fix, that dispatch is",
       "anchor": "the-problem"
@@ -2029,7 +2005,7 @@
       "anchor": "stage-2-tier-down-declared-per-agent-never-inferred"
     },
     "Why a body declaration, not frontmatter": {
-      "summary": "Issue #1333 established that this plugin's own tooling metadata lives in the",
+      "summary": "Issue #1333 established that this package's own tooling metadata lives in the",
       "anchor": "why-a-body-declaration-not-frontmatter"
     },
     "Initial opt-ins": {
@@ -2045,7 +2021,7 @@
       "anchor": "out-of-scope"
     }
   },
-  "plugins/dev-team/knowledge/virtual-service-libraries.md": {
+  "knowledge/virtual-service-libraries.md": {
     "Preferred vs. backup": {
       "summary": "A record-and-replay virtual-service library is the **preferred** pre-merge",
       "anchor": "preferred-vs-backup"
@@ -2063,9 +2039,9 @@
       "anchor": "recorded-artifacts-contain-real-traffic-scrub-before-commit"
     }
   },
-  "plugins/dev-team/knowledge/wave-consolidation-guidance.md": {
+  "knowledge/wave-consolidation-guidance.md": {
     "When it applies": {
-      "summary": "When a single wave's agent-selection would dispatch **5 or more** review agents in one wave — whether the Inline Review Checkpoint dispatch table in `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#inline-review-checkpoint` or Step 2 of `agents/quality-reviewer.md` selected them — note it in the phase/review output as a coordination-cost signal, not a hard block.",
+      "summary": "When a single wave's agent-selection would dispatch **5 or more** review agents in one wave — whether the Inline Review Checkpoint dispatch table in `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#inline-review-checkpoint` or Step 2 of `agents/quality-reviewer.md` selected them — note it in the phase/review output as a coordination-cost signal, not a hard block.",
       "anchor": "when-it-applies"
     },
     "Why five": {
@@ -2081,9 +2057,9 @@
       "anchor": "what-this-is-not"
     }
   },
-  "plugins/dev-team/skills/adr-tools/SKILL.md": {
+  "skills/adr-tools/SKILL.md": {
     "Pre-flight": {
-      "summary": "If the pre-flight reports `adr` missing, run `/project-init` to set up this repo's tooling — it installs the `adr` CLI as a capability tool (see its `${CLAUDE_PLUGIN_ROOT}/skills/project-init/references/capability-tools.md`) — or install it directly: see [npryce/adr-tools](https://github.com/npryce/adr-tools) (the CLI link is the fallback).",
+      "summary": "If the pre-flight reports `adr` missing, run `/project-init` to set up this repo's tooling — it installs the `adr` CLI as a capability tool (see its `${DEV_TEAM_ROOT}/skills/project-init/references/capability-tools.md`) — or install it directly: see [npryce/adr-tools](https://github.com/npryce/adr-tools) (the CLI link is the fallback).",
       "anchor": "pre-flight"
     },
     "Editor caveat — the most common failure": {
@@ -2127,7 +2103,7 @@
       "anchor": "when-to-defer-to-adr-author"
     }
   },
-  "plugins/dev-team/skills/agent-readiness/SKILL.md": {
+  "skills/agent-readiness/SKILL.md": {
     "Scope (MVP — issue #117)": {
       "summary": "This MVP uses **file-presence/heuristic analyzers only** — no CI-platform APIs.",
       "anchor": "scope-mvp-issue-117"
@@ -2145,7 +2121,7 @@
       "anchor": "steps"
     }
   },
-  "plugins/dev-team/skills/api-design/SKILL.md": {
+  "skills/api-design/SKILL.md": {
     "Overview": {
       "summary": "Contract-first API design patterns for defining stable, evolvable interfaces between system components.",
       "anchor": "overview"
@@ -2207,7 +2183,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/apply-fixes/SKILL.md": {
+  "skills/apply-fixes/SKILL.md": {
     "Implementation constraints": {
       "summary": "1.",
       "anchor": "implementation-constraints"
@@ -2245,7 +2221,7 @@
       "anchor": "6-suggest-alternatives"
     }
   },
-  "plugins/dev-team/skills/apply-test-doubles/SKILL.md": {
+  "skills/apply-test-doubles/SKILL.md": {
     "Parse Arguments": {
       "summary": "Arguments: an optional positional `<report-path-or-target>`, an optional",
       "anchor": "parse-arguments"
@@ -2267,17 +2243,17 @@
       "anchor": "3-dispatch"
     }
   },
-  "plugins/dev-team/skills/artifact-lifecycle/SKILL.md": {
+  "skills/artifact-lifecycle/SKILL.md": {
     "Steps": {
-      "summary": "Read `~/.claude/metrics/artifact-usage.json` (home-scoped — never a project-scoped path).",
+      "summary": "Read `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/dev-team/metrics/artifact-usage.json` (user-scoped — never a project-scoped path).",
       "anchor": "steps"
     },
     "1. Check for usage data": {
-      "summary": "Read `~/.claude/metrics/artifact-usage.json` (home-scoped — never a project-scoped path).",
+      "summary": "Read `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/dev-team/metrics/artifact-usage.json` (user-scoped — never a project-scoped path).",
       "anchor": "1-check-for-usage-data"
     },
     "2. Load pinned skills": {
-      "summary": "Read the project `CLAUDE.md` (or `.claude/CLAUDE.md`).",
+      "summary": "Read the project `AGENTS.md`.",
       "anchor": "2-load-pinned-skills"
     },
     "3. Classify artifacts": {
@@ -2288,23 +2264,23 @@
       "summary": "For each Stale Skill, offer to add it to the `## Disabled Skills` section in",
       "anchor": "4-produce-report"
     },
-    "5. Propose CLAUDE.md changes (interactive)": {
+    "5. Propose AGENTS.md changes (interactive)": {
       "summary": "For each Stale Skill, offer to add it to the `## Disabled Skills` section in",
-      "anchor": "5-propose-claudemd-changes-interactive"
+      "anchor": "5-propose-agentsmd-changes-interactive"
     },
     "Pinned skills note": {
       "summary": "If any artifacts were skipped because they appear in `## Pinned Skills`, note",
       "anchor": "pinned-skills-note"
     },
     "Constraints": {
-      "summary": "**Never delete or modify** files under `plugins/dev-team/` during or after execution.",
+      "summary": "**Never delete or modify** files under `${DEV_TEAM_ROOT}` during or after execution.",
       "anchor": "constraints"
     }
   },
-  "plugins/dev-team/skills/autoship/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/autoship/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "Run each unit's `/ship` in an isolated child so `DEV_TEAM_AUTO_APPROVE=1` and its cost stay scoped to that unit: use the `headless-run` skill (`DEV_TEAM_AUTO_APPROVE=1 pi --mode json -p --no-session \"/ship ...\"`) rather than invoking `/ship` in this conversation.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "1.",
@@ -2367,7 +2343,7 @@
       "anchor": "3e1-hard-block-iteration-journal-gate-1168"
     },
     "3f — Append round record": {
-      "summary": "Append log entries to `.claude/metrics/autoship-log.jsonl` using the log",
+      "summary": "Append log entries to `.pi/dev-team/metrics/autoship-log.jsonl` using the log",
       "anchor": "3f-append-round-record"
     },
     "Step 4 — Round summary": {
@@ -2379,7 +2355,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/benchmark/SKILL.md": {
+  "skills/benchmark/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -2425,7 +2401,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/branch-workflow/SKILL.md": {
+  "skills/branch-workflow/SKILL.md": {
     "Overview": {
       "summary": "The three-phase workflow ends at the Phase 3 human gate.",
       "anchor": "overview"
@@ -2471,7 +2447,7 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/skills/browse/SKILL.md": {
+  "skills/browse/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -2517,7 +2493,7 @@
       "anchor": "multi-step-interactions"
     }
   },
-  "plugins/dev-team/skills/browser-testing/SKILL.md": {
+  "skills/browser-testing/SKILL.md": {
     "Overview": {
       "summary": "This skill provides reusable patterns for browser-based testing and visual verification using Playwright.",
       "anchor": "overview"
@@ -2539,10 +2515,10 @@
       "anchor": "visual-verification-guidelines"
     }
   },
-  "plugins/dev-team/skills/build/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/build/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "**One retry on the next tier up before a dead-end stops the build.** This replaces sub-step 2a's \"do not dispatch a third attempt against the unchanged signature\" with one retry on the next tier up; the hard stop of 2a and the Escalation section applies after that retry.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "**MUST — confirm agent-dispatch capability before any review-agent dispatch (issue #1461).** This skill dispatches review agents at three points: Step 3 (`spec-compliance-review` acceptance-criteria gate), sub-step 4 (per-step review checkpoint for `complex` steps), and sub-step 6 (slice review checkpoint).",
@@ -2589,7 +2565,7 @@
       "anchor": "410-run-slice-invariants-issue-865"
     },
     "5. Run full test suite": {
-      "summary": "After all steps are complete, delete `.claude/memory/build-phase.json` if a `between-steps` record remains, then run the full test suite.",
+      "summary": "After all steps are complete, delete `.pi/dev-team/memory/build-phase.json` if a `between-steps` record remains, then run the full test suite.",
       "anchor": "5-run-full-test-suite"
     },
     "6. Run code review": {
@@ -2621,7 +2597,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/careful/SKILL.md": {
+  "skills/careful/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -2647,7 +2623,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/cd-test-architecture/SKILL.md": {
+  "skills/cd-test-architecture/SKILL.md": {
     "Overview": {
       "summary": "An **advisory, application-level** skill: it assesses how an existing application is tested, classifies that against a CD-aligned test taxonomy, finds the tests that can't run in a clean CI gate, and recommends a target architecture plus a migration path.",
       "anchor": "overview"
@@ -2717,7 +2693,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/ci-debugging/SKILL.md": {
+  "skills/ci-debugging/SKILL.md": {
     "Overview": {
       "summary": "CI failures are diagnosed systematically, not by guessing.",
       "anchor": "overview"
@@ -2763,7 +2739,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/co-evolution-audit/SKILL.md": {
+  "skills/co-evolution-audit/SKILL.md": {
     "The Problem": {
       "summary": "A file that churns repeatedly while its tests never change is a high-risk",
       "anchor": "the-problem"
@@ -2861,7 +2837,7 @@
       "anchor": "constraints"
     }
   },
-  "plugins/dev-team/skills/code-review/SKILL.md": {
+  "skills/code-review/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "**MUST — confirm agent-dispatch capability before anything else in this skill (issue #1461).** Before attempting to dispatch ANY review agent (Step 4), you MUST confirm the `Agent` (or `Task`) tool is actually present and available in your current toolset.",
       "anchor": "orchestrator-constraints"
@@ -2911,7 +2887,7 @@
       "anchor": "6a-review-fix-loop"
     },
     "7. Generate report": {
-      "summary": "**Output paths.** All file artifacts (`./corrections/*.json`, `.claude/memory/.pr-review-passed`) are repo-relative to the target repository's working directory.",
+      "summary": "**Output paths.** All file artifacts (`./corrections/*.json`, `.pi/dev-team/memory/.pr-review-passed`) are repo-relative to the target repository's working directory.",
       "anchor": "7-generate-report"
     },
     "8. Save correction prompts for remaining issues": {
@@ -2923,9 +2899,9 @@
       "anchor": "9-write-pre-commit-gate-file"
     }
   },
-  "plugins/dev-team/skills/competitive-analysis/SKILL.md": {
+  "skills/competitive-analysis/SKILL.md": {
     "Overview": {
-      "summary": "Systematic comparison of the dev-team plugin against another plugin, tool, feature set, or idea.",
+      "summary": "Systematic comparison of the dev-team package against another plugin, tool, feature set, or idea.",
       "anchor": "overview"
     },
     "Input Sources": {
@@ -2965,7 +2941,7 @@
       "anchor": "presenting-results"
     }
   },
-  "plugins/dev-team/skills/context-loading-protocol/SKILL.md": {
+  "skills/context-loading-protocol/SKILL.md": {
     "Constraints": {
       "summary": "Never load all agents upfront; load only the primary agent for each phase.",
       "anchor": "constraints"
@@ -2999,7 +2975,7 @@
       "anchor": "step-3-select-skills"
     },
     "Step 4: Calculate token budget": {
-      "summary": "**Target: total < 40% of the model's context window.** For Claude with a 200K window, that's < 80K tokens; on a 1M-window model it is 400K (there is no absolute cap).",
+      "summary": "**Target: total < 40% of the model's context window.** For a model with a 200K window, that's < 80K tokens; on a 1M-window model it is 400K (there is no absolute cap).",
       "anchor": "step-4-calculate-token-budget"
     },
     "Step 5: Load via tool-based file reads": {
@@ -3039,21 +3015,21 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/skills/continue/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/continue/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "Find the resume point in this order, and stop at the first hit.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
     },
     "Steps": {
-      "summary": "Find phase progress files with `Glob(\".claude/memory/*.md\")` — never `Read` the bare `.claude/memory/` directory to see what it contains (`${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md`).",
+      "summary": "Find phase progress files with `Glob(\".pi/dev-team/memory/*.md\")` — never `Read` the bare `.pi/dev-team/memory/` directory to see what it contains (`${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md`).",
       "anchor": "steps"
     },
     "1. Scan for in-progress work": {
-      "summary": "Find phase progress files with `Glob(\".claude/memory/*.md\")` — never `Read` the bare `.claude/memory/` directory to see what it contains (`${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md`).",
+      "summary": "Find phase progress files with `Glob(\".pi/dev-team/memory/*.md\")` — never `Read` the bare `.pi/dev-team/memory/` directory to see what it contains (`${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md`).",
       "anchor": "1-scan-for-in-progress-work"
     },
     "2. Check git state": {
@@ -3073,7 +3049,7 @@
       "anchor": "5-load-phase-context"
     }
   },
-  "plugins/dev-team/skills/cost-report/SKILL.md": {
+  "skills/cost-report/SKILL.md": {
     "Steps": {
       "summary": "1.",
       "anchor": "steps"
@@ -3099,7 +3075,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/coverage-baseline/SKILL.md": {
+  "skills/coverage-baseline/SKILL.md": {
     "Parse Arguments": {
       "summary": "Arguments: $ARGUMENTS",
       "anchor": "parse-arguments"
@@ -3149,7 +3125,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/coverage-delta/SKILL.md": {
+  "skills/coverage-delta/SKILL.md": {
     "Parse Arguments": {
       "summary": "Arguments: $ARGUMENTS",
       "anchor": "parse-arguments"
@@ -3179,7 +3155,7 @@
       "anchor": "3-parse-compute-the-delta"
     },
     "4. Post the snapshot": {
-      "summary": "Append a markdown row to the parent's `## Metrics history` section (tracker mode) or to `.claude/plans/<workflow>/FEATURE.md` (local-files mode):",
+      "summary": "Append a markdown row to the parent's `## Metrics history` section (tracker mode) or to `.pi/dev-team/plans/<workflow>/FEATURE.md` (local-files mode):",
       "anchor": "4-post-the-snapshot"
     },
     "5. Report": {
@@ -3191,7 +3167,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/design-doc/SKILL.md": {
+  "skills/design-doc/SKILL.md": {
     "Overview": {
       "summary": "The Research phase explores what exists.",
       "anchor": "overview"
@@ -3225,7 +3201,7 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/skills/design-interrogation/SKILL.md": {
+  "skills/design-interrogation/SKILL.md": {
     "Overview": {
       "summary": "Walk every branch of a decision tree until all decisions are resolved.",
       "anchor": "overview"
@@ -3267,7 +3243,7 @@
       "anchor": "anti-patterns"
     }
   },
-  "plugins/dev-team/skills/design-it-twice/SKILL.md": {
+  "skills/design-it-twice/SKILL.md": {
     "Overview": {
       "summary": "Your first design idea is rarely your best.",
       "anchor": "overview"
@@ -3305,7 +3281,7 @@
       "anchor": "anti-patterns"
     }
   },
-  "plugins/dev-team/skills/docker-image-audit/SKILL.md": {
+  "skills/docker-image-audit/SKILL.md": {
     "Prerequisites": {
       "summary": "| Tool | Quick install (macOS) | Purpose |",
       "anchor": "prerequisites"
@@ -3351,7 +3327,7 @@
       "anchor": "quick-audit-mode"
     }
   },
-  "plugins/dev-team/skills/docker-image-create/SKILL.md": {
+  "skills/docker-image-create/SKILL.md": {
     "Workflow": {
       "summary": "Scan the project root to identify:",
       "anchor": "workflow"
@@ -3405,7 +3381,7 @@
       "anchor": "java-spring-boot"
     }
   },
-  "plugins/dev-team/skills/domain-analysis/SKILL.md": {
+  "skills/domain-analysis/SKILL.md": {
     "Overview": {
       "summary": "Assess the domain health of an existing multi-component system.",
       "anchor": "overview"
@@ -3491,7 +3467,7 @@
       "anchor": "guidelines"
     }
   },
-  "plugins/dev-team/skills/domain-driven-design/SKILL.md": {
+  "skills/domain-driven-design/SKILL.md": {
     "Overview": {
       "summary": "Model software around the business domain.",
       "anchor": "overview"
@@ -3605,7 +3581,7 @@
       "anchor": "guidelines"
     }
   },
-  "plugins/dev-team/skills/exploratory-testing/SKILL.md": {
+  "skills/exploratory-testing/SKILL.md": {
     "Overview": {
       "summary": "The QA Engineer in charter-driven **\"Chaos Specialist\"** mode.",
       "anchor": "overview"
@@ -3659,7 +3635,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/explore/SKILL.md": {
+  "skills/explore/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -3673,7 +3649,7 @@
       "anchor": "steps"
     }
   },
-  "plugins/dev-team/skills/farley-score/SKILL.md": {
+  "skills/farley-score/SKILL.md": {
     "Overview": {
       "summary": "Evaluates test quality using the 8 properties of good tests as described by Andrea Laforgia, based on Dave Farley's testing principles.",
       "anchor": "overview"
@@ -3719,7 +3695,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/feature-file-validation/SKILL.md": {
+  "skills/feature-file-validation/SKILL.md": {
     "When to Run": {
       "summary": "During `/code-review` when `.feature` or step definition files are in the changeset",
       "anchor": "when-to-run"
@@ -3741,13 +3717,13 @@
       "anchor": "step-4-output"
     }
   },
-  "plugins/dev-team/skills/feedback-learning/SKILL.md": {
+  "skills/feedback-learning/SKILL.md": {
     "Trigger Keywords": {
       "summary": "| Keyword | Intent | Example |",
       "anchor": "trigger-keywords"
     },
     "Where Changes Are Written": {
-      "summary": "The plugin ships as a read-only cache — agent and skill files inside the plugin cannot be edited.",
+      "summary": "The package ships read-only — agent and skill files inside the package cannot be edited.",
       "anchor": "where-changes-are-written"
     },
     "Resolution order": {
@@ -3755,12 +3731,12 @@
       "anchor": "resolution-order"
     },
     "What NOT to do": {
-      "summary": "Do not edit files inside the plugin cache (`~/.claude/plugins/cache/...`).",
+      "summary": "Do not edit files inside the installed package (`${DEV_TEAM_ROOT}`).",
       "anchor": "what-not-to-do"
     },
-    "Project CLAUDE.md structure for overrides": {
+    "Project AGENTS.md structure for overrides": {
       "summary": "When writing agent behavior overrides, add them under a dedicated section so they're easy to find and manage:",
-      "anchor": "project-claudemd-structure-for-overrides"
+      "anchor": "project-agentsmd-structure-for-overrides"
     },
     "Processing Flow": {
       "summary": "1.",
@@ -3783,7 +3759,7 @@
       "anchor": "2-get-the-pre-score"
     },
     "3. Pause for approval, then dispatch the targeted eval": {
-      "summary": "Before dispatching *any* live `/agent-eval` run (pre-run or post-run), show",
+      "summary": "Before dispatching *any* live eval run (pre-run or post-run), show the",
       "anchor": "3-pause-for-approval-then-dispatch-the-targeted-eval"
     },
     "4. Compare and decide adoption": {
@@ -3791,7 +3767,7 @@
       "anchor": "4-compare-and-decide-adoption"
     },
     "Audit Trail": {
-      "summary": "All changes are logged in `.claude/metrics/config-changelog.jsonl` (one JSON object per line, append-only).",
+      "summary": "All changes are logged in `.pi/dev-team/metrics/config-changelog.jsonl` (one JSON object per line, append-only).",
       "anchor": "audit-trail"
     },
     "The `evidence` field (validated-outcome weighting, #866)": {
@@ -3823,7 +3799,7 @@
       "anchor": "recurring-correction-detection"
     },
     "Pending-Review Queue Disposition": {
-      "summary": "When `/session-review` surfaces entries from `.claude/metrics/pending-review.jsonl`, this",
+      "summary": "No producer for `.pi/dev-team/metrics/pending-review.jsonl` ships in this",
       "anchor": "pending-review-queue-disposition"
     },
     "Matching": {
@@ -3843,11 +3819,11 @@
       "anchor": "queue-entry-schema-reference"
     },
     "Constraints": {
-      "summary": "Never edit plugin cache files — all changes go to project-local files",
+      "summary": "Never edit installed package files — all changes go to project-local files",
       "anchor": "constraints"
     }
   },
-  "plugins/dev-team/skills/fix/SKILL.md": {
+  "skills/fix/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -3889,7 +3865,7 @@
       "anchor": "step-7-final-report"
     }
   },
-  "plugins/dev-team/skills/freeze/SKILL.md": {
+  "skills/freeze/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -3899,11 +3875,11 @@
       "anchor": "parse-arguments"
     },
     "Steps": {
-      "summary": "Write the following JSON to `.claude/hooks/freeze-state.json` (relative to",
+      "summary": "Write the following JSON to `.pi/dev-team/hooks/freeze-state.json` (relative to",
       "anchor": "steps"
     },
     "1. Write freeze state": {
-      "summary": "Write the following JSON to `.claude/hooks/freeze-state.json` (relative to",
+      "summary": "Write the following JSON to `.pi/dev-team/hooks/freeze-state.json` (relative to",
       "anchor": "1-write-freeze-state"
     },
     "2. Confirm": {
@@ -3915,7 +3891,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/frontend-architecture/SKILL.md": {
+  "skills/frontend-architecture/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -3945,7 +3921,7 @@
       "anchor": "4-report"
     }
   },
-  "plugins/dev-team/skills/gherkin-derive/SKILL.md": {
+  "skills/gherkin-derive/SKILL.md": {
     "Parse Arguments": {
       "summary": "Positional: `<repo-path>` (default: cwd).",
       "anchor": "parse-arguments"
@@ -3987,17 +3963,17 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/gherkin-public/SKILL.md": {
+  "skills/gherkin-public/SKILL.md": {
     "Parse Arguments": {
       "summary": "Arguments: $ARGUMENTS",
       "anchor": "parse-arguments"
     },
     "Steps": {
-      "summary": "Read `.claude/memory/<workflow>/<slug>/phase-1.md` for the components & patterns table.",
+      "summary": "Read `.pi/dev-team/memory/<workflow>/<slug>/phase-1.md` for the components & patterns table.",
       "anchor": "steps"
     },
     "1. Load the component map": {
-      "summary": "Read `.claude/memory/<workflow>/<slug>/phase-1.md` for the components & patterns table.",
+      "summary": "Read `.pi/dev-team/memory/<workflow>/<slug>/phase-1.md` for the components & patterns table.",
       "anchor": "1-load-the-component-map"
     },
     "2. Pick the output directory": {
@@ -4017,7 +3993,7 @@
       "anchor": "4b-adversarial-gherkin-quality-review"
     },
     "5. Persist phase-2 progress": {
-      "summary": "Write `.claude/memory/<workflow>/<slug>/phase-2.md` with:",
+      "summary": "Write `.pi/dev-team/memory/<workflow>/<slug>/phase-2.md` with:",
       "anchor": "5-persist-phase-2-progress"
     },
     "6. STOP for human sign-off": {
@@ -4037,7 +4013,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/governance-compliance/SKILL.md": {
+  "skills/governance-compliance/SKILL.md": {
     "Overview": {
       "summary": "Requirements and procedures for audit logging, multi-layer quality assurance, and ethical operation of the agent team.",
       "anchor": "overview"
@@ -4091,7 +4067,7 @@
       "anchor": "when-ethical-concerns-arise"
     },
     "Output": {
-      "summary": "Compliance checklist results (pass/fail per item) and/or new audit log entries written to `.claude/metrics/`.",
+      "summary": "Compliance checklist results (pass/fail per item) and/or new audit log entries written to `.pi/dev-team/metrics/`.",
       "anchor": "output"
     },
     "Compliance Checklist": {
@@ -4099,7 +4075,7 @@
       "anchor": "compliance-checklist"
     }
   },
-  "plugins/dev-team/skills/guard/SKILL.md": {
+  "skills/guard/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -4109,15 +4085,15 @@
       "anchor": "parse-arguments"
     },
     "Steps": {
-      "summary": "Write to `.claude/hooks/careful-state.json` (repo-scoped — see the `/careful`",
+      "summary": "Write to `.pi/dev-team/hooks/careful-state.json` (repo-scoped — see the `/careful`",
       "anchor": "steps"
     },
     "1. Enable careful mode": {
-      "summary": "Write to `.claude/hooks/careful-state.json` (repo-scoped — see the `/careful`",
+      "summary": "Write to `.pi/dev-team/hooks/careful-state.json` (repo-scoped — see the `/careful`",
       "anchor": "1-enable-careful-mode"
     },
     "2. Enable freeze mode": {
-      "summary": "Write to `.claude/hooks/freeze-state.json` (repo-scoped — see the `/freeze`",
+      "summary": "Write to `.pi/dev-team/hooks/freeze-state.json` (repo-scoped — see the `/freeze`",
       "anchor": "2-enable-freeze-mode"
     },
     "3. Confirm": {
@@ -4125,7 +4101,7 @@
       "anchor": "3-confirm"
     }
   },
-  "plugins/dev-team/skills/handoff/SKILL.md": {
+  "skills/handoff/SKILL.md": {
     "Mode Selection": {
       "summary": "Keyed off whether a **stated purpose** exists for an independent/fresh session:",
       "anchor": "mode-selection"
@@ -4163,7 +4139,7 @@
       "anchor": "when-to-summarize"
     },
     "Writing Summaries": {
-      "summary": "**Destination**: `.claude/memory/{date}-{task-slug}.md`",
+      "summary": "**Destination**: `.pi/dev-team/memory/{date}-{task-slug}.md`",
       "anchor": "writing-summaries"
     },
     "Phase Progress Files": {
@@ -4195,7 +4171,7 @@
       "anchor": "cleanup-event-based-never-time-based"
     }
   },
-  "plugins/dev-team/skills/harness-audit/SKILL.md": {
+  "skills/harness-audit/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -4261,7 +4237,7 @@
       "anchor": "error-handling"
     }
   },
-  "plugins/dev-team/skills/headless-run/SKILL.md": {
+  "skills/headless-run/SKILL.md": {
     "Isolation": {
       "summary": "New process, `--no-session` (nothing is written to the session store and the",
       "anchor": "isolation"
@@ -4271,7 +4247,7 @@
       "anchor": "steps"
     }
   },
-  "plugins/dev-team/skills/help/SKILL.md": {
+  "skills/help/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -4293,7 +4269,7 @@
       "anchor": "3-all-commands-all"
     }
   },
-  "plugins/dev-team/skills/hexagonal-architecture/SKILL.md": {
+  "skills/hexagonal-architecture/SKILL.md": {
     "Overview": {
       "summary": "Design systems with clear separation between business logic and infrastructure.",
       "anchor": "overview"
@@ -4351,7 +4327,7 @@
       "anchor": "guidelines"
     }
   },
-  "plugins/dev-team/skills/human-oversight-protocol/SKILL.md": {
+  "skills/human-oversight-protocol/SKILL.md": {
     "Constraints": {
       "summary": "Approval gates cannot be skipped; do not proceed past a gate without explicit human sign-off.",
       "anchor": "constraints"
@@ -4429,10 +4405,10 @@
       "anchor": "escalation-paths"
     }
   },
-  "plugins/dev-team/skills/issues-from-assessment/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/issues-from-assessment/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "Issue and comment text follows the \"GitHub text style\" from the system prompt.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Parse Arguments": {
       "summary": "Arguments: $ARGUMENTS",
@@ -4467,7 +4443,7 @@
       "anchor": "6-backfill-predecessor-links"
     },
     "7. Persist phase-1 progress": {
-      "summary": "Write `.claude/memory/<workflow>/<slug>/phase-1.md` with:",
+      "summary": "Write `.pi/dev-team/memory/<workflow>/<slug>/phase-1.md` with:",
       "anchor": "7-persist-phase-1-progress"
     },
     "8. Report": {
@@ -4475,7 +4451,7 @@
       "anchor": "8-report"
     },
     "Examples / Integration": {
-      "summary": "`/test-improve` invokes this worker with `--workflow test-improve` from its Phase 4; paths resolve under `.claude/memory/test-improve/<slug>/` and labels lead with `test-improve`.",
+      "summary": "`/test-improve` invokes this worker with `--workflow test-improve` from its Phase 4; paths resolve under `.pi/dev-team/memory/test-improve/<slug>/` and labels lead with `test-improve`.",
       "anchor": "examples-integration"
     },
     "Notes": {
@@ -4483,10 +4459,10 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/issues-from-plan/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/issues-from-plan/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "Issue and comment text follows the \"GitHub text style\" from the system prompt.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "1.",
@@ -4521,7 +4497,7 @@
       "anchor": "6-present-results"
     }
   },
-  "plugins/dev-team/skills/legacy-code/SKILL.md": {
+  "skills/legacy-code/SKILL.md": {
     "Overview": {
       "summary": "Techniques for safely modifying code that lacks tests or has poor structure.",
       "anchor": "overview"
@@ -4591,7 +4567,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/mermaid-diagramming/SKILL.md": {
+  "skills/mermaid-diagramming/SKILL.md": {
     "Theme Directive": {
       "summary": "Paste this as the **first line** inside every ```` ```mermaid ```` block, before the diagram type declaration:",
       "anchor": "theme-directive"
@@ -4633,10 +4609,10 @@
       "anchor": "adding-a-diagram-to-an-existing-file"
     }
   },
-  "plugins/dev-team/skills/mutation-night-watch/SKILL.md": {
-    "pi port notes": {
-      "summary": "Where this skill schedules or runs `claude --print`, use `pi --mode json -p --no-session` (or the port's `claude` shim, which is on `PATH` inside pi sessions but not in cron).",
-      "anchor": "pi-port-notes"
+  "skills/mutation-night-watch/SKILL.md": {
+    "pi notes": {
+      "summary": "Where this skill schedules or runs `dev-team-run --print`, use `pi --mode json -p --no-session` (or the `dev-team-run` shim, which is on `PATH` inside pi sessions but not in cron).",
+      "anchor": "pi-notes"
     },
     "Why this exists, and how it differs from `mutation-kill`": {
       "summary": "`mutation-kill` already has two modes: **interactive** (an agent generates",
@@ -4667,10 +4643,10 @@
       "anchor": "when-not-to-apply"
     }
   },
-  "plugins/dev-team/skills/mutation-testing/SKILL.md": {
-    "pi port notes": {
-      "summary": "Scripts in this skill that shell out to `claude --print` / `claude -p` run through the pi port's `claude` CLI shim (on `PATH` inside pi), which executes `pi --mode json -p --no-session` and returns a Claude-style result envelope.",
-      "anchor": "pi-port-notes"
+  "skills/mutation-testing/SKILL.md": {
+    "pi notes": {
+      "summary": "Scripts in this skill that shell out to `dev-team-run --print` / `dev-team-run -p` run through the `dev-team-run` CLI shim (on `PATH` inside pi), which executes `pi --mode json -p --no-session` and returns a JSON result envelope.",
+      "anchor": "pi-notes"
     },
     "Constraints": {
       "summary": "**Always ask the user before running.** Present the time estimate and scope; get explicit approval.",
@@ -4757,7 +4733,7 @@
       "anchor": "when-not-to-apply"
     }
   },
-  "plugins/dev-team/skills/performance-benchmark/SKILL.md": {
+  "skills/performance-benchmark/SKILL.md": {
     "Prerequisites": {
       "summary": "Installed by `/project-init` for frontend projects, or install manually:",
       "anchor": "prerequisites"
@@ -4811,9 +4787,9 @@
       "anchor": "file-storage"
     }
   },
-  "plugins/dev-team/skills/performance-metrics/SKILL.md": {
+  "skills/performance-metrics/SKILL.md": {
     "Overview": {
-      "summary": "Schema and procedures for capturing performance data in `.claude/metrics/`.",
+      "summary": "Schema and procedures for capturing performance data in `.pi/dev-team/metrics/`.",
       "anchor": "overview"
     },
     "Constraints": {
@@ -4821,7 +4797,7 @@
       "anchor": "constraints"
     },
     "Metric Categories": {
-      "summary": "> **Targets discipline.** Per CLAUDE.md → \"Claims discipline\", a numeric target",
+      "summary": "> **Targets discipline.** A numeric target",
       "anchor": "metric-categories"
     },
     "Efficiency Metrics": {
@@ -4837,11 +4813,11 @@
       "anchor": "cost-metrics"
     },
     "Log Format": {
-      "summary": "Metrics are stored in `.claude/metrics/` as JSONL files (one JSON object per line).",
+      "summary": "Metrics are stored in `.pi/dev-team/metrics/` as JSONL files (one JSON object per line).",
       "anchor": "log-format"
     },
     "File Naming": {
-      "summary": "Example: `.claude/metrics/2026-02-20-task-log.jsonl`",
+      "summary": "Example: `.pi/dev-team/metrics/2026-02-20-task-log.jsonl`",
       "anchor": "file-naming"
     },
     "Task Completion Entry": {
@@ -4869,7 +4845,7 @@
       "anchor": "when-to-log"
     },
     "Output": {
-      "summary": "JSONL log entries written to `.claude/metrics/` and/or a summary report of metric trends.",
+      "summary": "JSONL log entries written to `.pi/dev-team/metrics/` and/or a summary report of metric trends.",
       "anchor": "output"
     },
     "Reporting": {
@@ -4877,10 +4853,10 @@
       "anchor": "reporting"
     }
   },
-  "plugins/dev-team/skills/plan/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/plan/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "**Name the reuse.** In step 3, every step that adds production code says what it reuses: an existing function (by name), the standard library, a platform feature, or an already-installed dependency.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "**MUST — confirm agent-dispatch capability before Step 5b (issue #1461).** Step 5b below dispatches the five `plan-review-*` critics as parallel sub-agents.",
@@ -4923,10 +4899,10 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/pr/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/pr/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "Write the title and body in the \"GitHub text style\" from the system prompt.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "1.",
@@ -4965,10 +4941,10 @@
       "anchor": "6-report"
     }
   },
-  "plugins/dev-team/skills/project-init/SKILL.md": {
-    "pi port notes (read first — these override the steps below)": {
+  "skills/project-init/SKILL.md": {
+    "pi notes (read first — these override the steps below)": {
       "summary": "**MCP servers (Step 4c):** pi reads project MCP servers from `.pi/mcp.json` (user level: `~/.pi/agent/mcp.json`), not `.mcp.json`.",
-      "anchor": "pi-port-notes-read-first-these-override-the-steps-below"
+      "anchor": "pi-notes-read-first-these-override-the-steps-below"
     },
     "Arguments": {
       "summary": "Arguments: $ARGUMENTS",
@@ -5055,7 +5031,7 @@
       "anchor": "customization-handling"
     }
   },
-  "plugins/dev-team/skills/property-based-testing/SKILL.md": {
+  "skills/property-based-testing/SKILL.md": {
     "Procedure": {
       "summary": "Run project-init's own stack detection —",
       "anchor": "procedure"
@@ -5085,7 +5061,7 @@
       "anchor": "when-not-to-apply"
     }
   },
-  "plugins/dev-team/skills/proxy-resilience/SKILL.md": {
+  "skills/proxy-resilience/SKILL.md": {
     "Overview": {
       "summary": "A corporate proxy fronting Anthropic API traffic enforces its own rate",
       "anchor": "overview"
@@ -5111,7 +5087,7 @@
       "anchor": "anti-patterns"
     }
   },
-  "plugins/dev-team/skills/quality-gate-pipeline/SKILL.md": {
+  "skills/quality-gate-pipeline/SKILL.md": {
     "Overview": {
       "summary": "Single quality gate that every agent passes through before output is accepted.",
       "anchor": "overview"
@@ -5149,7 +5125,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/quality-targets-converge/SKILL.md": {
+  "skills/quality-targets-converge/SKILL.md": {
     "Parse Arguments": {
       "summary": "Arguments: $ARGUMENTS",
       "anchor": "parse-arguments"
@@ -5183,7 +5159,7 @@
       "anchor": "6-post-the-converge-history"
     },
     "6b. Gherkin effectiveness roll-up (conditional)": {
-      "summary": "When `.claude/memory/<workflow>/<slug>/gherkin.md` exists (Phase 3 ran — see",
+      "summary": "When `.pi/dev-team/memory/<workflow>/<slug>/gherkin.md` exists (Phase 3 ran — see",
       "anchor": "6b-gherkin-effectiveness-roll-up-conditional"
     },
     "7. Waiver handling": {
@@ -5195,7 +5171,7 @@
       "anchor": "8-report"
     },
     "Examples / Integration": {
-      "summary": "`/test-improve` invokes this worker from Phase 8 with `--workflow test-improve`; paths resolve as `.claude/memory/test-improve/<slug>/` and `.claude/plans/test-improve/phase-8/`, with tracked evidence (coverage/mutation history, baselines) under `.dev-team-reports/test-improve/<slug>/data/`.",
+      "summary": "`/test-improve` invokes this worker from Phase 8 with `--workflow test-improve`; paths resolve as `.pi/dev-team/memory/test-improve/<slug>/` and `.pi/dev-team/plans/test-improve/phase-8/`, with tracked evidence (coverage/mutation history, baselines) under `.dev-team-reports/test-improve/<slug>/data/`.",
       "anchor": "examples-integration"
     },
     "Notes": {
@@ -5203,7 +5179,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/repo-review/SKILL.md": {
+  "skills/repo-review/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -5221,7 +5197,7 @@
       "anchor": "1-determine-target-files"
     },
     "2. Load drift state": {
-      "summary": "Read `.claude/memory/repo-review-state.json` if it exists: `{\"last_commit\": \"<sha>\", \"last_run_at\": \"<ISO 8601>\"}`.",
+      "summary": "Read `.pi/dev-team/memory/repo-review-state.json` if it exists: `{\"last_commit\": \"<sha>\", \"last_run_at\": \"<ISO 8601>\"}`.",
       "anchor": "2-load-drift-state"
     },
     "3. Confirm agent-dispatch capability": {
@@ -5229,7 +5205,7 @@
       "anchor": "3-confirm-agent-dispatch-capability"
     },
     "4. Dispatch the fixed roster": {
-      "summary": "Spawn all four as parallel subagents in a single message using the `Agent` tool.",
+      "summary": "Spawn all three as parallel subagents in a single message using the `Agent` tool.",
       "anchor": "4-dispatch-the-fixed-roster"
     },
     "5. Aggregate and score": {
@@ -5245,7 +5221,7 @@
       "anchor": "7-write-the-report-and-update-drift-state"
     }
   },
-  "plugins/dev-team/skills/report-pdf/SKILL.md": {
+  "skills/report-pdf/SKILL.md": {
     "Arguments": {
       "summary": "`<path.md>` (required) — path to the Markdown report to render (for example",
       "anchor": "arguments"
@@ -5259,7 +5235,7 @@
       "anchor": "related"
     }
   },
-  "plugins/dev-team/skills/review-agent/SKILL.md": {
+  "skills/review-agent/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -5269,11 +5245,11 @@
       "anchor": "parse-arguments"
     },
     "Steps": {
-      "summary": "Read `.claude/agents/<name>.md` (project override) or else `${CLAUDE_PLUGIN_ROOT}/agents/<name>.md`.",
+      "summary": "Read `.pi/agents/<name>.md` (project override) or else `${DEV_TEAM_ROOT}/agents/<name>.md`.",
       "anchor": "steps"
     },
     "1. Load agent definition": {
-      "summary": "Read `.claude/agents/<name>.md` (project override) or else `${CLAUDE_PLUGIN_ROOT}/agents/<name>.md`.",
+      "summary": "Read `.pi/agents/<name>.md` (project override) or else `${DEV_TEAM_ROOT}/agents/<name>.md`.",
       "anchor": "1-load-agent-definition"
     },
     "2. Determine target files": {
@@ -5301,7 +5277,7 @@
       "anchor": "4b-write-the-durable-report-skip-when-internal-or-json"
     }
   },
-  "plugins/dev-team/skills/review-summary/SKILL.md": {
+  "skills/review-summary/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -5323,7 +5299,7 @@
       "anchor": "2-generate-compact-summary"
     },
     "3. Save summary": {
-      "summary": "Write the summary to `.claude/review-summaries/<date>-<short-sha>.md`.",
+      "summary": "Write the summary to `.pi/dev-team/review-summaries/<date>-<short-sha>.md`.",
       "anchor": "3-save-summary"
     },
     "4. Report": {
@@ -5331,7 +5307,7 @@
       "anchor": "4-report"
     }
   },
-  "plugins/dev-team/skills/review/SKILL.md": {
+  "skills/review/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -5345,7 +5321,7 @@
       "anchor": "1-pass-through"
     }
   },
-  "plugins/dev-team/skills/run-report/SKILL.md": {
+  "skills/run-report/SKILL.md": {
     "Steps": {
       "summary": "1.",
       "anchor": "steps"
@@ -5359,7 +5335,7 @@
       "anchor": "privacy-boundary"
     }
   },
-  "plugins/dev-team/skills/semantic-duplication-scan/SKILL.md": {
+  "skills/semantic-duplication-scan/SKILL.md": {
     "Overview": {
       "summary": "Detect business logic that has been reimplemented multiple times across different architectural layers.",
       "anchor": "overview"
@@ -5437,7 +5413,7 @@
       "anchor": "report"
     }
   },
-  "plugins/dev-team/skills/semantic-scan/SKILL.md": {
+  "skills/semantic-scan/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -5463,7 +5439,7 @@
       "anchor": "flags"
     }
   },
-  "plugins/dev-team/skills/semgrep-analyze/SKILL.md": {
+  "skills/semgrep-analyze/SKILL.md": {
     "Constraints": {
       "summary": "1.",
       "anchor": "constraints"
@@ -5497,10 +5473,10 @@
       "anchor": "common-rulesets"
     }
   },
-  "plugins/dev-team/skills/setup/SKILL.md": {
-    "pi port notes (read first — these override the steps below)": {
-      "summary": "This is the pi port of `/setup`.",
-      "anchor": "pi-port-notes-read-first-these-override-the-steps-below"
+  "skills/setup/SKILL.md": {
+    "pi notes (read first — these override the steps below)": {
+      "summary": "Follow the steps below with these substitutions:",
+      "anchor": "pi-notes-read-first-these-override-the-steps-below"
     },
     "Orchestrator constraints": {
       "summary": "1.",
@@ -5522,10 +5498,6 @@
       "summary": "Run the following and record the result:",
       "anchor": "1-detect-os"
     },
-    "2. Detect the agentic-dev-team repo and delegate to dev-setup.sh": {
-      "summary": "Before installing anything, check whether this invocation is running inside",
-      "anchor": "2-detect-the-agentic-dev-team-repo-and-delegate-to-dev-setupsh"
-    },
     "3. Install hard dependencies (jq and python3)": {
       "summary": "These are required by the mutation gate regardless of language.",
       "anchor": "3-install-hard-dependencies-jq-and-python3"
@@ -5546,16 +5518,16 @@
       "summary": "Based on detected stack, select applicable templates from `templates/agents/`:",
       "anchor": "7-select-agent-templates"
     },
-    "8. Generate project-level CLAUDE.md": {
-      "summary": "If `.claude/CLAUDE.md` does not already exist in the target project, generate one containing:",
-      "anchor": "8-generate-project-level-claudemd"
+    "8. Generate project-level AGENTS.md": {
+      "summary": "If `AGENTS.md` does not already exist in the target project, generate one containing:",
+      "anchor": "8-generate-project-level-agentsmd"
     },
     "8a. Ask about concise-response preference": {
       "summary": "**Check first, before prompting anyone.** If the marker is already present",
       "anchor": "8a-ask-about-concise-response-preference"
     },
     "9. Generate PostToolUse formatting hook": {
-      "summary": "Wire a PostToolUse hook entry for the project's `.claude/settings.json` that",
+      "summary": "Turn on the PostToolUse formatting hook (`\"autoFormat\": true` in the project's `.pi/dev-team.json`) that",
       "anchor": "9-generate-posttooluse-formatting-hook"
     },
     "9b. Configure harness autocompact (#2177)": {
@@ -5567,7 +5539,7 @@
       "anchor": "10-generate-pr-command"
     },
     "11. Ensure `.gitignore` covers dev-team runtime artifacts": {
-      "summary": "**Downstream projects only** — skip this step entirely when Step 2 detected",
+      "summary": "`/test-improve`, `/build`, and the review workflows write per-run resume",
       "anchor": "11-ensure-gitignore-covers-dev-team-runtime-artifacts"
     },
     "12. Report": {
@@ -5575,10 +5547,10 @@
       "anchor": "12-report"
     }
   },
-  "plugins/dev-team/skills/ship/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/ship/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "**Pass the saved request on.** The extension saves the text after `/ship` only when it holds a feature description, not just issue numbers, URLs or flags.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Orchestrator constraints": {
       "summary": "1.",
@@ -5633,7 +5605,7 @@
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/source-verification/SKILL.md": {
+  "skills/source-verification/SKILL.md": {
     "Procedure": {
       "summary": "Run `extract_claims(text)` from",
       "anchor": "procedure"
@@ -5667,10 +5639,10 @@
       "anchor": "when-not-to-apply"
     }
   },
-  "plugins/dev-team/skills/specs/SKILL.md": {
-    "pi port notes (read first)": {
+  "skills/specs/SKILL.md": {
+    "pi notes (read first)": {
       "summary": "Issue and comment text follows the \"GitHub text style\" from the system prompt.",
-      "anchor": "pi-port-notes-read-first"
+      "anchor": "pi-notes-read-first"
     },
     "Positioning — what this skill is for": {
       "summary": "This skill's value is **resolving ambiguity with a human before build begins**.",
@@ -5733,7 +5705,7 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/skills/static-analysis-integration/SKILL.md": {
+  "skills/static-analysis-integration/SKILL.md": {
     "Constraints": {
       "summary": "1.",
       "anchor": "constraints"
@@ -5787,7 +5759,7 @@
       "anchor": "4-deduplicate"
     },
     "5. Consult ACCEPTED-RISKS.md": {
-      "summary": "If present at repo root, apply suppression per `plugins/dev-team/knowledge/accepted-risks-schema.md`.",
+      "summary": "If present at repo root, apply suppression per `knowledge/accepted-risks-schema.md`.",
       "anchor": "5-consult-accepted-risksmd"
     },
     "6. Return structured result": {
@@ -5811,7 +5783,7 @@
       "anchor": "related"
     }
   },
-  "plugins/dev-team/skills/stryker-xunit-v2-shim/SKILL.md": {
+  "skills/stryker-xunit-v2-shim/SKILL.md": {
     "Why this exists": {
       "summary": "Stryker.NET (through at least 4.15/4.16) **cannot observe mutant kills through",
       "anchor": "why-this-exists"
@@ -5877,7 +5849,7 @@
       "anchor": "teardown"
     }
   },
-  "plugins/dev-team/skills/systematic-debugging/SKILL.md": {
+  "skills/systematic-debugging/SKILL.md": {
     "Overview": {
       "summary": "When LLMs hit failures, they tend to guess at fixes — changing code, re-running, changing more code.",
       "anchor": "overview"
@@ -5935,7 +5907,7 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/skills/telemetry/SKILL.md": {
+  "skills/telemetry/SKILL.md": {
     "Scope — keep this small (#106)": {
       "summary": "This beacon is intentionally a **cheap, always-on local counter**: which",
       "anchor": "scope-keep-this-small-106"
@@ -5949,7 +5921,7 @@
       "anchor": "steps"
     }
   },
-  "plugins/dev-team/skills/test-audit-disable/SKILL.md": {
+  "skills/test-audit-disable/SKILL.md": {
     "Parse Arguments": {
       "summary": "Arguments: $ARGUMENTS",
       "anchor": "parse-arguments"
@@ -5987,11 +5959,11 @@
       "anchor": "7-report"
     },
     "Notes": {
-      "summary": "The disabled tag carries the reason and the \"repair in Phase 4\" hint so the operator can see the audit history in source control, not only in `.claude/memory/`.",
+      "summary": "The disabled tag carries the reason and the \"repair in Phase 4\" hint so the operator can see the audit history in source control, not only in `.pi/dev-team/memory/`.",
       "anchor": "notes"
     }
   },
-  "plugins/dev-team/skills/test-design-advisor/SKILL.md": {
+  "skills/test-design-advisor/SKILL.md": {
     "Overview": {
       "summary": "An **advisory** skill: it recommends how to test code and how to make untestable code testable.",
       "anchor": "overview"
@@ -6053,7 +6025,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/test-design/SKILL.md": {
+  "skills/test-design/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -6091,7 +6063,7 @@
       "anchor": "6-report"
     }
   },
-  "plugins/dev-team/skills/test-driven-development/SKILL.md": {
+  "skills/test-driven-development/SKILL.md": {
     "Overview": {
       "summary": "Enforces strict RED-GREEN-REFACTOR discipline with verifiable gates.",
       "anchor": "overview"
@@ -6149,7 +6121,7 @@
       "anchor": "output"
     }
   },
-  "plugins/dev-team/skills/test-health/SKILL.md": {
+  "skills/test-health/SKILL.md": {
     "Overview": {
       "summary": "An **advisory, project-wide** skill: it produces the *strategic-health* view of a test suite that a team needs periodically — the suite's **shape** vs. its architecture, **Agile Testing Quadrant** coverage, **coverage + mutation** health rolled up to ROI, flaky-test management, and **automation maturity** — then an ordered improvement plan.",
       "anchor": "overview"
@@ -6211,7 +6183,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/test-improve/SKILL.md": {
+  "skills/test-improve/SKILL.md": {
     "Orchestrator constraints": {
       "summary": "1.",
       "anchor": "orchestrator-constraints"
@@ -6277,7 +6249,7 @@
       "anchor": "after-phase-9-re-run-with-refactor-close-out-prompt"
     }
   },
-  "plugins/dev-team/skills/threat-modeling/SKILL.md": {
+  "skills/threat-modeling/SKILL.md": {
     "Overview": {
       "summary": "Structured security analysis for identifying threats, attack surfaces, and mitigations during design or review phases.",
       "anchor": "overview"
@@ -6335,7 +6307,7 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/triage/SKILL.md": {
+  "skills/triage/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
@@ -6369,7 +6341,7 @@
       "anchor": "6-present-results"
     }
   },
-  "plugins/dev-team/skills/ubiquitous-language/SKILL.md": {
+  "skills/ubiquitous-language/SKILL.md": {
     "Announce on start": {
       "summary": "\"Running ubiquitous-language.",
       "anchor": "announce-on-start"
@@ -6407,17 +6379,17 @@
       "anchor": "integration"
     }
   },
-  "plugins/dev-team/skills/unfreeze/SKILL.md": {
+  "skills/unfreeze/SKILL.md": {
     "Worker constraints": {
       "summary": "1.",
       "anchor": "worker-constraints"
     },
     "Steps": {
-      "summary": "Delete `.claude/hooks/freeze-state.json` if it exists (the same per-repo",
+      "summary": "Delete `.pi/dev-team/hooks/freeze-state.json` if it exists (the same per-repo",
       "anchor": "steps"
     },
     "1. Remove freeze state": {
-      "summary": "Delete `.claude/hooks/freeze-state.json` if it exists (the same per-repo",
+      "summary": "Delete `.pi/dev-team/hooks/freeze-state.json` if it exists (the same per-repo",
       "anchor": "1-remove-freeze-state"
     },
     "2. Confirm": {
@@ -6425,7 +6397,7 @@
       "anchor": "2-confirm"
     }
   },
-  "plugins/dev-team/skills/upgrade/SKILL.md": {
+  "skills/upgrade/SKILL.md": {
     "Steps": {
       "summary": "1.",
       "anchor": "steps"

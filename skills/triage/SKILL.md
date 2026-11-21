@@ -125,7 +125,7 @@ sibling PDF per `knowledge/report-pdf-integration.md` (additive; non-fatal if
 no engine):
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/triage/<resolved-slug>.md
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/triage/<resolved-slug>.md
 ```
 
 The record is YAML frontmatter followed by four sections. Three outcomes are

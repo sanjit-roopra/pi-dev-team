@@ -37,7 +37,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-# skills/code-review/scripts -> skills/code-review -> skills -> plugin root
+# skills/code-review/scripts -> skills/code-review -> skills -> package root
 _PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 _HOOKS_LIB_DIR = _PLUGIN_ROOT / "hooks" / "lib"
 if str(_HOOKS_LIB_DIR) not in sys.path:
@@ -54,11 +54,11 @@ LEDGER_STREAM = review_dispatch_ledger.LEDGER_STREAM if review_dispatch_ledger e
 
 def _resolve(stream: str, cwd: Path) -> Path:
     # Read-only report: migrate=False so running it never migrates a legacy
-    # top-level metrics/ file or creates .claude/metrics/ as a side effect
+    # top-level metrics/ file or creates .pi/dev-team/metrics/ as a side effect
     # (mirrors hooks/lib/metrics_query.py::_stream_path's same reasoning).
     if review_dispatch_ledger is not None:
         return review_dispatch_ledger.resolve_stream("metrics", stream, cwd, migrate=False)
-    return cwd / ".claude" / "metrics" / stream
+    return cwd / ".pi" / "dev-team" / "metrics" / stream
 
 
 def read_jsonl(path: Path) -> tuple[list[dict], int]:

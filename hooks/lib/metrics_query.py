@@ -152,7 +152,7 @@ def facet_count(entries: Iterable[dict], field: str) -> dict:
 def _stream_path(cwd, stream: str) -> Path:
     base = Path(cwd) if cwd else Path.cwd()
     # Read-only query: migrate=False so a mere query never migrates a legacy
-    # file or creates .claude/metrics/ as a side effect.
+    # file or creates .pi/dev-team/metrics/ as a side effect.
     return artifact_paths.resolve_file("metrics", f"{stream}.jsonl", base, migrate=False)
 
 
@@ -185,7 +185,7 @@ def cmd_query(args) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--cwd", default=None, help="Project directory (default: cwd)")
-    ap.add_argument("--stream", required=True, help="Stream name, resolves to .claude/metrics/<name>.jsonl")
+    ap.add_argument("--stream", required=True, help="Stream name, resolves to .pi/dev-team/metrics/<name>.jsonl")
     ap.add_argument("--type", default=None, help="Event-type facet; see module docstring for field fallback order")
     ap.add_argument("--session", default=None, help="Filter on the session_id field")
     ap.add_argument("--since", default=None, help="ISO-8601 lower bound on the ts/timestamp field")

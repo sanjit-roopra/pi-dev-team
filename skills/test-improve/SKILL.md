@@ -21,7 +21,7 @@ Role: orchestrator. This command sequences existing skills and agents through a
 ten-phase (0-9) analyze-then-improve workflow; it does **not** implement, audit, or
 write tests itself. Each phase is **delegated** to the worker skill or agent
 that owns it, and per-phase progress is persisted to
-`.claude/memory/test-improve/<slug>/phase-<n>.md` so `/continue` (and `--from-phase`)
+`.pi/dev-team/memory/test-improve/<slug>/phase-<n>.md` so `/continue` (and `--from-phase`)
 can resume.
 
 You have been invoked with the `/test-improve` command.
@@ -48,20 +48,20 @@ You have been invoked with the `/test-improve` command.
 - Positional: `<repo-path>` (default: cwd).
 - `--parent <url>` — optional tracker parent issue URL; the host selects the
   CLI (ADO / GitHub / GitLab / Jira). Omit for **local-files mode** (the
-  default), which writes to `.dev-team-reports/test-improve/` and `.claude/plans/test-improve/`.
+  default), which writes to `.dev-team-reports/test-improve/` and `.pi/dev-team/plans/test-improve/`.
 - `--analyze-only` — run Phase 0 then Phase 1 directly and **exit after Phase 1** with a
   summary of the improvement plan (bypassing the default Baseline/Derive-Gherkin
   ordering — see Phase 0's `--analyze-only` semantics). No baseline is
   captured; no code changes.
 - `--from-phase [<n>]` — skips completed phases and resumes at phase `n` when
-  `.claude/memory/test-improve/<slug>/phase-<n-1>.md` exists. **The number is
+  `.pi/dev-team/memory/test-improve/<slug>/phase-<n-1>.md` exists. **The number is
   optional.** Passed with **no argument**, `/test-improve` **auto-detects** the
-  resume point from `.claude/memory/test-improve/<slug>/` (see
+  resume point from `.pi/dev-team/memory/test-improve/<slug>/` (see
   `references/phase-0-approach-contract.md`): it resumes at the phase after the highest completed
   progress file and prints which phase it resolved to and why. An explicit
   `<n>` **overrides** auto-detection. Either form does **not** re-prompt
   Phase-0 inputs; to change them, delete
-  `.claude/memory/test-improve/<slug>/phase-0.md` and re-run from Phase 0.
+  `.pi/dev-team/memory/test-improve/<slug>/phase-0.md` and re-run from Phase 0.
 - `--stack <id>` — force a stack profile (e.g. `js`, `dotnet`, `java`, `go`)
   when manifest detection is ambiguous.
 

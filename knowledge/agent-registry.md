@@ -1,6 +1,6 @@
 # Agent & Skill Registry (Full)
 
-This file contains the complete registry tables. CLAUDE.md references this file for on-demand loading — the orchestrator reads it when routing decisions require the full catalog.
+This file contains the complete registry tables. The orchestrator reads it on demand when routing decisions require the full catalog.
 
 ## Team Agents
 
@@ -9,7 +9,7 @@ This file contains the complete registry tables. CLAUDE.md references this file 
 | ADR Author | `agents/adr-author.md` | 1,143 | Creates and manages Architecture Decision Records |
 | Architect | `agents/architect.md` | 1,482 | System design, architecture |
 | Autoship Batch Proposer | `agents/autoship-batch-proposer.md` | ~748 | Proposes issue-number groupings among currently-ungrouped autoship candidates from title/body text supplied in-prompt. Dispatched by `/autoship` Step 2b, never directly. |
-| Codebase Recon | `agents/codebase-recon.md` | ~2,858 | Repo reconnaissance — surfaces entry points, dependencies, security surface, git history. Produces RECON artifact per security-primitives-contract. Dispatched on demand by architect and domain-analysis, and at the start of Phase 1: Research when no fresh artifact exists (see `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#codebase-recon-dispatch`). |
+| Codebase Recon | `agents/codebase-recon.md` | ~2,858 | Repo reconnaissance — surfaces entry points, dependencies, security surface, git history. Produces RECON artifact per security-primitives-contract. Dispatched on demand by architect and domain-analysis, and at the start of Phase 1: Research when no fresh artifact exists (see `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#codebase-recon-dispatch`). |
 | Gherkin Quality Critic | `agents/gherkin-quality-critic.md` | ~1,176 | Adversarial review of freshly-derived/authored Gherkin — coverage gaps and positive/negative balance. Dispatched by `/gherkin-derive` and `/gherkin-public`, never directly. |
 | Orchestrator | `agents/orchestrator.md` | 5,510 | Task routing, model selection, review coordination |
 | Plan Review Acceptance Critic | `agents/plan-review-acceptance.md` | ~1,386 | Adversarial plan review — acceptance criteria, Gherkin scenario, and TDD step traceability quality. Dispatched by `/plan` step 5b, never directly. |
@@ -28,7 +28,7 @@ This file contains the complete registry tables. CLAUDE.md references this file 
 
 ## Review Agents
 
-Spawned by the orchestrator during Phase 3 inline checkpoints and full `/code-review` runs. Each agent declares its own `model:`/`effort:` frontmatter — the native Claude Code sub-agent contract the harness resolves directly (see **Model/Effort Resolution** in `agents/orchestrator.md`). The frontmatter is the single source of truth; it is not mirrored here.
+Spawned by the orchestrator during Phase 3 inline checkpoints and full `/code-review` runs. Each agent declares its own `model:`/`effort:` frontmatter — the sub-agent contract the harness resolves directly (see **Model/Effort Resolution** in `agents/orchestrator.md`). The frontmatter is the single source of truth; it is not mirrored here.
 
 Each row below is also classified as a **discovery lens** or **verification gate** — the two need different value metrics (`$/finding` vs. escape rate). See [`review-lens-classification.md`](review-lens-classification.md) (#2007) for the classification and rationale.
 
@@ -37,7 +37,6 @@ Each row below is also classified as a **discovery lens** or **verification gate
 | a11y-review | `agents/a11y-review.md` | WCAG 2.1 AA, ARIA, keyboard nav, focus management |
 | ai-provenance-review | `agents/ai-provenance-review.md` | AI-authored test assertion verification debt, regeneration-risk candidates (magic values, unusual ordering) with no human-verification evidence |
 | arch-review | `agents/arch-review.md` | ADR compliance, layer boundary violations, dependency direction, pattern consistency |
-| claude-setup-review | `agents/claude-setup-review.md` | CLAUDE.md completeness, rules, skills, path accuracy |
 | component-architecture-review | `agents/component-architecture-review.md` | Reusable component extraction, frontend UI duplication, prop drilling, component granularity, inconsistent component APIs |
 | concurrency-review | `agents/concurrency-review.md` | Race conditions, async pitfalls, shared state |
 | correctness-review | `agents/correctness-review.md` | Functional/behavioral defects — implementation diverges from evident intent |
@@ -52,7 +51,6 @@ Each row below is also classified as a **discovery lens** or **verification gate
 | quality-reviewer | `agents/quality-reviewer.md` | Coordinates the Inline Review Checkpoint's review agents and drives the fix loop — Stage 2 of the three-stage inline review, distinct from the `spec-reviewer`/`spec-compliance-review` spec-matching gates. Dispatched by `agents/orchestrator.md` Phase 3, never directly. |
 | refactor-opportunity-review | `agents/refactor-opportunity-review.md` | Post-GREEN refactoring opportunities, semantic vs structural duplication |
 | security-review | `agents/security-review.md` | Injection, auth/authz, data exposure, crypto |
-| session-analysis | `agents/session-analysis.md` | Maps an aggregated session digest to probable plugin causes and ranked, tagged improvement suggestions (analysis-only) |
 | spec-compliance-review | `agents/spec-compliance-review.md` | Spec-to-code matching — general first gate before quality review (final `/code-review` gate; pre-build criteria-verification mode and batched/complex-slice checkpoints in `/build`) |
 | spec-reviewer | `agents/spec-reviewer.md` | Spec-to-diff matching for a single freshly-implemented unit — Stage 1 of the three-stage inline review, narrower and diff-scoped vs. `spec-compliance-review`'s broader file-scoped check. Dispatched by `agents/orchestrator.md` Phase 3, never directly. |
 | structure-review | `agents/structure-review.md` | SRP violations, DRY, coupling, file organization, nesting depth, cognitive load, async-pattern judgment (folds `complexity-review`, retired #2093) |
@@ -101,7 +99,7 @@ suggest-and-confirm both the same way they already do `color:`.
 
 ## Skills Registry
 
-Skills are reusable knowledge modules in `.claude/skills/` that agents reference. They define patterns, guidelines, and project structures without being tied to any single agent persona.
+Skills are reusable knowledge modules in `skills/` that agents reference. They define patterns, guidelines, and project structures without being tied to any single agent persona.
 
 | Skill | File | ~Tokens | Used By |
 | ------- | ------ | --------- | --------- |
@@ -114,7 +112,6 @@ Skills are reusable knowledge modules in `.claude/skills/` that agents reference
 | Browser Testing | `skills/browser-testing/SKILL.md` | 901 | QA Engineer |
 | CD Test Architecture | `skills/cd-test-architecture/SKILL.md` | ~9,622 | QA Engineer, Architect, Platform Engineer, Software Engineer |
 | CI Debugging | `skills/ci-debugging/SKILL.md` | 1,368 | Platform Engineer, Software Engineer, QA Engineer |
-| Claude Setup Review | `skills/claude-setup-review/SKILL.md` | ~1,296 | `/claude-setup-review` command, claude-setup-review |
 | Competitive Analysis | `skills/competitive-analysis/SKILL.md` | 2,034 | Orchestrator, Product Manager |
 | Context Loading Protocol | `skills/context-loading-protocol/SKILL.md` | 1,935 | Orchestrator |
 | Coverage Baseline | `skills/coverage-baseline/SKILL.md` | ~5,115 | `/test-improve` (Phase 2), QA Engineer, Platform Engineer |
@@ -168,7 +165,7 @@ Knowledge files in `knowledge/` provide progressive disclosure — agents read t
 
 | Name | File | ~Tokens | Used By |
 | ------ | ------ | --------- | --------- |
-| Adversarial Review Protocol | `knowledge/adversarial-review-protocol.md` | ~2,589 | all 25 review agents (a11y-review, ai-provenance-review, angular-reactivity-review, arch-review, claude-setup-review, component-architecture-review, concurrency-review, correctness-review, data-flow-tracer, doc-review, domain-review, js-fp-review, naming-review, performance-review, progress-guardian, react-reactivity-review, refactor-opportunity-review, security-review, session-analysis, spec-compliance-review, structure-review, test-review, test-smell-review, token-efficiency-review, vue-reactivity-review) |
+| Adversarial Review Protocol | `knowledge/adversarial-review-protocol.md` | ~2,589 | all 23 review agents (a11y-review, ai-provenance-review, angular-reactivity-review, arch-review, component-architecture-review, concurrency-review, correctness-review, data-flow-tracer, doc-review, domain-review, js-fp-review, naming-review, performance-review, progress-guardian, react-reactivity-review, refactor-opportunity-review, security-review, spec-compliance-review, structure-review, test-review, test-smell-review, token-efficiency-review, vue-reactivity-review) |
 | Agent Registry | `knowledge/agent-registry.md` | 5,543 | Orchestrator (routing decisions) |
 | Shared Review Methodology | `knowledge/agent-review-methodology.md` | ~1,052 | correctness-review, naming-review |
 | Architecture Assessment | `knowledge/architecture-assessment.md` | 1,187 | arch-review |

@@ -63,7 +63,7 @@ write their own phase-numbered evidence file using the fixed schema below.
    - **Verification-mode re-dispatch for the rest.** Re-dispatch **only the
      agents whose findings were fixed**, with the narrowed payload and the
      mandatory `insufficient-context` escape, resolving each agent's tier via
-     `python3 "$CLAUDE_PLUGIN_ROOT/scripts/verify_tier.py" --agent <name>`.
+     `python3 "$DEV_TEAM_ROOT/scripts/verify_tier.py" --agent <name>`.
      The payload contract, the escape's escalation path (an
      `insufficient-context` reply earns a **full-context** re-dispatch of
      that same agent at its discovery tier — never a shrug), and the
@@ -80,7 +80,7 @@ write their own phase-numbered evidence file using the fixed schema below.
    - `[r]` triggers one more revise pass (may exceed the cap by operator
      consent).
    - `[w]` writes the outstanding finding set to
-     `.claude/memory/test-improve/<slug>/waivers.json`, **tagged** with the
+     `.pi/dev-team/memory/test-improve/<slug>/waivers.json`, **tagged** with the
      finding list, and closes the phase.
    - `[q]` quits the phase with the loop unresolved.
 5. **Evidence.** Write the calling phase's own review-evidence file with the

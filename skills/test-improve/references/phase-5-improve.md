@@ -31,7 +31,7 @@ assignment alone is not a substitute for worktree isolation here.
    trailing-streak check. Do not eyeball the history:
 
    ```
-   sh "${CLAUDE_PLUGIN_ROOT}/hooks/py.sh" "${CLAUDE_PLUGIN_ROOT}/scripts/coverage_delta_steering.py" \
+   sh "${DEV_TEAM_ROOT}/hooks/py.sh" "${DEV_TEAM_ROOT}/scripts/coverage_delta_steering.py" \
      --history .dev-team-reports/test-improve/<slug>/data/coverage-history.json \
      --json
    ```
@@ -61,7 +61,7 @@ assignment alone is not a substitute for worktree isolation here.
        re-classified **REFACTOR_REQUIRED for Phase 6 rather than retried** —
        retrying it under no-refactor is what produced the flat streak.
      - **`[c]`** — continue, recording `coverage_flat_streak: <n> stories` in
-       `.claude/memory/test-improve/<slug>/phase-5.md` so Phase 8 and the
+       `.pi/dev-team/memory/test-improve/<slug>/phase-5.md` so Phase 8 and the
        report read it from a durable record instead of re-deriving it.
      - **Non-interactive runs** record the streak and continue — the same
        **record-and-continue posture, never a silent pass**.
@@ -140,7 +140,7 @@ assignment alone is not a substitute for worktree isolation here.
    check. Do not eyeball the history:
 
    ```
-   sh "${CLAUDE_PLUGIN_ROOT}/hooks/py.sh" "${CLAUDE_PLUGIN_ROOT}/scripts/mutation_yield_steering.py" \
+   sh "${DEV_TEAM_ROOT}/hooks/py.sh" "${DEV_TEAM_ROOT}/scripts/mutation_yield_steering.py" \
      --history .dev-team-reports/test-improve/<slug>/data/mutation-history.json \
      --json
    ```
@@ -184,12 +184,12 @@ After **all Phase-5 Stories have closed**, and only when Phase 0 selected
 reported closed — a hard gate, not prose:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_stub_gate.py" --dir <step-definitions-dir>
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_stub_gate.py" --dir <step-definitions-dir>
 ```
 
 (`<step-definitions-dir>` is wherever test-improve's own Phase 3 —
 `/gherkin-derive`'s Step 4 (stub generation) / Step 5 (output paths) — wrote
-step-definition files, recorded in `.claude/memory/test-improve/<slug>/gherkin.md`.)
+step-definition files, recorded in `.pi/dev-team/memory/test-improve/<slug>/gherkin.md`.)
 
 - **Exit 0 (no pending stubs)** — Phase 5 proceeds to the end-of-phase review
   loop below.
@@ -205,7 +205,7 @@ step-definition files, recorded in `.claude/memory/test-improve/<slug>/gherkin.m
 
 After **all Phase-5 Stories have closed**, run the review loop over the
 Phase-5 diff, writing evidence to
-`.claude/memory/test-improve/<slug>/phase-5-review.json`:
+`.pi/dev-team/memory/test-improve/<slug>/phase-5-review.json`:
 
 <!-- include: references/review-loop.md -->
 See `review-loop.md` for the single-panel dispatch, the test-lens
