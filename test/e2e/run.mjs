@@ -27,6 +27,14 @@ function assertAgentAfterGuide(systemPrompt, agentMarker, who) {
 	assert(!systemPrompt.includes("<addendum>"), `${who}: text left in pi's appended prompt`);
 }
 
+/**
+ * Prompt tokens of a cost-meter bucket, cached or not. pi-ai's faux provider (1.5.0+) simulates prompt
+ * caching: every prompt token is a cache read or a cache write, so input_tokens alone is 0.
+ */
+function promptTokens(bucket) {
+	return (bucket?.input_tokens ?? 0) + (bucket?.cache_read_input_tokens ?? 0) + (bucket?.cache_creation_input_tokens ?? 0);
+}
+
 function script(steps) {
 	return `<<script>>${JSON.stringify(steps)}<</script>>`;
 }
@@ -502,11 +510,12 @@ const scenarios = {
 		assert(dispatch && !dispatch.isError, `dispatch failed: ${JSON.stringify(dispatch)} ${r.err}`);
 		const views = dispatch.details.results;
 		assert(views.length === 2 && views.every((v) => v.status === "ok" && v.ok && v.turns === 1), `child views: ${JSON.stringify(views)}`);
-		const childInput = views.reduce((n, v) => n + v.usage.input, 0);
-		const childOutput = views.reduce((n, v) => n + v.usage.output, 0);
-		assert(childInput > 0, "children reported no input tokens");
-		assert(dispatch.usage?.input === childInput && dispatch.usage.output === childOutput, `tool result usage ${JSON.stringify(dispatch.usage)} vs children in=${childInput} out=${childOutput}`);
-		assert(dispatch.usage.totalTokens >= childInput + childOutput, `totalTokens ${dispatch.usage.totalTokens}`);
+		const sum = (field) => views.reduce((n, v) => n + v.usage[field], 0);
+		const child = { input: sum("input"), output: sum("output"), cacheRead: sum("cacheRead"), cacheWrite: sum("cacheWrite") };
+		assert(child.input + child.cacheRead + child.cacheWrite > 0, `children reported no prompt tokens: ${JSON.stringify(child)}`);
+		for (const [field, n] of Object.entries(child)) assert(dispatch.usage?.[field] === n, `tool result usage ${JSON.stringify(dispatch.usage)} vs children ${JSON.stringify(child)}`);
+		const childTotal = Object.values(child).reduce((a, b) => a + b, 0);
+		assert(dispatch.usage.totalTokens >= childTotal, `totalTokens ${dispatch.usage.totalTokens} < ${childTotal}`);
 	},
 
 	"subagent usage entry records the package version, so a session report can tell package versions apart"(env) {
@@ -578,8 +587,8 @@ const scenarios = {
 		pi(env, script([{ tool: "dev_team_subagent", args: { agent: "orchestrator", task: child } }]));
 		const row = readJsonl(path.join(env.repo, ".pi", "dev-team", "metrics", "cost-metering.jsonl")).at(-1);
 		const byAgent = row?.by_agent_type ?? {};
-		assert(byAgent["dev-team:orchestrator"]?.input_tokens > 0, `child missing: ${JSON.stringify(byAgent)}`);
-		assert(byAgent["dev-team:Explore"]?.input_tokens > 0, `grandchild not credited to its own agent: ${JSON.stringify(byAgent)}`);
+		assert(promptTokens(byAgent["dev-team:orchestrator"]) > 0, `child missing: ${JSON.stringify(byAgent)}`);
+		assert(promptTokens(byAgent["dev-team:Explore"]) > 0, `grandchild not credited to its own agent: ${JSON.stringify(byAgent)}`);
 	},
 
 	"subagent: progress of a nested dispatch streams up to the top level"(env) {
@@ -603,7 +612,7 @@ const scenarios = {
 		const rows = readJsonl(path.join(env.repo, ".pi", "dev-team", "metrics", "cost-metering.jsonl"));
 		const row = rows.at(-1);
 		assert(row?.session_id && row.by_agent_type?.main && row.by_agent_type["dev-team:security-review"], JSON.stringify(row));
-		assert(row.by_thread.subagent.input_tokens > 0 && row.total.messages >= 3, JSON.stringify(row.total));
+		assert(promptTokens(row.by_thread.subagent) > 0 && row.total.messages >= 3, JSON.stringify(row.total));
 	},
 
 	"dev-team-run -p runs an agent through pi and returns a result envelope"(env) {
