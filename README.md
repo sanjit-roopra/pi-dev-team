@@ -136,10 +136,12 @@ After `/setup`, the project `/pr` in `.pi/skills/pr/SKILL.md` replaces the packa
 
 The quality bar applies to all code: plain requests, `/fix`, review fixes and `/build`. Each function has at most 60 lines, at most 5 parameters and a cyclomatic complexity of at most 10. Cyclomatic complexity is the number of paths through the code. The agent runs the linter and `lizard` before it reports code work done. See [The quality bar](docs/review-profiles.md#the-quality-bar).
 
-The example check makes the input-to-output examples of your request into acceptance tests in `.dev-team/examples.json`. It is on by default.
+The example check makes the input-to-output examples of your request into acceptance tests in `.dev-team/examples.json`. It is on by default. You can give the examples yourself, or the team asks you for them:
 
-- Give concrete examples in your request, in fenced code blocks. Examples written only in prose do not become cases.
-- Each fenced block that you paste needs a case, or a skip with a reason.
+- Give concrete examples in your request, in fenced code blocks. Examples written only in prose do not become cases. Each fenced block that you paste needs a case, or a skip with a reason.
+- If your request shows no example for an acceptance criterion, `/specs` proposes examples and asks you to approve or edit them. Only examples that you approve become cases. See [/specs and approved examples](#specs-and-approved-examples).
+- A feature request (through `/ship`) and a vague request run `/specs`. A tiny change does not run `/specs`, so the team asks no example questions for it.
+- Without a human (`pi -p`, a script) or without an answer in time, the team saves no examples and goes on. The spec lists the examples under "Decide these".
 - To turn the check off, start pi with `DEV_TEAM_EXAMPLES=off pi`.
 
 In 52 SlopCodeBench checkpoints, the check passed 78.2% of hidden tests against 70.3% without it, at about 10% more cost. See [Example check](docs/review-profiles.md#example-check).
