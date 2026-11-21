@@ -49,7 +49,7 @@ edit to this file.
 | `/test-improve` | Analyze and raise a repo's test coverage and health |
 | `/triage` | Investigate a bug and write a TDD fix plan |
 | `/fix` | Investigate a bug, prove it, fix it RED/GREEN, then delegate to `/pr` |
-| `/setup` | Provision a repo for the dev-team plugin |
+| `/setup` | Provision a repo for the dev-team package |
 | `/continue` | Resume work from a prior session |
 | `/help` | Show this list — pass `--all` for every command |
 
@@ -58,7 +58,7 @@ Run `/help --all` to see every available command.
 
 ### 3. All commands (`--all`)
 
-1. Use `find` to list every `${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md` file, plus project skills in `.pi/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md`.
+1. Use `find` to list every `${DEV_TEAM_ROOT}/skills/*/SKILL.md` file, plus project skills in `.pi/skills/*/SKILL.md`.
 2. Read each file's YAML frontmatter and extract `name`, `description`, and `user-invocable`.
 3. Keep only files where `user-invocable` is `true` and `name` is present — agent-loaded skills are not user commands and must not appear.
 4. Sort the remaining commands alphabetically by name and display:

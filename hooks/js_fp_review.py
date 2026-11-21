@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Python port of hooks/js-fp-review.sh (#600 / #572 Phase 3).
+"""js_fp_review — PostToolUse hook (#600 / #572 Phase 3).
 
 PostToolUse advisory hook for Write/Edit on JS/TS files. Detects common
 mutation patterns and warns without blocking. Full nuanced analysis is
 handled by the js-fp-review agent — this is a fast pre-check that surfaces
 the obvious cases inline.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PostToolUse JSON on stdin with tool_input.file_path
     Output: advisory feedback on stdout
     Exit  : 0 always (advisory)

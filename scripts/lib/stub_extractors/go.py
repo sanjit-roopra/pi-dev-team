@@ -93,7 +93,7 @@ def _find_func_body(text: str, func_name: str) -> _GoFuncBody | None:
 
 # The conventional godog `ScenarioInitializer` entry-point function name
 # (see knowledge/test-stack-profiles/bdd-frameworks.md's Go section and
-# godog.TestSuite.ScenarioInitializer) — this plugin's own stub template
+# godog.TestSuite.ScenarioInitializer) — this package's own stub template
 # always names it this. Used only as a fallback anchor by
 # `find_scenario_initializer_body` below, for the "existing Go file with
 # zero sc.Step(...) bindings yet" case (issue #1421 bug 1); the main `parse`

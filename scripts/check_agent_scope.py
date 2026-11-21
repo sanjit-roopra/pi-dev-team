@@ -2,8 +2,7 @@
 """Validate that every review agent declares a body-level Scope: field.
 
 ``Scope:`` is a body-level declaration, not frontmatter (issue #1333 — it is
-not part of the official Claude Code sub-agent contract; see
-plugins/marketplace-dev/knowledge/agent-contract.json).
+not part of the agent frontmatter contract).
 
 Exit 0 if all review agents have a Scope: line in their body.
 Exit 1 with a list of offending agents if any are missing.
@@ -11,8 +10,8 @@ Exit 1 with a list of offending agents if any are missing.
 Usage:
     python3 check_agent_scope.py [--agents-dir <path>]
 
-The agents directory defaults to plugins/dev-team/agents/ relative to the
-repo root (inferred from this script's location).
+The agents directory defaults to agents/ at the package root (inferred from
+this script's location).
 """
 
 # Keeps PEP 585 annotations (`list[str]`) as strings, so this module imports on
@@ -104,7 +103,7 @@ def main() -> int:
             "\nAdd one of: 'Scope: always' (language-agnostic, every diff), a bullet list "
             "of glob patterns (file-type-scoped), 'Scope: added-only' + globs (only newly-"
             "added matching files), or 'Scope: on-demand' (never per-diff — dispatched by "
-            "name or by /repo-review).  See plugins/dev-team/docs/developer-notes.md."
+            "name or by /repo-review)."
         )
         return 1
 

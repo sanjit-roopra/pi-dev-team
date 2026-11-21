@@ -556,7 +556,7 @@ graph TD
 
 - [ ] `npm test` passes
 - [ ] `npm run e2e` passes
-- [ ] `/code-review --since main` passes (writes `.claude/memory/.pr-review-passed`)
+- [ ] `/code-review --since main` passes (writes `.pi/dev-team/memory/.pr-review-passed`)
 - [ ] README updated
 - [ ] Live pi TUI check: this session + this month, narrow (40 col) and short (15 row) terminal, resize, theme switch
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""internal_double_gate — Claude Code PreToolUse:Bash hook (#2128).
+"""internal_double_gate — PreToolUse:Bash hook (#2128).
 
 Wires `skills/test-design/scripts/internal_double_detector.py` (#2127) into
 a blocking position: an unwaived `high`-severity internal-collaborator
@@ -18,16 +18,12 @@ Only `high` findings among files changed in the branch diff are grounds to
 block (`internal_double_detector.changed_files_since`/`analyze_since`
 filter the findings, not the scan — `analyze()` itself still walks the
 whole tree every run, so this scoping buys precision, not latency: don't
-describe it as a speed optimization). This hook is NOT the correctness
-backstop: the required `"Plugin content & hooks"` CI check
-(`plugins/dev-team/tests/skills/test_internal_double_detector.py::
-test_full_repo_scan_has_no_high_severity_findings`) re-resolves the full
-first-party index and re-scans every test file, unfiltered, on every PR —
-including the one case this hook cannot see (a `high` finding whose target
-collaborator only just became resolvable because of a *new production
-file* in this same diff, while the double's own test file is untouched).
-That disclosed gap is why both enforcement points exist; this hook's block
-message says so rather than implying it is the only guarantee.
+describe it as a speed optimization). This hook only flags findings among
+files changed in this diff; it is not a whole-repo scan. One case it cannot
+see: a `high` finding whose target collaborator only just became resolvable
+because of a *new production file* in this same diff, while the double's
+own test file is untouched. This hook's block message says so rather than
+implying it is a complete guarantee.
 
 On any setup failure — base-ref resolution fails, the branch-diff git call
 itself fails independently of that, or the detector module cannot be
@@ -42,14 +38,14 @@ can read the ADVISORY and judge for themselves. That CLI-only exception is
 tested in `test_internal_double_detector.py` and never applies here.)
 
 Bypass: `INTERNAL_DOUBLE_GATE_BYPASS_REASON` (non-empty) allows the PR and
-is audit-logged to the SAME `.claude/metrics/gate-bypass-audit.jsonl`
+is audit-logged to the SAME `.pi/dev-team/metrics/gate-bypass-audit.jsonl`
 stream `pre_pr_review.py` writes to (distinguished by `triggeredBy`) —
 established shared-stream convention, not a new audit file per gate.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin
     Exit 0: allow the tool call (silent-pass, or an ADVISORY line)
-    Exit 2: block the tool call (feedback returned to Claude on stdout,
+    Exit 2: block the tool call (feedback returned to the model on stdout,
             mirrored to stderr)
 
 Stdlib-only.
@@ -136,7 +132,7 @@ try:
 except ImportError:  # pragma: no cover
 
     def _resolve_file(category, filename, root=None):  # type: ignore[misc]
-        return Path(root or ".") / ".claude" / category / filename
+        return Path(root or ".") / ".pi" / "dev-team" / category / filename
 
 
 # The detector lives with the test-design skill, not hooks/lib — this hook
@@ -162,7 +158,7 @@ except ImportError:  # pragma: no cover - degraded fallback, skill tree unreacha
 
 def _record_bypass_audit(reason: str, cwd: str) -> None:
     """Append one accountability line to the SAME
-    `.claude/metrics/gate-bypass-audit.jsonl` stream `pre_pr_review.py`
+    `.pi/dev-team/metrics/gate-bypass-audit.jsonl` stream `pre_pr_review.py`
     writes to, distinguished by `triggeredBy`. Fail-open: any failure to
     resolve the path, create the directory, or write the line logs a
     diagnostic to stderr and never blocks the PR."""
@@ -198,9 +194,7 @@ def _block_message(high_findings: list[dict]) -> str:
         f"{lines}\n\n"
         f"{_RECALL_BOUNDS_STATEMENT}\n\n"
         "This hook only flags findings among files changed in this diff; "
-        "the required \"Plugin content & hooks\" CI check re-scans the "
-        "whole repo unfiltered on every PR and is the actual completeness "
-        "guarantee, not this hook. Fix the double, or add an inline "
+        "it is not a whole-repo scan. Fix the double, or add an inline "
         "`double-waiver: B<n> — <reason>` comment naming one of the three "
         "blockers — see knowledge/internal-collaborator-doubling.md.\n\n"
         "To bypass this gate for a legitimate exception, set "

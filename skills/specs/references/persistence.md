@@ -7,10 +7,10 @@ After the gate passes, persist all three artifacts plus the verdict so downstrea
 
 ## Classify where to persist
 
-1. Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/git_origin_host.py` to classify the origin remote: `github` / `other` / `none`.
-2. When the result is `github`, additionally run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/specs_convention_marker.py` to classify the project's root `CLAUDE.md`: `marker` (contains the issue-first-specs opt-in phrase, e.g. "Specs and plans are GitHub issues here, not files") / `no-marker` (file exists, phrase absent) / `none` (no root `CLAUDE.md` found). If it reports `no-marker` or `none`, you MAY still read the root `CLAUDE.md` yourself and apply judgment for an equivalently-worded-but-differently-phrased declaration of the same convention before concluding "no marker" — but this manual-judgment fallback is deliberately unverified by any automated test, unlike the script's literal-match path (see the script's own module docstring).
+1. Run `python3 ${DEV_TEAM_ROOT}/scripts/git_origin_host.py` to classify the origin remote: `github` / `other` / `none`.
+2. When the result is `github`, additionally run `python3 ${DEV_TEAM_ROOT}/scripts/specs_convention_marker.py` to classify the project's root instructions file (`AGENTS.md`, else `CLAUDE.md`): `marker` (contains the issue-first-specs opt-in phrase, e.g. "Specs and plans are GitHub issues here, not files") / `no-marker` (file exists, phrase absent) / `none` (neither found). If it reports `no-marker` or `none`, you MAY still read the root instructions file (`AGENTS.md`, else `CLAUDE.md`) yourself and apply judgment for an equivalently-worded-but-differently-phrased declaration of the same convention before concluding "no marker" — but this manual-judgment fallback is deliberately unverified by any automated test, unlike the script's literal-match path (see the script's own module docstring).
 3. **Branch**:
-   - `github` origin **and** a marker found (by the script or by manual judgment) → **Persist to GitHub issue** (below). No downstream consumer of the shipped plugin is silently switched to this path — it requires both an actual GitHub origin and an explicit, repo-declared opt-in.
+   - `github` origin **and** a marker found (by the script or by manual judgment) → **Persist to GitHub issue** (below). No downstream consumer of the shipped package is silently switched to this path — it requires both an actual GitHub origin and an explicit, repo-declared opt-in.
    - Anything else — non-`github` origin, `none` origin, or a `github` origin with **no** marker found by either path — → **Persist to file** (below). This is today's behavior, unchanged.
 
 ## Persist to file

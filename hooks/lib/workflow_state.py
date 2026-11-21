@@ -2,7 +2,7 @@
 """workflow_state.py — workflow state-machine event stream (#1166).
 
 Persists only state-*transition* events for orchestrated flows (`/ship`,
-`/autoship`, `/build`) to `.claude/metrics/workflow-states.jsonl` — never a
+`/autoship`, `/build`) to `.pi/dev-team/metrics/workflow-states.jsonl` — never a
 current-state snapshot. Current state and per-state dwell time are always
 *derived* by replaying the stream for a given `session_id`, mirroring the
 event-sourcing discipline described in the competitive analysis this issue
@@ -14,7 +14,7 @@ against it, since ad-hoc workflows may define their own):
     SPEC -> PLAN -> BUILD -> REVIEW -> COMMIT -> PR
 
 Fail-open on emit: every exception is swallowed. A full disk, read-only
-`.claude/metrics/`, or malformed state must never raise into the caller.
+`.pi/dev-team/metrics/`, or malformed state must never raise into the caller.
 
 Stdlib only. See ADR 0014 / ADR 0015.
 """
@@ -59,11 +59,11 @@ def emit_state_transition(
 ) -> None:
     """Append one compact JSON line recording a state transition.
 
-    Fail-open: any error (bad `cwd`, unwritable `.claude/metrics/`, disk
+    Fail-open: any error (bad `cwd`, unwritable `.pi/dev-team/metrics/`, disk
     full, etc.) is swallowed silently.
 
     Args:
-        cwd: Directory whose `.claude/metrics/` subdirectory receives the
+        cwd: Directory whose `.pi/dev-team/metrics/` subdirectory receives the
             event.
         workflow: Orchestrated flow name, e.g. "ship", "autoship", "build".
         prior_state: State the workflow was in before this transition, or

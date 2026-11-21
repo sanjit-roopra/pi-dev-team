@@ -1,10 +1,10 @@
 ---
 name: competitive-analysis
 description: >-
-  Compare this plugin against external plugins, tools, feature sets, or ideas to
+  Compare this package against external plugins, tools, feature sets, or ideas to
   find gaps and weaknesses. Produces a structured gap analysis report with rough
   specs for closing each gap. Use this skill whenever the user references
-  capabilities from OUTSIDE the plugin — another plugin they found, a competitor's
+  capabilities from OUTSIDE the package — another plugin they found, a competitor's
   tool, a feature list from a different project, a repo URL, or a hypothetical
   concept for capabilities we lack. Trigger phrases include "how do we compare
   to X", "what does Y have that we don't", "what are we missing", "gap analysis",
@@ -22,7 +22,7 @@ user-invocable: true
 
 ## Overview
 
-Systematic comparison of the dev-team plugin against another plugin, tool, feature set, or idea. The goal is to surface gaps, weaknesses, and improvement opportunities — then produce rough specs for closing each gap.
+Systematic comparison of the dev-team package against another plugin, tool, feature set, or idea. The goal is to surface gaps, weaknesses, and improvement opportunities — then produce rough specs for closing each gap.
 
 This skill is analytical first, generative second. It catalogs what both sides offer, identifies where dev-team falls short, and then drafts actionable specs for each gap. The analysis should be honest — if the other plugin does something better, say so plainly.
 
@@ -32,8 +32,8 @@ The comparison target can come in several forms. Determine which applies and gat
 
 | Source | How to gather |
 | -------- | -------------- |
-| **URL** (repo, docs, marketplace) | Fetch the URL. Look for README, CLAUDE.md, plugin manifests, agent/skill/command directories. If the repo is large, focus on the manifest, README, and directory listing first. |
-| **Local path** | Read the directory structure, then key files (README, CLAUDE.md, manifests, agent/skill dirs). |
+| **URL** (repo, docs, marketplace) | Fetch the URL. Look for README, AGENTS.md/CLAUDE.md, plugin manifests, agent/skill/command directories. If the repo is large, focus on the manifest, README, and directory listing first. |
+| **Local path** | Read the directory structure, then key files (README, AGENTS.md/CLAUDE.md, manifests, agent/skill dirs). |
 | **Pasted description or feature list** | Use as-is. Ask clarifying questions only if the description is too vague to compare against. |
 | **Concept or idea** | Treat as a hypothetical plugin with the described capabilities. Note in the report that the comparison is against an idea, not a shipped product. |
 
@@ -73,7 +73,7 @@ Compare layer by layer. For each gap, classify it:
 | **Different approach** | Both plugins address this need, but with fundamentally different strategies worth examining |
 | **Stronger (dev-team)** | We do this better (include these for balance — the report should be honest in both directions) |
 
-Focus the gap analysis on things that matter. A missing agent for an obscure framework isn't as important as a missing workflow capability. Use judgment about what would actually improve the plugin if addressed.
+Focus the gap analysis on things that matter. A missing agent for an obscure framework isn't as important as a missing workflow capability. Use judgment about what would actually improve the package if addressed.
 
 **Always write the classification with the `(dev-team)` qualifier in every table cell** — never the bare word alone. "Stronger" and "Weaker" are meaningless out of context to a reader scanning a single row without the legend in view; "Missing (dev-team)" and "Stronger (dev-team)" are unambiguous on their own. `Different approach` needs no qualifier since it doesn't imply a direction.
 
@@ -177,7 +177,7 @@ shared-contract equivalent and stays as this skill's own field.)
 - Repository: `<repo path>`
 - Branch / SHA: `<branch>` / `<sha>`
 - Run parameters: `<flags>`
-- `dev-team` plugin version: `<plugin_version>`
+- `dev-team` package version: `<plugin_version>`
 ```
 
 ## Presenting Results

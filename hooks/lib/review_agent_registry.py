@@ -15,20 +15,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# This plugin's own marketplace-qualified prefix. A real Agent-tool dispatch
-# of one of this plugin's registered review agents, once installed, is named
+# dev-team's own agent-name prefix. A real Agent-tool dispatch
+# of one of dev-team's registered review agents, once installed, is named
 # "dev-team:<agent-name>" (e.g. "dev-team:doc-review") — the closed set below
 # is built from bare `agents/*-review.md` file stems, so an unstripped
 # qualified name never matches it (#1461 follow-up: this silently dropped
-# every dispatch's ledger record for the plugin's normal, installed
-# invocation form). A prefix for a DIFFERENT plugin is left untouched — it
+# every dispatch's ledger record for dev-team's normal, installed
+# invocation form). A prefix for a DIFFERENT package is left untouched — it
 # is never one of this registry's own agents.
 _PLUGIN_PREFIX = "dev-team:"
 
 
 def strip_plugin_prefix(subagent_type: str) -> str:
     """Normalize a dispatch's `subagent_type` to the bare agent name this
-    registry's closed set uses, stripping only this plugin's own
+    registry's closed set uses, stripping only dev-team's own
     `dev-team:` qualifier."""
     if subagent_type.startswith(_PLUGIN_PREFIX):
         return subagent_type[len(_PLUGIN_PREFIX) :]
@@ -58,7 +58,7 @@ def registered_review_agent_names(agents_dir: Path) -> frozenset[str]:
 
 
 def default_agents_dir() -> Path:
-    """The plugin's own `agents/` directory (#1904 item 3) — the single
+    """The package's own `agents/` directory (#1904 item 3) — the single
     source of truth every review-agent registry consumer resolves against,
     never the caller's own project `cwd`.
 
@@ -75,7 +75,7 @@ def default_agents_dir() -> Path:
     but it remains a duplicate resolution path this module has not yet
     absorbed).
     """
-    # hooks/lib/review_agent_registry.py -> hooks/lib -> hooks -> plugin root
+    # hooks/lib/review_agent_registry.py -> hooks/lib -> hooks -> package root
     # -> agents
     return Path(__file__).resolve().parents[2] / "agents"
 

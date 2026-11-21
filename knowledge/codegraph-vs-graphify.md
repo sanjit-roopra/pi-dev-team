@@ -1,8 +1,8 @@
 # CodeGraph, Repowise, and Graphify
 
 Three optional, complementary code-intelligence tools may show up in a
-project this plugin operates on. None is required — a project may have any
-subset (including none), and nothing in the plugin assumes any of them
+project this package operates on. None is required — a project may have any
+subset (including none), and nothing in the package assumes any of them
 exists. When present, they let agents read verified skeletons, resolved call
 graphs, modification risk, and decision rationale instead of re-reading whole
 files and grepping for callers — cheaper and more accurate. When absent, the
@@ -63,12 +63,12 @@ function."
   is accepted **installs the CLI keylessly** (`npm install -g
   @colbymchenry/codegraph`) and builds the index non-interactively
   (`codegraph init .`, no `-i`), recording the choice in
-  `.claude/init-state.json` (issue #1134).
+  `.pi/dev-team/init-state.json` (issue #1134).
 - **Strictly personal, user-level tooling — never committed.** Once
   initialized, the skill prints the manual command
-  (`claude mcp add codegraph -- codegraph serve --mcp`) for the user to
+  (`pi mcp add codegraph -- codegraph serve --mcp`) for the user to
   register the `codegraph` MCP server at **user scope**, exposing a single
-  tool, `codegraph_explore` (`mcp__codegraph__explore`), to Claude Code
+  tool, `codegraph_explore` (`mcp__codegraph__explore`), to pi
   sessions on that machine. One call returns the verbatim source of the
   relevant symbols grouped by file, the call path among them, and a
   blast-radius summary of what depends on them — Read-equivalent output, but
@@ -79,7 +79,7 @@ function."
   recommends `codegraph_explore` over multi-file Read/Grep/Glob exploration
   whenever `.codegraph/` exists and no CodeGraph tool has been used yet in
   the current turn; see
-  [`docs/code-intelligence-nudge.md`](../docs/code-intelligence-nudge.md)
+  `docs/code-intelligence-nudge.md`
   for the full sentinel mechanism. `hooks/codegraph_bootstrap.py`
   (SessionStart) rebuilds the local `.db` on a fresh clone when
   `.codegraph/` is committed but the machine-local database is missing.
@@ -95,7 +95,7 @@ function."
   the index never clutters the repo.
 - Registered as an MCP server, it exposes
   `mcp__plugin_repowise_repowise__{get_overview,get_context,get_symbol,search_codebase,get_answer,get_risk,get_why,get_health,get_dead_code}`
-  (and more) to Claude Code sessions.
+  (and more) to pi sessions.
 - **Server-name coupling caveat.** The tool names agents grant use the literal
   server prefix `mcp__plugin_repowise_repowise__*`. If a given install exposes
   Repowise under a different MCP server name, those grants are **inert** — no
@@ -104,9 +104,8 @@ function."
 
 ### Graphify
 
-- A repo-level tool with its own native `/graphify` skill
-  (`.claude/skills/graphify/SKILL.md` in this repo), not part of the
-  `dev-team` plugin's shipped skill set.
+- A repo-level tool with its own native `/graphify` skill, not part of the
+  `dev-team` package's shipped skill set.
 - Also offered opt-in during `/project-init`'s Step 4c, after the keyless
   CodeGraph + Repowise pair. **Only Graphify's AST pass builds keyless** —
   `graphify extract .` is full extraction (AST + semantic LLM pass) and is the
@@ -128,10 +127,6 @@ function."
   context), `graphify path "<A>" "<B>"` (shortest path between two
   concepts), and `graphify explain "<concept>"` (plain-language explanation
   of a single node).
-- PreToolUse nudge hooks in `.claude/settings.json` (this repo's own,
-  separate from the plugin's `code-intelligence-nudge`) steer codebase
-  questions toward `graphify query` when `graphify-out/graph.json` already
-  exists.
 - Keep the graph current after edits with `graphify update .`
   (incremental, AST-only, no LLM cost).
 
@@ -184,7 +179,7 @@ All three are optional and independently adopted per project:
 - Graphify requires someone to run `/graphify` (or `graphify extract`) at
   least once; a project can go its entire life without `graphify-out/`.
 
-Plugin behavior must not assume any of the three exists. The
+Package behavior must not assume any of the three exists. The
 `code-intelligence-nudge` hook already fails open when none of the three
 are present, Repowise/CodeGraph MCP grants are inert when their servers are
 absent, and no shipped `dev-team` skill or agent depends on

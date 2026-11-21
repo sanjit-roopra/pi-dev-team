@@ -28,7 +28,7 @@
 1. Breakdown: totals of USD, credits and tokens per model, provider, agent and provider, and thread, for every provider. Formatters for USD and tokens.
 2. Chart: rows carry USD, credits and tokens; optional credits and tokens columns. The split bar takes any segment list.
 3. Overlay, state and text summary: the provider view, both split bars, header, empty state, theme colours.
-4. README and PORTING.
+4. README.
 
 ## Risks
 

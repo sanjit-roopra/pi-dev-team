@@ -13,7 +13,7 @@ color: green
 Scope: always
 Cites: [adversarial-review-protocol]
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=no concurrency issues, warn=potential concerns, fail=likely race conditions or safety violations
 Severity: error=race condition or data corruption risk, warning=potential concurrency concern, suggestion=defensive improvement
@@ -94,7 +94,7 @@ Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` sur
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these concurrency-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these concurrency-review-specific challenges:
 
 - Did you trace EVERY shared-mutable-state access across all async paths, or stop at the first guard you saw?
 - For each race-condition finding, did you confirm the two accesses can actually interleave (same instance, concurrent entry), not just look risky?

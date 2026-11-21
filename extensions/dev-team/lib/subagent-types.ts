@@ -8,7 +8,7 @@ import type { NestedUsage, UsageTotals } from "../../spend/lib/subagent-usage.ts
 
 export { creditedRuns, type NestedUsage, SUBAGENT_USAGE_ENTRY, type SubagentUsageEntry, type UsageTotals } from "../../spend/lib/subagent-usage.ts";
 
-/** Where an agent definition came from: the project (.pi/agents, .claude/agents) or this package. */
+/** Where an agent definition came from: the project (.pi/agents) or this package. */
 export type AgentSource = "project" | "package";
 
 /**
@@ -107,7 +107,7 @@ export interface SubagentDetails {
 	untrustedProjectAgents?: string[];
 }
 
-/** Tool arguments, with the Claude Agent/Task aliases (subagent_type, prompt) still possible. */
+/** Tool arguments, with the Agent/Task aliases (subagent_type, prompt) still possible. */
 export interface DispatchArgs {
 	agent?: string;
 	subagent_type?: string;

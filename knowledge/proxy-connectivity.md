@@ -10,7 +10,7 @@ corporate-proxy unavailability:
 - **Connection refused** (this doc) — a transport-layer rejection. Nothing
   accepted the TCP connection at all.
 - **Rate limited** (tracked separately in
-  [issue #723](https://github.com/bdfinst/agentic-dev-team/issues/723)) — the
+  issue #723) — the
   proxy accepted the connection and the application layer returned an
   HTTP-level 429/503.
 
@@ -39,7 +39,7 @@ address — not something the application layer can throttle its way out of.
 1. Retry a small, bounded number of times with backoff. Reuse the existing
    `DEV_TEAM_BASH_RETRY_THRESHOLD` default of `3` (see
    `hooks/bash_retry_guard.py`) as the reference retry count, for consistency
-   with the one retry-count precedent already shipped in this plugin.
+   with the one retry-count precedent already shipped in this package.
 2. If the connection is still refused after those attempts, **stop** —
    do not keep retrying silently. Surface a concise diagnostic to the user
    that states:

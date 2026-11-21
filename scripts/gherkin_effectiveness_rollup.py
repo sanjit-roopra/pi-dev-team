@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """gherkin_effectiveness_rollup.py — roll up gherkin-derive scenario data
-against the coverage/mutation measurements the plugin already computes,
+against the coverage/mutation measurements the package already computes,
 so there is a signal on whether BDD-derived tests catch more real defects
 than ad hoc ones (issue #1296).
 
@@ -10,10 +10,10 @@ Today `/gherkin-derive` writes a surface inventory (`gherkin.md`) and
 files separately track coverage and mutation-survivor counts. Nothing
 correlates the two. This script reads whatever of those files exist for one
 workflow run and emits one JSONL record per discovered scenario to
-`.claude/metrics/gherkin-derive-effectiveness.jsonl` (append-only, per the
+`.pi/dev-team/metrics/gherkin-derive-effectiveness.jsonl` (append-only, per the
 `performance-metrics` skill's convention).
 
-**Attribution granularity is honest, not exact.** No file in this plugin
+**Attribution granularity is honest, not exact.** No file in this package
 today maps an individual scenario to the specific test(s) that exercise it
 at the mutation/coverage level — `gherkin-bindings.json` maps a scenario to a
 *Story* (which may bind several tests), and coverage/mutation deltas are
@@ -185,8 +185,8 @@ def append_jsonl(records: list[dict], out_path: Path) -> int:
     """Append each record as one JSON line, serialized via
     `atomic_state.append_line_locked` (#1901) so two concurrent rollup runs
     writing to the same stream cannot interleave their bytes into one
-    corrupted line — matching the pattern #1896 applied to the plugin's
-    other `.claude/metrics/*.jsonl` appenders. `fail_open=False` re-raises a
+    corrupted line — matching the pattern #1896 applied to the package's
+    other `.pi/dev-team/metrics/*.jsonl` appenders. `fail_open=False` re-raises a
     write error after the lock releases rather than swallowing it, matching
     this function's previous behavior (a bare `open()`/`write()` that
     propagated any OSError to the caller)."""

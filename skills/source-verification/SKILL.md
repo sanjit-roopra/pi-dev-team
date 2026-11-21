@@ -134,7 +134,7 @@ of truth for the code-level cases (verified against the file directly —
 > Claim: `"assemble() caps the re-injected context at 10000 characters by default."`
 
 ```
-verified: "assemble() caps the re-injected context at 10000 characters by default." — plugins/dev-team/hooks/post_compact_state_reinject.py:42 (MAX_CONTEXT_CHARS = 10_000), used as assemble()'s default limit at line 82
+verified: "assemble() caps the re-injected context at 10000 characters by default." — hooks/post_compact_state_reinject.py:42 (MAX_CONTEXT_CHARS = 10_000), used as assemble()'s default limit at line 82
 ```
 
 **Contradicted code-level claim**
@@ -142,7 +142,7 @@ verified: "assemble() caps the re-injected context at 10000 characters by defaul
 > Claim: `"assemble() caps the re-injected context at 50000 characters by default."`
 
 ```
-contradicted: "assemble() caps the re-injected context at 50000 characters by default." — actual default is 10000, plugins/dev-team/hooks/post_compact_state_reinject.py:42
+contradicted: "assemble() caps the re-injected context at 50000 characters by default." — actual default is 10000, hooks/post_compact_state_reinject.py:42
 ```
 
 **External claim resolved via WebFetch**

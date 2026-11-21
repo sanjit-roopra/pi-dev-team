@@ -11,11 +11,11 @@ allowed-tools: Read, Glob, Grep, Bash, Write
 
 # Issues from Plan
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
 - Issue and comment text follows the "GitHub text style" from the system prompt. Keep every heading, section and marker that this skill's template requires, because later steps read them. Write the prose inside them plainly and briefly. If the template itself breaks a rule (for example a required list that is longer than the limit), send the same `gh` command again unchanged: the extension blocks it only once.
-<!-- pi-port-notes -->
+<!-- pi-notes -->
 
 
 Role: orchestrator.
@@ -35,7 +35,7 @@ Break an implementation plan into GitHub issues that can be worked independently
 If a path is provided in arguments, read that file. Otherwise, look for the most recent plan in:
 
 - Active plan in conversation context
-- `.claude/memory/` directory (phase progress files)
+- `.pi/dev-team/memory/` directory (phase progress files)
 - `plans/` directory
 
 Arguments: $ARGUMENTS
@@ -47,7 +47,7 @@ If no plan is found, ask the user to point you to one.
 Read the plan and identify each **slice** (`### Slice <id>:`), its acceptance criteria, and the shared architectural decisions. Derive the dependency links from the **DAG, not file order** — do not hand-infer them:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue_deps.py" <plan-file>
+python3 "${DEV_TEAM_ROOT}/scripts/issue_deps.py" <plan-file>
 ```
 
 This returns `{ "<slice>": ["<dep slice>", ...] }` — each slice's direct predecessors. A slice listed earlier in the file carries **no** dependency on a later one unless the DAG says so.

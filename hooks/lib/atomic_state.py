@@ -40,7 +40,7 @@ read-modify-write whose lost update is a correctness bug, not an advisory
 nudge) that must never silently proceed without the lock.
 
 A second use case (#1889) reuses `locked_state` for pure append-serialization
-rather than read-modify-write: several `.claude/metrics/*.jsonl` telemetry
+rather than read-modify-write: several `.pi/dev-team/metrics/*.jsonl` telemetry
 streams have concurrent writers of their own — sliced-mode code-review's 2-3
 parallel slices, `/build`'s wave-parallel fan-out
 (`DEV_TEAM_MAX_PARALLEL_BUILDS`), or two sessions/worktrees appending to the

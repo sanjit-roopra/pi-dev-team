@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Renamed/generalized from codegraph_turn_mark.py (#594 / #572 Phase 3, #1368).
 
-Claude Code PostToolUse hook. Fires after a tool call completes and
+PostToolUse hook. Fires after a tool call completes and
 `_tool_family()` recognizes its name as belonging to a supported
 code-intelligence tool family — currently `mcp__codegraph__*` ("codegraph")
 and `mcp__plugin_repowise_repowise__*` ("repowise"). Writes a sentinel at
-`${CLAUDE_PROJECT_DIR:-$PWD}/.claude/code-intelligence-turn-state.json` that
+`${DEV_TEAM_PROJECT_DIR:-$PWD}/.pi/dev-team/code-intelligence-turn-state.json` that
 the nudge hook (`code_intelligence_nudge.py`) will consult (Step 2.3) to
 suppress its warning for whichever tool family was used during the rest of
 the current turn.
@@ -18,7 +18,7 @@ owns the identity-match predicate for both this hook's read-modify-write
 merge and the nudge hook's read-side suppression check.
 
 Sentinel schema (Step 2.2 — accumulating `tools_used` list, written to
-`.claude/code-intelligence-turn-state.json`):
+`.pi/dev-team/code-intelligence-turn-state.json`):
     { "transcript_id": <string>, "turn_counter": <int>, "tools_used": [<string>, ...] }
     - transcript_id: basename of transcript_path with extension stripped
     - turn_counter:  count of `"type":"user"` lines in the transcript file,
@@ -42,7 +42,7 @@ Both `transcript_id`/`turn_counter` are computed the same way the nudge hook
 recomputes them at PreToolUse time, so a same-turn match accumulates and a
 next-turn mismatch (new user message → counter bumps) resets it.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PostToolUse JSON on stdin
     Output: writes sentinel file; no stdout. Exit 0.
     Posture: fail-open. Any internal error → exit 0; sentinel may not be
@@ -86,7 +86,7 @@ try:
     )
 except ImportError:  # pragma: no cover
 
-    SENTINEL_RELATIVE_PATH = Path(".claude") / "code-intelligence-turn-state.json"  # type: ignore[misc]
+    SENTINEL_RELATIVE_PATH = Path(".pi", "dev-team") / "code-intelligence-turn-state.json"  # type: ignore[misc]
 
     def transcript_id(path: str) -> str:  # type: ignore[misc]
         return Path(path).stem
@@ -291,7 +291,7 @@ def main() -> int:
     if not transcript_path.is_file():
         return 0
 
-    project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    project_dir = Path(os.environ.get("DEV_TEAM_PROJECT_DIR") or os.getcwd())
     sentinel = project_dir / SENTINEL_RELATIVE_PATH
 
     tid = transcript_id(transcript_path_str)

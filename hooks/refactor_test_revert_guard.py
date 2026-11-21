@@ -165,7 +165,7 @@ def evaluate(
 
 
 def main() -> int:
-    project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    project_dir = Path(os.environ.get("DEV_TEAM_PROJECT_DIR") or os.getcwd())
     # The guard inspects disk state, not the payload — but stdin must still
     # be drained (so the hook runner never blocks on a full pipe) and the
     # session_id, when present, is worth threading into the boundary-events

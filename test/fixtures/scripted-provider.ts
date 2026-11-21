@@ -12,7 +12,7 @@
  * {"inspect": "runtime"} returns the model-facing system prompt and active tool names.
  * When the script is exhausted the model answers with the last tool result text
  * (prefixed "ECHO:") so tests can assert on what tools returned.
- * Each assistant message reports fixed usage so cost accounting can be tested.
+ * Usage comes from pi-ai's faux provider, which estimates tokens from text and simulates prompt caching.
  */
 import { fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -69,14 +69,6 @@ export default function (pi: ExtensionAPI) {
 		}
 		msg.provider = "scripted";
 		msg.model = "s1";
-		msg.usage = {
-			input: 1000,
-			output: 100,
-			cacheRead: 0,
-			cacheWrite: 0,
-			totalTokens: 1100,
-			cost: { input: 0.001, output: 0.0002, cacheRead: 0, cacheWrite: 0, total: 0.0012 },
-		};
 		return msg;
 	};
 	handle.setResponses(Array.from({ length: 500 }, () => factory as never));

@@ -22,8 +22,8 @@ You need no tool beyond reading the prompt itself — every issue's title and
 body is supplied to you in-prompt by the dispatching skill, which has
 already fetched it (`gh issue view`/`mcp__github__issue_read`) before
 dispatching you. `Read` is granted only as this repo's established
-minimal-footprint convention for a text-only analysis agent (see
-`agents/session-analysis.md`); you should not need to invoke it. You have no
+minimal-footprint convention for a text-only analysis agent; you should
+not need to invoke it. You have no
 Bash/Write/Edit capability, and none is needed — you make no repository or
 GitHub mutation of any kind. Your entire output is the JSON object below.
 

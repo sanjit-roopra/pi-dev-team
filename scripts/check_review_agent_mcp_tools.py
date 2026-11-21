@@ -9,13 +9,13 @@ in each agent's `tools:` frontmatter allowlist.
 
 Grants are no longer one-size-fits-all (#1467). Three tiers:
 
-- ``EXEMPT_AGENTS`` (``claude-setup-review``, ``token-efficiency-review``) — pure
-  text/regex/frontmatter validators on the ``haiku`` tier that never touch code
-  structure. They require **none** of the code-intelligence MCP tools, and this
-  check actively asserts they carry **none** of them — a "forbidden tools
+- ``EXEMPT_AGENTS`` (``token-efficiency-review``) — a pure
+  text/regex/frontmatter validator on the ``haiku`` tier that never touches code
+  structure. It requires **none** of the code-intelligence MCP tools, and this
+  check actively asserts it carries **none** of them — a "forbidden tools
   present" failure mode, reported and JSON-exposed distinctly from the ordinary
   "missing tools" offenders, so a future edit can't silently regrant the tools
-  these two never needed.
+  this agent never needed.
 - ``REASSIGNED_TOOLS`` agents (``refactor-opportunity-review``,
   ``performance-review``, ``doc-review``) — require their
   own specific tool set (see the mapping below) instead of the generic
@@ -38,10 +38,10 @@ present. Exit 1 (detection) or applies fixes (--fix) otherwise.
 
 Usage (repo-root-relative — this script mutates the agent files next to
 wherever it itself resides, so it must run against the maintainer's own
-checkout, never a `${CLAUDE_PLUGIN_ROOT}`-qualified installed-cache path):
-    python3 plugins/dev-team/scripts/check_review_agent_mcp_tools.py [--agents-dir <path>] [--skill-file <path>]
-    python3 plugins/dev-team/scripts/check_review_agent_mcp_tools.py --fix        # append missing tool names
-    python3 plugins/dev-team/scripts/check_review_agent_mcp_tools.py --json        # machine-readable report
+checkout, never a `${DEV_TEAM_ROOT}`-qualified installed-cache path):
+    python3 scripts/check_review_agent_mcp_tools.py [--agents-dir <path>] [--skill-file <path>]
+    python3 scripts/check_review_agent_mcp_tools.py --fix        # append missing tool names
+    python3 scripts/check_review_agent_mcp_tools.py --json        # machine-readable report
 """
 
 # Keeps PEP 585 annotations (`list[Path]`, `dict[str, list[str]]`) as strings,
@@ -95,7 +95,7 @@ MCP_TOOL_NAMES = BASE_MCP_TOOLS
 
 # Agents that do pure text/regex/frontmatter validation and never touch code
 # structure — they require zero code-intelligence MCP tools (#1467).
-EXEMPT_AGENTS = {"claude-setup-review", "token-efficiency-review"}
+EXEMPT_AGENTS = {"token-efficiency-review"}
 
 # Agents whose grant is reassigned to a specific set instead of the generic
 # BASE_MCP_TOOLS five (#1467).
@@ -301,7 +301,7 @@ def main() -> int:
         print("FAIL: review agents missing their required code-intelligence MCP tools in tools::")
         for name, missing in offenders.items():
             print(f"  - {name}: missing {', '.join(missing)}")
-        print("\nRun: python3 plugins/dev-team/scripts/check_review_agent_mcp_tools.py --fix")
+        print("\nRun: python3 scripts/check_review_agent_mcp_tools.py --fix")
     if forbidden:
         print("FAIL: exempt review agents granted forbidden code-intelligence MCP tools (should have none):")
         for name, tools in forbidden.items():

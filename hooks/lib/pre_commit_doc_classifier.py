@@ -3,7 +3,7 @@ doc-only exemption predicate (#1461, extracted from `pre_commit_review.py`
 under #1477).
 
 Moved out of `pre_commit_review.py` (which had grown to ~759 lines, mixing
-the hook stdin/exit-code contract, git querying, plugin-version resolution,
+the hook stdin/exit-code contract, git querying, package-version resolution,
 bypass-audit recording, boundary-event emission, doc-only classification,
 and the gate-verdict decision engine all in one file) so that module can
 stay to hook-contract plumbing and wiring, with this predicate as its own
@@ -67,6 +67,7 @@ from doc_classification import (
     DOC_EXTENSIONS,
     DOC_ROOT_WORDS,
     FUNCTIONAL_CONFIG_NAMES,
+    has_state_dir_segments,
 )
 
 _DOC_ROOT_NAMES = frozenset(DOC_ROOT_WORDS)
@@ -88,7 +89,7 @@ _NON_DOC_DIR_SEGMENTS = {"requirements", "constraints"}
 
 def is_doc_only_changeset(files: list[str]) -> bool:
     """True only when EVERY given path is provably documentation and none is
-    functional Claude-config markdown. An empty list — or a list whose every
+    functional agent-config markdown. An empty list — or a list whose every
     entry is blank/unusable — is not doc-only: there is nothing to exempt,
     so this must never vacuously pass."""
     saw_any = False
@@ -110,6 +111,7 @@ def is_doc_only_changeset(files: list[str]) -> bool:
             or stem in _NON_DOC_NAMES_DESPITE_EXTENSION
             or in_non_doc_dir
             or any(seg in CORE_FUNCTIONAL_CONFIG_SEGMENTS for seg in parts)
+            or has_state_dir_segments(parts)
         ):
             return False
         if suffix in DOC_EXTENSIONS:

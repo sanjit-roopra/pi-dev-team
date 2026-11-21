@@ -45,7 +45,7 @@ def walk_tree(root: Path, exclude_dirs) -> list[tuple[Path, list[str]]]:
         rel = Path(dirpath).relative_to(root).as_posix()
         prefix = "" if rel == "." else rel + "/"
         # An entry prunes by bare dir name (".git") or root-relative path
-        # (".claude/worktrees").
+        # (".pi/dev-team/worktrees").
         dirnames[:] = sorted(
             d for d in dirnames if d not in excl_set and prefix + d not in excl_set
         )

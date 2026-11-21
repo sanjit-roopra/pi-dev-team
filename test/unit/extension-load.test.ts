@@ -185,8 +185,8 @@ test("the main session's guide names the tiers even without a session model", as
 
 test("agent_settled compacts the main session once context reaches autocompactMaxTokens", async () => {
 	const { handlers } = await loaded;
-	const saved = process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;
-	process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "100"; // the user's own setting must not decide this test
+	const saved = process.env.DEV_TEAM_AUTOCOMPACT_PCT;
+	process.env.DEV_TEAM_AUTOCOMPACT_PCT = "100"; // the user's own setting must not decide this test
 	try {
 		const settle = async (tokens: number) => {
 			let compacted = 0;
@@ -204,8 +204,8 @@ test("agent_settled compacts the main session once context reaches autocompactMa
 		assert.equal(await settle(199_999), 0, "below the ceiling");
 		assert.equal(await settle(200_000), 1, "the default ceiling is 200k tokens");
 	} finally {
-		if (saved === undefined) delete process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;
-		else process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = saved;
+		if (saved === undefined) delete process.env.DEV_TEAM_AUTOCOMPACT_PCT;
+		else process.env.DEV_TEAM_AUTOCOMPACT_PCT = saved;
 	}
 });
 
@@ -814,10 +814,10 @@ test("with routing brief, a write before any brief is blocked with a reason nami
 	assert.equal(ext.probed(), false, "no hook ran for the blocked call");
 });
 
-test("with routing brief, a read and a write to the team's own .claude state are not blocked by routing", async (t) => {
+test("with routing brief, a read and a write to the team's own .pi/dev-team state are not blocked by routing", async (t) => {
 	const { call } = await routingHarness(t);
 	assert.doesNotMatch((await call("read", { path: "src/a.ts" }))?.reason ?? "", ROUTING_REASON);
-	assert.doesNotMatch((await call("write", { path: ".claude/memory/x.json", content: "{}" }))?.reason ?? "", ROUTING_REASON);
+	assert.doesNotMatch((await call("write", { path: ".pi/dev-team/memory/x.json", content: "{}" }))?.reason ?? "", ROUTING_REASON);
 });
 
 test("a tiny brief opens the gate; a new typed request closes it again", async (t) => {
@@ -896,7 +896,7 @@ test("a tiny brief shows the brief, saves it with the session id and opens the g
 	const r = await brief("tiny");
 	assert.match(r.content[0].text, /^The user sees this brief:/);
 	assert.equal(r.details.kind, "tiny");
-	const saved = JSON.parse(fs.readFileSync(path.join(cwd, ".claude", "memory", "brief.json"), "utf-8"));
+	const saved = JSON.parse(fs.readFileSync(path.join(cwd, ".pi", "dev-team", "memory", "brief.json"), "utf-8"));
 	assert.equal(saved.sessionId, "s");
 	assert.equal(saved.approved, "tiny");
 	assert.doesNotMatch((await write())?.reason ?? "", ROUTING_REASON);
@@ -1064,7 +1064,7 @@ test("an empty tasks list counts the call's own agent, so software-engineer is b
 test("/ship removes an older brief.json in the project; /pr keeps it", async (t) => {
 	for (const [name, kept] of [["ship", false], ["pr", true]] as const) {
 		const { cwd, command } = await routingHarness(t);
-		const file = path.join(cwd, ".claude", "memory", "brief.json");
+		const file = path.join(cwd, ".pi", "dev-team", "memory", "brief.json");
 		fs.mkdirSync(path.dirname(file), { recursive: true });
 		fs.writeFileSync(file, "{}");
 		await command(name, "add caching");
@@ -1132,7 +1132,7 @@ async function featureHarness(t: TestContext, pick: (options: string[]) => strin
 	const h = await routingHarness(t, { routing: "brief" }, { hasUI: true, mode: "rpc", ui });
 	process.env.DEV_TEAM_INTERACTIVE = "1";
 	const saved = () => {
-		const file = path.join(h.cwd, ".claude", "memory", "brief.json");
+		const file = path.join(h.cwd, ".pi", "dev-team", "memory", "brief.json");
 		return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf-8")) : undefined;
 	};
 	return { ...h, saved };
@@ -1230,13 +1230,13 @@ async function examplesSession(t: TestContext, env: { DEV_TEAM_EXAMPLES?: string
 	const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "dt-examples-"));
 	t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
 	const ctx = { ...blockCtx, cwd, isProjectTrusted: () => false };
-	const forge = () => ext.handlers.tool_call[0]({ toolName: "write", toolCallId: "w", input: { path: ".claude/memory/requests/request-x.md", content: "x" } }, ctx) as Promise<Verdict>;
+	const forge = () => ext.handlers.tool_call[0]({ toolName: "write", toolCallId: "w", input: { path: ".pi/dev-team/memory/requests/request-x.md", content: "x" } }, ctx) as Promise<Verdict>;
 	const specs = async () =>
 		((await (ext.tools.skill as unknown as { execute: (...args: unknown[]) => Promise<{ content: { text: string }[] }> }).execute("s", { name: "specs", args: "" }, undefined, () => {}, ctx)).content[0].text);
 	/** Types a request as the human would, and returns the saved request files' contents. */
 	const type = async (text: string) => {
 		await ext.handlers.input[0]({ text, source: "interactive" }, ctx);
-		const dir = path.join(cwd, ".claude", "memory", "requests");
+		const dir = path.join(cwd, ".pi", "dev-team", "memory", "requests");
 		return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => !f.startsWith(".")).map((f) => fs.readFileSync(path.join(dir, f), "utf-8")) : [];
 	};
 	const start = async () => {
@@ -1254,7 +1254,7 @@ test("example check by default: a typed request is saved word for word; off, lea
 	assert.equal(saved.length, 1);
 	assert.ok(saved[0].includes(text), saved[0]);
 	// Owner-only, and ignored by Git through the folder's own .gitignore.
-	const dir = path.join(on.cwd, ".claude", "memory", "requests");
+	const dir = path.join(on.cwd, ".pi", "dev-team", "memory", "requests");
 	const [file] = fs.readdirSync(dir).filter((f) => !f.startsWith("."));
 	assert.equal(fs.statSync(path.join(dir, file)).mode & 0o777, 0o600);
 	assert.equal(fs.readFileSync(path.join(dir, ".gitignore"), "utf-8"), "*\n");

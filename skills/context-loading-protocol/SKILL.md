@@ -7,7 +7,7 @@ user-invocable: true
 
 # Context Loading Protocol
 
-Token-budget reference (CLAUDE.md baseline, full-load ceiling, per-agent and per-skill costs) is the **Baseline Budget** section of `CLAUDE.md`. This skill is the runtime procedure; don't duplicate the table here — it goes stale.
+Token-budget reference (AGENTS.md baseline, full-load ceiling, per-agent and per-skill costs) is estimated per Step 4 below. This skill is the runtime procedure; don't add a fixed table here — it goes stale.
 
 ## Constraints
 
@@ -19,10 +19,10 @@ Token-budget reference (CLAUDE.md baseline, full-load ceiling, per-agent and per
 ## Enforcement
 
 No hook blocks or warns on capability loads any more (the former context
-ceiling hook was removed; see [ADR 0043](../../../../docs/adr/0043-replace-the-context-ceiling-guard-with-harness-autocompact.md)).
+ceiling hook was removed).
 The harness compacts the conversation itself at the percentage
-`/dev-team:setup` writes to the repo's `.claude/settings.json`
-(`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`, default 40). Repos that never ran `/setup`
+`/dev-team:setup` writes to the repo's `.pi/dev-team.json`
+(`autocompactPct`, default 40). Repos that never ran `/setup`
 keep the harness default, which is much later, and get a one-line advisory at
 session start. After a compaction, a `compact` SessionStart hook re-injects
 the active `/build` phase, step and plan progress.
@@ -46,7 +46,7 @@ than chasing a precise threshold that doesn't exist. There is no absolute token
 cap: the percentage applies to the window, so 40% of a 1M window is 400K.
 
 Full guide — how the threshold is configured, the two SessionStart hooks,
-troubleshooting: [Context Management](../../docs/context-management.md).
+troubleshooting: [Autocompact](../../docs/architecture.md#autocompact).
 
 ## Loading Decision Procedure
 
@@ -83,14 +83,14 @@ For each loaded agent, check its `## Skills` section:
 ### Step 4: Calculate token budget
 
 ```
-Total = CLAUDE.md baseline
+Total = AGENTS.md baseline
       + conversation history (estimate)
       + agent files (sum selected)
       + skill files (sum selected)
       + expected output (estimate)
 ```
 
-**Target: total < 40% of the model's context window.** For Claude with a 200K window, that's < 80K tokens; on a 1M-window model it is 400K (there is no absolute cap). See [Why 40%](#why-40) for the rationale. The config files are a small fraction; the real budget concern is conversation history + output accumulation over multi-turn tasks.
+**Target: total < 40% of the model's context window.** For a model with a 200K window, that's < 80K tokens; on a 1M-window model it is 400K (there is no absolute cap). See [Why 40%](#why-40) for the rationale. The config files are a small fraction; the real budget concern is conversation history + output accumulation over multi-turn tasks.
 
 ### Step 5: Load via tool-based file reads
 
@@ -122,7 +122,7 @@ Pre-computed loading sets for common task types.
 
 ### New Feature (full lifecycle)
 
-Three phases, each in a fresh context window with a human review gate between. Each phase's output is a structured progress file in `.claude/memory/` that onboards the next phase.
+Three phases, each in a fresh context window with a human review gate between. Each phase's output is a structured progress file in `.pi/dev-team/memory/` that onboards the next phase.
 
 | Phase | Load | Purpose | Output |
 |---|---|---|---|
@@ -141,7 +141,7 @@ Key rules:
 
 Since tokens can't be literally removed from context:
 
-1. **Phase transitions** — summarize completed phase output into `.claude/memory/` and start a new conversation for the next phase.
+1. **Phase transitions** — summarize completed phase output into `.pi/dev-team/memory/` and start a new conversation for the next phase.
 2. **Within a conversation** — stop referencing the agent/skill; the orchestrator mentally notes it's no longer active. Use the Handoff skill (continue mode) to compress stale content.
 3. **Multi-turn accumulation** — when conversation history crosses **30%** utilization, trigger summarization before loading additional agents.
 

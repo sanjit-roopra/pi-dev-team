@@ -8,7 +8,7 @@ and ``.sln`` hide/restore reuse the shipped ``csharp_stryker_net_wrapper``;
 scoring and survivor extraction reuse ``mutation_report``.
 
 Generic, stdlib-only, cross-platform (macOS, Linux, Windows). The only
-non-stdlib imports are the sibling plugin modules in this same ``scripts/``
+non-stdlib imports are the sibling modules in this same ``scripts/``
 directory.
 
 **Scope (#1562).** This module owns config parsing, the scoped Stryker run,
@@ -36,7 +36,7 @@ tests to write — a caller supplies a ``generate`` callable that returns the
 new test-method text. The default (interactive) path is agent-driven: the
 ``mutation-kill`` agent calls :func:`run_for_file` directly, passing a
 ``generate`` hook backed by a live agent turn. A ``--headless`` CLI mode
-(``mutation_kill_headless.py``) shells to ``claude --print`` for unattended
+(``mutation_kill_headless.py``) shells to ``dev-team-run --print`` for unattended
 (CI / shard-pipeline) runs. Invoking the CLI with neither an injected
 generator nor ``--headless`` fails fast at startup — before any Stryker run
 or file mutation.
@@ -274,7 +274,7 @@ def make_confirm_scoped_config(
     offset) is not pinned by the documentation alone, and confirming it needs
     a live ``dotnet``/``dotnet-stryker`` run against a probe file with a
     known survivor line. No such toolchain is available in every environment
-    that develops this plugin (checked: ``dotnet`` is not always on ``PATH``).
+    that develops this package (checked: ``dotnet`` is not always on ``PATH``).
     Per this issue's own explicit fallback: **this function stays unwired**
     from ``_score_round`` — see
     ``test_confirm_scoped_config_is_not_wired_into_the_default_loop_path`` —

@@ -1,8 +1,9 @@
 # Artifact Lifecycle States
 
-This file defines the lifecycle state model for tracked plugin artifacts (skills,
-agents). States are maintained in `~/.claude/metrics/artifact-usage.json`
-(home-scoped, never a project-scoped path) and consumed by the
+This file defines the lifecycle state model for tracked package artifacts (skills,
+agents). States are maintained in `metrics/artifact-usage.json` in the dev-team
+folder in your pi agent directory (`~/.pi/agent/dev-team/` by default; user-scoped,
+never a project-scoped path) and consumed by the
 `/artifact-lifecycle` skill to report and propose transitions.
 
 ## States
@@ -13,7 +14,7 @@ An artifact used within the last 30 days. No lifecycle transition is needed.
 ### stale
 An artifact **not used in more than 30 days** (i.e., `days_since_used >= 30` and
 `< 90`). Stale artifacts are candidates for disabling — add them to
-`## Disabled Skills` in project `CLAUDE.md` so they do not load into context
+`## Disabled Skills` in project `AGENTS.md` so they do not load into context
 until deliberately re-enabled.
 
 ### archived
@@ -33,12 +34,12 @@ stale; an artifact last used exactly 90 days ago is an archive candidate.
 
 ## Pinned Exemption
 
-Artifacts listed under `## Pinned Skills` in `CLAUDE.md` are exempt from all
+Artifacts listed under `## Pinned Skills` in `AGENTS.md` are exempt from all
 lifecycle transitions regardless of `last_used_at`. A pinned artifact is excluded
 from the Stale Skills and Archive Candidates sections of `/artifact-lifecycle`
 output and is never proposed for disabling or removal.
 
-## ~/.claude/metrics/artifact-usage.json Schema
+## `artifact-usage.json` Schema
 
 ```json
 {

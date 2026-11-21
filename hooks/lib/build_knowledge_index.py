@@ -155,8 +155,7 @@ _BULLET_RE = re.compile(r"^[ \t]*[-*+][ \t]+")
 # re-declaring its own copies, so the grammar and recursion budget have one
 # owner instead of two hand-kept-equal ones. Every marker — at any recursion
 # depth — must carry a single-path-segment `references/<name>.md` path (no
-# `/` inside `<name>`, matching knowledge_index_paths.CORPUS_REGEX's own
-# shape and closing off `../` traversal at the regex level), and every path
+# `/` inside `<name>`, matching the corpus path shape and closing off `../` traversal at the regex level), and every path
 # resolves against the ORIGINAL including file's own directory (`root`),
 # pinned for every recursive call. A marker inside an already-spliced-in
 # reference file is still relative to the top-level file's directory, never
@@ -206,9 +205,9 @@ def resolve_contained_target(target: Path, root: Path) -> Path | None:
 
     `is_symlink()` is inside the same try as `resolve()`, not before it:
     this repo's own convention is not to rely on an unverified claim about a
-    library's internal error-swallowing behavior as a safety guarantee (see
-    root CLAUDE.md's "validate the property explicitly in your own code
-    instead") — the explicit `except (OSError, ValueError)` below is what
+    library's internal error-swallowing behavior as a safety guarantee
+    ("validate the property explicitly in your own code instead") — the
+    explicit `except (OSError, ValueError)` below is what
     actually closes the must-never-crash gap, not an assumption that
     `is_symlink()` never raises."""
     try:
@@ -425,9 +424,8 @@ def build_index_text(roots: Path) -> str:
     index = {}
     for path in discover_files(roots):
         rel = path.relative_to(roots)
-        # The roots env var may point at the plugin dir; reattach the
-        # plugin prefix so keys are repo-relative.
-        rel_key = f"plugins/dev-team/{rel.as_posix()}"
+        # Keys are relative to the package root (e.g. `knowledge/x.md`).
+        rel_key = rel.as_posix()
         rows = extract_sections(path)
         if not rows:
             continue

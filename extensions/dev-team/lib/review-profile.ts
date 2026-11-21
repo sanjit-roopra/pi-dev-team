@@ -3,7 +3,7 @@
  *
  * `gate` (the default) is lean with less process and a code-quality bar (below). `lean` cuts the review layers that measured runs showed cost the most and changed the
  * least (extra fix rounds, the second review panel, complex-tier plan critics, per-step implementer
- * dispatches). `full` is upstream's flow, and its prompt text stays byte for byte what it was: nothing
+ * dispatches). `full` is the skills' own flow, and its prompt text stays byte for byte what it was: nothing
  * here adds text unless the profile is `lean` or `gate`. Only the user's own process environment chooses the
  * profile: the value is read once, when the extension loads, before any config file's `env` is applied,
  * and a project's config may not set it either (it is not in PROJECT_ENV_SETTINGS). The lean instructions live in extensions/dev-team/lean/<skill>.md
@@ -76,17 +76,17 @@ export function reviewProfileNote(packageRoot: string, profile: ReviewProfile, s
 	}
 }
 
-const PORT_NOTES_MARKER = "<!-- pi-port-notes -->";
+const PI_NOTES_MARKER = "<!-- pi-notes -->";
 
 /**
- * Inserts the profile section after the skill's pi port notes (the second marker), so it is read after them
+ * Inserts the profile section after the skill's pi notes (the second marker), so it is read after them
  * and overrides them; without markers, after the first `# ` heading; else at the top. No note: body unchanged.
  */
 export function insertReviewProfileNote(body: string, note: string | undefined): string {
 	if (!note) return body;
-	const marker = body.lastIndexOf(PORT_NOTES_MARKER);
+	const marker = body.lastIndexOf(PI_NOTES_MARKER);
 	if (marker >= 0) {
-		const at = marker + PORT_NOTES_MARKER.length;
+		const at = marker + PI_NOTES_MARKER.length;
 		return `${body.slice(0, at)}\n${note}\n${body.slice(at)}`;
 	}
 	const heading = body.match(/^# .*$/m);
@@ -127,7 +127,7 @@ export function applyExamplesEnv(env: NodeJS.ProcessEnv, on: boolean): void {
 
 /**
  * Set by a session, to its own pid, in the environment its tools inherit. A pi session that finds another
- * process's pid there at load was started by another session (`pi -p` or the `claude` shim from a bash call),
+ * process's pid there at load was started by another session (`pi -p` or bin/dev-team-run from a bash call),
  * so its prompt is the model's text, not the human's, and is not saved as a request. Its own pid means the
  * module was loaded again in the same process (`/reload`), which is still the top-level session.
  */
@@ -146,7 +146,7 @@ export function isNested(env: NodeJS.ProcessEnv, pid: number): boolean {
  * with an exit code: `scripts/example_replay.py` runs the request's examples and compares by value or shape.
  */
 export const EXAMPLE_BAR =
-	"- Example check (gate): the examples a request shows are its acceptance tests. Typed requests are saved word for word under `.claude/memory/requests/`. Before writing code, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py --format` and copy every input-to-output example of the request into `.dev-team/examples.json` as cases: `source` is the example copied character for character, and expected outputs are copied exactly as shown (precision, suffixes, wording, empty lines), never edited to fit the code; never change an input the example shows either, only add what it leaves out. Put only values the program generates (ids, timestamps, random tokens) under `vary`, which still requires the example's shape; `save` an id an example reuses; use `excerpt` for an example that elides lines with `...`. Skip a code block that is not an example (a schema, a grammar) with a reason. Keep the cases of earlier requests: they guard behaviour that a later change must not break; drop one only with `superseded_by` quoting newer request text that changes that example's output for its input; a new rule that makes your program reject an earlier example's input is a regression unless the new text names that input as invalid, so keep the case and fix the program. Before you report code work done, run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/example_replay.py` (under `timeout 600`), fix the program, not the case, for every failure, and re-run until it exits 0. Where the request says the caller prepares something (an output directory exists, a file is created), create or tolerate it when it is missing, unless the request names an error for that case. Mark a step `disputed` only when its example contradicts the request's own text, quoting that text. Where the text leaves a format, precision or suffix open, the example decides, even against an interface standard: a standard applies only where the request has neither text nor an example on that point. When /specs writes acceptance criteria and the request shows no example for a criterion, propose concrete input-to-output examples and call `dev_team_approve_examples`: only examples the human approved or edited, which that tool saves under `.claude/memory/requests/`, may be case sources. Never write that folder yourself.";
+	"- Example check (gate): the examples a request shows are its acceptance tests. Typed requests are saved word for word under `.pi/dev-team/memory/requests/`. Before writing code, run `python3 ${DEV_TEAM_ROOT}/scripts/example_replay.py --format` and copy every input-to-output example of the request into `.dev-team/examples.json` as cases: `source` is the example copied character for character, and expected outputs are copied exactly as shown (precision, suffixes, wording, empty lines), never edited to fit the code; never change an input the example shows either, only add what it leaves out. Put only values the program generates (ids, timestamps, random tokens) under `vary`, which still requires the example's shape; `save` an id an example reuses; use `excerpt` for an example that elides lines with `...`. Skip a code block that is not an example (a schema, a grammar) with a reason. Keep the cases of earlier requests: they guard behaviour that a later change must not break; drop one only with `superseded_by` quoting newer request text that changes that example's output for its input; a new rule that makes your program reject an earlier example's input is a regression unless the new text names that input as invalid, so keep the case and fix the program. Before you report code work done, run `python3 ${DEV_TEAM_ROOT}/scripts/example_replay.py` (under `timeout 600`), fix the program, not the case, for every failure, and re-run until it exits 0. Where the request says the caller prepares something (an output directory exists, a file is created), create or tolerate it when it is missing, unless the request names an error for that case. Mark a step `disputed` only when its example contradicts the request's own text, quoting that text. Where the text leaves a format, precision or suffix open, the example decides, even against an interface standard: a standard applies only where the request has neither text nor an example on that point. When /specs writes acceptance criteria and the request shows no example for a criterion, propose concrete input-to-output examples and call `dev_team_approve_examples`: only examples the human approved or edited, which that tool saves under `.pi/dev-team/memory/requests/`, may be case sources. Never write that folder yourself.";
 
 /**
  * The approved-examples step for /specs under the example check, from extensions/dev-team/gate/specs-examples.md;
@@ -172,7 +172,7 @@ ${QUALITY_BAR}${examples ? `\n${EXAMPLE_BAR}` : ""}`;
 const BACKSTOP_SKIP_FLAG = "--backstop-review=skip";
 
 /**
- * The arguments a skill expands with. Under lean, `/build` gets upstream's `--backstop-review=skip`, so the
+ * The arguments a skill expands with. Under lean, `/build` gets its own `--backstop-review=skip`, so the
  * skill's own flag logic (Parse Arguments, step 6) engages: the lean profile is the enclosing caller's
  * assertion that flag requires, the lean slice checkpoints being the enclosing review. Gate: the same. Full: args unchanged.
  */
@@ -188,7 +188,7 @@ const TEST_BUDGET =
 /**
  * Skills lean inlines into a dispatched agent's system prompt, by agent. A dispatch starts with an empty context,
  * so software-engineer otherwise spends a turn per dispatch reading the skills its instructions say to invoke
- * before delivery and on a failing test; upstream Claude Code preloads frontmatter skills the same way.
+ * before delivery and on a failing test.
  */
 const LEAN_PRELOADED_SKILLS: Readonly<Record<string, readonly string[]>> = {
 	"software-engineer": ["quality-gate-pipeline", "systematic-debugging"],
@@ -200,7 +200,7 @@ export function reviewProfilePreloadedSkills(profile: ReviewProfile, agentName: 
 	return LEAN_PRELOADED_SKILLS[agentName] ?? [];
 }
 
-const LIZARD_COMMAND = "lizard --csv <files> | python3 ${CLAUDE_PLUGIN_ROOT}/skills/static-analysis-integration/adapters/lizard-adapter.py";
+const LIZARD_COMMAND = "lizard --csv <files> | python3 ${DEV_TEAM_ROOT}/skills/static-analysis-integration/adapters/lizard-adapter.py";
 
 const LEAN_NOTE_HEADING = `## Review profile: lean (${REVIEW_PROFILE_ENV}=lean; unset it for the default gate profile)`;
 const GATE_NOTE_HEADING = `## Review profile: gate (the default; ${REVIEW_PROFILE_ENV}=lean or full turns it off)`;

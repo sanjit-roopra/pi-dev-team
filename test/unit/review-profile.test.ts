@@ -81,7 +81,7 @@ test("full profile: no note, no guide line, and every package skill expands byte
 	assert.equal(insertReviewProfileNote("# T\nbody", undefined), "# T\nbody");
 });
 
-test("lean profile: plan, build, code-review and ship get their section after the port notes or the title", () => {
+test("lean profile: plan, build, code-review and ship get their section after the pi notes or the title", () => {
 	assert.match(reviewProfileGuideLine("lean"), /^- Review profile: lean \(the user set DEV_TEAM_REVIEW=lean/);
 	const skills = discoverSkills(ROOT, ROOT, { includeProject: false });
 	for (const name of LEAN_SKILLS) {
@@ -92,9 +92,9 @@ test("lean profile: plan, build, code-review and ship get their section after th
 		const full = expandSkill(skill, "");
 		const lean = expandSkill(skill, "", note);
 		assert.equal(lean.split(note).length, 2, `${name}: note inserted once`);
-		const notesEnd = lean.lastIndexOf("<!-- pi-port-notes -->");
+		const notesEnd = lean.lastIndexOf("<!-- pi-notes -->");
 		const at = lean.indexOf(note);
-		if (notesEnd >= 0) assert.ok(at > notesEnd, `${name}: after the port notes`);
+		if (notesEnd >= 0) assert.ok(at > notesEnd, `${name}: after the pi notes`);
 		else assert.ok(at > lean.indexOf("\n# "), `${name}: after the title`);
 		const inserted = notesEnd >= 0 ? `\n${note}\n` : `\n\n${note}\n`;
 		assert.equal(lean.replace(inserted, ""), full, `${name}: only the note is added`);
@@ -114,7 +114,7 @@ test("lean sections name each agreed cut and keep the agreed gates", () => {
 	assert.match(build, /once per slice, not once per step/);
 	assert.match(build, /run the full test suite once, after the slice's last step/);
 	assert.match(build, /static self-heal pass/);
-	assert.match(build, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
+	assert.match(build, /lizard --csv <files> \| python3 \$\{DEV_TEAM_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
 	assert.match(build, /overrides the per-behavior cycle's "Run the full test suite" gate/);
 	assert.match(build, /structure-review/);
 	assert.match(build, /Core lenses until the last slice/);
@@ -170,7 +170,7 @@ test("lean adds software-engineer and test-lens overrides; full adds nothing", (
 
 test("lean software-engineer runs lizard, chains markers, commits once and gets its skills inlined", () => {
 	const engineer = reviewProfileAgentNote("lean", "software-engineer");
-	assert.match(engineer, /lizard --csv <files> \| python3 \$\{CLAUDE_PLUGIN_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
+	assert.match(engineer, /lizard --csv <files> \| python3 \$\{DEV_TEAM_ROOT\}\/skills\/static-analysis-integration\/adapters\/lizard-adapter\.py/);
 	assert.match(engineer, /never spend a turn on a `build_phase\.py` marker alone/);
 	assert.match(engineer, /Commit once, after the final full-suite run/);
 	assert.match(engineer, /inlined below; do not load or read them again/);

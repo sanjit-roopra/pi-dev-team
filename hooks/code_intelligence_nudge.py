@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""code_intelligence_nudge — Claude Code PreToolUse hook.
+"""code_intelligence_nudge — PreToolUse hook.
 
 Renamed/generalized from codegraph_nudge.py (#593 / #572 Phase 3, #1368)
 now that this hook nudges agents toward whichever of CodeGraph, Repowise,
@@ -11,7 +11,7 @@ combined message for whichever of those are not already used this turn.
 Runs before Read, Grep, Glob tool calls. Single-file Read calls, Grep with
 a file `path`, and Glob with a literal `pattern` pass silently.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin
     Output: warning on stderr when exploration is detected
     Exit  : 0 = allow (silent or warn). 2 = block (careful mode only).
@@ -51,7 +51,7 @@ try:
     )
 except ImportError:  # pragma: no cover
 
-    SENTINEL_RELATIVE_PATH = Path(".claude") / "code-intelligence-turn-state.json"  # type: ignore[misc]
+    SENTINEL_RELATIVE_PATH = Path(".pi", "dev-team") / "code-intelligence-turn-state.json"  # type: ignore[misc]
 
     def transcript_id(path: str) -> str:  # type: ignore[misc]
         return Path(path).stem
@@ -134,7 +134,7 @@ def _compose_message(qualifying: list) -> str | None:
 def _tools_used_this_turn(cwd: Path, transcript_path: str) -> list:
     """Which tool families ran earlier in the current turn, per the
     accumulating sentinel `code_intelligence_turn_mark.py` writes at
-    `$cwd/.claude/code-intelligence-turn-state.json`.
+    `$cwd/.pi/dev-team/code-intelligence-turn-state.json`.
 
     Cross-checks the sentinel's `transcript_id`/`turn_counter` against the
     freshly computed values (same turn-identity computation the write side
@@ -219,9 +219,9 @@ def _careful_active(careful_path: Path) -> bool:
     `artifact_paths.resolve_file()`, keyed off the payload's own `cwd`
     (#1900 follow-up in this file — the identical bug class already fixed
     in `destructive_guard.py`: `/careful`/`/guard` only ever write the
-    per-repo `<repo-root>/.claude/hooks/careful-state.json`, never a path
+    per-repo `<repo-root>/.pi/dev-team/hooks/careful-state.json`, never a path
     relative to this hook's own script directory, which in a real
-    installed session is the shared plugin-cache directory — one location
+    installed session is the shared package install directory — one location
     shared by every concurrently-running session, worktree, and project on
     the machine).
     """

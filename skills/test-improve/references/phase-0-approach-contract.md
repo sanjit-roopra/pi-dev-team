@@ -1,5 +1,5 @@
 Resolve every ambiguous input in **one batch** before any work starts, then
-persist the resolved inputs to `.claude/memory/test-improve/<slug>/phase-0.md`. The
+persist the resolved inputs to `.pi/dev-team/memory/test-improve/<slug>/phase-0.md`. The
 file must exist **before Phase 1** runs.
 
 **Detect language(s) and stack profile.** Inspect manifests for JS/TS
@@ -77,7 +77,7 @@ silent surprise.
 5. **Sink** — `--parent <url>` selects a tracker (ADO / GitHub / GitLab /
    Jira via the host CLI); missing CLI or omitted flag falls back to
    **local-files** mode (writes under `.dev-team-reports/test-improve/` and
-   `.claude/plans/test-improve/`).
+   `.pi/dev-team/plans/test-improve/`).
 6. **Code-lookup tools (all-or-none install)** — offer to install the three
    code-lookup tools (**CodeGraph**, **Repowise**, **Graphify**) so the review
    and analysis agents read verified skeletons and resolved call graphs instead
@@ -111,7 +111,7 @@ goal to the end.
 Run the check; do not judge it in prose:
 
 ```
-sh "${CLAUDE_PLUGIN_ROOT}/hooks/py.sh" "${CLAUDE_PLUGIN_ROOT}/scripts/coverage_gap_ranking.py" \
+sh "${DEV_TEAM_ROOT}/hooks/py.sh" "${DEV_TEAM_ROOT}/scripts/coverage_gap_ranking.py" \
   --report <existing coverage report> --repo-root <repo-path> \
   --target-line-pct <line target> --target-branch-pct <branch target> --json
 ```
@@ -149,11 +149,11 @@ This check is skipped entirely when knob 4 left no coverage percentage target
 active, or when knob 3 selected `refactor-allowed` (there is no mode conflict
 to surface).
 
-**Persistence.** Write the resolved inputs to `.claude/memory/test-improve/<slug>/phase-0.md` before Phase 1 runs — Phase 1 must not start until `phase-0.md` exists. This includes the knob-6 outcome (the operator's install choice, and for each tool whether it was already present, installed, declined, or failed).
+**Persistence.** Write the resolved inputs to `.pi/dev-team/memory/test-improve/<slug>/phase-0.md` before Phase 1 runs — Phase 1 must not start until `phase-0.md` exists. This includes the knob-6 outcome (the operator's install choice, and for each tool whether it was already present, installed, declined, or failed).
 
 **Immutability.** Phase-0 answers are **immutable** for the remainder of the
 run. `--from-phase` does not re-prompt Phase-0 inputs. To change them, delete
-`.claude/memory/test-improve/<slug>/phase-0.md` and re-run from Phase 0.
+`.pi/dev-team/memory/test-improve/<slug>/phase-0.md` and re-run from Phase 0.
 
 **`--analyze-only` semantics.** With `--analyze-only`, Phase 0 completes as
 normal, Phase 1 (`/test-health`) runs, and the orchestrator **exits after Phase 1**
@@ -180,11 +180,11 @@ explicitly.
 calling the helper — do **not** infer it in prose:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/test_improve_resume.py" <repo-path>
+python3 "${DEV_TEAM_ROOT}/scripts/test_improve_resume.py" <repo-path>
 ```
 
 The helper resolves the slug from `<repo-path>` (its last path segment), scans
-**only** that slug's `.claude/memory/test-improve/<slug>/` directory for the
+**only** that slug's `.pi/dev-team/memory/test-improve/<slug>/` directory for the
 completed-phase progress files (`phase-0.md` … `phase-9.md`, excluding
 `phase-3.md` — Phase 3 is conditional and tracked via `gherkin.md` instead,
 never a numbered progress file), finds the highest completed phase in

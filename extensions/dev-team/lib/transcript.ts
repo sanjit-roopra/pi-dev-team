@@ -1,8 +1,8 @@
 /**
- * Synthetic Claude Code subagent transcripts.
+ * Synthetic subagent transcripts in the hook protocol's format.
  *
  * The SubagentStop hooks (review_verdict_recorder.py, subagent_completion_guard.py,
- * task_completion_metrics.py) read a Claude-format sidechain transcript: the first record is the
+ * task_completion_metrics.py) read a sidechain transcript in that format: the first record is the
  * dispatch prompt (user turn), assistant records carry `attributionAgent`, `message.content` blocks,
  * `message.stop_reason` and `message.usage`. pi children run with --no-session, so the subagent tool
  * records the child's JSON event stream and writes this equivalent file before firing SubagentStop.

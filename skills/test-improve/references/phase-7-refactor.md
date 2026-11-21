@@ -3,7 +3,7 @@ returned `[b]` (backlog) or `[q]` (quit), Phase 7 is **skipped**.
 
 **Hard mode gate — Phase 7 refuses to run under `no-refactor`.** Before any
 Phase-7 work begins, `/test-improve` re-reads `refactor-mode` from
-`.claude/memory/test-improve/<slug>/phase-0.md`. When it records
+`.pi/dev-team/memory/test-improve/<slug>/phase-0.md`. When it records
 `refactor-mode: no-refactor`, Phase 7 **refuses to run** and is skipped —
 **even if `[y]` is somehow reached**. Phase 6 offers no `[y]` in this mode,
 so this gate is a defense-in-depth backstop: Phase 7 executes production-code
@@ -33,7 +33,7 @@ concurrently without `isolation: "worktree"` on every dispatch**; see
 
 **End-of-phase review loop.** After all Phase-7 Stories close, run the
 **same review loop as Phase 5**, writing evidence to
-`.claude/memory/test-improve/<slug>/phase-7-review.json` using the same
+`.pi/dev-team/memory/test-improve/<slug>/phase-7-review.json` using the same
 fixed schema:
 
 <!-- include: references/review-loop.md -->

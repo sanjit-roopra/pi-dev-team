@@ -1,10 +1,9 @@
-<!-- step 3 (agent eligibility and the change-shape, change-size and diff-signal gates). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 3 (agent eligibility and the change-shape, change-size and diff-signal gates). Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 ### 3. Determine enabled agents
 
 If `--background`: run only `doc-review`, `arch-review`, `naming-review`, `structure-review`. Skip all others.
 
-Otherwise read the roster from the **Review Agents** section of `knowledge/agent-registry.md` — each row names an agent and its `agents/<name>.md` file. **Never `Read` the bare `agents/` directory** (it throws `EISDIR`); if you must confirm files on disk, list them with `Glob("agents/*.md")`, never a directory `Read` (see `${CLAUDE_PLUGIN_ROOT}/knowledge/directory-enumeration.md`). All are enabled by default.
+Otherwise read the roster from the **Review Agents** section of `knowledge/agent-registry.md` — each row names an agent and its `agents/<name>.md` file. **Never `Read` the bare `agents/` directory** (it throws `EISDIR`); if you must confirm files on disk, list them with `Glob("agents/*.md")`, never a directory `Read` (see `${DEV_TEAM_ROOT}/knowledge/directory-enumeration.md`). All are enabled by default.
 
 **Agent eligibility is resolved by `select_lenses.py` (#1523).** For a diff-scoped run (auto-scope or `--since <ref>`) compute the changed-file list first — the same helper step 4 reuses for the `project-structure` context payload, so this is one computation feeding two consumers, not two ways to derive the same fact (#1733, #1734). **Always** carry the same `-c diff.relative=false -c core.quotePath=false` overrides step 1's own listing uses — omitting them here would let a repo/global `diff.relative=true` (or a non-ASCII path under default `core.quotePath`) desync this list from step 1's `--files`, silently zeroing every `--added` membership match below:
 
@@ -16,12 +15,12 @@ set -o pipefail  # a pipeline's status is its LAST command's without this —
 # Auto-scope (uncommitted changes):
 CHANGED_JSON=$({ git -c diff.relative=false -c core.quotePath=false diff --name-status; \
   git -c diff.relative=false -c core.quotePath=false diff --cached --name-status; } \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
   || { echo "ERROR: failed to compute the changed-file list" >&2; exit 1; }
 
 # --since <ref>:
 CHANGED_JSON=$(git -c diff.relative=false -c core.quotePath=false diff --name-status <ref>...HEAD \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
   || { echo "ERROR: failed to compute the changed-file list" >&2; exit 1; }
 ```
 
@@ -37,7 +36,7 @@ ADDED_LIST=$(printf '%s' "$CHANGED_JSON" | python3 -c 'import json, sys; print("
 Now run, feeding those two variables — not a separately-interpolated `<target files>` placeholder — to `select_lenses.py` via `--files-from`/`--added-from` process substitution:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_lenses.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/select_lenses.py" \
   --files-from <(printf '%s\n' "$FILES_LIST") \
   --added-from <(printf '%s\n' "$ADDED_LIST")
 ```
@@ -46,7 +45,7 @@ Deriving both from the same quoted `$CHANGED_JSON` variable — rather than re-i
 
 Always pass `--added-from` for a diff-scoped run, **even when `added` is `[]`** — an empty process substitution still supplies an explicit empty set (narrows away any added-only lens), whereas omitting the flag entirely reverts to the fail-safe fallback (matches an added-only `Scope:` like a plain glob list). Omit both `--files-from` and `--added-from` only for `--path`/`--all`/the full-repository fallback.
 
-Take its `lenses` array as the Scope-eligible roster, and **surface its `warnings`** in the review output — a bare agent name means that agent is missing its `Scope:` declaration and was included include-biased; `unnarrowed-added-only:<name>` (#1733) means an added-only lens was kept un-narrowed (matched like a plain glob list) because this run supplied no `--added`/`--added-from`; `skipped-non-executable:<name>` (#1923) means a `Scope: always` lens on the resolver's own `NON_EXECUTABLE_SKIP_ELIGIBLE` allowlist (`correctness-review` today) was dropped from `lenses` because every changed file matched a docs/config/asset/lockfile pattern that lens's own `## Skip` clause already covers — this is a deliberate cost optimization, not a coverage gap, so treat it as informational rather than `fail`-equivalent, distinct from the two shapes below; `unreadable-registry:<file>` means the roster could not be read at all; `unreadable-files-from:<path>`/`unreadable-added-from:<path>` mean the named `--files-from`/`--added-from` source could not be read — **treat either as equivalent to a `fail` status** for this run (an unreadable source is not "nothing changed") rather than proceeding as if the (now-truncated) file list were complete. Never silently drop any of these shapes from the report. The resolver reads each review agent's body-level `Scope:` declaration — `Scope: always` (eligible for any non-empty changeset), a glob list (eligible only when at least one target file matches a declared glob), `Scope: added-only` + globs (eligible only when a target file matching a declared glob was newly *added* — `component-architecture-review`'s dual-placement rule, #1733: unconditional in `/repo-review`, added-only here), `Scope: test-files` (eligible only when a changed file is a test file, resolved against `knowledge/test-file-indicators.md`'s single shared encoding rather than a glob list, which could not express `test_*.py`, `__tests__/`, or the C#/Java annotation indicators — `test-smell-review` declares this, #1978; note `test-review` deliberately stays `Scope: always`, because its coverage-gap check must see production diffs that add code *without* a matching test), or `Scope: on-demand` (never eligible for this per-diff roster at all — `token-efficiency-review`, `ai-provenance-review`, and `claude-setup-review` declare this; they are repo-wide drift/trend metrics dispatched instead by the whole-tree `/repo-review` command, #1735, and `refactor-opportunity-review` declares it too, #1976, dispatched by name at `/build`'s slice review checkpoint where its post-GREEN charter actually applies). `Scope:` is a body declaration, not frontmatter (`agent-contract.json`). This is the single source of truth shared with `/build`'s inline checkpoints: adding or changing an agent's trigger scope needs only an edit to that agent's own body — zero edits to this skill. (The framework-reactivity agents react/vue/angular are **not** in the resolver's roster; they are governed by the manifest rule below.)
+Take its `lenses` array as the Scope-eligible roster, and **surface its `warnings`** in the review output — a bare agent name means that agent is missing its `Scope:` declaration and was included include-biased; `unnarrowed-added-only:<name>` (#1733) means an added-only lens was kept un-narrowed (matched like a plain glob list) because this run supplied no `--added`/`--added-from`; `skipped-non-executable:<name>` (#1923) means a `Scope: always` lens on the resolver's own `NON_EXECUTABLE_SKIP_ELIGIBLE` allowlist (`correctness-review` today) was dropped from `lenses` because every changed file matched a docs/config/asset/lockfile pattern that lens's own `## Skip` clause already covers — this is a deliberate cost optimization, not a coverage gap, so treat it as informational rather than `fail`-equivalent, distinct from the two shapes below; `unreadable-registry:<file>` means the roster could not be read at all; `unreadable-files-from:<path>`/`unreadable-added-from:<path>` mean the named `--files-from`/`--added-from` source could not be read — **treat either as equivalent to a `fail` status** for this run (an unreadable source is not "nothing changed") rather than proceeding as if the (now-truncated) file list were complete. Never silently drop any of these shapes from the report. The resolver reads each review agent's body-level `Scope:` declaration — `Scope: always` (eligible for any non-empty changeset), a glob list (eligible only when at least one target file matches a declared glob), `Scope: added-only` + globs (eligible only when a target file matching a declared glob was newly *added* — `component-architecture-review`'s dual-placement rule, #1733: unconditional in `/repo-review`, added-only here), `Scope: test-files` (eligible only when a changed file is a test file, resolved against `knowledge/test-file-indicators.md`'s single shared encoding rather than a glob list, which could not express `test_*.py`, `__tests__/`, or the C#/Java annotation indicators — `test-smell-review` declares this, #1978; note `test-review` deliberately stays `Scope: always`, because its coverage-gap check must see production diffs that add code *without* a matching test), or `Scope: on-demand` (never eligible for this per-diff roster at all — `token-efficiency-review` and `ai-provenance-review` declare this; they are repo-wide drift/trend metrics dispatched instead by the whole-tree `/repo-review` command, #1735, and `refactor-opportunity-review` declares it too, #1976, dispatched by name at `/build`'s slice review checkpoint where its post-GREEN charter actually applies). `Scope:` is a body declaration, not frontmatter (`agent-contract.json`). This is the single source of truth shared with `/build`'s inline checkpoints: adding or changing an agent's trigger scope needs only an edit to that agent's own body — zero edits to this skill. (The framework-reactivity agents react/vue/angular are **not** in the resolver's roster; they are governed by the manifest rule below.)
 
 **Framework-specific reactivity review** — dispatch based on the project's dependency manifest (`package.json` etc.):
 
@@ -63,7 +62,7 @@ target file is documentation or config, so those lenses would only no-op. Decide
 deterministically with the shared helper (not by eyeballing the file list):
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_shape.py" --files <target files>
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_shape.py" --files <target files>
 ```
 
 It prints `{"hasRuntimeSurface": <bool>, "isTestOnly": <bool>, "isProseOnly":
@@ -73,8 +72,8 @@ change shape, not by `Scope:`).
 
 `isProseOnly` (#2104) reports a third, independent property: every changed
 file is `.md`/`.mdx`. Unlike `hasRuntimeSurface`, this makes **no** exception
-for functional Claude-config markdown (`agents/`, `skills/`, `knowledge/`,
-`.claude/`, …) — that markdown drives agent behavior, so `performance-review`
+for functional agent-config markdown (`agents/`, `skills/`, `knowledge/`,
+`.claude/` or `.pi/dev-team/`, …) — that markdown drives agent behavior, so `performance-review`
 and `correctness-review` still apply to it, but a `.md` file cannot exhibit an
 injection/auth/data-exposure vulnerability, a domain-boundary leak, a
 test-coverage gap, or a resource leak/N+1 query regardless of whether it also
@@ -104,7 +103,7 @@ a separate, per-lens decision that must cite the measured split, exactly as the
 architectural-impact gate requires for widening `GATED_LENSES`. Read the field
 for telemetry; do not narrow a roster on it until it does gate something. The gate is **fail-safe**: any
 file it cannot prove is doc/config (source, an unknown extension, or functional
-Claude-config markdown under `agents/`, `skills/`, `knowledge/`, `.claude/`, …)
+agent-config markdown under `agents/`, `skills/`, `knowledge/`, `.claude/` or `.pi/dev-team/`, …)
 counts as runtime surface and keeps every lens. This never fires on a pure-docs
 changeset — that is already handled earlier by the documentation-only
 short-circuit; this gate covers the doc/config-**mixed** and config-only diffs
@@ -135,10 +134,10 @@ union unstaged and staged the same way step 1 unions `--name-only`:
 
 ```bash
 # Auto-scope (uncommitted changes):
-{ git diff --numstat; git diff --cached --numstat; } | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
+{ git diff --numstat; git diff --cached --numstat; } | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
 
 # --since <ref>:
-git diff --numstat <ref>...HEAD | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
+git diff --numstat <ref>...HEAD | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
 ```
 
 It prints `{"filesChanged": <int>, "addedLines": <int>, "qualifiesForFastPath":
@@ -177,11 +176,11 @@ boundary for it to evaluate. Decide deterministically:
 ```bash
 # Auto-scope (uncommitted changes):
 { git -c diff.relative=false diff --no-color; git -c diff.relative=false diff --cached --no-color; } \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
 
 # --since <ref>:
 git -c diff.relative=false diff --no-color <ref>...HEAD \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
 ```
 
 It prints `{"signals": [...], "hasArchitecturalImpact": <bool>, "skipLenses":

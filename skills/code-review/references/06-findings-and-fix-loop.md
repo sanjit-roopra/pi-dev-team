@@ -1,5 +1,4 @@
-<!-- step 6 (findings prompt) and 6a (review-fix loop, round ledger, closing pass, exit conditions). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 6 (findings prompt) and 6a (review-fix loop, round ledger, closing pass, exit conditions). Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 ### 6. Present findings and ask for direction
 
 If zero actionable issues, skip to step 7.
@@ -77,7 +76,7 @@ while actionable_issues > 0 AND iteration ≤ MAX_ITERATIONS:
        and the agent's lens definition, NOT the full target file set, and
        grant the mandatory `insufficient-context` escape. Resolve each
        agent's verification tier with `python3
-       "$CLAUDE_PLUGIN_ROOT/scripts/verify_tier.py" --agent <name>`. Full
+       "$DEV_TEAM_ROOT/scripts/verify_tier.py" --agent <name>`. Full
        contract: [`knowledge/verification-mode.md`](../../knowledge/verification-mode.md).
        Carry forward statuses of agents that passed.
     5. Re-aggregate. Reclassify remaining issues.
@@ -86,7 +85,7 @@ while actionable_issues > 0 AND iteration ≤ MAX_ITERATIONS:
        returns `terminate`/`reason` — honor it: `converged` and `round-cap`
        both leave this loop.
     5b. **Record this round (#1624).** Append one row per re-dispatch round
-       to `.claude/metrics/review-value.jsonl`, passing THIS iteration's fix
+       to `.pi/dev-team/metrics/review-value.jsonl`, passing THIS iteration's fix
        diff so `fix_provenance_new` can be computed (see below).
     6. iteration += 1
 
@@ -103,15 +102,15 @@ iteration cap but, on its own, no notion of finding *identity* across rounds
 # RUN_ID identifies this changeset; the ledger is discarded if it belongs to
 # a different one. Any stable digest of the target set works.
 RUN_ID=$(printf '%s\n' <target files> | sort | sha256sum | cut -c1-16)
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/finding_signature.py" \
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/finding_signature.py" \
   --round <N> --findings <this-round's-findings.json> \
   --run-id "$RUN_ID" \
-  --state .claude/memory/review-round-state.json
+  --state .pi/dev-team/memory/review-round-state.json
 ```
 
 It prints `{"round", "new", "carried", "actionable_new", "ledger_reset",
 "terminate", "reason"}` and maintains the durable ledger at
-`.claude/memory/review-round-state.json`, so `/continue` can resume a review
+`.pi/dev-team/memory/review-round-state.json`, so `/continue` can resume a review
 mid-loop and step 6a's `--carried` count for #1624 comes from the same
 source rather than being re-derived from memory.
 
@@ -164,7 +163,7 @@ this round's new findings to the previous round's fix:
 # Item 1 applied fixes; capture them as a diff, then (item 3) `git add` them.
 git -c diff.relative=false diff --no-color > "$FIX_DIFF"
 # …after item 5's re-aggregation:
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/review_round_log.py" \
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/review_round_log.py" \
   --round <N> --agents "<agents re-dispatched this round>" \
   --findings <this-round's-NEW-findings.json> \
   --carried <count of findings carried over from the prior round> \
@@ -188,7 +187,7 @@ split, gate recidivism) are computed by `/harness-audit` — see its Step 4a.
 This used to be satisfied by re-dispatching the **full** original panel, which made a one-line fix cost an 18-agent round. **Unconditionally, after any loop iteration ran** (i.e. any fix was applied and re-staged) — not only when the count looks short, since that count isn't something to reason about from memory — run a **closing pass** instead. Compose it deterministically, don't pick the set by hand:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/closing_pass.py" \
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/closing_pass.py" \
   --fixed-by "<agents whose findings were fixed during the loop>" \
   --roster "@<select_lenses.py output>" --panel "<the round-1 panel>" \
   --panel-files "<files the round-1 panel targeted>" \

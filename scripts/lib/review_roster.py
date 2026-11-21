@@ -15,13 +15,13 @@ keep them together so an agent added for one reason is handled by both:
   roster (they never run as a ``/build`` or ``/code-review`` lens).
 
 Genuine review agents whose findings are properties of the whole repository
-rather than any one diff (``claude-setup-review``, ``token-efficiency-review``,
+rather than any one diff (``token-efficiency-review``,
 ``ai-provenance-review``) are **not** members here — they declare their own
 exclusion directly in their body via ``Scope: on-demand``
 (``select_lenses.SCOPE_ON_DEMAND``), which the resolver reads and never
 selects for the per-diff roster. That is the single-source-of-truth
 mechanism ``select_lenses.py``'s own docstring already promises for every
-other ``Scope:`` kind — putting these three agents in this set instead would
+other ``Scope:`` kind — putting these two agents in this set instead would
 be a second, competing mechanism for the same fact, and would also (wrongly)
 exempt them from the ``Scope:`` declaration requirement they actually
 satisfy. See each agent's own comment for why it is whole-tree, not
@@ -41,7 +41,7 @@ from __future__ import annotations
 import re
 
 #: A body-level ``Scope: <value>`` line. Not frontmatter — see
-#: ``plugins/marketplace-dev/knowledge/agent-contract.json`` (issue #1333).
+#: the agent body contract (issue #1333).
 #: Exposed as a raw pattern string too, so a consumer needing different
 #: compile-time flags (e.g. ``re.MULTILINE`` for a whole-body ``.search()``
 #: instead of a per-line ``.match()``) shares the same grammar without a
@@ -62,12 +62,11 @@ NON_REVIEW_AGENTS = frozenset({
     "qa-engineer",
     "quality-reviewer",  # Stage-2 coordinator, orchestrator-dispatched — not a lens
     "security-engineer",
-    "session-analysis",
     "software-engineer",
     "spec-reviewer",  # Stage-1 spec gate, orchestrator-dispatched — not a lens
     "tech-writer",
     "ui-ux-designer",
-    # `claude-setup-review`, `token-efficiency-review`, and `ai-provenance-review`
+    # `token-efficiency-review` and `ai-provenance-review`
     # are deliberately NOT here — they are genuine review agents that declare
     # `Scope: on-demand` directly in their own body, which select_lenses.py's
     # resolver reads and excludes on its own. See this module's docstring.

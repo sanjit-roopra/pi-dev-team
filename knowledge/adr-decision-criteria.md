@@ -59,6 +59,6 @@ Suggest an ADR when you observe any of the following during review or implementa
 ## Relationship to Other Documents
 
 - **Design doc** — explores options before a decision is made. An ADR records the outcome after the decision is made. They complement each other: design doc → decision → ADR.
-- **CLAUDE.md / inline comments** — capture *what* the code does or *how* it works. ADRs capture *why* a particular approach was chosen over alternatives.
+- **AGENTS.md / inline comments** — capture *what* the code does or *how* it works. ADRs capture *why* a particular approach was chosen over alternatives.
 - **`adr-author` agent** — applies this framework and writes the ADR prose. This file is the criteria; that agent is the author.
 - **`adr-tools` skill** — handles CLI mechanics (`adr new`, `adr link`, TOC regeneration). Use after the author has drafted the prose.

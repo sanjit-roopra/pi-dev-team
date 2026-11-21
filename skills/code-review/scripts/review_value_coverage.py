@@ -31,7 +31,7 @@ value stream lacks. Comparing the two gives a per-lens collection rate that no
 amount of missing value rows can inflate.
 
 The denominator is honest about its own limits: a dispatch the ledger missed
-(hook disabled, older plugin version) is invisible here too, so coverage is an
+(hook disabled, older package version) is invisible here too, so coverage is an
 upper bound on collection, never an under-estimate of the gap.
 
 Stdlib-only. See docs/python-hook-contract.md.
@@ -45,7 +45,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-# skills/code-review/scripts -> skills/code-review -> skills -> plugin root
+# skills/code-review/scripts -> skills/code-review -> skills -> package root
 _PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 _HOOKS_LIB_DIR = _PLUGIN_ROOT / "hooks" / "lib"
 if str(_HOOKS_LIB_DIR) not in sys.path:
@@ -103,12 +103,12 @@ VERDICTS = (
 
 def _resolve(stream: str, cwd: Path) -> Path:
     # Read-only report: migrate=False so running it never migrates a legacy
-    # top-level metrics/ file or creates .claude/metrics/ as a side effect
+    # top-level metrics/ file or creates .pi/dev-team/metrics/ as a side effect
     # (mirrors hooks/lib/metrics_query.py::_stream_path's same reasoning, and
     # matches contract_failure_report.py's own _resolve() — #2059).
     if review_dispatch_ledger is not None:
         return review_dispatch_ledger.resolve_stream("metrics", stream, cwd, migrate=False)
-    return cwd / ".claude" / "metrics" / stream
+    return cwd / ".pi" / "dev-team" / "metrics" / stream
 
 
 def read_jsonl(path: Path) -> tuple[list[dict], int]:
@@ -272,7 +272,7 @@ def _format_text(report: dict) -> str:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Report whether .claude/metrics/review-value.jsonl can support a "
+            "Report whether .pi/dev-team/metrics/review-value.jsonl can support a "
             "per-lens pruning decision. Consult before citing per-lens value."
         )
     )

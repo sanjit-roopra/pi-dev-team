@@ -1,4 +1,4 @@
-"""pitest (Java/Kotlin) mutation-testing adapter — Python port of pitest.sh.
+"""pitest (Java/Kotlin) mutation-testing adapter.
 
 Key features (mirroring bash):
   - ADAPTER_TIMEOUT default 300s (Maven startup alone can eat 20-30s).

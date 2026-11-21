@@ -1,14 +1,14 @@
 ---
 
 name: token-efficiency-review
-description: Token usage optimization, file length, CLAUDE.md size, LLM anti-patterns
+description: Token usage optimization, file length, AGENTS.md size, LLM anti-patterns
 tools: Read, Grep, Glob
 model: haiku
 effort: medium
 color: green
 ---
 
-> **Implemented by:** ${CLAUDE_PLUGIN_ROOT}/scripts/token_efficiency_review.py
+> **Implemented by:** ${DEV_TEAM_ROOT}/scripts/token_efficiency_review.py
 
 # Token Efficiency Review
 
@@ -17,7 +17,7 @@ Cites: [adversarial-review-protocol]
 Enforcement: script
 
 Dispatched by the whole-tree `/repo-review` command, never by
-`/code-review`'s per-diff panel (#1733). Its findings (file length, CLAUDE.md
+`/code-review`'s per-diff panel (#1733). Its findings (file length, AGENTS.md
 size, LLM anti-patterns) are properties of absolute size and accumulated
 drift, not of any single diff's delta — a diff-scoped review of a 20-line PR
 can't even see a file that crept past a size threshold over 10 separate small
@@ -26,7 +26,7 @@ directly and never selects it for the per-diff roster — the agent body is
 the single source of truth for this exclusion, same as any other `Scope:`
 kind.
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=efficient, warn=optimization opportunities, fail=major waste
 Severity: error=critical waste, warning=significant, suggestion=minor
@@ -36,17 +36,17 @@ Context needs: full-file
 
 ## Skip
 
-Return `{"status": "skip", "issues": [], "summary": "No Claude Code config or source files in target"}` when:
+Return `{"status": "skip", "issues": [], "summary": "No agent config or source files in target"}` when:
 
-- Target has no CLAUDE.md, rules, skills, or source code files
+- Target has no AGENTS.md, CLAUDE.md, rules, skills, or source code files
 - Target contains only binary or generated files
 
 ## Thresholds
 
 | Target | Limit |
 | -------- | ------- |
-| CLAUDE.md | <5000 chars |
-| Code examples in CLAUDE.md | ≤10 |
+| AGENTS.md | <5000 chars |
+| Code examples in AGENTS.md | ≤10 |
 | Rules | ≤200 chars each |
 | Skill definitions | ≤2000 chars |
 | File length | ≤500 lines |
@@ -57,9 +57,9 @@ Return `{"status": "skip", "issues": [], "summary": "No Claude Code config or so
 
 ## Findings
 
-Metric thresholds are enforced by `${CLAUDE_PLUGIN_ROOT}/scripts/token_efficiency_review.py` (exit 1 for errors, exit 2 for warnings). This agent provides qualitative analysis for issues the script cannot detect mechanically.
+Metric thresholds are enforced by `${DEV_TEAM_ROOT}/scripts/token_efficiency_review.py` (exit 1 for errors, exit 2 for warnings). This agent provides qualitative analysis for issues the script cannot detect mechanically.
 
-### CLAUDE.md
+### AGENTS.md
 
 - Char limit exceeded (script-enforced at >5000)
 - Excessive code examples
@@ -77,7 +77,7 @@ Metric thresholds are enforced by `${CLAUDE_PLUGIN_ROOT}/scripts/token_efficienc
 ### Skills
 
 - Missing skills for common workflows
-- Step-by-step procedures in CLAUDE.md that belong in skills
+- Step-by-step procedures in AGENTS.md that belong in skills
 - Verbose skill definitions
 
 ### Code
@@ -95,7 +95,7 @@ Metric thresholds are enforced by `${CLAUDE_PLUGIN_ROOT}/scripts/token_efficienc
 
 ## LLM-Native Validation
 
-CLAUDE.md, rules, and skills must follow LLM-native patterns. Flag violations:
+AGENTS.md, rules, and skills must follow LLM-native patterns. Flag violations:
 
 ### Anti-patterns (flag these)
 
@@ -124,11 +124,11 @@ CLAUDE.md, rules, and skills must follow LLM-native patterns. Flag violations:
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these token-efficiency-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these token-efficiency-review-specific challenges:
 
 - Did you measure the actual char/line counts against the thresholds, or estimate "looks long"?
 - For each LLM-anti-pattern finding (role preamble, filler, hedging), did you quote the offending text?
-- Did you check whether a multi-step procedure in CLAUDE.md or rules should be a skill, not just flag its length?
+- Did you check whether a multi-step procedure in AGENTS.md or rules should be a skill, not just flag its length?
 - Are there duplicate or repetitive sections across files you missed by reviewing each file alone?
 - For each "should be terser" suggestion, did you confirm trimming wouldn't drop a load-bearing instruction?
 

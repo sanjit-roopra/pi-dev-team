@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Python port of hooks/token-efficiency-review.sh (#607 / #572 Phase 3).
+"""token_efficiency_review — PostToolUse hook (run by the dev-team extension; #607).
 
-PostToolUse hook for Write/Edit — checks file length, CLAUDE.md length,
-and function length. Emits advisory warnings on stdout; never blocks.
+PostToolUse hook for Write/Edit — checks file length, instructions-file
+(AGENTS.md / CLAUDE.md) length, and function length. Emits advisory warnings
+on stdout; never blocks.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PostToolUse JSON on stdin
     Output: Advisory warnings on stdout, or empty
     Exit  : Always 0
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations
@@ -26,19 +27,21 @@ if str(_LIB_DIR) not in sys.path:
 
 try:
     from token_efficiency_limits import (  # type: ignore[import-not-found]
-        CLAUDE_MD_CHAR_LIMIT,
         FILE_LINE_LIMIT,
+        INSTRUCTIONS_MD_CHAR_LIMIT,
     )
     from token_efficiency_limits import char_count as _char_count
-    from token_efficiency_limits import is_claude_md_file as _is_claude_md_file
+    from token_efficiency_limits import (
+        is_instructions_md_file as _is_instructions_md_file,
+    )
 except ImportError:
     # Fail-open per the hook contract: never let a missing sibling module
     # break advisory output. Mirror the shared defaults and logic.
-    CLAUDE_MD_CHAR_LIMIT = 5000
+    INSTRUCTIONS_MD_CHAR_LIMIT = 5000
     FILE_LINE_LIMIT = 500
 
-    def _is_claude_md_file(path: Path) -> bool:
-        return path.name.lower() == "claude.md"
+    def _is_instructions_md_file(path: Path) -> bool:
+        return path.name.lower() in {"agents.md", "claude.md"}
 
     def _char_count(path: Path) -> int:
         return len(path.read_text(encoding="utf-8", errors="replace"))
@@ -89,17 +92,17 @@ def _read_json(raw: bytes) -> dict:
         return {}
 
 
-def _check_claude_md(path: Path) -> str | None:
-    """Character-count check for CLAUDE.md files."""
-    if not _is_claude_md_file(path):
+def _check_instructions_md(path: Path) -> str | None:
+    """Character-count check for instructions files (AGENTS.md / CLAUDE.md)."""
+    if not _is_instructions_md_file(path):
         return None
     try:
         count = _char_count(path)
     except OSError:
         return None
-    if count > CLAUDE_MD_CHAR_LIMIT:
+    if count > INSTRUCTIONS_MD_CHAR_LIMIT:
         return (
-            f"Token: CLAUDE.md is {count} chars (limit: {CLAUDE_MD_CHAR_LIMIT}). "
+            f"Token: {path.name} is {count} chars (limit: {INSTRUCTIONS_MD_CHAR_LIMIT}). "
             "Move detailed examples to docs/ or skills."
         )
     return None
@@ -176,9 +179,9 @@ def main() -> int:
         return 0
 
     warnings: list[str] = []
-    claude_md_warning = _check_claude_md(file_path)
-    if claude_md_warning:
-        warnings.append(claude_md_warning)
+    instructions_md_warning = _check_instructions_md(file_path)
+    if instructions_md_warning:
+        warnings.append(instructions_md_warning)
     warnings.extend(_check_source_file(file_path))
 
     if warnings:

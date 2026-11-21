@@ -4,7 +4,7 @@
 # Must match the filename convention; used by hooks as agent_type
 name: your-agent-name
 
-# REQUIRED — tells Claude when to delegate to this agent
+# REQUIRED — tells the model when to delegate to this agent
 # Write a clear, specific description. Include "Use proactively" to encourage automatic delegation.
 description: >-
   One-sentence description of what this agent does and when to use it.
@@ -30,7 +30,7 @@ tools: Read, Grep, Glob
 # OPTIONAL — model to use for this agent's dispatch
 # An alias (haiku | sonnet | opus | fable), a full model ID, or inherit.
 # Resolved natively by the harness before dispatch (ADR 0026) — there is no
-# plugin-side PreToolUse hook, routing map, or ladder file in this path.
+# PreToolUse hook, routing map, or ladder file in this path.
 # Do not pin a dated snapshot ID here; use the alias.
 # inherit: use the same model as the main conversation (default if omitted)
 #
@@ -47,8 +47,7 @@ model: sonnet
 effort: high
 
 # OPTIONAL — permission mode
-# WARNING: Ignored for plugin agents (silently has no effect).
-# Only works for project agents (.claude/agents/) or user agents (~/.claude/agents/).
+# NOTE: pi-dev-team ignores this field.
 # Values: default | acceptEdits | auto | dontAsk | bypassPermissions | plan
 # permissionMode: default
 
@@ -64,8 +63,7 @@ effort: high
 #   - error-handling-patterns
 
 # OPTIONAL — MCP servers available to this agent
-# WARNING: Ignored for plugin agents (silently has no effect).
-# Only works for project agents (.claude/agents/) or user agents (~/.claude/agents/).
+# NOTE: pi-dev-team ignores this field.
 # mcpServers:
 #   - playwright:
 #       type: stdio
@@ -73,8 +71,7 @@ effort: high
 #       args: ["-y", "@playwright/mcp@latest"]
 
 # OPTIONAL — lifecycle hooks scoped to this agent
-# WARNING: Ignored for plugin agents (silently has no effect).
-# Only works for project agents (.claude/agents/) or user agents (~/.claude/agents/).
+# NOTE: pi-dev-team ignores this field.
 # hooks:
 #   PreToolUse:
 #     - matcher: "Bash"
@@ -83,10 +80,8 @@ effort: high
 #           command: "./scripts/validate-command.sh"
 
 # OPTIONAL — persistent memory directory that survives across conversations
+# NOTE: pi-dev-team ignores this field.
 # Values: user | project | local
-#   user:    ~/.claude/agent-memory/<name>/    (all projects)
-#   project: .claude/agent-memory/<name>/      (this project, check in to VCS)
-#   local:   .claude/agent-memory-local/<name>/ (this project, do NOT check in)
 # memory: project
 
 # OPTIONAL — always run this agent as a background task (non-blocking)
@@ -105,11 +100,12 @@ effort: high
 # isolation: worktree
 
 # OPTIONAL — display color in the task list and transcript
+# NOTE: pi-dev-team ignores this field.
 # Values: red | blue | green | yellow | purple | orange | pink | cyan
 # color: blue
 
 # OPTIONAL — auto-submitted first turn when this agent runs as the main session
-# (via --agent flag or `agent` setting in settings.json)
+# NOTE: pi-dev-team ignores this field.
 # Commands and skills in this prompt are processed.
 # initialPrompt: "Load the project context and summarize the current state."
 ---

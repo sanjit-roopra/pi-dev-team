@@ -6,8 +6,9 @@
 # pre-Python bootstrap carve-out ADR 0015 grants install.sh — not a regression
 # on the "shipped scripts are Python" rule.
 #
-# Why it exists: every hook command in settings.json and the /version skill
-# route their Python invocations through this shim so the plugin works on
+# Why it exists: skills that run Python helpers (e.g. report_pdf, the
+# code-review scripts) route their invocations through this shim (the dev-team
+# extension runs hooks with its own Python probe) so the package works on
 # machines where Python 3 exists under a name other than `python3`. Notably
 # Windows, where python.org installs `python.exe`/`py.exe` but NOT
 # `python3.exe`, and the only `python3` on PATH is the WindowsApps

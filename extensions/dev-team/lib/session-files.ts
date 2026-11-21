@@ -1,5 +1,5 @@
 /**
- * Files the port writes for a session: synthetic subagent transcripts (read by the SubagentStop hooks)
+ * Files dev-team writes for a session: synthetic subagent transcripts (read by the SubagentStop hooks)
  * and the complete output of every subagent. All of it lives in one private
  * directory per pi process, created with mkdtemp (mode 0700, unpredictable name), so another local
  * user cannot pre-create or redirect it in a shared temp directory. Files are created exclusively

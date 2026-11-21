@@ -50,7 +50,7 @@ source of truth for the manual commands.
    project venv. Never `pip install --user` or a global pipx install.
 3. **Configuration** — Ruff honors the project's `ruff.toml`/`pyproject.toml`
    when present (Ruff's default config discovery — no override flags) and
-   falls back to Ruff's defaults; the plugin pins no curated rule set — the
+   falls back to Ruff's defaults; the package pins no curated rule set — the
    project owns its quality bar. mypy honors `mypy.ini`/`pyproject.toml`
    (`[tool.mypy]`). A plain `src/`-layout project (modules with no
    `__init__.py`, no mypy package-base config) needs no manual setup
@@ -182,7 +182,7 @@ Registered by #810.
 From your project root (requires a JDK/JRE — `java` on PATH):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/install-java-static-analysis.py"
+python3 "${DEV_TEAM_ROOT}/scripts/install-java-static-analysis.py"
 ```
 
 Installs a pinned PMD distribution into the repo-local **`.pmd/`**
@@ -200,7 +200,7 @@ install.
 - **Repo-root `pmd-ruleset.xml`**, when present, is used by both the
   build-time lane and the `/code-review` pass. Carry your own
   `<exclude-pattern>` entries in it (generated-output dirs like `target/`).
-- Otherwise the plugin's quickstart-wrapping default ruleset applies —
+- Otherwise the package's quickstart-wrapping default ruleset applies —
   PMD's quickstart rules plus excludes for `target/`, `build/`, `out/`,
   and `.gradle/`. Test sources run the same rules as production code.
 

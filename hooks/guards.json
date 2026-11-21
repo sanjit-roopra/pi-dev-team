@@ -17,8 +17,9 @@
     ".credentials/*"
   ],
   "warn_paths": [
-    ".claude/settings.json",
-    ".claude/claude.md"
+    ".pi/settings.json",
+    ".pi/dev-team.json",
+    ".pi/dev-team.local.json"
   ],
   "allowed_paths": [
     "*.md"

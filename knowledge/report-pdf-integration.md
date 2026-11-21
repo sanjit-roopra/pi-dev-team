@@ -20,7 +20,7 @@ When a skill is invoked with `--pdf`:
    produced (each skill knows its own — see the table below) and render it:
 
    ```bash
-   sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" <the-report-path-just-written>
+   sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" <the-report-path-just-written>
    ```
 
    The module prints a `Rendering PDF via <engine>…` progress line (the

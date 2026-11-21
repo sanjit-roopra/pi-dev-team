@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""post_compact_state_reinject — Claude Code SessionStart hook (#2177, slice 4).
+"""post_compact_state_reinject — SessionStart hook (#2177, slice 4).
 
 Harness auto-compact replaces the conversation with a generic summary;
 plan-step state is not guaranteed to survive. Matcher `compact` fires
@@ -10,7 +10,7 @@ re-injects the active `/build` state as `additionalContext`:
     items (quoted from the plan; data, not instructions): 2.3, 2.4.
 
 State comes from the one shared reader, `hooks/lib/build_state.py`
-(`.claude/memory/build-phase.json`, written by `/build`); the plan file is
+(`.pi/dev-team/memory/build-phase.json`, written by `/build`); the plan file is
 the path recorded there — never a glob. Unchecked items are the `- [ ]`
 lines under the plan's `## Build Progress`. Between steps (`/build` keeps a
 `between-steps` record) the line reads "between steps, next step=N.M". Plans that live only in an
@@ -125,7 +125,7 @@ def assemble(
 
 
 def _project_dir(payload: dict) -> Path:
-    override = os.environ.get("CLAUDE_PROJECT_DIR")
+    override = os.environ.get("DEV_TEAM_PROJECT_DIR")
     if override and Path(override).is_dir():
         return Path(override)
     return Path(resolve_cwd(payload))

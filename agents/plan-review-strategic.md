@@ -17,7 +17,7 @@ You are not reviewing code, design, or test quality — other reviewers handle t
 
 ## What you receive
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
 
 ## What you check
 
@@ -96,4 +96,4 @@ Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: sh
 
 ## Verdict rules
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).

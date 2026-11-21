@@ -12,15 +12,15 @@ detect_correction_turn` already detects:
              agent/skill name.
   shape      what kind of correction it was -- `SHAPE_VALUES` below.
 
-Deterministic-first (CLAUDE.md's "deterministic tools over inference"
+Deterministic-first (the "deterministic tools over inference" project
 rule, and this issue's own "must be cheap" constraint): every label comes
 from pattern-matching over tool-call shape and correction-turn keywords,
 the same style `classify.CORRECTION_RE` already uses to DETECT a
 correction turn in the first place. No model call is ever made here. When
 `shape` can't be resolved confidently, it's reported as `"ambiguous"`
 with `confidence: "low"` rather than guessed -- the inference share is a
-queryable statistic (`accuracy.correction_causes.ambiguous_share` in
-`session_report.py`), never hidden.
+queryable statistic (`accuracy.correction_causes.ambiguous_share` in a
+session report), never hidden.
 
 Privacy: only the four labels below are ever emitted to a digest. The
 correction TEXT (`classify_shape`'s `text` argument) is read in memory
@@ -68,7 +68,7 @@ def is_review_agent_name(name: str | None) -> bool:
     repo's own review-agent naming convention: `<domain>-review`,
     `<domain>-reviewer` (`quality-reviewer`, `spec-reviewer`), or
     `plan-review-<facet>` (`plan-review-acceptance`, ...). Checked against
-    every review agent under `plugins/dev-team/agents/` at the time this
+    every review agent under `agents/` at the time this
     was written -- a naming-convention check, not a registry lookup, so it
     needs no registry threaded through the classifier."""
     if not name:

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """orchestrator.py — Python dispatcher for the dev-team three-phase pipeline.
 
-CLI: python3 ${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator.py [--resume] [--skip-llm]
+CLI: python3 ${DEV_TEAM_ROOT}/scripts/orchestrator.py [--resume] [--skip-llm]
      [--memory-dir <path>] [--classify trivial|standard|complex] [--fail-wave]
      [--dispatch-personas]
 
 Flags:
   --resume            Skip phases whose state files already exist in memory-dir.
   --skip-llm          Use stubs for classify() and all LLM dispatch.
-  --memory-dir <path> Where to read/write phase state (default: .claude/memory/ relative to CWD).
+  --memory-dir <path> Where to read/write phase state (default: .pi/dev-team/memory/ relative to CWD).
   --classify <size>   Override classification (trivial|standard|complex). For testing only.
   --fail-wave         Simulate a wave barrier failure (for testing).
   --dispatch-personas Dispatch plan-review personas (for testing).
@@ -138,7 +138,7 @@ TECH_WRITER_PERSONA = "tech-writer"
 # constant at all.
 IMPLEMENT_WAVE_SLICES = ("implement-1",)
 
-# Timeouts (seconds) for the two `claude -p` subprocess dispatch sites below.
+# Timeouts (seconds) for the two `dev-team-run -p` subprocess dispatch sites below.
 # Unverified placeholders, not measured against a real dispatch — pinned by
 # a direct test (test_orchestrator.py) per follow-up #1716 so an accidental
 # edit fails fast instead of surfacing only as a flaky/slow-CLI symptom;
@@ -224,7 +224,7 @@ async def classify(request: str, skip_llm: bool = False) -> dict:
             functools.partial(
                 subprocess.run,
                 [
-                    "claude",
+                    "dev-team-run",
                     "-p",
                     (
                         "Classify this task as exactly one of: trivial, standard, or complex. "
@@ -258,7 +258,7 @@ def _recon_artifact_path(root: Path) -> Path:
     """Path to codebase-recon's JSON artifact for the repo at `root`.
 
     Per agents/codebase-recon.md's Contract section: always
-    `.claude/memory/recon-<slug>.json`. `root` is deliberately the caller's
+    `.pi/dev-team/memory/recon-<slug>.json`. `root` is deliberately the caller's
     own CWD, not a git-root resolution (e.g.
     hooks/lib/artifact_paths.py::memory_dir, used by other scripts in this
     directory for that purpose) — the recon *agent*'s prompt writes this
@@ -272,12 +272,12 @@ def _recon_artifact_path(root: Path) -> Path:
     diverge — inherent to the recon agent's contract, not something this
     function can paper over.
     """
-    return root / ".claude" / "memory" / f"recon-{derive_slug(root)}.json"
+    return root / ".pi" / "dev-team" / "memory" / f"recon-{derive_slug(root)}.json"
 
 
 async def _resolve_recon_artifact(personas: list, results: list, cwd: Path) -> str | None:
     """Link codebase-recon's own artifact (agents/codebase-recon.md's
-    Contract — .claude/memory/recon-<slug>.json) into Research state, so a
+    Contract — .pi/dev-team/memory/recon-<slug>.json) into Research state, so a
     Plan-phase consumer doesn't need to independently know that naming
     convention (follow-up #1716). Returns `None` when codebase-recon wasn't
     dispatched, didn't succeed, or its artifact file isn't on disk (e.g.
@@ -385,7 +385,7 @@ async def _default_phase_plan(
     )
     critics_skipped_reason = None
     if _all_personas_failed(core_results):
-        # Every core-trio persona failed (most plausibly: the claude CLI is
+        # Every core-trio persona failed (most plausibly: the dev-team-run helper is
         # unreachable) — skip the five critic dispatches entirely rather
         # than spend real LLM cost critiquing identical failure stubs.
         critic_results = []
@@ -546,7 +546,7 @@ def _failed_result(persona: str, error: str) -> dict:
 
 
 def _parse_dispatch_envelope(stdout: str, persona: str) -> dict:
-    """Parse a `claude -p --output-format json` envelope into a dispatch result.
+    """Parse a `dev-team-run -p --output-format json` envelope into a dispatch result.
 
     Status is derived solely from the envelope's `is_error` field and is
     never overwritten by the parsed payload. For personas in
@@ -605,7 +605,7 @@ def _parse_dispatch_envelope(stdout: str, persona: str) -> dict:
 
 
 async def dispatch_persona(persona: str, plan: dict, skip_llm: bool = False) -> dict:
-    """Dispatch a persona via `claude -p --agent <persona> --output-format json`.
+    """Dispatch a persona via `dev-team-run -p --agent <persona> --output-format json`.
 
     In --skip-llm mode, returns a stub success result without invoking the CLI.
     """
@@ -632,7 +632,7 @@ async def dispatch_persona(persona: str, plan: dict, skip_llm: bool = False) -> 
             functools.partial(
                 subprocess.run,
                 [
-                    "claude",
+                    "dev-team-run",
                     "-p",
                     "--agent",
                     persona,
@@ -843,9 +843,9 @@ def main(argv=None) -> int:
     )
     ap.add_argument(
         "--memory-dir",
-        default=".claude/memory",
+        default=".pi/dev-team/memory",
         metavar="PATH",
-        help="Where to read/write phase state (default: .claude/memory/)",
+        help="Where to read/write phase state (default: .pi/dev-team/memory/)",
     )
     ap.add_argument(
         "--classify",

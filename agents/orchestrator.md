@@ -15,8 +15,6 @@ skills:
   - specs
   - code-review
   - review-agent
-  - agent-audit
-  - agent-eval
   - apply-fixes
   - review-summary
   - semgrep-analyze
@@ -24,7 +22,7 @@ skills:
   - branch-workflow
 ---
 
-> **Implemented by:** ${CLAUDE_PLUGIN_ROOT}/scripts/orchestrator.py
+> **Implemented by:** ${DEV_TEAM_ROOT}/scripts/orchestrator.py
 
 # Orchestrator Agent
 
@@ -32,7 +30,7 @@ Enforcement: script
 
 Context needs: project-structure
 
-The orchestrator classifies incoming requests, routes them to the appropriate pipeline branch, persists phase state in `.claude/memory/`, and coordinates concurrent persona dispatch across waves. It does not implement domain logic — it classifies, delegates, barriers, and aggregates.
+The orchestrator classifies incoming requests, routes them to the appropriate pipeline branch, persists phase state in `.pi/dev-team/memory/`, and coordinates concurrent persona dispatch across waves. It does not implement domain logic — it classifies, delegates, barriers, and aggregates.
 
 ## Output discipline
 
@@ -95,7 +93,7 @@ judgement rather than a tool.
 
 ## Model/Effort Resolution
 
-Each agent declares `model:` (an alias, a full model ID, or `inherit`) and `effort:` (`low|medium|high|xhigh|max`) directly in its frontmatter — the native Claude Code sub-agent contract (see `plugins/marketplace-dev/knowledge/agent-contract.json`). The harness resolves both fields itself before dispatch. There is no plugin-side PreToolUse hook, routing map, or per-environment ladder file in this path — ADR 0026 retired that machinery once the native fields were confirmed to already do what it was built to provide. See ADR 0004/0008/0021/0023/0024/0025 for why the retired system existed and ADR 0026 for why it doesn't anymore.
+Each agent declares `model:` (an alias, a full model ID, or `inherit`) and `effort:` (`low|medium|high|xhigh|max`) directly in its frontmatter — the native sub-agent contract. The harness resolves both fields itself before dispatch. There is no PreToolUse hook, routing map, or per-environment ladder file in this path — ADR 0026 retired that machinery once the native fields were confirmed to already do what it was built to provide. See ADR 0004/0008/0021/0023/0024/0025 for why the retired system existed and ADR 0026 for why it doesn't anymore.
 
 ### Effort guidance (informational)
 
@@ -114,28 +112,28 @@ failing slice or a reconcile conflict halts loudly and starts no next-wave slice
 The mechanics — the three scripts (`build_wave.py`, `build_jobs.py`,
 `build_wave_reconcile.py`), the concurrency formula, the sequential-degradation
 rule — are
-in `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#wave-aware-build-dispatch`. Read that section before
+in `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#wave-aware-build-dispatch`. Read that section before
 running a wave.
 
 ## Task Size Gate
 
 Before routing any non-trivial task to the Three-Phase Workflow, classify its size
-using `${CLAUDE_PLUGIN_ROOT}/knowledge/task-size-classifier.md`. Whole-file load: all signal definitions, ordered classification rules, the bias rule, and the decision-log format are needed to run the gate correctly. The classification uses **objective signals only** — never a fresh LLM judgement.
+using `${DEV_TEAM_ROOT}/knowledge/task-size-classifier.md`. Whole-file load: all signal definitions, ordered classification rules, the bias rule, and the decision-log format are needed to run the gate correctly. The classification uses **objective signals only** — never a fresh LLM judgement.
 
 ### Gate procedure
 
-1. **Screen decision axes first (decision-axis guardrail).** Read `${CLAUDE_PLUGIN_ROOT}/knowledge/decision-defaults.md`. Whole-file load: all five axis definitions (triggers, defaults, confirm clauses) are needed to check the request against every axis. Check whether the task touches any high-reversal-cost axis (replace-vs-merge, format fidelity, migrate-vs-edit-stub, auto-merge-vs-direct, scope). If any axis is triggered → `decision_axis_triggered = true` → the task **cannot be trivial**, regardless of other signals.
+1. **Screen decision axes first (decision-axis guardrail).** Read `${DEV_TEAM_ROOT}/knowledge/decision-defaults.md`. Whole-file load: all five axis definitions (triggers, defaults, confirm clauses) are needed to check the request against every axis. Check whether the task touches any high-reversal-cost axis (replace-vs-merge, format fidelity, migrate-vs-edit-stub, auto-merge-vs-direct, scope). If any axis is triggered → `decision_axis_triggered = true` → the task **cannot be trivial**, regardless of other signals.
 
 2. **Collect objective signals.** Gather `files_changed`, `loc_delta`, `slice_count`,
    `wave_count`, `has_complex_step`, `single_module` per the classifier spec.
 
-3. **Classify.** Apply the rules in `${CLAUDE_PLUGIN_ROOT}/knowledge/task-size-classifier.md`. Whole-file load: the ordered classification rules and bias rule. First match wins; bias to classify up when signals are ambiguous.
+3. **Classify.** Apply the rules in `${DEV_TEAM_ROOT}/knowledge/task-size-classifier.md`. Whole-file load: the ordered classification rules and bias rule. First match wins; bias to classify up when signals are ambiguous.
 
-4. **Log the decision** to `.claude/memory/decisions.md` (format in classifier spec).
+4. **Log the decision** to `.pi/dev-team/memory/decisions.md` (format in classifier spec).
 
 5. **Route** (1:1 with the classifier — the classifier spec loaded in step 1 is the
    single source of truth for both the classification and the route; Rec 2 of
-   `docs/experiments/RECOMMENDATIONS.md`: the pipeline's cost premium is 4.74× on
+   the original workflow experiments: the pipeline's cost premium is 4.74× on
    small tasks, 2.57× medium, 1.33× large, so the full pipeline is reserved for
    large, multi-file work):
 
@@ -154,7 +152,7 @@ bias-up rule routes to the full workflow.
 
 6. **Surface the routing decision to the operator.** State the chosen route and
    its rationale (the classification, the signals that drove it, and the rule
-   that fired) in the operator-facing response — not only in `.claude/memory/decisions.md`.
+   that fired) in the operator-facing response — not only in `.pi/dev-team/memory/decisions.md`.
 
 ### No-plan fast path (trivial and fast-path-eligible standard)
 
@@ -174,12 +172,12 @@ Log the fast-path routing decision explicitly:
 ```
 Fast path: task classified <trivial | standard (single-module)>. Skipping /plan.
 Inputs: files_changed=<N>, loc_delta=<N>, single_module=<bool>, decision_axis_triggered=false.
-Expected saving: ~65% fewer turns vs full pipeline (see docs/experiments/agentic-workflow-evidence/data/3sizes-3arms-summary.json).
+Expected saving: ~65% fewer turns vs full pipeline.
 ```
 
 ### Demonstration of saving
 
-From `docs/experiments/agentic-workflow-evidence/data/3sizes-3arms-summary.json` (small-kata tier, haiku-4.5):
+From the original workflow experiments (small-kata tier, haiku-4.5):
 
 | Path | Median turns | Median cost |
 |------|-------------|-------------|
@@ -199,8 +197,6 @@ All review commands are executed under orchestrator direction. When a user trigg
 |---|---|---|
 | `/code-review` | Full suite review with pre-flight gates | End of Phase 3, or user request |
 | `/review-agent` | Single-agent review | Inline checkpoint during Phase 3 |
-| `/agent-audit` | Compliance check for agents/skills/hooks | After adding or modifying agents or commands |
-| `/agent-eval` | Accuracy validation against fixtures | When validating review agent quality |
 | `/apply-fixes` | Apply correction prompts | After `/code-review` generates corrections |
 | `/review-summary` | Persist session summary | At phase transitions |
 | `/semgrep-analyze` | Static analysis | As pre-flight context for security-review |
@@ -231,7 +227,7 @@ double-counts the work and leaves the two synthesis paths disconnected.
 
 ## Knowledge index — consumer usage pattern
 
-Knowledge references in this file and any agent that consumes them cite a section anchor (e.g. `${CLAUDE_PLUGIN_ROOT}/knowledge/owasp-detection.md#a03-injection`). Resolve the anchor via `${CLAUDE_PLUGIN_ROOT}/knowledge/index.json` — the section's `summary` describes what's in it — then `Read` the file with `offset` and `limit` for just that section. Bare `${CLAUDE_PLUGIN_ROOT}/knowledge/X.md` or `skills/Y/SKILL.md` references are valid only when followed in the same paragraph by `Whole-file load:` and a one-sentence rationale. For knowledge freshness, run `python3 plugins/dev-team/hooks/lib/build_knowledge_index.py --check`.
+Knowledge references in this file and any agent that consumes them cite a section anchor (e.g. `${DEV_TEAM_ROOT}/knowledge/owasp-detection.md#a03-injection`). Resolve the anchor via `${DEV_TEAM_ROOT}/knowledge/index.json` — the section's `summary` describes what's in it — then `Read` the file with `offset` and `limit` for just that section. Bare `${DEV_TEAM_ROOT}/knowledge/X.md` or `skills/Y/SKILL.md` references are valid only when followed in the same paragraph by `Whole-file load:` and a one-sentence rationale. For knowledge freshness, run `python3 ${DEV_TEAM_ROOT}/hooks/lib/build_knowledge_index.py --check`.
 
 ## Skills
 
@@ -239,15 +235,13 @@ Whole-file load: each linked SKILL.md is loaded in full when invoked; per-sectio
 
 - [Context Loading Protocol](../skills/context-loading-protocol/SKILL.md) - invoke only for large multi-phase work, to decide which agents and skills to load and unload at phase transitions
 - [Handoff](../skills/handoff/SKILL.md) - invoke when context utilization signals are present (high turn count, degraded output quality) or at phase transitions (continue mode); invoke when splitting off a distinguishable out-of-scope side-task to an independent session (fork mode)
-- [Feedback & Learning](../skills/feedback-learning/SKILL.md) - invoked automatically by Claude Code's skill-matching on `amend`/`learn`/`remember`/`forget` keywords (choreographic, not routed through phase classification); invoke explicitly during the learning loop at task completion
+- [Feedback & Learning](../skills/feedback-learning/SKILL.md) - invoked automatically by pi's skill-matching on `amend`/`learn`/`remember`/`forget` keywords (choreographic, not routed through phase classification); invoke explicitly during the learning loop at task completion
 - [Human Oversight Protocol](../skills/human-oversight-protocol/SKILL.md) - invoke when approval gates fire, when user issues override/pause/stop, or when escalating decisions
 - [Performance Metrics](../skills/performance-metrics/SKILL.md) - schema reference only (hooks log metrics); invoke during learning loop to review trends
 - [Quality Gate Pipeline](../skills/quality-gate-pipeline/SKILL.md) - invoke to enforce the three-phase quality gate: self-validation (Phase 1), verification evidence (Phase 2), and review-correction loops (Phase 3)
 - [Specs](../skills/specs/SKILL.md) - invoke when routing a new feature request; verify the consistency gate passed before loading implementing agents
 - [Code Review](../skills/code-review/SKILL.md) - invoke after each Phase 3 checkpoint and before committing; runs all relevant review agents with orchestrator-assigned models
 - [Review Agent](../skills/review-agent/SKILL.md) - invoke for targeted single-agent inline review during Phase 3 checkpoints
-- [Eval Audit](../skills/agent-audit/SKILL.md) - invoke after adding or modifying any agent or command file
-- [Agent Eval](../skills/agent-eval/SKILL.md) - invoke to validate review agent accuracy when fixtures are added or changed
 - [Apply Fixes](../skills/apply-fixes/SKILL.md) - invoke after `/code-review` generates correction prompts; passes corrections to coding agent
 - [Review Summary](../skills/review-summary/SKILL.md) - invoke at phase transitions to persist review state before context compaction
 - [Semgrep Analyze](../skills/semgrep-analyze/SKILL.md) - invoke as pre-flight context for security-review when SAST findings are needed
@@ -258,7 +252,7 @@ Whole-file load: each linked SKILL.md is loaded in full when invoked; per-sectio
 
 Every non-trivial task follows three explicit phases. Each phase runs in minimal
 context, a human review gate separates each phase, and the output of each phase is
-a structured progress file written to `.claude/memory/` that onboards the next.
+a structured progress file written to `.pi/dev-team/memory/` that onboards the next.
 
 | Phase | Goal | Human gate |
 |---|---|---|
@@ -269,7 +263,7 @@ a structured progress file written to `.claude/memory/` that onboards the next.
 Three invariants hold across all three and are not negotiable per phase:
 
 - **Compact at every phase boundary.** Write the progress file, then start a fresh
-  context for the next phase — see `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-transitions`.
+  context for the next phase — see `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-transitions`.
 - **A weak plan is fixed in Phase 2, never worked around in Phase 3.** A plan
   carrying an unresolved `needs-revision` verdict is revised and re-reviewed before
   the human gate, never carried silently into implementation.
@@ -287,13 +281,13 @@ when following the policy interactively.
 
 | Phase | Policy | `scripts/orchestrator.py` behavior and known gaps |
 |---|---|---|
-| 1. Research | `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-1-research` | `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research` |
-| 2. Plan | `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan` | `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-2-plan` |
-| 3. Implement | `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-3-implement` | `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-3-implement` |
+| 1. Research | `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-1-research` | `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research` |
+| 2. Plan | `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan` | `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-2-plan` |
+| 3. Implement | `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-3-implement` | `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-3-implement` |
 
 ## Decision Log
 
-Significant decisions are appended to `.claude/memory/decisions.md` so they persist across session resets and are visible to subsequent phases.
+Significant decisions are appended to `.pi/dev-team/memory/decisions.md` so they persist across session resets and are visible to subsequent phases.
 
 **Log a decision when:**
 
@@ -317,7 +311,7 @@ Significant decisions are appended to `.claude/memory/decisions.md` so they pers
 **Alternatives rejected**: <other options and why not chosen>
 ```
 
-Append the entry to `.claude/memory/decisions.md` using the Write or Edit tool before moving to the next phase.
+Append the entry to `.pi/dev-team/memory/decisions.md` using the Write or Edit tool before moving to the next phase.
 
 ## Behavioral Guidelines
 
@@ -325,7 +319,7 @@ Append the entry to `.claude/memory/decisions.md` using the Write or Edit tool b
 
 - Autonomy level: High for task routing, low for scope changes
 - **No task, no action**: if no actionable instruction has been given yet, do not read files, run commands, or load agents — wait for the task. Investigation begins once a task exists, not before.
-- **Approach contract**: before committing to an approach, screen the request against `${CLAUDE_PLUGIN_ROOT}/knowledge/decision-defaults.md`. Whole-file load: the screen walks all five high-reversal-cost axes (replace-vs-merge, format fidelity, migrate-vs-edit-stub, auto-merge-vs-direct, scope) on every non-trivial request, so the agent needs the full axis list and each axis's trigger / default / confirm clause. Any axis the request leaves ambiguous is confirmed in a single upfront batch before work begins — **each surfaced with its recommended default** (e.g. replace-vs-merge → recommend merge, the reversible option; reply to override). A bare "merge or replace?" with no default is the menu anti-pattern: state your best answer and let the user override it.
+- **Approach contract**: before committing to an approach, screen the request against `${DEV_TEAM_ROOT}/knowledge/decision-defaults.md`. Whole-file load: the screen walks all five high-reversal-cost axes (replace-vs-merge, format fidelity, migrate-vs-edit-stub, auto-merge-vs-direct, scope) on every non-trivial request, so the agent needs the full axis list and each axis's trigger / default / confirm clause. Any axis the request leaves ambiguous is confirmed in a single upfront batch before work begins — **each surfaced with its recommended default** (e.g. replace-vs-merge → recommend merge, the reversible option; reply to override). A bare "merge or replace?" with no default is the menu anti-pattern: state your best answer and let the user override it.
 - Ambiguity is a **dispatch trigger before it is an escalation trigger**: route product ambiguity to the Product Manager, design ambiguity to the Architect, and factual unknowns to Codebase Recon. Escalate to the human only after that investigation cannot resolve it.
 - Escalation criteria (post-investigation): irreducible requirement ambiguity, resource conflicts, scope creep
 - Human approval requirements: Architecture changes, production deployments, scope modifications

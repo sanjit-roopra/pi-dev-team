@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Runtime cost/token meter for dispatched work (issues #102, #134).
 
-PostToolUse hooks do NOT carry token usage in Claude Code; the canonical source
+PostToolUse hooks do NOT carry token usage; the canonical source
 is the session transcript JSONL, where each assistant message records a `usage`
 block (input/output/cache tokens). Every hook payload includes `transcript_path`,
 so a Stop hook can hand this script the transcript to parse. This converts token
@@ -36,9 +36,9 @@ visible either way (#1094).
 
 What is deliberately NOT attributed, and why (#170): per-command, per-phase, and
 per-fix-loop-iteration attribution were attempted via `attributionSkill` /
-`orchestrationPhase` / `fixLoopIteration` markers, but **the Claude Code harness
+`orchestrationPhase` / `fixLoopIteration` markers, but **the harness
 authors the transcript and exposes none of those fields** (0/312 in a real
-transcript), and a plugin has no write-path into the transcript. Those buckets
+transcript), and a hook has no write-path into the transcript. Those buckets
 were therefore always inert ("untagged"/"other"/"unattributed") and have been
 removed rather than ship misleading empty dimensions. Re-deriving them would
 require fragile heuristics (correlating Stop-hook timestamps with command
@@ -61,32 +61,32 @@ report   --transcript T [--json]
          (main vs subagent), plus the session total. The acceptance command:
          "after a run, print actual tokens spent."
 
-record   --transcript T --log .claude/metrics/cost-metering.jsonl
+record   --transcript T --log .pi/dev-team/metrics/cost-metering.jsonl
          Append one session-summary line to the append-only metrics log
-         (follows the .claude/metrics/config-changelog.jsonl convention). Used by the
+         (follows the .pi/dev-team/metrics/config-changelog.jsonl convention). Used by the
          Stop hook. Idempotent on directory creation; never errors out loudly.
 
-regression --log .claude/metrics/cost-metering.jsonl [--tolerance 0.5] [--window N]
+regression --log .pi/dev-team/metrics/cost-metering.jsonl [--tolerance 0.5] [--window N]
          Compare the most recent session's total cost against the rolling mean
          of prior sessions; exit 1 if it exceeds mean * (1 + tolerance). With
          --window N the baseline is the mean of only the N most recent prior
          sessions (a windowed rolling baseline) instead of all-time mean.
 
-pace     --log .claude/metrics/cost-metering.jsonl [--budget B] [--period-days 30]
+pace     --log .pi/dev-team/metrics/cost-metering.jsonl [--budget B] [--period-days 30]
          [--window-days 7]
          Account-level pace guidance (#142): cumulative spend over a rolling
          window, the implied daily rate, and the projected spend for a billing
          period. With --budget it flags when the current pace would exhaust the
          budget and suggests dropping a model tier for the rest of the window.
 
-phase-mark --transcript T --phase LABEL [--log .claude/metrics/phase-markers.jsonl]
+phase-mark --transcript T --phase LABEL [--log .pi/dev-team/metrics/phase-markers.jsonl]
          Context-pollution measurement (#1520): append one phase-boundary
          marker capturing the main-loop resident context occupancy and the
          cumulative output spend at a `/handoff` boundary. Fired by the
          `phase_marker.py` PostToolUse hook. Kept in its own log, never folded
          into the incremental `record` state.
 
-phase-report --log .claude/metrics/phase-markers.jsonl [--json]
+phase-report --log .pi/dev-team/metrics/phase-markers.jsonl [--json]
          Report per-phase resident-vs-spent ratios from the phase markers: for
          each phase, the context still resident at its boundary vs the output
          tokens spent during it. A high ratio distinguishes context that
@@ -107,7 +107,7 @@ import sys
 import time
 from pathlib import Path
 
-# hooks/lib/cost_meter.py -> plugin root is three parents up.
+# hooks/lib/cost_meter.py -> package root is three parents up.
 _PLUGIN_ROOT = Path(__file__).resolve().parent.parent.parent
 _DEFAULT_PRICING = _PLUGIN_ROOT / "knowledge/model-pricing.json"
 
@@ -126,10 +126,10 @@ from pricing import rate as _rate
 # directory dependency direction, #1461), session_log/ has to live under
 # scripts/lib/session_log/ per the epic's own decision (ADR 0042): it is the
 # ONE sanctioned home for transcript-record/usage-block parsing, and
-# session_report.py -- a scripts/ module -- is its primary consumer. This
+# scripts/ tooling is its primary consumer. This
 # import is therefore genuinely hooks/lib/ -> scripts/lib/, the reverse of
 # #1461's rule. It is safe to invert here for a reason #1461 itself did not
-# have to consider: session_log/ ships INSIDE this same plugin package,
+# have to consider: session_log/ ships INSIDE this same package,
 # always present wherever cost_meter.py (a real Stop hook) runs -- unlike
 # the monorepo-only scripts/ tooling #1461 was written to keep hooks/lib/
 # independent of. session_log/ itself imports nothing from hooks/lib/ (no
@@ -728,7 +728,7 @@ def cmd_pace(args, pricing) -> int:
             )
             print(
                 "  Consider dropping Opus→Sonnet for the remainder of the "
-                "window (see .claude/model-overrides.json / /harness-audit)."
+                "window (see .pi/dev-team/model-overrides.json / /harness-audit)."
             )
     return 0
 

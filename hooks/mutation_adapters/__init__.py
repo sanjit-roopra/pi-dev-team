@@ -1,4 +1,4 @@
-"""Mutation-testing adapters — Python port of hooks/mutation-adapters/*.sh (#578).
+"""Mutation-testing adapters (#578).
 
 Public surface mirrors the bash lib.sh + adapter contract so mutation-gate can
 switch consumers one at a time. See `lib.py` for the shared library and

@@ -35,7 +35,7 @@ directly — the shim resolves a real Python 3 on Windows too), passing the
 arguments through verbatim:
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" <path.md> [--out <path>]
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" <path.md> [--out <path>]
 ```
 
 The module detects a PDF engine (fallback order: pandoc + headless

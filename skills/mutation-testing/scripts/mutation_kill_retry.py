@@ -11,12 +11,12 @@ blast radius, with neither small enough to read in one pass and confirm it
 doesn't touch the other's state. This module owns exactly the retry/downgrade
 concern; ``mutation_kill_shared.py`` keeps git mechanics, ``_timeout_from_env``,
 ``stop_reason``, ``resolve_model``/``resolve_fallback_model`` and the headless
-``claude --print`` invocation glue, and the ``InsertOutcome``/``InsertionRefused``
+``dev-team-run --print`` invocation glue, and the ``InsertOutcome``/``InsertionRefused``
 shapes.
 
 The type precondition for the 502/gateway-class error definition is EXACT: a
 :class:`mutation_kill_shared.HeadlessCallFailed` raised by
-``run_claude_headless``'s non-zero-exit shape (never its
+``run_headless``'s non-zero-exit shape (never its
 ``TimeoutExpired``-derived shape, which raises a plain ``RuntimeError`` — a
 local generation timeout, not an upstream provider signal). Within that type,
 the classifier reads the full, untruncated ``stderr``, case-insensitively,
@@ -29,15 +29,15 @@ that only appear on stdout — filed and deliberately deferred rather than
 fixed in this slice, see #1950.
 
 This module's dependencies on ``mutation_kill_shared`` are
-``run_claude_headless``/``resolve_fallback_model`` — both accessed via the
-module object (``mutation_kill_shared.run_claude_headless(...)``), not a
+``run_headless``/``resolve_fallback_model`` — both accessed via the
+module object (``mutation_kill_shared.run_headless(...)``), not a
 ``from ... import`` binding, so a test's ``monkeypatch.setattr(mutation_kill_shared,
-"run_claude_headless", fake)`` takes effect here too (mirrors the existing
-same-module-globals contract ``_mutation_test_helpers.sequenced_run_claude_headless``
+"run_headless", fake)`` takes effect here too (mirrors the existing
+same-module-globals contract ``_mutation_test_helpers.sequenced_run_headless``
 already documents) — plus ``HeadlessCallFailed``, referenced only as a type
 (``isinstance(exc, mutation_kill_shared.HeadlessCallFailed)``), which carries
 no monkeypatch sensitivity of its own since nothing here calls it.
-``run_claude_headless`` is reached on every generation attempt unless the
+``run_headless`` is reached on every generation attempt unless the
 caller injects ``call_headless`` (#1918), in which case it is never reached —
 see :meth:`_RetryCallContext.resolve_call_headless`. (This
 mirrors the dependency inventory documented from the other direction in
@@ -133,7 +133,7 @@ _BACKOFF_CAP_S = 10
 
 def is_gateway_class_error(exc: BaseException) -> bool:
     """True iff ``exc`` is a :class:`mutation_kill_shared.HeadlessCallFailed`
-    raised by :func:`mutation_kill_shared.run_claude_headless`'s non-zero-exit
+    raised by :func:`mutation_kill_shared.run_headless`'s non-zero-exit
     shape whose full, untruncated ``stderr``, case-insensitively, contains a
     non-numeric gateway-class marker or matches the anchored numeral pattern
     (#1938).
@@ -146,8 +146,8 @@ def is_gateway_class_error(exc: BaseException) -> bool:
     """
     if not isinstance(exc, mutation_kill_shared.HeadlessCallFailed):
         return False
-    # #1950: classify over stderr AND stdout. The claude CLI renders some
-    # upstream failures to stdout while stderr carries only a generic
+    # #1950: classify over stderr AND stdout. The dev-team-run helper renders some
+    # provider failures to stdout while stderr carries only a generic
     # non-zero-exit line; a stderr-only classifier calls those non-gateway-class
     # and spends the file's whole budget on a genuinely retryable overload.
     # `getattr` rather than attribute access so a HeadlessCallFailed built by
@@ -320,12 +320,12 @@ class _RetryCallContext:
 
     ``call_headless`` is ``None`` when the caller didn't inject a transport
     (#1918 Step 2.2) — :meth:`resolve_call_headless` looks up
-    ``mutation_kill_shared.run_claude_headless`` fresh on every actual call,
+    ``mutation_kill_shared.run_headless`` fresh on every actual call,
     not once here at construction time, so a test that monkeypatches the
     module attribute *after* constructing the closure (but before invoking
     it) still observes the patch — exactly the dynamic-lookup contract the
     pre-injection code had via its direct
-    ``mutation_kill_shared.run_claude_headless(...)`` call sites."""
+    ``mutation_kill_shared.run_headless(...)`` call sites."""
 
     cwd: Path | None
     log: Callable[[str], None]
@@ -334,12 +334,12 @@ class _RetryCallContext:
 
     def resolve_call_headless(self) -> Callable[..., str]:
         """Return the injected transport, or
-        ``mutation_kill_shared.run_claude_headless`` looked up dynamically
+        ``mutation_kill_shared.run_headless`` looked up dynamically
         via the module object when none was injected."""
         return (
             self.call_headless
             if self.call_headless is not None
-            else mutation_kill_shared.run_claude_headless
+            else mutation_kill_shared.run_headless
         )
 
     def invoke(self, prompt: str, model: str | None) -> str:
@@ -370,7 +370,7 @@ def _retry_once_then_maybe_downgrade(
 
     Returns the retry's result string on a successful retry. Returns
     ``None`` when a downgrade was applied instead — the caller's
-    ``while True`` loop re-enters :func:`mutation_kill_shared.run_claude_headless`
+    ``while True`` loop re-enters :func:`mutation_kill_shared.run_headless`
     on the new model. Raises :class:`GenerationExhausted` on exhaustion (no
     fallback tier available, or this file already spent its one downgrade).
     """
@@ -414,7 +414,7 @@ def make_retrying_headless_call(
     call_headless: Callable[..., str] | None = None,
 ) -> Callable[[str, str, int | None], str]:
     """Return a per-file, stateful wrapper around
-    :func:`mutation_kill_shared.run_claude_headless` implementing the
+    :func:`mutation_kill_shared.run_headless` implementing the
     retry-then-downgrade rule (#1908): 3 consecutive gateway-class failures
     on the model in use earn exactly one same-model retry; if that retry
     ALSO fails (of any error class — the retry's own outcome is a plain
@@ -435,7 +435,7 @@ def make_retrying_headless_call(
     ``RuntimeError``-mediated exit path (a return, or a raise) the streak is
     reset first, so no round mediated that way ever actually leaves a
     non-zero streak behind. A non-``RuntimeError`` escape from
-    :func:`mutation_kill_shared.run_claude_headless` (e.g.
+    :func:`mutation_kill_shared.run_headless` (e.g.
     ``FileNotFoundError``/``OSError`` if the CLI binary disappears mid-run)
     is NOT caught by the ``except RuntimeError`` below, so it skips the
     reset — but that escape is fatal to the process, so a residual streak
@@ -461,7 +461,7 @@ def make_retrying_headless_call(
     this file has already spent its one downgrade all live in THIS
     closure's :class:`_RetryState` — meant to be constructed once per file,
     inside each language loop's own ``make_headless_generator`` factory —
-    never at module scope. :func:`mutation_kill_shared.run_claude_headless`
+    never at module scope. :func:`mutation_kill_shared.run_headless`
     itself stays the stateless, language-neutral single-shot call it
     already is; this wrapper adds retry/downgrade semantics entirely from
     the caller's side, so a new file's closure always starts fresh at the
@@ -470,7 +470,7 @@ def make_retrying_headless_call(
 
     The returned callable takes ``(prompt, source_file, round_num)`` and
     returns the generated text — exactly what a single
-    :func:`mutation_kill_shared.run_claude_headless` call would return.
+    :func:`mutation_kill_shared.run_headless` call would return.
     Every retry and downgrade happens transparently inside one call: neither
     loop's round machinery (``_run_round``/``run_for_file``) needs to
     change, since a call either eventually succeeds or raises (a plain
@@ -480,18 +480,18 @@ def make_retrying_headless_call(
 
     **Injectable transport (#1918 Step 2.2).** ``call_headless`` defaults to
     ``None``, resolved by :meth:`_RetryCallContext.resolve_call_headless` to
-    :func:`mutation_kill_shared.run_claude_headless` fresh on every actual
+    :func:`mutation_kill_shared.run_headless` fresh on every actual
     generation attempt rather than once here at construction time — a
     signature-level default (``call_headless: Callable[..., str] =
-    mutation_kill_shared.run_claude_headless``) would bind that reference
+    mutation_kill_shared.run_headless``) would bind that reference
     once, at module-import time, and a construction-time resolution would
     still be a single stale snapshot; either way, a test's
-    ``monkeypatch.setattr(mutation_kill_shared, "run_claude_headless", fake)``
+    ``monkeypatch.setattr(mutation_kill_shared, "run_headless", fake)``
     made after this factory returns its closure (but before the closure is
     invoked) would silently miss the patch (this module's own docstring
     dependency-inventory note above depends on the module-attribute lookup
     staying dynamic on every call, matching the pre-injection code's direct
-    ``mutation_kill_shared.run_claude_headless(...)`` call sites). Every
+    ``mutation_kill_shared.run_headless(...)`` call sites). Every
     generation attempt this closure makes — the initial attempt and the
     3rd-failure same-model retry — goes through ``call_headless``, so a test
     can also substitute a fake transport directly via this parameter without

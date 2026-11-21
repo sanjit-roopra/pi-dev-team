@@ -2,16 +2,16 @@
 """hooks/review_verdict_recorder.py — SubagentStop per-lens verdict recorder
 (#2166, Step 2.3; plan: plans/2164-verdict-ledger-writer.md, Decisions 3/4/4a).
 
-## Contract (docs/python-hook-contract.md)
+## Contract
 
     Input : SubagentStop JSON on stdin (`transcript_path`, `session_id`, `cwd`)
-    Output: zero or more `.claude/metrics/review-verdicts.jsonl` rows via
+    Output: zero or more `.pi/dev-team/metrics/review-verdicts.jsonl` rows via
         `hooks/lib/review_verdicts.emit_review_verdict()` — one per in-scope
         file the dispatch prompt's Step 2.1 scope marker declared, each
         carrying `outcome: "pass"` or `"findings"`. Once `subagent_type` is
         confirmed a registered review lens, a degenerate exit (missing/
         reformatted scope marker, unparseable/malformed final result) also
-        writes one `.claude/metrics/boundary-events.jsonl` `"record"`-decision
+        writes one `.pi/dev-team/metrics/boundary-events.jsonl` `"record"`-decision
         row via `hooks/lib/boundary_events.emit_boundary_event()`, naming the
         reason (`missing-scope-marker` | `unparseable-result`) (Fix #3, #2166
         correctness review).
@@ -31,18 +31,18 @@
 native top-level `attributionAgent` field is "present on every usage-bearing
 sidechain record in real transcripts". Checked here directly against every
 real subagent transcript from this session
-(`~/.claude/projects/-home-user-agentic-dev-team/<session-id>/subagents/agent-*.jsonl`,
-124 files, 10,795 total rows, 4,279 usage-bearing assistant rows):
+(`<session-dir>/subagents/agent-*.jsonl`, the sidechain format the dev-team
+extension writes in `extensions/dev-team/lib/transcript.ts`; 124 files, 10,795 total rows, 4,279 usage-bearing assistant rows):
 
   * 124/124 files carried an `attributionAgent` value on 100% (4,279/4,279)
     of their usage-bearing (assistant) records — no exceptions.
   * Exactly one distinct value per file, always — never absent-then-present
     partway through, never two different values in one file. The field
     identifies the whole dispatch, not just one turn.
-  * Values are plugin-qualified for this plugin's own agents (e.g.
+  * Values are `dev-team:`-qualified for dev-team's own agents (e.g.
     `dev-team:structure-review`, `dev-team:correctness-review`,
     `dev-team:software-engineer`) and bare for harness-builtin agent types
-    (`general-purpose`, `claude-code-guide`) — `strip_plugin_prefix`
+    (`general-purpose`) — `strip_plugin_prefix`
     (`hooks/lib/review_agent_registry.py`) already normalizes exactly this,
     reused below rather than reimplemented.
   * The field is NOT stamped on every record in a subagent transcript — only
@@ -76,7 +76,7 @@ if str(_LIB_DIR) not in sys.path:
 
 # hooks/ -> scripts/lib/session_log/ is a documented reverse-dependency
 # exception (see hooks/lib/cost_meter.py's identical import for the full
-# rationale): session_log/ ships INSIDE this same plugin package,
+# rationale): session_log/ ships INSIDE this same package,
 # always present wherever this hook runs, and session_log itself imports
 # nothing from hooks/lib/ (no cycle). Mirrors cost_meter.py's own
 # sys.path.insert + bare-package-import MECHANISM, not its directionality.
@@ -216,8 +216,7 @@ def _handback_message_text(records: list[dict]) -> str | None:
 
     Verified directly against a real transcript in this session's own
     corpus before writing this (not assumed):
-    `~/.claude/projects/-home-user-agentic-dev-team/<session-id>/subagents/
-    agent-a006af1f32a025449.jsonl`, line 17 — a completed subagent's real
+    `<session-dir>/subagents/agent-a006af1f32a025449.jsonl`, line 17 — a completed subagent's real
     final JSON result lives inside its OWN `SubagentHandback` tool_use
     block's `input.message` field (prose plus a fenced ```json block), never
     as the transcript's literal last row. The literal last row is a short

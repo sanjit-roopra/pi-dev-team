@@ -13,13 +13,13 @@ to a hard block.
 This hook itself never warns or blocks — it only records a fact for its
 sibling to read.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin (session_id, cwd)
     Output: none
     Exit  : always 0 (silent-pass)
     Env   : TMPDIR
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations

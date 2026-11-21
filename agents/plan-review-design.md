@@ -17,7 +17,7 @@ You are the reviewer who asks "will we regret this in 6 months?" You are not her
 
 ## What you receive
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric). This agent also
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric). This agent also
 reads the existing codebase (files referenced in the plan) to check design
 decisions against it.
 
@@ -87,4 +87,4 @@ decisions against it.
 
 ## Verdict rules
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).

@@ -10,7 +10,7 @@ frontend/UI lenses). ``/code-review`` Step 3 also adopted this resolver
 ones present at #1523.
 A ``Scope: always`` lens named in ``NON_EXECUTABLE_SKIP_ELIGIBLE`` is
 additionally excluded when every changed file is non-executable
-(docs/config/assets/lockfiles, never functional Claude-config markdown —
+(docs/config/assets/lockfiles, never functional agent-config markdown —
 see ``NON_EXECUTABLE_EXTENSIONS`` and ``doc_classification.is_functional_config``), since
 that lens's own Skip clause would otherwise just self-report
 ``{"status": "skip"}`` at opus, high-effort cost.
@@ -46,11 +46,11 @@ sys.path.insert(0, str(_HERE / "lib"))
 import review_roster
 
 # skills/code-review/scripts/change_shape.py's runtime-surface gate already
-# solves "is this path functional Claude-config, never skippable regardless
+# solves "is this path functional agent-config, never skippable regardless
 # of extension" — reuse its shared predicate (#1477, extended #1923) rather
 # than adding a fourth, independently-drifting copy of the same
 # classification (a real defect a prior draft of this filter had: `.md`
-# alone made `plugins/dev-team/agents/*.md` — this very repo's shipped
+# alone made `agents/*.md` — this very repo's shipped
 # agent behavior — read as "non-executable"). Same cross-boundary import
 # pattern that module already uses.
 _HOOKS_LIB_DIR = _HERE.parent / "hooks" / "lib"
@@ -63,7 +63,7 @@ if str(_HOOKS_LIB_DIR) not in sys.path:
 # `test_is_functional_config_matches_doc_classification_module`) compared the
 # canonical implementation against itself whenever the import succeeded — which
 # is always, here — so sabotaging the fallback to `return False` left the whole
-# suite green. `hooks/lib/` ships inside this same plugin; an unreachable one is
+# suite green. `hooks/lib/` ships inside this same package; an unreachable one is
 # a broken install, not a supported degraded mode.
 try:
     from doc_classification import (
@@ -72,7 +72,7 @@ try:
 except ImportError as exc:  # pragma: no cover - broken install, not a supported mode
     raise ImportError(
         f"{__name__} requires the shared classifier 'doc_classification' from "
-        f"the dev-team plugin's hooks/lib, which could not be imported.\n"
+        f"pi-dev-team's hooks/lib, which could not be imported.\n"
         f"  searched: {_HOOKS_LIB_DIR}\n"
         f"  exists:   {_HOOKS_LIB_DIR.is_dir()}\n"
         "This module deliberately has no fallback copy of the classifier "
@@ -96,7 +96,7 @@ try:
 except ImportError as exc:  # pragma: no cover - broken install, not a supported mode
     raise ImportError(
         f"{__name__} requires the shared classifier 'test_file_classify' from "
-        f"the dev-team plugin's hooks/lib, which could not be imported.\n"
+        f"pi-dev-team's hooks/lib, which could not be imported.\n"
         f"  searched: {_HOOKS_LIB_DIR}\n"
         f"  exists:   {_HOOKS_LIB_DIR.is_dir()}\n"
         "This module deliberately has no fallback copy of the classifier "
@@ -138,7 +138,7 @@ SCOPE_ADDED_ONLY = "added-only"
 # The sentinel an agent uses to declare it is a genuine review agent whose
 # findings are properties of the whole repository, not any single diff, and
 # so must never be dispatched by the per-diff resolver — only by name (e.g.
-# `/claude-setup-review`) or by the whole-tree `/repo-review` skill (#1735).
+# `/review-agent token-efficiency-review`) or by the whole-tree `/repo-review` skill (#1735).
 # A bare declaration, no bullet block: unlike `added-only`, there is no glob
 # data to carry, so the resolver just excludes the lens outright. Replaces a
 # prior, competing mechanism (listing the agent in `NON_REVIEW_AGENTS`) that
@@ -248,7 +248,7 @@ NON_EXECUTABLE_BASENAMES = frozenset({
 def _is_non_executable_file(file_path: str) -> bool:
     """True if ``file_path`` is a static asset, inert config/data,
     documentation, or a lockfile — see NON_EXECUTABLE_EXTENSIONS above.
-    Never true for functional Claude-config markdown/paths (checked
+    Never true for functional agent-config markdown/paths (checked
     first, via the shared `is_functional_config` — same predicate
     `change_shape.py` uses), regardless of extension."""
     if is_functional_config(file_path):

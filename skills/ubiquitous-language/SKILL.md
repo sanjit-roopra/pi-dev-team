@@ -25,7 +25,7 @@ Produces a queryable per-concept glossary at `.plans/domain/`. Each concept gets
 Run the colocated gather script. It collects raw candidates; it does not decide what is domain language (that is Phase 3's job).
 
 ```bash
-python3 .claude/skills/ubiquitous-language/scripts/collect_domain_signals.py "$ARGUMENTS"
+python3 "${DEV_TEAM_ROOT}/skills/ubiquitous-language/scripts/collect_domain_signals.py" "$ARGUMENTS"
 ```
 
 The script writes to `.plans/raw/domain-language/`:

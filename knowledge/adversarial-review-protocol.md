@@ -132,7 +132,7 @@ After the challenger pass, append to the `summary` field in your JSON output:
 Challenge: N round(s). Revisions: <count>. Blind spots examined: <list>. Confidence: High|Medium|Low.
 ```
 
-Agents that emit a non-JSON report instead of a `summary` field — `data-flow-tracer` (trace report) and `session-analysis` (ranked suggestion list) — append the same `Challenge:` line to the report's closing summary sentence.
+Agents that emit a non-JSON report instead of a `summary` field — `data-flow-tracer` (trace report) — append the same `Challenge:` line to the report's closing summary sentence.
 
 - **High**: all files examined, every finding has a code citation freshly verified against the exact named file or source (not memory, not a different file from the same batch), no suspicious absences
 - **Medium**: 1-2 files not examined or 1 finding revised downward

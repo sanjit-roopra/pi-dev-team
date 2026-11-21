@@ -38,8 +38,8 @@ from pathlib import Path
 from typing import Any
 
 # `finding_signature.py` lives under `skills/code-review/scripts/`; this
-# script lives under `scripts/` — both are children of the plugin root
-# (`plugins/dev-team/`). Imported (not re-typed) so `compute_round_outcome`'s
+# script lives under `scripts/` — both are children of the package root.
+# Imported (not re-typed) so `compute_round_outcome`'s
 # severity floor can never silently diverge from `finding_signature.py`'s
 # own `is_actionable` — see the comment on `_is_blocking_finding` below for
 # the drift this closes.

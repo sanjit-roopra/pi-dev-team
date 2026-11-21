@@ -7,10 +7,10 @@ regardless of which skill or agent was active.
 
 Skills no longer need "remember to log X" prose in their Output sections.
 They only need to have populated the shared scratch file
-`.claude/session-metrics.json` with any task-local values they want recorded.
+`.pi/dev-team/session-metrics.json` with any task-local values they want recorded.
 The hook consumes that file and clears it after writing.
 
-## Scratch file format (.claude/session-metrics.json)
+## Scratch file format (.pi/dev-team/session-metrics.json)
 
 ```json
 {
@@ -23,7 +23,7 @@ The hook consumes that file and clears it after writing.
   "rework_cycles": 0,
   "defects_found": 0,
   "config_change": {
-    "parameter": "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
+    "parameter": "DEV_TEAM_AUTOCOMPACT_PCT",
     "old_value": "40",
     "new_value": "50",
     "reason": "Increased for larger context models"
@@ -39,10 +39,10 @@ a single 2026-07-20 audit run emitted 172 empty heartbeats vs 10 real rows).
 
 ## Output files
 
-- `.claude/metrics/{date}-task-log.jsonl`  — task completion entry
-- `.claude/metrics/config-changelog.jsonl` — config change entry (if `config_change` present)
+- `.pi/dev-team/metrics/{date}-task-log.jsonl`  — task completion entry
+- `.pi/dev-team/metrics/config-changelog.jsonl` — config change entry (if `config_change` present)
 
-## Contract (docs/python-hook-contract.md)
+## Contract
 
     Input : Stop / SubagentStop JSON on stdin
     Output: appends to metrics JSONL files; no stdout. Exit 0.
@@ -76,8 +76,8 @@ from atomic_state import append_line_locked
 from stdin_json import read_stdin_json  # type: ignore[import-not-found]
 
 # Scratch file location: resolved relative to the project root (cwd when hook
-# fires) so it is session-local, not baked into the plugin install tree.
-_SCRATCH_RELATIVE = Path(".claude") / "session-metrics.json"
+# fires) so it is session-local, not baked into the package install tree.
+_SCRATCH_RELATIVE = artifact_paths.STATE_DIR / "session-metrics.json"
 
 
 def _env_off(var: str) -> bool:
@@ -132,7 +132,7 @@ def _append_jsonl(path: Path, entry: dict) -> None:
 
 
 def _write_task_completion(cwd: Path, scratch: dict, payload: dict) -> None:
-    """Write a task completion entry to .claude/metrics/{date}-task-log.jsonl."""
+    """Write a task completion entry to .pi/dev-team/metrics/{date}-task-log.jsonl."""
     ts = _now_iso()
     entry: dict = {
         "timestamp": ts,
@@ -187,7 +187,7 @@ def main() -> int:
 
     # Resolve project root from the hook payload's cwd, falling back to
     # process cwd (which the harness sets to the project root).
-    raw_cwd = payload.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or ""
+    raw_cwd = payload.get("cwd") or os.environ.get("DEV_TEAM_PROJECT_DIR") or ""
     cwd = Path(raw_cwd).resolve() if raw_cwd else Path.cwd()
 
     scratch = _load_scratch(cwd)

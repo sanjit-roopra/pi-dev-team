@@ -26,7 +26,7 @@ You have been invoked with the `/gherkin-public` command.
 Arguments: $ARGUMENTS
 
 - Positional: `<repo-path>` — the repo under modernization.
-- `--repo-slug <slug>` — namespace under `.claude/memory/<workflow>/`. Defaults to the last path segment of `<repo-path>`.
+- `--repo-slug <slug>` — namespace under `.pi/dev-team/memory/<workflow>/`. Defaults to the last path segment of `<repo-path>`.
 
 If `<repo-path>` is absent, ask the operator.
 
@@ -34,7 +34,7 @@ If `<repo-path>` is absent, ask the operator.
 
 ### 1. Load the component map
 
-Read `.claude/memory/<workflow>/<slug>/phase-1.md` for the components & patterns table. If it's missing, tell the operator Phase 1 has not run and stop.
+Read `.pi/dev-team/memory/<workflow>/<slug>/phase-1.md` for the components & patterns table. If it's missing, tell the operator Phase 1 has not run and stop.
 
 ### 2. Pick the output directory
 
@@ -149,7 +149,7 @@ Feature: <component> emits <event-type>
 In every `.feature` file's header, include:
 
 ```
-# Source: .claude/memory/<workflow>/<slug>/phase-1.md
+# Source: .pi/dev-team/memory/<workflow>/<slug>/phase-1.md
 # Component: <name>
 # Pattern: <pattern>
 # Public surface: <surface-id>
@@ -176,7 +176,7 @@ surface's `.feature` file content plus its Step 4 header (`# Source:`,
 
 ### 5. Persist phase-2 progress
 
-Write `.claude/memory/<workflow>/<slug>/phase-2.md` with:
+Write `.pi/dev-team/memory/<workflow>/<slug>/phase-2.md` with:
 
 - Number of `.feature` files written + their paths.
 - Surface coverage per component (one row per component: surfaces touched / surfaces total).
@@ -225,7 +225,7 @@ Once the operator has approved the scenarios (orchestrator passes `--create-stor
   <In-memory doubles for third-party dependencies + local containers / loopback for team-owned infrastructure. No off-machine calls.>
   ```
 
-Record the **scenario → Story-id** map in `.claude/memory/<workflow>/<slug>/gherkin-bindings.json`:
+Record the **scenario → Story-id** map in `.pi/dev-team/memory/<workflow>/<slug>/gherkin-bindings.json`:
 
 ```json
 {

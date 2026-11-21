@@ -14,7 +14,7 @@ the loop never decides *what* tests to write — a caller supplies a
 ``generate`` callable that returns the new pytest function text. The
 default (interactive) path is agent-driven: the ``mutation-kill`` agent
 calls :func:`run_for_file` directly, passing a ``generate`` hook backed by a
-live agent turn. A ``--headless`` CLI mode shells to ``claude --print`` for
+live agent turn. A ``--headless`` CLI mode shells to ``dev-team-run --print`` for
 unattended (CI) runs.
 
 **Scope (#1583).** This module owns the scoped ``mutmut run``,
@@ -23,10 +23,10 @@ verify/commit/revert, and ``run_for_file`` orchestration — mirroring
 (detect-or-refuse end-of-file test-function appending) live in
 ``mutation_kill_insert_python.py``, a stdlib-only leaf this module imports
 from — never the reverse — mirroring the C# split
-(``mutation_kill_insert.py``). Headless generation's shared ``claude --print``
+(``mutation_kill_insert.py``). Headless generation's shared ``dev-team-run --print``
 invocation glue and the generic (non-language-specific) helpers
-(``strip_code_fences``, ``resolve_model``, ``claude_cli_available``,
-``CLAUDE_CLI``, ``run_claude_headless``) live in ``mutation_kill_shared.py``
+(``strip_code_fences``, ``resolve_model``, ``headless_cli_available``,
+``DEV_TEAM_RUN_BIN``, ``run_headless``) live in ``mutation_kill_shared.py``
 (#1601) and are reused, not duplicated, here — only the Python-flavored
 prompt (``build_generation_prompt``/``build_survivor_summary``) and the
 ``--headless`` CLI argument parsing for THIS loop stay local, since mutmut's
@@ -39,14 +39,14 @@ rounds" stop predicate are imported from ``mutation_kill_shared.py`` rather
 than defined here — they were byte-for-byte duplicated with
 ``mutation_kill_loop.py`` before that module existed.
 
-**Import boundary (#1601).** ``resolve_model``, ``claude_cli_available``,
-``CLAUDE_CLI``, and ``run_claude_headless`` are imported directly from
+**Import boundary (#1601).** ``resolve_model``, ``headless_cli_available``,
+``DEV_TEAM_RUN_BIN``, and ``run_headless`` are imported directly from
 ``mutation_kill_shared`` — never from ``mutation_kill_headless``, which is
 the C#/Stryker.NET CLI module (it imports ``mutation_kill_loop`` at module
 scope and owns the C#-only ``--config``/``--stryker-bin`` CLI surface).
 (``strip_code_fences`` also moved to ``mutation_kill_shared`` but isn't
 imported here directly — this module only reaches it indirectly, through
-``run_claude_headless``'s own internal call.) Reaching into
+``run_headless``'s own internal call.) Reaching into
 ``mutation_kill_headless`` for these language-neutral names used to
 transitively pull the entire C# stack into this Python-only loop; importing
 them from the neutral ``mutation_kill_shared`` module instead removes that
@@ -82,15 +82,15 @@ from mutation_kill_retry import (
     make_retrying_headless_call,
 )
 from mutation_kill_shared import (
-    CLAUDE_CLI,
+    DEV_TEAM_RUN_BIN,
     GIT_TIMEOUT_S,  # noqa: F401 — re-exported for tests (loop.GIT_TIMEOUT_S), matching the C# sibling's export name
     _timeout_from_env,
-    claude_cli_available,
+    headless_cli_available,
     git_commit,
     git_reset_and_revert,
     git_revert,
     resolve_model,
-    run_claude_headless,  # noqa: F401 — re-exported for tests (loop.run_claude_headless identity check); make_headless_generator now calls it indirectly via make_retrying_headless_call (#1908)
+    run_headless,  # noqa: F401 — re-exported for tests (loop.run_headless identity check); make_headless_generator now calls it indirectly via make_retrying_headless_call (#1908)
     stop_reason,
 )
 
@@ -103,11 +103,10 @@ NO_GENERATOR_MESSAGE = (
     "or pass --headless"
 )
 
-MISSING_CLAUDE_MESSAGE = (
-    f"--headless requires the Claude CLI but '{CLAUDE_CLI}' is not available. "
-    "Install Claude Code (`npm install -g @anthropic-ai/claude-code`) and "
-    "authenticate it (run `claude` once to log in, or set ANTHROPIC_API_KEY) — "
-    "or set CLAUDE_BIN to the CLI's path."
+MISSING_CLI_MESSAGE = (
+    f"--headless requires the dev-team-run helper but '{DEV_TEAM_RUN_BIN}' is not available. "
+    "It ships in pi-dev-team's bin/ and is on PATH inside pi; log in to pi "
+    "(run `pi` once) — or set DEV_TEAM_RUN_BIN to the helper's path."
 )
 
 
@@ -693,7 +692,7 @@ def run_for_file(
 
 
 # =============================================================================
-# Headless generation — shell to `claude --print` for unattended runs.
+# Headless generation — shell to `dev-team-run --print` for unattended runs.
 # =============================================================================
 def build_survivor_summary(survivors: list[dict], *, limit: int = 40) -> str:
     """Render surviving mutants as a compact list."""
@@ -753,13 +752,13 @@ def make_headless_generator(
     on_downgrade: Callable[[DowngradeEvent], None] | None = None,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Generator:
-    """Return a :data:`Generator` that shells to ``claude --print``.
+    """Return a :data:`Generator` that shells to ``dev-team-run --print``.
 
     Builds the Python-flavored prompt above, then delegates everything else
     to :func:`mutation_kill_retry.make_retrying_headless_call` (#1908) —
     the 3-consecutive-gateway-class-failures/1-same-model-retry/at-most-
     once-per-file-downgrade wrapper around
-    :func:`mutation_kill_shared.run_claude_headless` (#1583, relocated from
+    :func:`mutation_kill_shared.run_headless` (#1583, relocated from
     ``mutation_kill_headless`` in #1601).
 
     The retry/downgrade state (consecutive-failure counter, model in use,
@@ -810,7 +809,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         description=(
             "Deterministic survivor-kill loop for Python/mutmut. Agent-driven "
             "by default; --headless enables unattended generation via the "
-            "Claude CLI."
+            "dev-team-run helper."
         ),
     )
     p.add_argument("--file", required=False, help="Source file to target")
@@ -823,13 +822,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     p.add_argument(
         "--headless",
         action="store_true",
-        help="Unattended generation via `claude --print` (CI runs).",
+        help="Unattended generation via `dev-team-run --print` (CI runs).",
     )
     p.add_argument(
         "--model",
         help=(
             "Generation model for --headless. Default: DEV_TEAM_MUTATION_MODEL "
-            "env var, else omitted so `claude --print` uses its own default."
+            "env var, else omitted so `dev-team-run --print` uses its own default."
         ),
     )
     p.add_argument("--test-file", help="Test file to extend (required with --headless)")
@@ -872,8 +871,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     model = resolve_model(args.model)
 
-    if not claude_cli_available():
-        sys.stderr.write(f"error: {MISSING_CLAUDE_MESSAGE}\n")
+    if not headless_cli_available():
+        sys.stderr.write(f"error: {MISSING_CLI_MESSAGE}\n")
         return 3
 
     if not (args.file and args.test_file and args.source_path and args.test_command):

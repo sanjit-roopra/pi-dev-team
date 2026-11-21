@@ -33,7 +33,7 @@ or as the Phase-3 sub-step of `/test-improve`.
 - `--mode <none|xunit-with-annotations|bdd-runner>` — the binding mode. When
   omitted, present the BDD value rubric (Step 1) and let the operator choose.
 - `--repo-slug <slug>` — namespace for the surface inventory under
-  `.claude/memory/<workflow>/<slug>/` (`/test-improve` passes `--workflow test-improve`).
+  `.pi/dev-team/memory/<workflow>/<slug>/` (`/test-improve` passes `--workflow test-improve`).
 
 ## Step 1 — Choose the binding mode (BDD value rubric)
 
@@ -135,7 +135,7 @@ single project-wide directory probe; this skill composes the per-surface
 path, it never asks the script to resolve one itself:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/detect_bdd_convention.py"
+python3 "${DEV_TEAM_ROOT}/scripts/detect_bdd_convention.py"
 ```
 
 A `"dir": null` result (`"signal": "none"`) means the script found no usable
@@ -226,7 +226,7 @@ Then call `gherkin_feature_merge.py check-stale` to decide match/mismatch
 deterministically, never by eyeballing the comparison yourself:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_feature_merge.py" check-stale \
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_feature_merge.py" check-stale \
   --existing <dir>/<surface>.feature --feature-title "<surface>" \
   --observed "<scenario title>=<observed value>" --json
 ```
@@ -260,7 +260,7 @@ table above) to a scratch candidates file, then invoke
 `gherkin_stub_merge.py merge`:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_stub_merge.py" merge \
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_stub_merge.py" merge \
   --existing <dir>/<surface>_steps.<ext> --candidates <scratch-file> \
   --ext <.js|.ts|.mjs|.cjs|.java|.cs|.go> --json
 ```
@@ -320,7 +320,7 @@ above (issue #1421).
   file on disk:
 
   ```
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_feature_merge.py" merge \
+  python3 "${DEV_TEAM_ROOT}/scripts/gherkin_feature_merge.py" merge \
     --existing <dir>/<surface>.feature --candidates <scratch-file> \
     --feature-title "<surface>" --json
   ```
@@ -352,7 +352,7 @@ above (issue #1421).
 - `step_definitions/<surface>_steps.<ext>` pending stubs (`bdd-runner` only) —
   written via Step 4's `gherkin_stub_merge.py merge` invocation, never a raw
   `Write`, so an already-implemented step is never clobbered.
-- A surface inventory at `.claude/memory/<workflow>/<slug>/gherkin.md` listing each
+- A surface inventory at `.pi/dev-team/memory/<workflow>/<slug>/gherkin.md` listing each
   discovered surface, its discovery source, provenance, mode, and the files
   written. `/test-improve` reads this at Phase 4 (plan fixes) and Phase 5
   (build) to bind tests to the derived scenarios. **The inventory MUST also
@@ -494,7 +494,7 @@ fills them in (that happens later, in `/test-improve` Phase 5 or whatever
 follow-up work the operator does after a standalone run). Run the gate:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_stub_gate.py" --dir <step-definitions-dir>
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_stub_gate.py" --dir <step-definitions-dir>
 ```
 
 - **Pending stubs remain → print one consolidated statement as the FIRST
@@ -550,7 +550,7 @@ whenever `.feature` files exist, independent of whether `bdd-runner` mode
 wired a runner:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_failure_path_gate.py" --dir <feature-files-dir>
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_failure_path_gate.py" --dir <feature-files-dir>
 ```
 
 Print the gate's result as its own report section, never folded into the
@@ -571,7 +571,7 @@ immediately above — not `bdd-runner`-only, since the collision this checks
 for exists whenever `.feature` files exist:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_cross_feature_duplicate_titles_gate.py" --dir <feature-files-dir>
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_cross_feature_duplicate_titles_gate.py" --dir <feature-files-dir>
 ```
 
 Print the gate's result as its own report section, never folded into the
@@ -594,7 +594,7 @@ binding mode, since the mandatory in-depth analysis (Step 2) happens before
 mode-specific output does:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_analysis_coverage_gate.py" --file <inventory-path>
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_analysis_coverage_gate.py" --file <inventory-path>
 ```
 
 Print the gate's result as its own report section: `OK: all 8 analysis

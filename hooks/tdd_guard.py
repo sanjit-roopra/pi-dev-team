@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tdd_guard.py — PostToolUse advisory hook (Python port of tdd-guard.sh).
+"""tdd_guard.py — PostToolUse advisory hook.
 
 Tracks RED-GREEN-REFACTOR state and warns when implementation code is
 written without a preceding test file edit in the same session. State is
@@ -173,7 +173,7 @@ def _read_state(state_file: Path) -> tuple[str, int]:
 def _write_state(state_file: Path, file_path: str, now: int) -> None:
     # Atomic (tempfile + rename) so a concurrent _read_state never observes a
     # torn/partial file (#1501). No lock is needed here: unlike the counter
-    # hooks (bash_retry_guard, session_learning_trigger), this write is NOT a
+    # hooks (bash_retry_guard), this write is NOT a
     # function of the prior read — the state is simply "the most recent test
     # edit," so two concurrent test-file edits racing to write is correct
     # last-writer-wins, not a lost update. atomic_write handles the mkdir.

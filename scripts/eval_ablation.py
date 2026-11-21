@@ -68,12 +68,12 @@ from pathlib import Path
 #: `eval_grade.py`/`eval_variance.py` are monorepo-dev-only eval-corpus
 #: tooling (they read `evals/` fixtures that are never shipped), unlike this
 #: module's own `--find-latest` mode — a generic JSONL reader with no
-#: repo-shape assumption. #1653 moved this file into the plugin so a shipped
-#: skill (harness-audit) can invoke `--find-latest` via `${CLAUDE_PLUGIN_ROOT}`,
+#: repo-shape assumption. #1653 moved this file into the package so a shipped
+#: skill (harness-audit) can invoke `--find-latest` via `${DEV_TEAM_ROOT}`,
 #: but `--mode knowledge`/`--mode agent` still only make sense run from this
 #: repo's own dev checkout, where the sibling modules below actually resolve.
 #: Deferred (not module-level) so importing this file — or invoking
-#: `--find-latest` — never requires them to be importable at all; a plugin
+#: `--find-latest` — never requires them to be importable at all; a package
 #: user has no `evals/` corpus and no reason to hit this path.
 def _grading_deps():
     this_dir = Path(__file__).resolve().parent
@@ -88,12 +88,10 @@ def _grading_deps():
 
 
 def _repo_root_scripts_dir(this_dir: Path) -> Path:
-    """The monorepo's own root `scripts/` dir, reached from this file's
-    shipped location (`plugins/dev-team/scripts/`) by climbing three levels
-    (`scripts` -> `dev-team` -> `plugins` -> repo root) then descending into
-    `scripts/` again — where `eval_grade.py`/`eval_variance.py` still live,
-    unmoved. Resolves to a real path only inside this repo's own checkout;
-    harmless (simply not a directory) anywhere else."""
+    """A `scripts/` dir three levels above this file's directory, then
+    descending into `scripts/` again — the dev checkout layout where
+    `eval_grade.py`/`eval_variance.py` live. Resolves to a real path only in
+    such a checkout; harmless (simply not a directory) anywhere else."""
     return (this_dir / ".." / ".." / ".." / "scripts").resolve()
 
 

@@ -1,9 +1,8 @@
-<!-- step 4 (file scope, verdict ledger, scope marker, context payload, model, static-analysis context, output contract). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 4 (file scope, verdict ledger, scope marker, context payload, model, static-analysis context, output contract). Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 - **File scope**: pass only files matching each agent's declared scope. Skip the agent if no files match.
 - **Ledger-scoped dispatch (#2167).** Once every agent's File scope above is known, consult the per-lens verdict ledger before building any dispatch prompt — a repeat review must not pay to re-derive an outcome an exact `(lens, file, content)` match already recorded:
   ```bash
-  python3 "$CLAUDE_PLUGIN_ROOT/scripts/verdict_scope.py" --root . --lens-files '<JSON: {"<agent>": [<its File-scope files from the bullet above>], ...} for every agent surviving step 3''s gates>'
+  python3 "$DEV_TEAM_ROOT/scripts/verdict_scope.py" --root . --lens-files '<JSON: {"<agent>": [<its File-scope files from the bullet above>], ...} for every agent surviving step 3''s gates>'
   ```
   Prints `{"toDispatch": {<agent>: [...]}, "skipped": {<agent>: [{"file": ..., "verdict": {...}}]}, "fullySkippedLenses": [...]}`.
   - Narrow each agent's File scope to `toDispatch[<agent>]` before building its dispatch prompt and Scope marker (below) — its ledger-cleared files are simply removed from both, never added to. An agent named in `fullySkippedLenses` gets exactly the same treatment the File-scope bullet above already describes for "no files match": do not dispatch it this round, and leave its wave slot unused — no change to how `dispatch_waves.py` is invoked above.

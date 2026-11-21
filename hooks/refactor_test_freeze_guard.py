@@ -3,13 +3,13 @@
 
 Enforces the tests-frozen-during-refactor invariant mechanically: while
 `/build` has recorded that the current step is in its REFACTOR phase
-(`.claude/memory/build-phase.json`), any Write/Edit targeting a test file is denied
-(exit 2, `[BLOCK]` per docs/python-hook-contract.md). A refactor step must
+(`.pi/dev-team/memory/build-phase.json`), any Write/Edit targeting a test file is denied
+(exit 2, `[BLOCK]` per the hook contract). A refactor step must
 never change a test — the invariant held at zero violations across the
 experiment campaigns (Rec 4, docs/experiments/RECOMMENDATIONS.md).
 
 Fails OPEN on any internal error, with one audit line in
-`.claude/metrics/refactor-freeze.jsonl` — a broken guard must never block
+`.pi/dev-team/metrics/refactor-freeze.jsonl` — a broken guard must never block
 work.
 """
 
@@ -40,7 +40,7 @@ def emit_boundary_event(*args, **kwargs) -> None:
 
 def _project_dir() -> Path:
     """Resolve the project root via git, not the possibly-unset/stale
-    CLAUDE_PROJECT_DIR env var."""
+    DEV_TEAM_PROJECT_DIR env var."""
     return artifact_paths.project_root()
 
 
@@ -52,7 +52,7 @@ def audit(
     step: str | None = None,
     reason: str | None = None,
 ) -> None:
-    """Append one JSONL audit line under .claude/metrics/refactor-freeze.jsonl.
+    """Append one JSONL audit line under .pi/dev-team/metrics/refactor-freeze.jsonl.
 
     Best-effort — a failure to resolve the path, create the directory, or
     write the line is fail-open: log a diagnostic and never crash the guard.

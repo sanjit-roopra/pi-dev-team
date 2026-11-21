@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""pre_commit_review — Claude Code PreToolUse:Bash hook (Python port).
+"""pre_commit_review — PreToolUse:Bash hook.
 
-Python port of hooks/pre-commit-review.sh (#583 / #572 Cluster B), extended
+Started as #583 / #572 Cluster B, extended
 under #709 (`--no-verify`/`-n` bypass-reason auditing), then hardened across
 #1461/#1476/#1627/#1763/#1801 into a review-corroboration gate on
 `git commit`.
@@ -22,7 +22,7 @@ removed, so the many docs/tests/skills that reference `pre_commit_review.py`
 by name (describing this exact migration, or a bypass mechanism that is now
 simply unnecessary rather than broken) keep resolving to a real file that
 explains what happened, instead of a dangling reference. Every prior test
-against this module's git-commit-gating behavior has had its INTENT ported
+against this module's git-commit-gating behavior has had its INTENT moved
 to `hooks/pre_pr_review.py`'s own test suite (#1886 acceptance criterion:
 "existing pre_commit_review.py test suite's intent is preserved") — this
 module's own remaining tests (`tests/hooks/test_pre_commit_review.py`) now
@@ -35,8 +35,8 @@ no longer meaningful to THIS hook, since there is no gate left to bypass.
 Nothing needs to change in a caller that still sets them; they are now inert
 input, not a contract this module still enforces.
 
-Contract (docs/python-hook-contract.md):
-    Input : JSON on stdin (Claude Code PreToolUse:Bash payload)
+Contract:
+    Input : JSON on stdin (PreToolUse:Bash payload)
     Exit 0: allow the tool call — the ONLY exit code this module now
             produces, for every input, including malformed/absent stdin.
 
@@ -52,7 +52,7 @@ def main() -> int:
     """Always allow. Reading stdin at all is unnecessary now that this hook
     makes the same decision regardless of payload content — but the
     contract (read stdin, then decide) is kept structurally identical to
-    every other PreToolUse hook in this plugin, so a future reviewer sees
+    every other PreToolUse hook in this package, so a future reviewer sees
     the same shape they'd expect, not a surprising short-circuit before the
     stdin read."""
     sys.stdin.read()

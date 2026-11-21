@@ -1,21 +1,15 @@
-<!-- Extracted from CLAUDE.md ## Skills Registry — do not duplicate here, edit the source -->
-
 # Skills Registry
 
-> This file is extracted from `plugins/dev-team/CLAUDE.md` → Skills Registry. Edit the source table there; this file is a standalone reference copy for agents that need to load only the skills catalog.
-
-User-invocable workflows in `.claude/skills/`. All review skills are executed under orchestrator direction. Every agent declares its own `model:`/`effort:` frontmatter — the native Claude Code sub-agent contract the harness resolves directly (see **Model/Effort Resolution** in `agents/orchestrator.md`).
-
-> **Moved to the `marketplace-dev` plugin.** The plugin-authoring skills `agent-create`, `agent-skill-authoring`, `agent-add`, `agent-remove`, and `add-plugin` are no longer part of dev-team. They — plus a generalized `/plugin-audit` — now live in the companion `marketplace-dev` plugin, which builds and audits Claude Code plugins for any marketplace. Install it from the `bfinster` marketplace.
+User-invocable workflows in `skills/`. All review skills are executed under orchestrator direction. Every agent declares its own `model:`/`effort:` frontmatter — the sub-agent contract the harness resolves directly (see **Model/Effort Resolution** in `agents/orchestrator.md`).
 
 ## Command Table
 
 | Command | File | Role | What It Does |
 | --------- | ------ | ------ | -------------- |
-| `/agent-readiness` | `skills/agent-readiness/SKILL.md` | worker | Score how agent-ready the current project repo is against the Agent-Readiness Scorecard; emits a tiered JSON/Markdown report (scores your project, not the plugin — use `/harness-audit` for that) |
+| `/agent-readiness` | `skills/agent-readiness/SKILL.md` | worker | Score how agent-ready the current project repo is against the Agent-Readiness Scorecard; emits a tiered JSON/Markdown report (scores your project, not the package — use `/harness-audit` for that) |
 | `/apply-fixes` | `skills/apply-fixes/SKILL.md` | implementation | Apply correction prompts from `/code-review` output |
 | `/apply-test-doubles` | `skills/apply-test-doubles/SKILL.md` | worker | Apply `/cd-test-architecture`'s Step 4b build-vs-document decision logic against an existing, saved assessment report — or, when no valid report path is given, against a target to assess first — without re-running the full Steps 0-6 assessment each time |
-| `/autoship` | `skills/autoship/SKILL.md` | orchestrator | Bounded automated issue-dispatch round: reclaim orphaned in-progress issues, discover `autoship:ready` issues, invoke `/ship --no-auto-merge` sequentially for each, detect stakeholder-input blockers, classify outcomes, and log a round summary to `.claude/metrics/autoship-log.jsonl`. Requires `--max-issues` and `--max-cost-usd` |
+| `/autoship` | `skills/autoship/SKILL.md` | orchestrator | Bounded automated issue-dispatch round: reclaim orphaned in-progress issues, discover `autoship:ready` issues, invoke `/ship --no-auto-merge` sequentially for each, detect stakeholder-input blockers, classify outcomes, and log a round summary to `.pi/dev-team/metrics/autoship-log.jsonl`. Requires `--max-issues` and `--max-cost-usd` |
 | `/benchmark` | `skills/benchmark/SKILL.md` | worker | Capture runtime performance metrics (Core Web Vitals, resource sizes) and compare against baselines |
 | `/browse` | `skills/browse/SKILL.md` | worker | Browser-based QA: navigate, screenshot, click, fill forms via Playwright |
 | `/build` | `skills/build/SKILL.md` | orchestrator | Execute an approved plan in small per-behavior batches (Code-First Small Batches) with inline reviews and verification evidence; ends with a Farley Score for the branch's tests before prompting for `/pr` |
@@ -33,8 +27,8 @@ User-invocable workflows in `.claude/skills/`. All review skills are executed un
 | `/gherkin-derive` | `skills/gherkin-derive/SKILL.md` | worker | Standalone Gherkin derivation from code — discovers the public surface (OpenAPI → routes → tests → signatures), recommends a BDD binding mode via the value rubric, writes `.feature` files and (bdd-runner) pending step stubs; no tracker Stories. Phase 3 of `/test-improve` |
 | `/gherkin-public` | `skills/gherkin-public/SKILL.md` | worker | Standalone worker — author Gherkin scenarios for the entire public interface (API endpoints, UI flows, batch-job entry points, library exports, event types) at the observable boundary. Standalone; not part of the current `/test-improve` orchestrator flow |
 | `/guard` | `skills/guard/SKILL.md` | worker | Combined `/careful` + `/freeze` for production-critical sessions |
-| `/harness-audit` | `skills/harness-audit/SKILL.md` | orchestrator | Analyze harness effectiveness and flag stale components (audits this plugin's own agents/skills/hooks — not your project, see ADR 0032; contrast `/agent-readiness`, which scores your project) |
-| `/headless-run` | `skills/headless-run/SKILL.md` | worker | Run a Claude Code skill/command headlessly in an isolated subprocess (fresh `--session-id`, clean HOME/config, scrubbed env, JSON result, timeout) so a benchmark harness (e.g. #821 running `/code-review` per case) doesn't inherit the parent Remote session identity/tool surface — the reusable #842 workaround |
+| `/harness-audit` | `skills/harness-audit/SKILL.md` | orchestrator | Analyze harness effectiveness and flag stale components (audits this package's own agents/skills/hooks — not your project, see ADR 0032; contrast `/agent-readiness`, which scores your project) |
+| `/headless-run` | `skills/headless-run/SKILL.md` | worker | Run a pi skill/command headlessly in an isolated subprocess (fresh `--session-id`, clean HOME/config, scrubbed env, JSON result, timeout) so a benchmark harness (e.g. #821 running `/code-review` per case) doesn't inherit the parent Remote session identity/tool surface — the reusable #842 workaround |
 | `/help` | `skills/help/SKILL.md` | worker | List the main dev-team workflows, with `--all` to show every user command |
 | `/issues-from-assessment` | `skills/issues-from-assessment/SKILL.md` | worker | Convert a `/cd-test-architecture` assessment into a parent + Phase-tagged child issues via the tracker CLI resolved from the parent URL host (gh / az / glab / acli). Falls back to local plan files when no URL is given or the CLI is missing |
 | `/issues-from-plan` | `skills/issues-from-plan/SKILL.md` | orchestrator | Break a plan into independently-grabbable GitHub issues |
@@ -44,14 +38,14 @@ User-invocable workflows in `.claude/skills/`. All review skills are executed un
 | `/property-based-testing` | `skills/property-based-testing/SKILL.md` | worker | Generate a runnable property-based test for a target function — a round-trip test for an encode/decode pair, or an invariant test for a documented postcondition ("returns sorted", "is idempotent"); Hypothesis for Python, fast-check for JS/TS |
 | `/quality-targets-converge` | `skills/quality-targets-converge/SKILL.md` | worker | Phase-8 of `/test-improve` — loop that picks the largest gap to the four quality targets (coverage / mutants / determinism / speed) and dispatches the smallest action to close it |
 | `/report-pdf` | `skills/report-pdf/SKILL.md` | worker | Render a dev-team Markdown report (any `.dev-team-reports/*.md` or `reports/*.md`) to a styled, shareable PDF via the shared `report_pdf.py` module; graceful engine fallback (pandoc + headless Chrome → weasyprint → wkhtmltopdf → md-to-pdf), skips with an install hint when no engine is present |
-| `/repo-review` | `skills/repo-review/SKILL.md` | orchestrator | Whole-repository drift review for `token-efficiency-review`, `ai-provenance-review`, `claude-setup-review`, and `component-architecture-review` — agents whose findings are properties of accumulated drift or the full codebase, not any single diff, so they were removed from `/code-review`'s per-diff panel (#1733) and run here instead, on demand. Report-only — never gates a commit |
+| `/repo-review` | `skills/repo-review/SKILL.md` | orchestrator | Whole-repository drift review for `token-efficiency-review`, `ai-provenance-review`, and `component-architecture-review` — agents whose findings are properties of accumulated drift or the full codebase, not any single diff, so they were removed from `/code-review`'s per-diff panel (#1733) and run here instead, on demand. Report-only — never gates a commit |
 | `/review` | `skills/review/SKILL.md` | orchestrator | Alias for `/code-review` — same arguments, same behavior |
 | `/review-agent` | `skills/review-agent/SKILL.md` | worker | Run a single review agent (used for inline checkpoints) |
 | `/review-summary` | `skills/review-summary/SKILL.md` | orchestrator | Generate compact session summary for context continuity |
 | `/run-report` | `skills/run-report/SKILL.md` | worker | Report one orchestrated run's timeline joined from `boundary-events.jsonl`, `cost-metering.jsonl`, and `workflow-states.jsonl` for a given `session_id` (default: most recent) — per-state dwell time, rejection count, hook denials/bypasses by cause, and best-effort cost |
 | `/semantic-scan` | `skills/semantic-scan/SKILL.md` | worker | Build computation register and detect semantic duplicates across architectural layers |
 | `/semgrep-analyze` | `skills/semgrep-analyze/SKILL.md` | worker | Run Semgrep SAST and return structured findings |
-| `/setup` | `skills/setup/SKILL.md` | orchestrator | Provision a repo for the dev-team plugin end to end: install plugin prerequisites (jq, python3, per-language mutation tooling — Stryker, pitest, Stryker.NET), then generate dev-team-specific project config (CLAUDE.md, PostToolUse formatting hook, agent template activation, generated `/pr` command) from the stack signal `/project-init` establishes; invokes `/project-init` for all stack detection/toolchain install |
+| `/setup` | `skills/setup/SKILL.md` | orchestrator | Provision a repo for the dev-team package end to end: install package prerequisites (jq, python3, per-language mutation tooling — Stryker, pitest, Stryker.NET), then generate dev-team-specific project config (AGENTS.md, PostToolUse formatting hook, agent template activation, generated `/pr` command) from the stack signal `/project-init` establishes; invokes `/project-init` for all stack detection/toolchain install |
 | `/ship` | `skills/ship/SKILL.md` | orchestrator | Run the full spec→plan→build (Code-First Small Batches)→code-review→PR(auto-merge) pipeline as one command, pausing at the existing human gates |
 | `/source-verification` | `skills/source-verification/SKILL.md` | worker | Extract and verify factual claims in generated content against this repo's own code and, where needed, external sources — flags each claim verified/contradicted/unverifiable, never silently drops or defaults one to "verified" |
 | `/telemetry` | `skills/telemetry/SKILL.md` | worker | Manage and report the opt-in, privacy-clean usage telemetry beacon (on/off/status/report) |
@@ -61,7 +55,5 @@ User-invocable workflows in `.claude/skills/`. All review skills are executed un
 | `/test-improve` | `skills/test-improve/SKILL.md` | orchestrator | Consolidated analyze-then-improve test orchestrator — 10 phases (0-9): Phase-0 approach contract → coverage + mutation baseline → optional `/gherkin-derive` → `/test-health` analyze → `/issues-from-assessment` plan fixes → `/build` + `/coverage-delta --workflow test-improve` + `mutation-kill` per Story (no-refactor) → refactor decision → optional refactor-for-testability → `/quality-targets-converge` → 10-section executive-summary report. Defaults to lightweight ceremony; opts into heavier capabilities only when the operator asks; Go-aware (mutation advisory); local-first with `--parent <url>` opt-in for tracker sinks |
 | `/triage` | `skills/triage/SKILL.md` | worker | Investigate a bug and write a triage record to `.dev-team-reports/triage/<slug>.md` with a TDD fix plan |
 | `/unfreeze` | `skills/unfreeze/SKILL.md` | worker | Lift the scope lock set by `/freeze` |
-| `/upgrade` | `skills/upgrade/SKILL.md` | worker | Check for and apply plugin updates from within a session |
-| `/version` | `skills/version/SKILL.md` | worker | Report the installed plugin version |
-
-Referenced from: `plugins/dev-team/CLAUDE.md` → Skills Registry
+| `/upgrade` | `skills/upgrade/SKILL.md` | worker | Check for and apply package updates from within a session |
+| `/version` | `skills/version/SKILL.md` | worker | Report the installed package version |

@@ -27,15 +27,15 @@ data.
    know the current transcript path), run an exact per-agent report:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/cost_meter.py" report --transcript <path>
+   python3 "${DEV_TEAM_ROOT}/hooks/lib/cost_meter.py" report --transcript <path>
    ```
 
    Otherwise show the most recently recorded session from the metrics log
-   (prefer the migrated `.claude/metrics/` location, falling back to the
+   (prefer the migrated `.pi/dev-team/metrics/` location, falling back to the
    legacy bare `metrics/` path for a project mid-transition):
 
    ```bash
-   log=".claude/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
+   log=".pi/dev-team/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
    tail -n 1 "$log" | python3 -m json.tool
    ```
 
@@ -43,15 +43,15 @@ data.
    rolling mean of prior sessions (default tolerance +50%):
 
    ```bash
-   log=".claude/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
-   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/cost_meter.py" regression \
+   log=".pi/dev-team/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
+   python3 "${DEV_TEAM_ROOT}/hooks/lib/cost_meter.py" regression \
      --log "$log" --tolerance 0.5
    ```
 
 3. Report the per-model, per-thread (main/subagent), and per-agent-type tokens
    + cost, the session total, and whether a cost regression was detected. Do
    not invent numbers — print exactly what the meter emits. If
-   `.claude/metrics/cost-metering.jsonl` (or the legacy `metrics/cost-metering.jsonl`)
+   `.pi/dev-team/metrics/cost-metering.jsonl` (or the legacy `metrics/cost-metering.jsonl`)
    is absent, tell the user the meter hasn't recorded a session yet (the hook
    records on turn end).
 
@@ -59,8 +59,8 @@ data.
    sessions instead of all-time), pass `--window N`:
 
    ```bash
-   log=".claude/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
-   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/cost_meter.py" regression \
+   log=".pi/dev-team/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
+   python3 "${DEV_TEAM_ROOT}/hooks/lib/cost_meter.py" regression \
      --log "$log" --tolerance 0.5 --window 10
    ```
 
@@ -80,11 +80,11 @@ the sibling per-subagent transcript files
 (`<dir>/<session-id>/subagents/agent-*.jsonl`) that newer harness versions
 write instead of inline sidechain turns, so subagent spend stays visible.
 
-Attribution is limited to what the Claude Code harness actually records on
+Attribution is limited to what the harness actually records on
 transcript turns. Per-command, per-phase, and per-fix-loop-iteration buckets
 were **removed** (#170): they relied on `attributionSkill` / `orchestrationPhase`
 / `fixLoopIteration` fields the harness never writes (verified 0/312 in a real
-transcript), and a plugin has no write-path into the transcript — so those
+transcript), and a package has no write-path into the transcript — so those
 dimensions were always empty. The main/subagent split uses the native
 `isSidechain` flag, which the harness does provide; the agent-type dimension
 likewise reads only harness-recorded fields (verified against a real
@@ -100,7 +100,7 @@ checkpoints that **found+fixed** a defect vs. those that **passed no-op**, with
 the fix-loop iterations spent:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   {checkpoints: length,
    no_op:    (map(select(.outcome=="no-op"))    | length),
@@ -127,8 +127,8 @@ occupancy and the cumulative output spend at that boundary. `phase-report`
 turns the marker sequence into a per-phase ratio:
 
 ```bash
-log=".claude/metrics/phase-markers.jsonl"; [ -f "$log" ] || log="metrics/phase-markers.jsonl"
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/cost_meter.py" phase-report --log "$log"
+log=".pi/dev-team/metrics/phase-markers.jsonl"; [ -f "$log" ] || log="metrics/phase-markers.jsonl"
+python3 "${DEV_TEAM_ROOT}/hooks/lib/cost_meter.py" phase-report --log "$log"
 ```
 
 Report the per-phase `resident_tokens`, `spent_tokens` (output generated during
@@ -162,8 +162,8 @@ text, code, file paths, or tool payloads. `metrics/cost-metering.jsonl` and
    period — flagging when pace would exhaust a stated budget:
 
    ```bash
-   log=".claude/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
-   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/cost_meter.py" pace \
+   log=".pi/dev-team/metrics/cost-metering.jsonl"; [ -f "$log" ] || log="metrics/cost-metering.jsonl"
+   python3 "${DEV_TEAM_ROOT}/hooks/lib/cost_meter.py" pace \
      --log "$log" --budget 100 --period-days 30 --window-days 7
    ```
 

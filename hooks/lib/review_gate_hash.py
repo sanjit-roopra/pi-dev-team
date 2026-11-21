@@ -1,6 +1,6 @@
 """review_gate_hash — single source of truth for the .review-passed gate hash.
 
-Python port of hooks/lib/review-gate-hash.sh (#576 / #572 Cluster B, #193).
+First written as hooks/lib/review-gate-hash.sh (#576 / #572 Cluster B, #193).
 
 The review gate binds to the STAGED CONTENT (the cached patch), not just
 the staged file PATHS. Hashing paths alone let a reviewed file's content
@@ -11,9 +11,9 @@ review invalidates the gate and forces a re-review.
 Both the writer (`/code-review` step 9) and the reader (pre_commit_review)
 MUST compute the hash identically. This module IS that shared computation.
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 
-The `.sh` sibling this module ported was retired in #618 — there is no
+The `.sh` sibling this module replaced was retired in #618 — there is no
 second implementation left to stay byte-parity with. `review_gate_hash()`'s
 own docstring documents the current git invocation, including the config
 overrides pinned off by later #1461 security re-reviews.

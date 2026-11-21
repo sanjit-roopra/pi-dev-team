@@ -1,7 +1,7 @@
 # Summary & Progress File Templates
 
 These templates structure output written by the `handoff` skill — continue-mode
-templates go to `.claude/memory/`; fork-mode templates go to the OS temp dir.
+templates go to `.pi/dev-team/memory/`; fork-mode templates go to the OS temp dir.
 
 - **Task Summary** -- general-purpose summary for any completed or paused task (continue mode).
 - **Research Progress File** -- output of the Research phase; onboards the Planner (continue mode).
@@ -14,7 +14,7 @@ templates go to `.claude/memory/`; fork-mode templates go to the OS temp dir.
 
 ## Task Summary
 
-**File naming**: `.claude/memory/{date}-{task-slug}.md` (e.g., `.claude/memory/2026-02-20-user-auth-api.md`)
+**File naming**: `.pi/dev-team/memory/{date}-{task-slug}.md` (e.g., `.pi/dev-team/memory/2026-02-20-user-auth-api.md`)
 
 ```markdown
 # Task Summary: [Brief Description]
@@ -137,7 +137,7 @@ Be concise in summaries -- preserve decisions and artifacts, discard process nar
 ```
 
 Fill in the **Plan Quality Signal** section above from the plan's own
-`## Plan Review Summary` — see `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan` for why this
+`## Plan Review Summary` — see `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#phase-2-plan` for why this
 signal matters (stated there in full; not restated here). Carrying it
 forward means Implement inherits how much scrutiny the plan already
 received, rather than starting Phase 3 blind to it.
@@ -175,7 +175,7 @@ received, rather than starting Phase 3 blind to it.
 ## Fork Handoff
 
 **File naming**: `{tmpdir}/handoff-{purpose-slug}-{date}.md` (e.g.,
-`/tmp/handoff-flaky-test-repro-2026-07-06.md`) — never `.claude/memory/`.
+`/tmp/handoff-flaky-test-repro-2026-07-06.md`) — never `.pi/dev-team/memory/`.
 
 ```markdown
 # Fork Handoff: [Stated Purpose]

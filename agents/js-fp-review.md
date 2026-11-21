@@ -22,7 +22,7 @@ Cites: [adversarial-review-protocol]
 Scope: JavaScript and TypeScript files only (`.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs`).
 Skip this agent entirely if the project has no JS/TS files.
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=no mutations or impure patterns, warn=only style/point-free suggestions, fail=external mutation or a buried side effect
 Severity: error=external state mutation or a side effect buried inside a value-returning computation, warning=local mutation, suggestion=style (point-free/composition)
@@ -88,7 +88,7 @@ Point-free opportunities (style, confidence medium unless noted):
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these js-fp-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these js-fp-review-specific challenges:
 
 - Did you enumerate every declaration and call site in the diff, or stop after the first few mutations?
 - For each array-mutation finding, did you verify it mutates a shared/external reference, not a locally-constructed spread copy (`[...arr].sort()` is allowed)?

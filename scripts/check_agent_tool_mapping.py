@@ -31,10 +31,10 @@ Read/Grep/Glob.
 
 Usage (repo-root-relative — this script mutates the agent files next to
 wherever it itself resides, so it must run against the maintainer's own
-checkout, never a `${CLAUDE_PLUGIN_ROOT}`-qualified installed-cache path):
-    python3 plugins/dev-team/scripts/check_agent_tool_mapping.py [--agents-dir <path>]
-    python3 plugins/dev-team/scripts/check_agent_tool_mapping.py --fix     # append missing tier tools
-    python3 plugins/dev-team/scripts/check_agent_tool_mapping.py --json     # machine-readable report
+checkout, never a `${DEV_TEAM_ROOT}`-qualified installed-cache path):
+    python3 scripts/check_agent_tool_mapping.py [--agents-dir <path>]
+    python3 scripts/check_agent_tool_mapping.py --fix     # append missing tier tools
+    python3 scripts/check_agent_tool_mapping.py --json     # machine-readable report
 """
 
 from __future__ import annotations
@@ -80,9 +80,9 @@ TIER_CONFIG = {
 
 # Team agents the structural sweep surfaces but the mapping deliberately does NOT
 # grant (dispatch-only, non-code-structure roles). Exactly the swept agents absent
-# from TIER_CONFIG — no more, no less. `session-analysis` and `mutation-kill` carry
-# neither marker, so the sweep never surfaces them (they need no exclusion entry;
-# mutation-kill is covered via TIER_CONFIG).
+# from TIER_CONFIG — no more, no less. `mutation-kill` carries
+# neither marker, so the sweep never surfaces it (it needs no exclusion entry;
+# it is covered via TIER_CONFIG).
 EXCLUSIONS = {
     "orchestrator",
     "product-manager",
@@ -198,7 +198,7 @@ def main(argv=None) -> int:
         print("FAIL: non-review agents missing their tier's code-intelligence tools:")
         for name, missing in offenders.items():
             print(f"  - {name}: missing {', '.join(missing)}")
-        print("\nRun: python3 plugins/dev-team/scripts/check_agent_tool_mapping.py --fix")
+        print("\nRun: python3 scripts/check_agent_tool_mapping.py --fix")
     if unclassified:
         print("FAIL: team agents in neither the mapping nor the exclusion list "
               "(classify each into TIER_CONFIG or EXCLUSIONS):")

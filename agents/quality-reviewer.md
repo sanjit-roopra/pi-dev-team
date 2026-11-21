@@ -31,11 +31,11 @@ If `Complexity: trivial`, return `status: skip` immediately. The final `/code-re
 
 ### 2. Select review agents by what changed
 
-Apply the **Inline Review Checkpoint** dispatch table from `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#inline-review-checkpoint`, Step 1 — that table is the single source of truth for which agents run on which changed-file classes; do not re-duplicate it here, it drifts.
+Apply the **Inline Review Checkpoint** dispatch table from `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#inline-review-checkpoint`, Step 1 — that table is the single source of truth for which agents run on which changed-file classes; do not re-duplicate it here, it drifts.
 
 If `Complexity: complex`, also add the opus-tier agents: `security-review`, `domain-review`, `arch-review` (regardless of file type).
 
-When this selection would dispatch 5+ agents in one wave, note the coordination-cost signal and consider batching high-overlap lenses per `${CLAUDE_PLUGIN_ROOT}/knowledge/wave-consolidation-guidance.md#when-it-applies` — advisory only; dispatch still proceeds.
+When this selection would dispatch 5+ agents in one wave, note the coordination-cost signal and consider batching high-overlap lenses per `${DEV_TEAM_ROOT}/knowledge/wave-consolidation-guidance.md#when-it-applies` — advisory only; dispatch still proceeds.
 
 ### 3. Dispatch in parallel
 
@@ -55,7 +55,7 @@ When all agents return, classify each finding:
 
 ### 5. Review-fix loop
 
-If actionable findings exist, run the **Review Loop** in `${CLAUDE_PLUGIN_ROOT}/knowledge/three-phase-workflow.md#review-loop`
+If actionable findings exist, run the **Review Loop** in `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#review-loop`
 § Review Loop — that section is the single source of truth for the fix-loop
 mechanics (file-by-file fix order, test-revert handling, 5-iteration cap,
 re-run/converge/escalate exits; step 4 above already covers this agent's own

@@ -10,8 +10,7 @@ does not mirror `skills:` per-agent, so it is not consulted here.
 
 Reuses `minimal_yaml.py`'s `extract_frontmatter_block` + `parse_yaml`
 directly rather than writing a second frontmatter parser — that module
-already parses this exact SKILL.md/agent-frontmatter shape for
-`build_skills_index.py`.
+already parses this exact SKILL.md/agent-frontmatter shape.
 
 Stdlib only (ADR 0014).
 """

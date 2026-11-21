@@ -2,7 +2,7 @@
 """Per-lens review finding categories at /build checkpoints (#2211).
 
 ``append`` adds one JSONL row per finding to
-``.claude/metrics/review-findings.jsonl`` and is fail-open (never raises, never
+``.pi/dev-team/metrics/review-findings.jsonl`` and is fail-open (never raises, never
 blocks a phase). ``report`` ranks ``(lens, category)`` by frequency and
 first-pass-fix rate, so authoring checklists promote only the categories that
 actually fire.
@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_LOG = Path(".claude/metrics/review-findings.jsonl")
+DEFAULT_LOG = Path(".pi/dev-team/metrics/review-findings.jsonl")
 
 
 def append(path: Path, lens: str, category: str, severity: str,

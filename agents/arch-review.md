@@ -15,7 +15,7 @@ Cites:
 - architecture-assessment
 - adversarial-review-protocol
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=aligned with architecture, warn=minor drift, fail=boundary or pattern violation
 Severity: error=violates documented architectural decision or introduces prohibited dependency; warning=diverges from established pattern without documented rationale; suggestion=opportunity to align more closely with architectural intent
@@ -34,7 +34,7 @@ surfaces as a spurious tool-error finding instead of a real one.
 
 ## Knowledge Files
 
-Read `${CLAUDE_PLUGIN_ROOT}/knowledge/architecture-assessment.md` before starting analysis. Whole-file load: the agent uses every section — exploration patterns, ADR compliance checks, layer boundary rules, dependency direction, pattern consistency, and the optional MCP guidance.
+Read `${DEV_TEAM_ROOT}/knowledge/architecture-assessment.md` before starting analysis. Whole-file load: the agent uses every section — exploration patterns, ADR compliance checks, layer boundary rules, dependency direction, pattern consistency, and the optional MCP guidance.
 
 ## MCP Tools (Optional)
 
@@ -50,7 +50,7 @@ Note tool availability in output for the orchestrator's report.
 
 ## Explore
 
-Follow the discovery sequence in `${CLAUDE_PLUGIN_ROOT}/knowledge/architecture-assessment.md#discovery-sequence`
+Follow the discovery sequence in `${DEV_TEAM_ROOT}/knowledge/architecture-assessment.md#discovery-sequence`
 to map the architectural landscape: ADRs, architecture docs, layer
 definitions, and import patterns.
 
@@ -107,7 +107,7 @@ Grep for patterns that architecture documentation explicitly bans:
 
 ### Database change safety
 
-When the changeset includes schema migrations or DDL, apply the signals in `${CLAUDE_PLUGIN_ROOT}/knowledge/architecture-assessment.md#database-change-safety`:
+When the changeset includes schema migrations or DDL, apply the signals in `${DEV_TEAM_ROOT}/knowledge/architecture-assessment.md#database-change-safety`:
 
 - A migration drops or renames a column/table that the same release's application code still reads or writes — breaks running instances mid-rollout and blocks rollback
 - A roll-forward migration ships with no paired roll-back script
@@ -118,7 +118,7 @@ Flag the migration file and the coupled application code; fix direction is to sp
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these arch-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these arch-review-specific challenges:
 
 - Did you read the ADRs before reviewing? Every finding should reference whether it contradicts an ADR.
 - Did you check cross-boundary imports in BOTH directions (not just infrastructure → domain)?

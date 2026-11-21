@@ -1,6 +1,6 @@
 /**
  * How this session's pi trust decision reaches the pi processes it starts (dev_team_subagent children
- * and the claude shim). pi decides trust per working directory, so a granted decision covers exactly
+ * and bin/dev-team-run). pi decides trust per working directory, so a granted decision covers exactly
  * the session's directory, plus a worktree this session created of the repository rooted there. A
  * declined decision is always forwarded, so a saved /trust entry or defaultProjectTrust cannot
  * re-trust a child. Everywhere else the child decides for itself.
@@ -53,8 +53,8 @@ export function childTrusted(trust: ChildTrust, runCwd: string, worktreeRepoRoot
 }
 
 /**
- * Environment for the claude shim (bin/claude): DEV_TEAM_TRUSTED_DIR is set only when trusted, and
- * the shim adds --approve only when it runs in exactly that directory; --no-approve rides in
+ * Environment for the CLI helper (bin/dev-team-run): DEV_TEAM_TRUSTED_DIR is set only when trusted, and
+ * the helper adds --approve only when it runs in exactly that directory; --no-approve rides in
  * DEV_TEAM_PI_ARGS when declined.
  */
 export function shimTrustEnv(trust: ChildTrust, forwarded: string[]): { piArgs: string[]; trustedDir?: string } {

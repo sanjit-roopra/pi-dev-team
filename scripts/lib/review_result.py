@@ -52,7 +52,7 @@ def make_issue(
     rule_id: str = "",
 ) -> dict:
     """Return a canonical issue dict — the shared shape every review script
-    (progress_guardian, claude_setup_review, test_modernization_review,
+    (progress_guardian, test_modernization_review,
     token_efficiency_review) independently duplicated before #732.
 
     `rule_id` is included only when truthy, matching the pre-dedup

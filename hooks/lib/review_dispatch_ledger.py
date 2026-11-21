@@ -6,7 +6,7 @@ Both hand-rolled an identical `read_jsonl()` + `dispatch_counts()` pair over
 `boundary-events.jsonl`'s `hook == "agent_dispatch_ledger"` / `decision ==
 "record"` rows (see `agent_dispatch_ledger.py`) — the predicate "this row IS
 a review dispatch" had three homes (the emitter plus two independent
-readers) before this module. Per this repo's CLAUDE.md ratchet rule ("a
+readers) before this module. Per this repo's ratchet rule ("a
 mechanical finding reported twice becomes a check"), two independent review
 agents (arch-review, structure-review; #1998 wave 1) plus a third
 (domain-review; #1998 wave 2) flagged the same duplication — this module is
@@ -47,11 +47,11 @@ _LEDGER_DECISION = "record"
 
 
 def resolve_stream(category: str, stream: str, cwd: Path, *, migrate: bool = False) -> Path:
-    """Resolve a `.claude/<category>/<stream>` metrics path.
+    """Resolve a `.pi/dev-team/<category>/<stream>` metrics path.
 
     `migrate=False` by default: every current caller of this helper is a
     read-only report/query, so a mere read must never migrate a legacy file
-    or create `.claude/<category>/` as a side effect (mirrors
+    or create `.pi/dev-team/<category>/` as a side effect (mirrors
     `hooks/lib/metrics_query.py::_stream_path`'s same reasoning). Pass
     `migrate=True` explicitly for a writer.
     """

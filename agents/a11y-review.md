@@ -24,7 +24,7 @@ Cites: [adversarial-review-protocol]
 Scope: UI component and template files only (.svelte, .html, .jsx, .tsx, .vue, .razor, .cshtml, .jsp).
 Skip non-component files (utilities, services, stores, configs, tests, routes/pages without markup).
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=accessible, warn=minor gaps, fail=WCAG AA violations
 Severity: error=blocks users, warning=degrades experience, suggestion=enhancement
@@ -91,7 +91,7 @@ Focus management:
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these a11y-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these a11y-review-specific challenges:
 
 - Did you examine every component/template file in scope, not just the most obviously interactive one?
 - For each contrast finding, did you cite the actual color values and the computed WCAG ratio rather than estimate "looks low"?

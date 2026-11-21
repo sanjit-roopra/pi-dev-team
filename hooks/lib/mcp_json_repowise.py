@@ -8,18 +8,16 @@ legitimately commit it to distribute other MCP servers (`codegraph`, an
 internal org server) that don't bake in a local path — that entry breaks
 for every other clone/teammate.
 
-`detect()` is the single shared predicate both consumers of this module
-need: `project-init/SKILL.md`'s `.mcp.json` standing check (which calls
-`relocate()` via this module's CLI) and `hooks/mcp_json_repowise_nudge.py`
-(the SessionStart hook that prompts an already-initialized project to
-re-run `/project-init`). Implemented once here so the two can never drift
-out of sync on what counts as "needs fixing."
+`detect()` is the shared predicate behind `project-init/SKILL.md`'s
+`.mcp.json` standing check (which calls `relocate()` via this module's CLI).
 
 `relocate()` registers at `local` scope BEFORE stripping the tracked entry
-— never the reverse — so a failed `claude mcp add` (CLI missing, timeout,
-non-zero exit) leaves `.mcp.json` untouched rather than deleting the only
-registration that existed. Every other `mcpServers` entry is preserved
-byte-for-byte; only the `repowise` key is ever touched.
+— never the reverse — so a failed registration leaves `.mcp.json`
+untouched rather than deleting the only registration that existed. pi has
+no local-scope MCP registry to register with, so the default registration
+always fails and `relocate()` reports `relocate-failed` for a tracked
+repowise entry. Every other `mcpServers` entry is preserved byte-for-byte;
+only the `repowise` key is ever touched.
 
 Stdlib-only. Python 3.10+. See ADR 0014 / ADR 0015.
 """
@@ -111,27 +109,10 @@ def strip_entry(mcp_json_path: Path) -> bool:
 
 
 def _register_local_scope(repo_root: Path) -> bool:
-    """`claude mcp add repowise --scope local -- repowise mcp <repo_root>
-    --transport stdio`. True on exit 0; False on any failure (`claude` CLI
-    missing, non-zero exit, timeout) — never raises. Deliberately re-derives
-    `args` from the CURRENT repo root rather than reusing the stripped
-    entry's own `args` — those carry the OLD, wrong machine's path, which is
-    exactly the bug being fixed."""
-    try:
-        completed = subprocess.run(
-            [
-                "claude", "mcp", "add", _SERVER_NAME, "--scope", "local",
-                "--", _SERVER_NAME, "mcp", str(repo_root), "--transport", "stdio",
-            ],
-            cwd=str(repo_root),
-            capture_output=True,
-            check=False,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0
+    """Register `repowise mcp <repo_root> --transport stdio` at a local,
+    untracked scope. pi has no such MCP registry, so this always returns
+    False (never raises) and the tracked entry is left in place."""
+    return False
 
 
 def relocate(
@@ -143,12 +124,13 @@ def relocate(
         "not-tracked"       -- .mcp.json missing, or not git-tracked
         "no-repowise-entry" -- tracked, but no repowise key to relocate
         "relocated"         -- registered locally and stripped
-        "relocate-failed"   -- repowise entry found, but `claude mcp add`
-                                failed; .mcp.json is left untouched
+        "relocate-failed"   -- repowise entry found, but the local-scope
+                                registration failed; .mcp.json is left
+                                untouched
 
-    `register` is injectable (stdlib `Callable`, defaulting to the real
-    `claude mcp add` call) so callers/tests can verify both branches
-    without a real `claude` CLI or a live MCP registration. Never raises.
+    `register` is injectable (stdlib `Callable`, defaulting to
+    `_register_local_scope`) so callers/tests can verify both branches
+    without a live MCP registration. Never raises.
     """
     cwd = Path(cwd)
     entry = detect(cwd)

@@ -1,8 +1,9 @@
-"""session_log — the shared classification/discovery core for the two
-forked session-transcript extractors (epic #2040):
-
-  - ``scripts/session_extract.py`` (monorepo-only developer tooling)
-  - ``plugins/dev-team/scripts/extract_session_report.py`` (shipped)
+"""session_log — the shared classification/discovery core for session
+transcripts (epic #2040). Its live consumers are the hooks that read a
+transcript (``hooks/lib/cost_meter.py``, ``hooks/review_verdict_recorder.py``,
+``hooks/subagent_completion_guard.py``); it was first extracted from two
+forked extractor scripts (``session_extract.py`` and
+``extract_session_report.py``), which this package does not ship.
 
 See ``docs/adr/0036-the-two-session-extractors-stay-forked-1994.md`` for why
 the extractors themselves stay forked (discovery/CLI surface, pricing, cost,

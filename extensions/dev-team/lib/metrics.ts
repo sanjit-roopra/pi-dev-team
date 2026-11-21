@@ -2,17 +2,20 @@
  * Native replacements for the transcript-parsing hooks.
  *
  * - Cost meter (hooks/cost_meter.py + hooks/lib/cost_meter.py): appends one cumulative row per
- *   agent run to .claude/metrics/cost-metering.jsonl with the upstream row shape, so /cost-report,
+ *   agent run to .pi/dev-team/metrics/cost-metering.jsonl in the row shape cost_meter.py writes, so /cost-report,
  *   `cost_meter.py regression|pace` and /autoship --max-cost-usd keep working. Uses pi's own
- *   usage.cost (correct for every provider, including GitHub Copilot) instead of a Claude-only
- *   price table. Adds `session_id` (upstream could not, see run_report `joinable:false`).
+ *   usage.cost (correct for every provider, including GitHub Copilot) instead of a fixed
+ *   price table. Adds `session_id`, which a transcript-parsing hook cannot know (see run_report `joinable:false`).
+ *
+ * Rows are written only with telemetry consent: `enabled: true` in <agentDir>/dev-team/telemetry.json
+ * (agentDir = PI_CODING_AGENT_DIR or ~/.pi/agent), the file hooks/lib/telemetry_consent.py reads too.
  */
 import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { costUsd, type PiUsage, sessionEntries, sessionSpend } from "../../spend/lib/session-spend.ts";
+import { STATE_DIR } from "./state-dir.ts";
 
 export function projectRoot(cwd: string): string {
 	const r = spawnSync("git", ["rev-parse", "--show-toplevel"], { cwd, encoding: "utf-8" });
@@ -20,9 +23,14 @@ export function projectRoot(cwd: string): string {
 	return r.status === 0 && out ? out : cwd;
 }
 
+/** The user's telemetry consent file: <agentDir>/dev-team/telemetry.json. */
+export function telemetryConsentPath(): string {
+	return path.join(getAgentDir(), "dev-team", "telemetry.json");
+}
+
 export function telemetryConsent(): boolean {
 	try {
-		const data = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude", "telemetry.json"), "utf-8"));
+		const data = JSON.parse(fs.readFileSync(telemetryConsentPath(), "utf-8"));
 		return data?.enabled === true;
 	} catch {
 		return false;
@@ -65,7 +73,7 @@ function slim(map: Record<string, Bucket>): Record<string, Omit<Bucket, "message
 	return out;
 }
 
-/** Build the cumulative cost row for the whole session (every branch, like upstream's whole-transcript sum). */
+/** Build the cumulative cost row for the whole session (every branch, like cost_meter.py's whole-transcript sum). */
 export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | undefined {
 	const total = newBucket();
 	const byModel: Record<string, Bucket> = {};
@@ -77,7 +85,7 @@ export function buildCostRow(ctx: ExtensionContext): Record<string, unknown> | u
 	};
 	let any = false;
 	for (const run of sessionSpend(sessionEntries(ctx))) {
-		// Rows keep upstream's shape: model turns only, so pi's other usage entries (cache warming) stay out.
+		// Rows keep cost_meter.py's shape: model turns only, so pi's other usage entries (cache warming) stay out.
 		if (run.thread === "overhead") continue;
 		add(total, run.usage, run.messages);
 		bump(byModel, run.model, run.usage, run.messages);
@@ -104,7 +112,7 @@ export function recordCost(ctx: ExtensionContext): string | undefined {
 	if (process.env.DEV_TEAM_COST_METER === "off" || !telemetryConsent()) return undefined;
 	const row = buildCostRow(ctx);
 	if (!row) return undefined;
-	const file = path.join(projectRoot(ctx.cwd), ".claude", "metrics", "cost-metering.jsonl");
+	const file = path.join(projectRoot(ctx.cwd), STATE_DIR, "metrics", "cost-metering.jsonl");
 	try {
 		fs.mkdirSync(path.dirname(file), { recursive: true });
 		fs.appendFileSync(file, `${JSON.stringify(row)}\n`, "utf-8");

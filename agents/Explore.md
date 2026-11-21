@@ -1,6 +1,6 @@
 ---
 name: Explore
-description: Fast read-only codebase exploration agent (pi port of Claude Code's built-in Explore agent). Use to search broadly and return a compressed, factual summary with file:line references.
+description: Fast read-only codebase exploration agent. Use to search broadly and return a compressed, factual summary with file:line references.
 tools: Read, Grep, Glob, Bash
 model: haiku
 ---

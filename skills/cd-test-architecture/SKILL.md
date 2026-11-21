@@ -173,7 +173,7 @@ Coverage` section (issue #1450), run here against this skill's own
 configuration:
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gherkin_analysis_coverage_gate.py" --file <report-path> --config cd-test-architecture
+python3 "${DEV_TEAM_ROOT}/scripts/gherkin_analysis_coverage_gate.py" --file <report-path> --config cd-test-architecture
 ```
 
 Print the gate's result as its own report section: `OK: all 8
@@ -195,7 +195,7 @@ When `--pdf` was passed and a report **file** was written, render it to a
 sibling PDF per `knowledge/report-pdf-integration.md`:
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/cd-test-architecture-<app>.md
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/cd-test-architecture-<app>.md
 ```
 
 In the single-component **chat-only** case no file was written, so `--pdf` is a
@@ -263,7 +263,7 @@ When a Downstream-service `Build (Fake)` row resolves to a virtual-service libra
 - Repository: `<repo path>`
 - Branch / SHA: `<branch>` / `<sha>`
 - Run parameters: `<flags — e.g. single-component scope>`
-- `dev-team` plugin version: `<plugin_version>`
+- `dev-team` package version: `<plugin_version>`
 ```
 
 ### Companion: test-double setup guide

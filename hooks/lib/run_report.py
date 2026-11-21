@@ -2,9 +2,9 @@
 """run_report.py — per-session run report (#1167).
 
 Composes one `session_id`'s view across three existing streams:
-`.claude/metrics/boundary-events.jsonl` (denials/bypasses),
-`.claude/metrics/cost-metering.jsonl` (tokens/$), and
-`.claude/metrics/workflow-states.jsonl` (#1166, state dwell times).
+`.pi/dev-team/metrics/boundary-events.jsonl` (denials/bypasses),
+`.pi/dev-team/metrics/cost-metering.jsonl` (tokens/$), and
+`.pi/dev-team/metrics/workflow-states.jsonl` (#1166, state dwell times).
 Pure composition of already-deterministic data — no model tokens spent
 parsing transcripts.
 

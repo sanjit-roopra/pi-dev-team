@@ -2,7 +2,7 @@
 """Decide whether /ship's Review phase is redundant (#2212).
 
 /build's inline checkpoints and Step 6 backstop already record per-lens
-verdicts in ``.claude/metrics/review-verdicts.jsonl`` keyed by
+verdicts in ``.pi/dev-team/metrics/review-verdicts.jsonl`` keyed by
 ``(lens, file, content hash)``. When every resolver-selected lens has a
 ``pass`` row for every changed file at its CURRENT content, a second
 whole-change ``/code-review`` has nothing left to examine.

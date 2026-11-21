@@ -18,17 +18,12 @@ Constraints).
 Substitute:
 
 - `<repo>` — absolute path to the repository root (the project being
-  measured, not the plugin's own install location).
-- `<plugin-root>` — absolute path to the installed dev-team plugin on this
-  machine — get it by running `echo "$CLAUDE_PLUGIN_ROOT"` from an active
-  Claude Code session with the dev-team plugin loaded. Without a session,
-  derive it from `/dev-team:version`'s output (`dev-team@<marketplace>
-  v<version> (scope: <scope>)`): the installed copy lives at
-  `~/.claude/plugins/cache/<marketplace>/dev-team/<version>/`, e.g.
-  `~/.claude/plugins/cache/bfinster/dev-team/12.3.0` for `dev-team@bfinster
-  v12.3.0 (scope: user)`. `${CLAUDE_PLUGIN_ROOT}` itself is a
-  Claude-session-time environment variable and does not exist when a
-  scheduler runs the job outside any Claude session, so these recipes need
+  measured, not the package's own install location).
+- `<package-root>` — absolute path to the installed dev-team package on this
+  machine — get it by running `echo "$DEV_TEAM_ROOT"` from an active
+  pi session with the dev-team package loaded. `${DEV_TEAM_ROOT}` itself is a
+  pi-session-time environment variable and does not exist when a
+  scheduler runs the job outside any pi session, so these recipes need
   its resolved value substituted in ahead of time rather than the literal
   token.
 - `<python>` — an absolute path to the Python 3.10+ interpreter that has the
@@ -39,7 +34,7 @@ Substitute:
 launchd (not cron — cron does not run on a schedule reliably across macOS
 sleep/wake cycles) via a per-user `LaunchAgent`.
 
-`~/Library/LaunchAgents/dev.agentic-dev-team.mutation-nightwatch.plist`:
+`~/Library/LaunchAgents/dev.pi-dev-team.mutation-nightwatch.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -48,11 +43,11 @@ sleep/wake cycles) via a per-user `LaunchAgent`.
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.agentic-dev-team.mutation-nightwatch</string>
+  <string>dev.pi-dev-team.mutation-nightwatch</string>
   <key>ProgramArguments</key>
   <array>
     <string><python></string>
-    <string><plugin-root>/skills/mutation-testing/scripts/mutation_nightwatch.py</string>
+    <string><package-root>/skills/mutation-testing/scripts/mutation_nightwatch.py</string>
     <string>--repo-root</string>
     <string><repo></string>
   </array>
@@ -74,8 +69,8 @@ sleep/wake cycles) via a per-user `LaunchAgent`.
 Load/unload:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/dev.agentic-dev-team.mutation-nightwatch.plist
-launchctl unload ~/Library/LaunchAgents/dev.agentic-dev-team.mutation-nightwatch.plist
+launchctl load ~/Library/LaunchAgents/dev.pi-dev-team.mutation-nightwatch.plist
+launchctl unload ~/Library/LaunchAgents/dev.pi-dev-team.mutation-nightwatch.plist
 ```
 
 launchd's own scheduling already survives the machine sleeping (it fires on
@@ -92,7 +87,7 @@ line itself.
 `crontab -e`:
 
 ```cron
-0 1 * * * <python> <plugin-root>/skills/mutation-testing/scripts/mutation_nightwatch.py --repo-root <repo> >> <repo>/reports/mutation-nightwatch/cron.log 2>&1
+0 1 * * * <python> <package-root>/skills/mutation-testing/scripts/mutation_nightwatch.py --repo-root <repo> >> <repo>/reports/mutation-nightwatch/cron.log 2>&1
 ```
 
 Note the redirect is a direct `>>`, not a `| tee` — see
@@ -109,7 +104,7 @@ process is already running, not a deeper suspend triggered before cron fires).
 ## Windows — Task Scheduler
 
 ```powershell
-schtasks /create /tn "MutationNightWatch" /tr "<python> <plugin-root>\skills\mutation-testing\scripts\mutation_nightwatch.py --repo-root <repo>" /sc daily /st 01:00
+schtasks /create /tn "MutationNightWatch" /tr "<python> <package-root>\skills\mutation-testing\scripts\mutation_nightwatch.py --repo-root <repo>" /sc daily /st 01:00
 ```
 
 Task Scheduler's own "Wake the computer to run this task" option (in the

@@ -17,9 +17,9 @@ timeout semantics — before this module existed:
   leaving the working tree in an unknown, possibly-mutated state (#1930).
 - ``stop_reason`` — the "zero survivors, or no improvement over the previous
   round" predicate that ends a file's kill loop.
-- ``resolve_model`` / ``strip_code_fences`` / ``claude_cli_available`` /
-  ``CLAUDE_CLI`` / ``run_claude_headless`` / ``HeadlessCallFailed`` (moved
-  here from ``mutation_kill_headless.py`` in #1601) — the ``claude --print`` invocation
+- ``resolve_model`` / ``strip_code_fences`` / ``headless_cli_available`` /
+  ``DEV_TEAM_RUN_BIN`` / ``run_headless`` / ``HeadlessCallFailed`` (moved
+  here from ``mutation_kill_headless.py`` in #1601) — the ``dev-team-run --print`` invocation
   glue neither loop's scoring/insertion/orchestration logic actually needs,
   but that ``mutation_kill_loop_python.py`` previously reused by importing
   ``mutation_kill_headless.py`` at module scope. That module is NOT a neutral
@@ -40,10 +40,10 @@ The retry-then-downgrade policy on repeated headless-generation failures
 ``GenerationExhausted``, ``DowngradeEvent``, ``make_downgrade_audit_hook``,
 #1908) lives in ``mutation_kill_retry.py`` instead — extracted out of this
 module (#1925) once it grew into a five-concern grab-bag; that module's
-dependencies on this one are ``run_claude_headless``/``resolve_fallback_model``,
+dependencies on this one are ``run_headless``/``resolve_fallback_model``,
 plus ``HeadlessCallFailed`` referenced only as a type
 (``isinstance(exc, mutation_kill_shared.HeadlessCallFailed)``), not a
-monkeypatch-sensitive callable. ``run_claude_headless`` is reached on every
+monkeypatch-sensitive callable. ``run_headless`` is reached on every
 generation attempt unless the caller injects ``call_headless`` (#1918), in
 which case it is never reached. (Keep this in sync with the
 mirrored dependency inventory in ``mutation_kill_retry.py``'s own module
@@ -386,32 +386,32 @@ def stop_reason(
 
 
 # =============================================================================
-# Headless generation glue — shelling to `claude --print`. Moved here from
+# Headless generation glue — shelling to `dev-team-run --print`. Moved here from
 # mutation_kill_headless.py (#1601): both mutation_kill_headless.py (the
 # C# CLI) and mutation_kill_loop_python.py (the Python loop) reuse this
 # verbatim; neither loop's own scoring/insertion/orchestration logic is
 # C#- or Python-specific here.
 # =============================================================================
 
-# Timeout for the `claude --print` generation subprocess. Overridable via env
+# Timeout for the `dev-team-run --print` generation subprocess. Overridable via env
 # var since a legitimately slow/large prompt may need a larger budget than
 # this default — unlike the 30s used by this module's git-shelling helpers
 # above, this subprocess routinely runs for tens of seconds to minutes.
-CLAUDE_GENERATION_TIMEOUT_S = _timeout_from_env("DEV_TEAM_MUTATION_GENERATION_TIMEOUT_S", 300)
+GENERATION_TIMEOUT_S = _timeout_from_env("DEV_TEAM_MUTATION_GENERATION_TIMEOUT_S", 300)
 
-# Timeout for the `claude --version` availability probe — small, since it's a
+# Timeout for the `dev-team-run --version` availability probe — small, since it's a
 # startup check, not a generation call.
-CLAUDE_VERSION_TIMEOUT_S = _timeout_from_env("DEV_TEAM_MUTATION_VERSION_TIMEOUT_S", 30)
+VERSION_TIMEOUT_S = _timeout_from_env("DEV_TEAM_MUTATION_VERSION_TIMEOUT_S", 30)
 
-# The Claude CLI binary. Overridable via CLAUDE_BIN so a non-PATH install can
-# be pointed at without editing this module.
-CLAUDE_CLI = os.environ.get("CLAUDE_BIN", "claude")
+# The dev-team-run helper binary. Overridable via DEV_TEAM_RUN_BIN so a non-PATH
+# install can be pointed at without editing this module.
+DEV_TEAM_RUN_BIN = os.environ.get("DEV_TEAM_RUN_BIN", "dev-team-run")
 
 
 def resolve_model(explicit: str | None = None) -> str | None:
     """Resolve the generation model: ``--model`` > ``DEV_TEAM_MUTATION_MODEL``
-    > ``None``. When ``None``, ``--model`` is omitted from the ``claude --print``
-    invocation and the Claude CLI uses its own default — the plugin never pins a
+    > ``None``. When ``None``, ``--model`` is omitted from the ``dev-team-run --print``
+    invocation and the helper uses its own default — the package never pins a
     model snapshot id in source (models are resolved dynamically, not literalized;
     see ``tests/repo/test_no_pinned_snapshots.py``, the enforcing authority for
     that rule)."""
@@ -436,8 +436,8 @@ _MODEL_DOWNGRADE_LADDER: dict[str, str] = {
     "sonnet": "haiku",
 }
 
-# Mirrors plugins/marketplace-dev/knowledge/agent-contract.json's
-# ``model.enum`` minus ``inherit`` (which doesn't make sense as a fallback
+# Mirrors the agent frontmatter ``model:`` enum (opus/sonnet/haiku/fable/
+# inherit) minus ``inherit`` (which doesn't make sense as a fallback
 # target). ``fable`` is a display-latency variant, not a capability tier, so
 # it is a valid --model/DEV_TEAM_MUTATION_FALLBACK_MODEL override value but
 # deliberately has no entry in _MODEL_DOWNGRADE_LADDER above — it is not part
@@ -491,7 +491,7 @@ _FENCE_CLOSE_RE = re.compile(r"\n?```$")
 def strip_code_fences(text: str) -> str:
     """Strip one leading and one trailing markdown code fence, if present.
 
-    Claude may wrap generated methods in a ```` ```csharp ```` (or
+    The model may wrap generated methods in a ```` ```csharp ```` (or
     ```` ```python ````) block; the loop inserts raw method/test text, so the
     fence is removed on both ends.
     """
@@ -501,7 +501,7 @@ def strip_code_fences(text: str) -> str:
 
 
 class HeadlessCallFailed(RuntimeError):
-    """Raised by :func:`run_claude_headless` when ``claude --print`` exits
+    """Raised by :func:`run_headless` when ``dev-team-run --print`` exits
     non-zero.
 
     Carries the full, untruncated ``returncode``/``stderr`` as public
@@ -515,8 +515,8 @@ class HeadlessCallFailed(RuntimeError):
     def __init__(self, returncode: int, stderr: str, stdout: str = "") -> None:
         self.returncode = returncode
         self.stderr = stderr
-        # #1950: the classifier was structurally blind to stdout. The claude
-        # CLI renders some upstream failures to stdout (a rendered
+        # #1950: the classifier was structurally blind to stdout. The helper
+        # renders some provider failures to stdout (a rendered
         # "API Error: 529 Overloaded" body) while stderr carries only a
         # generic non-zero-exit line, so a stderr-only classifier calls a
         # genuinely retryable overload non-gateway-class and burns the file's
@@ -526,32 +526,32 @@ class HeadlessCallFailed(RuntimeError):
         super().__init__(str(self))
 
     def __str__(self) -> str:
-        return f"claude CLI failed (exit {self.returncode}): {self.stderr[:500]}"
+        return f"dev-team-run failed (exit {self.returncode}): {self.stderr[:500]}"
 
 
-def claude_cli_available() -> bool:
-    """True if the Claude CLI responds to ``--version``."""
+def headless_cli_available() -> bool:
+    """True if the dev-team-run helper responds to ``--version``."""
     try:
         result = subprocess.run(
-            [CLAUDE_CLI, "--version"],
+            [DEV_TEAM_RUN_BIN, "--version"],
             capture_output=True,
             text=True,
             check=False,
-            timeout=CLAUDE_VERSION_TIMEOUT_S,
+            timeout=VERSION_TIMEOUT_S,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
 
 
-def run_claude_headless(prompt: str, *, model: str | None, cwd: Path | None = None) -> str:
-    """Shell to ``claude --print`` with an already-built ``prompt``; return
+def run_headless(prompt: str, *, model: str | None, cwd: Path | None = None) -> str:
+    """Shell to ``dev-team-run --print`` with an already-built ``prompt``; return
     stdout with markdown code fences stripped.
 
     The single shared invocation glue behind both languages'
     ``make_headless_generator`` factories (#1583). ``--model`` is passed only
-    when ``model`` is set; when ``None`` the Claude CLI uses its own default
-    (the plugin pins no model snapshot id — see
+    when ``model`` is set; when ``None`` the helper uses its own default
+    (the package pins no model snapshot id — see
     ``tests/repo/test_no_pinned_snapshots.py``).
 
     ``prompt`` is passed over stdin (``input=prompt``), not as a trailing
@@ -560,7 +560,7 @@ def run_claude_headless(prompt: str, *, model: str | None, cwd: Path | None = No
     any other process on the host via ``ps``/procfs for the subprocess's
     lifetime — stdin avoids both.
     """
-    cmd = [CLAUDE_CLI, "--print"]
+    cmd = [DEV_TEAM_RUN_BIN, "--print"]
     if model:
         cmd += ["--model", model]
     try:
@@ -571,12 +571,12 @@ def run_claude_headless(prompt: str, *, model: str | None, cwd: Path | None = No
             text=True,
             cwd=cwd,
             check=False,
-            timeout=CLAUDE_GENERATION_TIMEOUT_S,
+            timeout=GENERATION_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(
-            f"claude --print generation timed out after "
-            f"{CLAUDE_GENERATION_TIMEOUT_S}s (set "
+            f"dev-team-run --print generation timed out after "
+            f"{GENERATION_TIMEOUT_S}s (set "
             "DEV_TEAM_MUTATION_GENERATION_TIMEOUT_S to raise it)"
         ) from exc
     if result.returncode != 0:

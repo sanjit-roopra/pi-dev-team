@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Merge CLAUDE_AUTOCOMPACT_PCT_OVERRIDE into a project's `.claude/settings.json`.
+"""Merge `autocompactPct` into a project's `.pi/dev-team.json`.
 
-Used by `/dev-team:setup` (#2177). Merges exactly one key into the `env`
-block, preserving every other key; it never replaces the file wholesale.
+Used by `/dev-team:setup` (#2177). Merges exactly one top-level key,
+preserving every other key; it never replaces the file wholesale. The value
+is written as a JSON integer.
 
     set_autocompact_env.py [--project-dir DIR] [--autocompact-pct N]
                            [--yes] [--no-autocompact]
@@ -19,9 +20,11 @@ Value resolution (all `--yes` / prompt logic lives here, not in SKILL.md):
 
 The threshold can only be LOWERED by the harness: a value above the
 (reported, unverified) harness default of ~83 is written but warned about.
+The env var DEV_TEAM_AUTOCOMPACT_PCT and `.pi/dev-team.local.json` outrank
+this file; the script warns when either already sets a value.
 
-`--no-autocompact` leaves settings.json untouched and creates
-`.claude/memory/autocompact-nudge-off` so the SessionStart nudge stays quiet.
+`--no-autocompact` leaves dev-team.json untouched and creates
+`.pi/dev-team/memory/autocompact-nudge-off` so the SessionStart nudge stays quiet.
 
 Exit codes: 0 ok, 2 error. On any error the original file bytes are left
 untouched. Stdlib only; Python 3.10+.
@@ -43,6 +46,7 @@ if str(_LIB) not in sys.path:
     sys.path.insert(0, str(_LIB))
 
 from autocompact_config import (  # type: ignore[import-not-found]
+    CONFIG_KEY,
     DEFAULT_PCT,
     HARNESS_DEFAULT_PCT,
     KEY,
@@ -50,12 +54,13 @@ from autocompact_config import (  # type: ignore[import-not-found]
     validate_pct,
 )
 
-NUDGE_OFF_RELPATH = Path(".claude") / "memory" / "autocompact-nudge-off"
+CONFIG_RELPATH = Path(".pi") / "dev-team.json"
+NUDGE_OFF_RELPATH = Path(".pi") / "dev-team" / "memory" / "autocompact-nudge-off"
 _TOKENS_ON_200K = 200_000
 
 
 class SetupError(Exception):
-    """A user-facing failure; the settings file was not modified."""
+    """A user-facing failure; the config file was not modified."""
 
 
 def _prompt_text(default: int) -> str:
@@ -78,11 +83,9 @@ def _load_settings(path: Path) -> dict:
     except (OSError, ValueError) as exc:
         if isinstance(exc, OSError):
             raise SetupError(f"cannot read {path}: {exc}; not modified") from exc
-        raise SetupError(f"malformed settings.json: {path}; not modified") from exc
+        raise SetupError(f"malformed dev-team.json: {path}; not modified") from exc
     if not isinstance(data, dict):
-        raise SetupError(f"settings.json top level is not an object: {path}; not modified")
-    if "env" in data and not isinstance(data["env"], dict):
-        raise SetupError(f'"env" is not an object in {path}; not modified')
+        raise SetupError(f"dev-team.json top level is not an object: {path}; not modified")
     return data
 
 
@@ -90,12 +93,12 @@ def _atomic_write(path: Path, data: dict) -> None:
     """Write `data` via a unique temp file in the same directory + os.replace.
 
     mkstemp gives an unpredictable name opened O_EXCL (no planted-symlink or
-    race on a fixed `settings.json.tmp`); the existing file's mode is kept.
+    race on a fixed `dev-team.json.tmp`); the existing file's mode is kept.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_name = None
     try:
-        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".settings.", suffix=".tmp")
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".dev-team.", suffix=".tmp")
         try:
             mode = stat.S_IMODE(path.stat().st_mode)
         except OSError:
@@ -136,19 +139,21 @@ def run(
     if pct_flag is not None and validate_pct(pct_flag) is None:
         raise SetupError(f"invalid --autocompact-pct '{pct_flag}': expected integer 1-100")
 
-    path = project_dir / ".claude" / "settings.json"
+    path = project_dir / CONFIG_RELPATH
     data = _load_settings(path)
-    env_block = data.get("env") or {}
-    existing = env_block.get(KEY)
-    existing_valid = validate_pct(existing) is not None
-    existing_present = KEY in env_block
+    existing_raw = data.get(CONFIG_KEY)
+    existing_pct = validate_pct(existing_raw)
+    existing_valid = existing_pct is not None
+    # A valid value (JSON number or numeric string) compares as its digits.
+    existing = str(existing_pct) if existing_valid else existing_raw
+    existing_present = CONFIG_KEY in data
 
     lines: list[str] = []
-    # Only the project's settings.json is ever written. A process-env or
-    # settings.local.json entry outranks it, so say so rather than report a
+    # Only the project's dev-team.json is ever written. A process-env or
+    # dev-team.local.json entry outranks it, so say so rather than report a
     # success the harness will not honor.
     effective = detect(project_dir, os.environ if environ is None else environ)
-    shadow = effective if effective.source in ("process env", "settings.local.json") else None
+    shadow = effective if effective.source in ("process env", "dev-team.local.json") else None
     if pct_flag is not None:
         final = pct_flag
     else:
@@ -163,7 +168,7 @@ def run(
 
     if existing_valid and pct_flag is None and final == existing:
         lines.append(
-            f"kept existing {KEY}={existing} (pass --autocompact-pct to change)"
+            f"kept existing {CONFIG_KEY}={existing} (pass --autocompact-pct to change)"
         )
     elif existing_present and not existing_valid:
         lines.append(f"replaced invalid value '{existing}' with {final}")
@@ -174,20 +179,21 @@ def run(
         )
 
     if shadow is not None:
+        shadow_key = KEY if shadow.source == "process env" else CONFIG_KEY
         lines.append(
-            f"warning: {KEY} is also set in {shadow.source} (value {shadow.raw!r}), which "
+            f"warning: {shadow_key} is also set in {shadow.source} (value {shadow.raw!r}), which "
             f"takes precedence over {path}; the value written here will not take effect "
             "until that entry is removed or corrected"
         )
 
     if existing == final:
         if not lines:
-            lines.append(f"{KEY}={final} already set in {path}")
+            lines.append(f"{CONFIG_KEY}={final} already set in {path}")
         return lines
 
-    data.setdefault("env", {})[KEY] = final
+    data[CONFIG_KEY] = int(final)
     _atomic_write(path, data)
-    lines.insert(0, f"set {KEY}={final} in {path}")
+    lines.insert(0, f"set {CONFIG_KEY}={final} in {path}")
     return lines
 
 

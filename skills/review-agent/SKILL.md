@@ -22,7 +22,7 @@ You have been invoked with the `/review-agent` skill. Run a single named review 
 This command is executed under orchestrator direction. Pass the named
 agent's `model:`/`effort:` frontmatter as declared — the harness resolves
 both fields natively before dispatch, per Model/Effort Resolution in
-`.claude/agents/orchestrator.md` (ADR 0026).
+`agents/orchestrator.md` (ADR 0026).
 
 ## Worker constraints
 
@@ -67,8 +67,8 @@ Optional:
 
 ### 1. Load agent definition
 
-Read `.claude/agents/<name>.md` (project override) or else `${CLAUDE_PLUGIN_ROOT}/agents/<name>.md`. If neither exists, list available
-review agents from `${CLAUDE_PLUGIN_ROOT}/agents/` (the Review Agents section of
+Read `.pi/agents/<name>.md` (project override) or else `${DEV_TEAM_ROOT}/agents/<name>.md`. If neither exists, list available
+review agents from `${DEV_TEAM_ROOT}/agents/` (the Review Agents section of
 `knowledge/agent-registry.md` is the roster) and ask the user to pick one.
 
 ### 2. Determine target files

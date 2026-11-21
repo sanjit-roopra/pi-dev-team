@@ -1,4 +1,4 @@
-"""Stryker.NET (C#) mutation-testing adapter — Python port of stryker-net.sh.
+"""Stryker.NET (C#) mutation-testing adapter.
 
 Uses the same JSON schema as Stryker JS, so `lib.parse_stryker_kills` is
 shared. `stryker_net_run` intentionally stays separate from `stryker_run`:

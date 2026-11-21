@@ -13,10 +13,9 @@ extractor, and the historical-comparability consequence. A distilled
 enumeration also lives in this slice's commit body; this docstring is the
 canonical, in-code record of the same decisions.
 
-The four signal classes `/session-review`'s contract defines (docstring of
-scripts/session_extract.py, mirrored in
-plugins/dev-team/knowledge/telemetry-schema.md's `session-digest.jsonl`
-section):
+Neither extractor (`session_extract.py`, `extract_session_report.py`) nor
+any `session-digest.jsonl` producer ships in this package; the history below
+is kept for provenance. The four signal classes:
 
   token      per-session / per-skill / per-subagent / per-model token +
              cost, and the cache-hit ratio.
@@ -132,7 +131,7 @@ CONTEXT_TOKEN_FIELDS = (
 )
 
 #: Mirrors `hooks/lib/cost_meter.py`'s `_new_bucket()` shape (#1094) so the
-#: per-agent breakdowns agree on field names across the plugin. They stay
+#: per-agent breakdowns agree on field names across the package. They stay
 #: separate implementations — cost_meter runs live per turn, this runs over
 #: a whole transcript tree.
 AGENT_BUCKET_FIELDS = (*CONTEXT_TOKEN_FIELDS, "output_tokens")

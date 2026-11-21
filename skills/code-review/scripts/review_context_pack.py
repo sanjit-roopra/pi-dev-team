@@ -209,7 +209,7 @@ def render_pack(*, changed, diff_text, included, omitted, base_ref) -> str:
 def _pack_dir(cwd: Path) -> Path:
     if artifact_paths is not None:
         return artifact_paths.category_dir(_CATEGORY, cwd)
-    return cwd / ".claude" / _CATEGORY
+    return cwd / ".pi" / "dev-team" / _CATEGORY
 
 
 def build(

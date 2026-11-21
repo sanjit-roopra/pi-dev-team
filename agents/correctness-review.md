@@ -15,7 +15,7 @@ Cites:
 - adversarial-review-protocol
 - agent-review-methodology
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 **Status** (derive from the highest-severity finding, do not let finding volume alone change the tier):
 
@@ -51,7 +51,7 @@ verbatim source plus its callers/siblings in one call; the granted
 tools return verified skeletons and modification risk. Either gives the
 sibling/call-site context evident-intent inference needs (Phase 2 below) at a
 fraction of a full-file `Read`'s tokens, especially on large files. See
-`${CLAUDE_PLUGIN_ROOT}/knowledge/codegraph-vs-graphify.md` for the full
+`${DEV_TEAM_ROOT}/knowledge/codegraph-vs-graphify.md` for the full
 comparison. Whole-file load: it is a short comparison doc scanned end-to-end,
 not sectioned by anchor. **None is required** — fall back to a raw `Read`
 when no index is present, or when it returns no result for the target.
@@ -70,7 +70,7 @@ Return `{"status": "skip", "issues": [], "summary": "No behavioral logic to anal
 ## Protocol
 
 Run the shared three-phase methodology in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/agent-review-methodology.md` (Whole-file load:
+`${DEV_TEAM_ROOT}/knowledge/agent-review-methodology.md` (Whole-file load:
 the Enumerate/Classify/Group phases and their rationale, read in full) —
 enumerate first, classify second, group third.
 
@@ -250,7 +250,7 @@ Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` sur
 ## Self-Challenge
 
 After producing findings, run the shared challenger loop in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared
+`${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared
 methodology — The Loop + Output format — read in full), then work this
 correctness-review-specific challenge before finalizing each finding:
 

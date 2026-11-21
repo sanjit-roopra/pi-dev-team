@@ -27,9 +27,9 @@ content that now exists on disk.
 
 ## Location & gating (issue #1624 design item 2)
 
-Writes to `.claude/metrics/` **unconditionally**, matching
+Writes to `.pi/dev-team/metrics/` **unconditionally**, matching
 `boundary-events.jsonl` rather than `/build`'s consent-gated
-`~/.claude/telemetry.json` path. Rationale, as recorded on the issue: this
+`~/.pi/agent/dev-team/telemetry.json` path. Rationale, as recorded on the issue: this
 is the same class of local, counts-only operational stream the commit gate
 itself already depends on, and gating it behind consent would make the
 epic's success criteria depend on consent being enabled on dev machines.
@@ -48,7 +48,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# skills/code-review/scripts -> skills/code-review -> skills -> plugin root
+# skills/code-review/scripts -> skills/code-review -> skills -> package root
 _PLUGIN_ROOT = Path(__file__).resolve().parents[3]
 _HOOKS_LIB_DIR = _PLUGIN_ROOT / "hooks" / "lib"
 if str(_HOOKS_LIB_DIR) not in sys.path:
@@ -256,10 +256,10 @@ def build_round_entry(
 
 
 def append_round(entry: dict, cwd=None) -> Path | None:
-    """Append one row to `.claude/metrics/review-value.jsonl`.
+    """Append one row to `.pi/dev-team/metrics/review-value.jsonl`.
 
     Fail-open on the write, matching every other metrics emitter in this
-    plugin: a full disk or read-only metrics directory must never fail a
+    package: a full disk or read-only metrics directory must never fail a
     review. Returns the path written, or `None` when the write failed.
     """
     try:
@@ -267,7 +267,7 @@ def append_round(entry: dict, cwd=None) -> Path | None:
         log = (
             artifact_paths.resolve_file("metrics", _STREAM_NAME, base)
             if artifact_paths is not None
-            else base / ".claude" / "metrics" / _STREAM_NAME
+            else base / ".pi" / "dev-team" / "metrics" / _STREAM_NAME
         )
         log.parent.mkdir(parents=True, exist_ok=True)
         with open(log, "a", encoding="utf-8") as handle:

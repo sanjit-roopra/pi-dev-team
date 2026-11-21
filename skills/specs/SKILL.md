@@ -7,12 +7,12 @@ user-invocable: true
 
 # Agent-Assisted Specification
 
-<!-- pi-port-notes -->
-## pi port notes (read first)
+<!-- pi-notes -->
+## pi notes (read first)
 
 - Issue and comment text follows the "GitHub text style" from the system prompt. Keep every heading, section and marker that this skill's template requires, because later steps read them. Write the prose inside them plainly and briefly. If the template itself breaks a rule (for example a required list that is longer than the limit), send the same `gh` command again unchanged: the extension blocks it only once.
-- **The saved request is the primary input.** When the invocation names a saved request file (`.claude/memory/requests/*.md`, typed with the command or passed on by `/ship`), read it in full. The spec records it in a metadata line `**Source request**: <path>` and copies each example of exact output in it into the acceptance criteria character for character. Flags in it are command options, not requirements. An answer logged with source `user` is settled. An answer logged `assumed (timeout)` or `assumed (no human)` is not settled: the criterion built on it names its Ambiguity Log row, so `/plan` lists it under `## Risks & Open Questions`.
-<!-- pi-port-notes -->
+- **The saved request is the primary input.** When the invocation names a saved request file (`.pi/dev-team/memory/requests/*.md`, typed with the command or passed on by `/ship`), read it in full. The spec records it in a metadata line `**Source request**: <path>` and copies each example of exact output in it into the acceptance criteria character for character. Flags in it are command options, not requirements. An answer logged with source `user` is settled. An answer logged `assumed (timeout)` or `assumed (no human)` is not settled: the criterion built on it names its Ambiguity Log row, so `/plan` lists it under `## Risks & Open Questions`.
+<!-- pi-notes -->
 
 
 Role: orchestrator. This command produces specification artifacts and gates
@@ -54,7 +54,7 @@ a long time. Refuse instead, naming the unresolved path or the fetch failure
 (private, deleted, unauthenticated, network).
 
 **Unsupported formats are refused too, never partially parsed.** The supported
-set is what `Read` handles natively. `.docx` is explicitly out — the plugin
+set is what `Read` handles natively. `.docx` is explicitly out — the package
 ships stdlib-only Python (ADR 0014/0015) and no stdlib path parses it. Name the
 reason and the conversion to perform; do not guess at a partial read.
 

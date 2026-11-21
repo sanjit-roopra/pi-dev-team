@@ -4,7 +4,7 @@ description: >-
   Analyze review agent effectiveness, model routing, and orchestration complexity
   against actual usage data. Produces a report of harness components that may be
   candidates for simplification or removal. Use periodically to prevent harness
-  staleness as model capabilities improve. Audits the dev-team plugin's OWN
+  staleness as model capabilities improve. Audits the dev-team package's OWN
   harness from runtime metrics — not your project repo's readiness (for that,
   use /agent-readiness).
 argument-hint: "[--output <path>] [--pdf]"
@@ -18,15 +18,15 @@ Role: orchestrator. This command analyzes harness effectiveness — it does not 
 
 You have been invoked with the `/harness-audit` command.
 
-> **Not `/agent-readiness`.** This audits the **dev-team plugin's own harness**
+> **Not `/agent-readiness`.** This audits the **dev-team package's own harness**
 > (review-agent effectiveness, model tiers, orchestration) from accumulated
 > runtime metrics in `metrics/`. `/agent-readiness` scores the **subject
 > repository's** readiness for AI-assisted development from a static checkout.
-> Different subject, different input, different output. The inward-facing
-> companion here is `/session-review`, whose `session-digest.jsonl` this command
-> consumes (Step 1).
+> Different subject, different input, different output. Step 1 also reads
+> `session-digest.jsonl` when it exists; no producer for it ships in this
+> package.
 
-**Portable executable, repo-relative data (#1653).** `eval_ablation.py` now ships under `plugins/dev-team/scripts/` — its `--find-latest`/`--jsonl` mode is a generic JSONL reader with no repo-shape assumption, unlike the module's `--mode knowledge`/`--mode agent` paths, which stay monorepo-only (they read `evals/` fixtures never shipped). The call below is therefore `${CLAUDE_PLUGIN_ROOT}`-qualified like any other shipped script; only the `--jsonl` argument stays bare — `metrics/eval-ablation.jsonl` is genuinely *this repo's own* runtime metrics stream, consistent with the note above that this command audits the dev-team plugin's own harness.
+**Portable executable, repo-relative data (#1653).** `eval_ablation.py` now ships under `scripts/` — its `--find-latest`/`--jsonl` mode is a generic JSONL reader with no repo-shape assumption, unlike the module's `--mode knowledge`/`--mode agent` paths, which need `evals/` fixtures this package does not ship. The call below is therefore `${DEV_TEAM_ROOT}`-qualified like any other shipped script; only the `--jsonl` argument stays bare — `metrics/eval-ablation.jsonl` is genuinely *this repo's own* runtime metrics stream, consistent with the note above that this command audits the dev-team package's own harness.
 
 ## Orchestrator constraints
 
@@ -46,20 +46,21 @@ Arguments: $ARGUMENTS
 ### 1. Check for metrics data
 
 Read metrics JSONL files from `metrics/`. Full field reference for every
-stream below: `${CLAUDE_PLUGIN_ROOT}/knowledge/telemetry-schema.md` — read it
+stream below: `${DEV_TEAM_ROOT}/knowledge/telemetry-schema.md` — read it
 instead of re-deriving a schema from the emitter. Five complementary streams
 exist:
 
 - `metrics/*-task-log.jsonl` — **self-reported** task logs (whatever the model
   chose to record about itself).
-- `metrics/session-digest.jsonl` — **ground-truth** real-session digests from
-  `/session-review` (#129): token/cost trends, `rework`/`accuracy` counts, and
-  `utilization.never_observed_*`. Prefer this where it disagrees with the
-  self-reports, and use `never_observed_*` to corroborate stale-component
-  flags. Schema + join: see `docs/eval-system.md` → "Session-review trend
-  digest".
-- `~/.claude/metrics/artifact-usage.json` — **per-artifact usage index** written by the
-  telemetry hook on each Skill invocation. Use `last_used_at` to identify
+- `metrics/session-digest.jsonl` — **ground-truth** real-session digests
+  (#129): token/cost trends, `rework`/`accuracy` counts, and
+  `utilization.never_observed_*`. No producer for this stream ships in this
+  package; use it only if the file exists. Prefer this where it disagrees with
+  the self-reports, and use `never_observed_*` to corroborate stale-component
+  flags.
+- `metrics/artifact-usage.json` in the dev-team folder in your pi agent
+  directory (`~/.pi/agent/dev-team/` by default) — **per-artifact usage index**
+  written by the telemetry hook on each Skill invocation. Use `last_used_at` to identify
   artifacts that have never been observed (absent from the index) or are stale
   (absent or `last_used_at` > 30 days ago). Cross-reference with
   `never_observed_*` in `session-digest.jsonl` for corroboration. See
@@ -71,8 +72,8 @@ exist:
   without causes, join on `session_id` (when present on both streams) to
   attribute friction to a specific hook/rule instead of reasoning from counts
   alone.
-- `metrics/eval-ablation.jsonl` — **causal** per-agent ablation evidence from
-  `/agent-eval --ablation <agent>` (#868): a controlled baseline-vs-ablated
+- `metrics/eval-ablation.jsonl` — **causal** per-agent ablation evidence
+  (#868; no ablation runner ships in this package): a controlled baseline-vs-ablated
   integration-tier delta, not accumulated usage data. When a record exists
   for a drop-candidate agent, Step 3 cites its measured delta/verdict instead
   of relying on `review-value.jsonl` alone.
@@ -92,16 +93,16 @@ section.
 1. Read `evals/baseline.json`. If the file is absent, skip this step
    entirely (nothing to compare).
 2. Read its `model` field (written by `scripts/eval_variance.py
-   --write-baseline --model <name>`, per the change-contract flow in
+   --write-baseline --model <name>`, an eval-corpus script not shipped in
+   this package, per the change-contract flow in
    `skills/feedback-learning/SKILL.md`). **Absent field = pre-migration
    baseline — do not prompt.** This is deliberate: a baseline recorded
    before the `model` field existed carries no false signal either way.
 3. Read the current session's model from `metrics/session-digest.jsonl`
-   (the most recent record's model field) or session metadata.
+   if present (the most recent record's model field), else session metadata.
 4. Compare. **On mismatch**, the report (Step 8) gains a **Re-baseline
    Required** section instructing the operator to re-run the eval suite and
-   re-write the baseline (`/agent-eval` full suite + `eval_variance.py
-   --write-baseline --model <current-model>`) before trusting any pre/post
+   re-write the baseline (no eval runner ships in this package) before trusting any pre/post
    comparison elsewhere in this report or in a feedback-learning change
    contract. Flag explicitly that scaffolding kept alive by old-model scores
    (e.g. a removal candidate from Step 3 that "still fails" on the old
@@ -119,7 +120,7 @@ For each review agent in the registry (`knowledge/agent-registry.md`):
 4. **Finding severity distribution**: Is the agent producing mostly minor findings? If >80% of findings are minor severity, consider whether the agent justifies its token cost. Compute this from the `severity_breakdown` object on `metrics/review-value.jsonl` rows (`{errors, warnings, suggestions}`, added in #1256) — aggregate per `agents_run` and treat `suggestions` as the minor bucket. Rows written before #1256 lack the field; count them as "no severity data" and exclude them from the ratio rather than assuming a mix (small-N honesty, consistent with Step 5). If **no** row carries `severity_breakdown`, report this analysis as dark ("severity breakdown unavailable — pre-#1256 metrics") rather than fabricating a distribution.
 
    ```bash
-   log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+   log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
    [ -f "$log" ] && jq -s '
      map(select(.severity_breakdown != null))
      | group_by(.agents_run | sort | join(","))
@@ -139,7 +140,7 @@ For each review agent in the registry (`knowledge/agent-registry.md`):
 **Check the sample's validity first (#2019).** Run this before reading a single rate, and report its verdict at the top of every section that cites per-lens value:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/review_value_coverage.py" --json
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/review_value_coverage.py" --json
 ```
 
 Both writers of `review-value.jsonl` are triggered by agent instruction, not by mechanism, so the rows collected skew toward rounds that found something — an agent that found nothing is markedly less likely to run a "record the review value" step. #1512 measured this directly: ~100% "found something" across a 10-record sample, which nearly justified pruning lenses that were working fine.
@@ -174,7 +175,7 @@ back-compat — and drops `outcome: "skipped"` rows (a backstop suppressed by
 a non-event), **before** grouping:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   map(select((.source // "build-checkpoint") | . == "build-checkpoint" or . == "build-backstop"))
   | map(select(.outcome != "skipped"))
@@ -208,7 +209,7 @@ it before touching a gate. Group `diff_shape: "test-only"` rows by lens and
 report the outcome split against the same lens's `mixed` rows:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   map(select((.source // "build-checkpoint") | . == "build-checkpoint" or . == "build-backstop"))
   | map(select(.outcome != "skipped" and .diff_shape != null))
@@ -250,7 +251,7 @@ ran first — a backstop on a `trivial`-only slice reviewed something nothing el
 did, and including it would understate redundancy:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   (map(select((.source // "build-checkpoint") == "build-checkpoint"))
      | map(.plan + "|" + (.slice // "")) | unique) as $reviewed
@@ -278,7 +279,7 @@ that these rows are excluded from the fix-rate drop-candidate logic because they
 apply no fixes by design — a 0% fix rate there is expected, not a signal:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   map(select(.source == "code-review"))
   | map(. + {found: ((.issues_found // .findings_new) // 0)})
@@ -313,7 +314,7 @@ was applied (`round >= 2`), what fraction found *nothing but* problems that
 fix created? A high ratio means the loop is chasing its own tail:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   map(select(.round != null and .round >= 2))
   | if length == 0 then "no round data yet" else
@@ -335,7 +336,7 @@ Step 3: an agent near the top of that table whose rounds are mostly
 not evidence of high discovery value:
 
 ```bash
-log=".claude/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
+log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/review-value.jsonl"
 [ -f "$log" ] && jq -s '
   map(select(.dispatch_purpose != null))
   | map({purpose: .dispatch_purpose, agent: .agents_run[]})
@@ -357,10 +358,10 @@ blocks is the operator-visible symptom of the same churn.
 #1886 moved this gate from `git commit` (`hook == "pre_commit_review"`) to
 `gh pr create` (`hook == "pre_pr_review"`) — query BOTH hook names so a
 session that spans the migration (or a fork still running the older cached
-plugin version) is not silently undercounted:
+package version) is not silently undercounted:
 
 ```bash
-log=".claude/metrics/boundary-events.jsonl"
+log=".pi/dev-team/metrics/boundary-events.jsonl"
 [ -f "$log" ] && jq -rs '
   map(select((.hook == "pre_commit_review" or .hook == "pre_pr_review") and (.matched_rule | startswith("dispatch-evidence-"))))
   | group_by(.session_id)
@@ -392,7 +393,7 @@ for causal evidence:
 
 ```bash
 for agent in <each single-agent drop candidate>; do
-  python3 "$CLAUDE_PLUGIN_ROOT/scripts/eval_ablation.py" --find-latest "$agent" \
+  python3 "$DEV_TEAM_ROOT/scripts/eval_ablation.py" --find-latest "$agent" \
     --jsonl metrics/eval-ablation.jsonl
 done
 ```
@@ -406,8 +407,7 @@ done
 - **No record found** — state the evidence is correlational-only and name
   the exact command that would upgrade it: `No ablation evidence for
   <agent> — this recommendation is based on correlational usage data only.
-  Run \`/agent-eval --ablation <agent>\` to get a controlled baseline-vs-
-  ablated delta before acting.`
+  A controlled baseline-vs-ablated delta would be stronger evidence.`
 
 This applies only to drop candidates that resolve to a **single** review
 agent (multi-agent checkpoint combinations have no single-agent ablation
@@ -427,7 +427,7 @@ above, but with `source: "harness"` — a value distinct from
 `build-checkpoint` / `build-backstop` / `code-review`, and written to the
 harness's **own** results directory (`evals/code-review-benchmark/results/
 review-value.jsonl` by default, `--results-dir` elsewhere), never
-`.claude/metrics/`. Both are structural, not just a labelling convention:
+`.pi/dev-team/metrics/`. Both are structural, not just a labelling convention:
 even a caller that pointed this step at the wrong file could not
 accidentally pool harness rows into the live population, because they
 don't live in the same file.
@@ -503,7 +503,7 @@ directory), building the `[{"applied_findings": [...], "pretool_findings":
 [...]}, ...]` shape `classify_lens_redundancy()` expects, and running:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/harness-audit/scripts/redundancy_criterion.py" \
+python3 "${DEV_TEAM_ROOT}/skills/harness-audit/scripts/redundancy_criterion.py" \
   --rounds <path-to-rounds.json>
 ```
 
@@ -518,21 +518,22 @@ every other section in this skill.
 Close the loop on `/feedback-learning` lessons: does an adopted lesson
 measurably help, or should it become a rollback candidate? This step is
 **report-only**, consistent with the orchestrator constraints above — it
-never edits an agent, skill, or CLAUDE.md file, and a `harmful` verdict is
+never edits an agent, skill, or AGENTS.md file, and a `harmful` verdict is
 always a *proposal*, never an automatic rollback.
 
 Reads `metrics/config-changelog.jsonl` (written by `/feedback-learning`,
 schema in [feedback-learning](../feedback-learning/SKILL.md) → Audit Trail)
-and `metrics/session-digest.jsonl` (this command's existing Step 1 input).
-Both are metrics-only — no prompt or code content, consistent with the
-session-review privacy boundary.
+and `metrics/session-digest.jsonl` (this command's existing Step 1 input;
+read only if present — no producer ships in this package, and a missing file
+yields `insufficient data` for every lesson).
+Both are metrics-only — no prompt or code content.
 
 Run the deterministic helper (pure stdlib, zero model tokens for the
 computation):
 
 ```bash
-changelog=".claude/metrics/config-changelog.jsonl"; [ -f "$changelog" ] || changelog="metrics/config-changelog.jsonl"
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/harness-audit/scripts/lesson_validate.py" \
+changelog=".pi/dev-team/metrics/config-changelog.jsonl"; [ -f "$changelog" ] || changelog="metrics/config-changelog.jsonl"
+python3 "${DEV_TEAM_ROOT}/skills/harness-audit/scripts/lesson_validate.py" \
   --changelog "$changelog" \
   --digest metrics/session-digest.jsonl \
   --apply -o memory/lesson-validation.json
@@ -589,8 +590,8 @@ Review the current pipeline for components that may be unnecessary overhead:
 4. **Context pollution per phase (#1520)**: Read the per-phase resident-vs-spend ratios from the phase markers (`phase-report`) and flag phases whose context lingered rather than being one-time cost — candidates for earlier mid-phase compaction or narrower subagent scoping. Skip if the log is absent.
 
    ```bash
-   log=".claude/metrics/phase-markers.jsonl"; [ -f "$log" ] || log="metrics/phase-markers.jsonl"
-   [ -f "$log" ] && python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/cost_meter.py" phase-report --log "$log" --json
+   log=".pi/dev-team/metrics/phase-markers.jsonl"; [ -f "$log" ] || log="metrics/phase-markers.jsonl"
+   [ -f "$log" ] && python3 "${DEV_TEAM_ROOT}/hooks/lib/cost_meter.py" phase-report --log "$log" --json
    ```
 
    A phase with a high `resident_to_spent_ratio` spent proportionally little fresh generation while carrying a large resident context — cite it in § Orchestration Simplification Opportunities as a compaction/scoping candidate. This is a session-scoped proxy (resident is sampled at the `/handoff` boundary — see `skills/cost-report/SKILL.md` § Context pollution), not exact per-phase accounting.
@@ -603,7 +604,7 @@ to a sibling PDF per `knowledge/report-pdf-integration.md` (additive; non-fatal
 if no engine):
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" <the-output-path>
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" <the-output-path>
 ```
 
 Write the report to the output path using this structure:
@@ -624,8 +625,7 @@ Write the report to the output path using this structure:
 - **Baseline model**: <model recorded in evals/baseline.json>
 - **Current session model**: <current model>
 - **Action**: Re-run the eval suite and re-write the baseline
-  (`/agent-eval` full suite, then `eval_variance.py --write-baseline
-  --model <current-model>`) before trusting any pre/post comparison in this
+  (no eval runner ships in this package) before trusting any pre/post comparison in this
   report or in a feedback-learning change contract.
 - **Possibly stale scaffolding**: <any removal candidate below whose
   "zero fail" or "high false positive" verdict was measured on the old
@@ -662,8 +662,8 @@ Write the report to the output path using this structure:
 > Requires human decision — do not auto-edit skills.
 >
 > "Ablation evidence" column: the cited `metrics/eval-ablation.jsonl` verdict +
-> date for single-agent candidates, or "correlational only — run
-> `/agent-eval --ablation <agent>`" when no record exists.
+> date for single-agent candidates, or "correlational only" when no record
+> exists.
 
 ### High-Value Checkpoints (fix rate ≥ 50%)
 | Checkpoint | Agents | Runs | Fix rate | Issues fixed |

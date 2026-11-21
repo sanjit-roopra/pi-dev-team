@@ -48,7 +48,7 @@ _SEGMENT_OPERATORS = {"&&", "||", ";", "|"}
 #: A `<<[-]DELIM ... DELIM` heredoc body, DELIM optionally quoted.
 _HEREDOC_RE = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?\n.*?\n\1\b", re.DOTALL)
 
-#: The plugin's Stryker.NET wrapper script, matched against a token's
+#: The package's Stryker.NET wrapper script, matched against a token's
 #: basename — with or without hyphen/underscore separators, with or without
 #: the `.sh` extension (mirrors the two gates' previously-divergent forms).
 _WRAPPER_NAME_RE = re.compile(r"^csharp[_-]stryker[_-]net[_-]wrapper(\.sh)?$")
@@ -87,7 +87,7 @@ def _segment_is_stryker(segment: list[str]) -> bool:
 
 def is_stryker_invocation(command: str) -> bool:
     """True only when `command` actually runs Stryker.NET — `dotnet stryker`,
-    `dotnet-stryker`, or the plugin's wrapper script, in program position of
+    `dotnet-stryker`, or the package's wrapper script, in program position of
     one of the command's operator-separated segments. A mention of the tool
     name in a --body/grep/echo/comment argument does not count."""
     if not command:

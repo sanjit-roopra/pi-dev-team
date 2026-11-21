@@ -24,8 +24,8 @@ Arguments: $ARGUMENTS
 
 - Positional: `<repo-path>`.
 - `--parent <issue-url>` — parent issue URL (or empty for local-files).
-- `--repo-slug <slug>` — `.claude/memory/<workflow>/` namespace.
-- `--workflow <name>` — the workflow namespace under `.claude/memory/`. Defaults to `test-improve`. Orchestrators pass their own namespace (e.g. `/test-improve` passes `test-improve` for its Phase-5 per-Story deltas).
+- `--repo-slug <slug>` — `.pi/dev-team/memory/<workflow>/` namespace.
+- `--workflow <name>` — the workflow namespace under `.pi/dev-team/memory/`. Defaults to `test-improve`. Orchestrators pass their own namespace (e.g. `/test-improve` passes `test-improve` for its Phase-5 per-Story deltas).
 - `--story <id-or-path>` — optional Story this delta is attributed to. Used as the snapshot label.
 - `--story-files <glob-or-comma-list>` — production-code files the Story touched (typically from `/build`'s commit diff, tests filtered out). When both `--story` AND a non-empty `--story-files` are present, Step 2b runs scoped mutation; otherwise it is a no-op so `/quality-targets-converge` can keep calling this worker without `--story-files` exactly as before.
 
@@ -49,9 +49,9 @@ If the run fails, surface the first error and stop. Do not post a delta from a b
 
 When a `.sln` file exists at the repo root (.NET), a workspace signal is present (JS/TS), or a multi-module signal is present (Java) — the same triggers `coverage-baseline`'s Step 1a uses — re-run the appropriate discovery script **fresh, every call**, never reusing a project/package/module list recorded by a prior run:
 
-- **.NET**: `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_dotnet.py`'s `discover_dotnet_projects(repo_root)`
-- **JS/TS**: `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_js.py`'s `discover_js_packages(repo_root)`
-- **Java**: `${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_java.py`'s `discover_java_modules(repo_root)` — a root `pom.xml` declaring `<modules>` (Maven, which wins when both are present) or a `settings.gradle`/`settings.gradle.kts` declaring `include(...)` (Gradle)
+- **.NET**: `${DEV_TEAM_ROOT}/scripts/coverage_discovery_dotnet.py`'s `discover_dotnet_projects(repo_root)`
+- **JS/TS**: `${DEV_TEAM_ROOT}/scripts/coverage_discovery_js.py`'s `discover_js_packages(repo_root)`
+- **Java**: `${DEV_TEAM_ROOT}/scripts/coverage_discovery_java.py`'s `discover_java_modules(repo_root)` — a root `pom.xml` declaring `<modules>` (Maven, which wins when both are present) or a `settings.gradle`/`settings.gradle.kts` declaring `include(...)` (Gradle)
 
 Implementation mechanics (the bootstrap/drift-check contract, weighted-merge, and the exact message templates): [`../coverage-baseline/references/multi-project-discovery.md`](../coverage-baseline/references/multi-project-discovery.md) — this section pins the contract surface only, mirroring how `coverage-baseline`'s own Step 1a links the same file rather than re-deriving the mechanics a second time.
 
@@ -143,7 +143,7 @@ Append to `.dev-team-reports/<workflow>/<slug>/data/coverage-history.json` (arra
 
 ### 4. Post the snapshot
 
-Append a markdown row to the parent's `## Metrics history` section (tracker mode) or to `.claude/plans/<workflow>/FEATURE.md` (local-files mode):
+Append a markdown row to the parent's `## Metrics history` section (tracker mode) or to `.pi/dev-team/plans/<workflow>/FEATURE.md` (local-files mode):
 
 ```markdown
 | <ISO-8601> | Phase <n> | <story-id-or-—> | Line <pct>% (Δ <+/-pct>) | Branch <pct>% (Δ <+/-pct>) | Mutants <count> (Δ <+/-n>) |

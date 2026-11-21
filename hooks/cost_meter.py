@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Python port of hooks/cost-meter.sh (#597 / #572 Phase 3).
+"""cost_meter — Stop / SubagentStop hook (#597 / #572 Phase 3).
 
 Stop / SubagentStop hook (issue #102). PostToolUse hooks carry no token
 usage, so this fires when a turn finishes, reads `transcript_path` from the
 hook payload, and records a per-session cost summary (tokens + dollars, by
-agent) to `.claude/metrics/cost-metering.jsonl` via
+agent) to `.pi/dev-team/metrics/cost-metering.jsonl` via
 `hooks/lib/cost_meter.py record`.
 
 Token→cost conversion uses `knowledge/model-pricing.json`.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : Stop / SubagentStop JSON on stdin
-    Output: writes .claude/metrics/cost-metering.jsonl; no stdout. Exit 0.
+    Output: writes .pi/dev-team/metrics/cost-metering.jsonl; no stdout. Exit 0.
     Posture: record-only and fail-open. Any error → exit 0 silently.
     Opt-out: DEV_TEAM_COST_METER=off disables.
 

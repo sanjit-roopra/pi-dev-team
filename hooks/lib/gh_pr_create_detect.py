@@ -7,26 +7,21 @@ command, looking for `gh pr create` as the segment's real command words
 (after skipping any leading `NAME=value` environment-variable prefixes and
 resolving a path-qualified `gh` — e.g. `/usr/local/bin/gh` — by basename).
 
-This is deliberately a MUCH lighter heuristic than
-`hooks/lib/pre_commit_detect.py`'s `is_git_commit_command` — that module
-went through five adversarial hardening rounds (`<shell> -c` unwrapping,
-command substitution, I/O redirection before the command word, `-C`/global
-option chaining, ...) specifically for `git commit`'s much larger and more
-security-sensitive command-shape surface (a missed detection there let a
-commit land with no review corroboration at all). `gh pr create` has a much
-narrower realistic invocation shape in practice, and the trigger point this
-module guards is a human/agent-driven "open a PR" action, not a background
-`git commit` that fires many times per session — so the cost/benefit of
-matching that same adversarial-hardening investment here is different.
+This is deliberately a light heuristic, not an adversarially hardened
+command parser (`<shell> -c` unwrapping, command substitution, I/O
+redirection before the command word, `-C`/global option chaining, ...).
+`gh pr create` has a narrow realistic invocation shape in practice, and the
+trigger point this module guards is a human/agent-driven "open a PR"
+action, not a background command that fires many times per session — so
+the cost/benefit of that hardening investment is different here.
 
-KNOWN RESIDUAL GAP, disclosed rather than silently accepted (mirrors this
-repo's own convention for `pre_commit_detect.py`'s own disclosed gaps): this
+KNOWN RESIDUAL GAP, disclosed rather than silently accepted: this
 detector does NOT unwrap `<shell> -c '...'`, command substitution
 (`$(...)`/backticks), `eval`/`xargs`, I/O redirection before the command
 word, or a `gh` alias/wrapper script — any of those can still reach `gh pr
 create` undetected. A future round of adversarial review (correctness-review
-/ security-review) should extend this the same way #1801 extended
-`pre_commit_detect.py`, if this trigger point proves to need it in practice.
+/ security-review) should extend this if this trigger point proves to need
+it in practice.
 
 Stdlib-only. See ADR 0014 / ADR 0015.
 """

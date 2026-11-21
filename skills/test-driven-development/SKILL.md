@@ -1,6 +1,6 @@
 ---
 name: test-driven-development
-description: Advisory reference for the Classic RED-GREEN-REFACTOR TDD discipline with hard gates — not a build cadence toggle. The plugin's single build cadence is Code-First Small Batches (docs/experiments/RECOMMENDATIONS.md Rec 3); /build does not dispatch into this skill. Use on explicit user request when someone wants test-first discipline for the code being written, or when reviewing code to verify TDD discipline was followed by hand.
+description: Advisory reference for the Classic RED-GREEN-REFACTOR TDD discipline with hard gates — not a build cadence toggle. The package's single build cadence is Code-First Small Batches (docs/experiments/RECOMMENDATIONS.md Rec 3); /build does not dispatch into this skill. Use on explicit user request when someone wants test-first discipline for the code being written, or when reviewing code to verify TDD discipline was followed by hand.
 role: worker
 user-invocable: true
 ---
@@ -24,7 +24,7 @@ Enforces strict RED-GREEN-REFACTOR discipline with verifiable gates. LLMs are es
 - Do not move to the next unit of work until all tests pass
 - Do not skip the refactor step — it's where design quality happens
 - Do not rationalize exceptions to the cycle (see Rationalization Prevention below)
-- Before doubling any collaborator, check it against `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md#the-three-blockers-exhaustive`'s blocker table
+- Before doubling any collaborator, check it against `${DEV_TEAM_ROOT}/knowledge/internal-collaborator-doubling.md#the-three-blockers-exhaustive`'s blocker table
 
 ## The Cycle
 

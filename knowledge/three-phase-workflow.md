@@ -10,36 +10,36 @@ via its anchor, not the whole file.
 
 Notes on what `scripts/orchestrator.py` — the `Enforcement: script` deterministic
 implementation — actually does, and where it diverges from the policy below, live
-in `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md`. They are needed when running or working on that script, not
+in `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md`. They are needed when running or working on that script, not
 when following the policy interactively.
 
-Every non-trivial task follows three explicit phases. Each phase runs in minimal context, and a human review gate separates each phase. The output of each phase is a structured progress file written to `.claude/memory/` that onboards the next phase.
+Every non-trivial task follows three explicit phases. Each phase runs in minimal context, and a human review gate separates each phase. The output of each phase is a structured progress file written to `.pi/dev-team/memory/` that onboards the next phase.
 
 ## Phase 1: Research
 
 - **Goal**: Understand how the system works, identify all relevant files, locate the problem or feature surface area
-- **Agents**: `codebase-recon` (gated on RECON artifact freshness — see Codebase Recon dispatch below), `architect`, `data-flow-tracer` (always dispatched — see the Research persona roster in `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`), `security-engineer` (conditional — see Security Engineer dispatch), plus the Orchestrator itself and further sub-agents for exploration as needed (context isolation — sub-agents search, read, and return concise findings so the parent context stays clean)
+- **Agents**: `codebase-recon` (gated on RECON artifact freshness — see Codebase Recon dispatch below), `architect`, `data-flow-tracer` (always dispatched — see the Research persona roster in `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`), `security-engineer` (conditional — see Security Engineer dispatch), plus the Orchestrator itself and further sub-agents for exploration as needed (context isolation — sub-agents search, read, and return concise findings so the parent context stays clean)
 - **Output**: A research progress file with file paths, line numbers, data flows, and key findings
 - **Design doc**: For non-trivial features (see Design Doc skill for criteria), produce a design document at `docs/specs/{feature-name}.md` with problem statement, proposed approach, alternatives, key decisions, and scope boundaries. The human approves the design doc as part of the research gate.
 - **Human gate**: Human reviews the research findings and design doc before planning begins. Catching a misunderstanding here prevents hundreds of bad lines of code downstream.
 - **Context**: Compact after this phase — write progress file, start fresh context for Phase 2
 
-Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`.
+Script behavior and known gaps: `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`.
 
 ### Codebase Recon dispatch
 
 Dispatch `codebase-recon` as a sub-agent **before any other exploration**,
-at the start of Research, when no `.claude/memory/recon-<slug>.json`
+at the start of Research, when no `.pi/dev-team/memory/recon-<slug>.json`
 artifact exists, or the existing one is more than 24 hours old (`<slug>` is
 the repo basename) — skip the dispatch (silently) when a fresh artifact is
 present. It returns entry points, dependency graph, security surface, and
-git history in a structured artifact (`.claude/memory/recon-<slug>.json` /
-`.claude/memory/recon-<slug>.md`, checked for freshness against the `.json`
+git history in a structured artifact (`.pi/dev-team/memory/recon-<slug>.json` /
+`.pi/dev-team/memory/recon-<slug>.md`, checked for freshness against the `.json`
 half since that's the machine-readable artifact other agents consume)
 intended to onboard the Architect and Security Engineer without those
 agents needing to re-read the codebase themselves.
 
-Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`.
+Script behavior and known gaps: `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`.
 
 ### Security Engineer dispatch
 
@@ -55,12 +55,12 @@ orchestrator sees `/code-review` history). Its `effort: high` cost is only
 justified on security-relevant work, so this dispatch stays conditional
 rather than unconditional.
 
-Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`.
+Script behavior and known gaps: `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-1-research`.
 
 ## Phase 2: Plan
 
 - **Goal**: Specify every change to be made — files, snippets, test strategy, verification steps
-- **Agents**: `product-manager`, `architect`, `qa-engineer` (core trio that drafts the plan — always dispatched, see the Plan persona roster in `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-2-plan`), then the `plan-review-*` critics reviewing that draft (below)
+- **Agents**: `product-manager`, `architect`, `qa-engineer` (core trio that drafts the plan — always dispatched, see the Plan persona roster in `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-2-plan`), then the `plan-review-*` critics reviewing that draft (below)
 - **Input**: Research progress file from Phase 1 + approved design doc (if produced in Phase 1)
 - **Output**: An implementation plan with explicit file changes, test expectations, and acceptance criteria
 - **Automated plan review**: Before the human gate, dispatch the plan review
@@ -80,10 +80,10 @@ Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-sc
   before presenting to the human. Aggregate all findings (including
   warnings from approving reviewers) into the plan review summary.
 - **Human gate**: Human reviews the plan and the aggregated review findings. This is the primary review artifact — 200 lines of plan is far more reviewable than 2,000 lines of code. If the plan is wrong, fix it here, not in code.
-- **Design intent: no choice made during Implementation is meant to compensate for a weak plan.** A plan carrying an unresolved `needs-revision` verdict (a blocker, or 3+ warnings — 2+ for `plan-review-parallelization` — per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md#verdict-rules`) is revised and re-reviewed before the human gate — see the plan skill's [Run plan review personas step](../skills/plan/SKILL.md#5-run-plan-review-personas) for that iteration cap and its escalation path — and never carried silently into Phase 3. Code-First Small Batches (Phase 3's sole cadence, per ADR 0017) is not a substitute for plan quality, it is what a *good* plan gets executed with. When a plan looks weak going into the human gate, the fix is another Phase 2 iteration, never a Phase 3 workaround. See `${CLAUDE_PLUGIN_ROOT}/knowledge/test-cadence-tradeoffs.md#the-decision-rule` for the evidence bar an alternative Phase 3 cadence has to clear before it changes this.
+- **Design intent: no choice made during Implementation is meant to compensate for a weak plan.** A plan carrying an unresolved `needs-revision` verdict (a blocker, or 3+ warnings — 2+ for `plan-review-parallelization` — per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md#verdict-rules`) is revised and re-reviewed before the human gate — see the plan skill's [Run plan review personas step](../skills/plan/SKILL.md#5-run-plan-review-personas) for that iteration cap and its escalation path — and never carried silently into Phase 3. Code-First Small Batches (Phase 3's sole cadence, per ADR 0017) is not a substitute for plan quality, it is what a *good* plan gets executed with. When a plan looks weak going into the human gate, the fix is another Phase 2 iteration, never a Phase 3 workaround. See `${DEV_TEAM_ROOT}/knowledge/test-cadence-tradeoffs.md#the-decision-rule` for the evidence bar an alternative Phase 3 cadence has to clear before it changes this.
 - **Context**: Compact after this phase — write progress file, start fresh context for Phase 3
 
-Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-2-plan`.
+Script behavior and known gaps: `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-2-plan`.
 
 ## Phase 3: Implement
 
@@ -94,7 +94,7 @@ Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-sc
 - **Cadence enforcement**: The Software Engineer follows the single per-behavior cadence for every unit — Code-First Small Batches (IMPLEMENT → TEST → REFACTOR), per `docs/experiments/RECOMMENDATIONS.md` Rec 3. The orchestrator verifies that each unit's output includes the cadence's verification evidence: green full-suite output. Defect fixes are the one exception — they follow `systematic-debugging`'s mandatory Phase 4 gate, which requires a failing test that reproduces the bug before any fix code is written.
 - **Output**: Working code that passes all tests, acceptance criteria, and code review
 - **Three-stage inline review**: After each discrete unit of work completes, run the deterministic static self-heal pass to pass-or-cap (`skills/build/references/static-self-heal.md`), then spec-compliance, then quality, then browser verification for UI changes:
-  1. **Stage 1 — Spec compliance**: Dispatch the `spec-reviewer` agent by `subagent_type`. Does the code match the spec? If fail → fix before proceeding to Stage 2. (This is a distinct, narrower per-step check than the `spec-compliance-review` agent used as the first gate before the final `/code-review` — see § Inline review checkpoint below and `${CLAUDE_PLUGIN_ROOT}/knowledge/agent-registry.md#review-agents` for how the two differ.)
+  1. **Stage 1 — Spec compliance**: Dispatch the `spec-reviewer` agent by `subagent_type`. Does the code match the spec? If fail → fix before proceeding to Stage 2. (This is a distinct, narrower per-step check than the `spec-compliance-review` agent used as the first gate before the final `/code-review` — see § Inline review checkpoint below and `${DEV_TEAM_ROOT}/knowledge/agent-registry.md#review-agents` for how the two differ.)
   2. **Stage 2 — Code quality**: Dispatch the `quality-reviewer` agent by `subagent_type` to run the standard **Inline Review Checkpoint** (see below). Is the code high quality?
   3. **Stage 3 — Browser verification (UI changes only)**: If the plan step involves UI components, run `/browse` in automated smoke test mode against the running dev server. Capture screenshots, verify rendering, and check basic interaction. If the dev server is not running, skip with a warning (do not fail). Timeout: 30 seconds. Failures enter the review loop (max 2 iterations). This stage is skipped for non-UI changes.
 - **Final verify**: After all units complete and tests pass, run `/code-review` on all modified files:
@@ -104,12 +104,12 @@ Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-sc
 - **Doc review**: Before the human gate, invoke `dev-team:tech-writer` to review all documentation affected by the changes:
   - Any behavioral or architectural change → check `docs/agent-architecture.md`, `README.md`
   - Any configuration or tooling change → check `docs/agent-architecture.md` (Governance section)
-  - Any agent or skill change → check `CLAUDE.md`, `docs/agent_info.md`, `docs/team-structure.md`; regenerate `docs/skills.md` (generated — `hooks/lib/build_skills_index.py`)
+  - Any agent or skill change → check `AGENTS.md`, `docs/agent_info.md`, `docs/team-structure.md`
   - Tech-writer updates outdated sections and confirms all docs reflect current behavior before proceeding
 - **Human gate**: Human reviews the final output. If the plan was good, implementation review is lightweight.
 - **Context**: If implementation is large, compact mid-phase — update the plan progress file with completed steps and continue in a fresh context
 
-Script behavior and known gaps: `${CLAUDE_PLUGIN_ROOT}/knowledge/orchestrator-script-implementation.md#phase-3-implement`.
+Script behavior and known gaps: `${DEV_TEAM_ROOT}/knowledge/orchestrator-script-implementation.md#phase-3-implement`.
 
 ### Wave-aware build dispatch
 
@@ -137,7 +137,7 @@ Each plan step includes a **Complexity** classification that controls review dep
 
 If a step has no complexity annotation, default to `standard`.
 
-Each checkpoint that runs records a find/fix/no-op outcome to `.claude/metrics/review-value.jsonl` (#348) so the review overhead is measurable and the tiering can be evidence-based.
+Each checkpoint that runs records a find/fix/no-op outcome to `.pi/dev-team/metrics/review-value.jsonl` (#348) so the review overhead is measurable and the tiering can be evidence-based.
 
 ### Inline review checkpoint
 
@@ -152,7 +152,6 @@ After each discrete unit of work classified as **standard** or **complex** (a fu
 | API surface / auth | security-review |
 | Domain/business logic | domain-review |
 | UI components | a11y-review, structure-review, component-architecture-review |
-| Agent or command files | eval-compliance-check hook runs automatically; also run /agent-audit |
 | Dockerfile or .dockerignore | docker-image-audit skill |
 | Documentation files (.md) | doc-review |
 | Architecture/dependency changes | arch-review |
@@ -161,7 +160,7 @@ After each discrete unit of work classified as **standard** or **complex** (a fu
 
 **Step 2 — Run selected agents in parallel** using the Agent tool by `subagent_type` — the harness reads each agent's `model:`/`effort:` frontmatter natively per `agents/orchestrator.md` § Model/Effort Resolution.
 
-When the selection above would dispatch 5+ agents in one wave, note the coordination-cost signal and consider batching high-overlap lenses per `${CLAUDE_PLUGIN_ROOT}/knowledge/wave-consolidation-guidance.md#when-it-applies` — advisory only; dispatch still proceeds.
+When the selection above would dispatch 5+ agents in one wave, note the coordination-cost signal and consider batching high-overlap lenses per `${DEV_TEAM_ROOT}/knowledge/wave-consolidation-guidance.md#when-it-applies` — advisory only; dispatch still proceeds.
 
 **Step 3 — Aggregate findings and apply Review Loop:**
 
@@ -192,7 +191,7 @@ When any checkpoint agent returns `fail`:
 ## Phase transitions
 
 1. Complete the current phase's work
-2. Write a structured progress file to `.claude/memory/` (see Context Summarization skill)
+2. Write a structured progress file to `.pi/dev-team/memory/` (see Context Summarization skill)
 3. Human reviews and approves before proceeding
 4. Start new context window for the next phase
 5. Load only the progress file + agents needed for the new phase

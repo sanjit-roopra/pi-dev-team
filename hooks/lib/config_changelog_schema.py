@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Change-contract schema validator for metrics/config-changelog.jsonl (#860).
 
-`feedback-learning` (plugins/dev-team/skills/feedback-learning/SKILL.md §
+`feedback-learning` (skills/feedback-learning/SKILL.md §
 Audit Trail) extends the config-changelog entry schema with nine change-
 contract fields whenever a change touches a review agent that has eval
 fixtures (`evals/expected/*.json` `applicableAgents`): `component`,
@@ -17,8 +17,8 @@ this validator only enforces the contract on *gated* entries (those whose
 Stdlib-only (ADR 0014/0015). Not wired into any hook's exit code — this is
 a standalone validator consumed by tests and, optionally, by a human/CI
 audit script. It intentionally does not decide *whether* to gate; callers
-pass in the fixtured-agent set (e.g. from
-`hooks/eval_compliance_check.py::_fixtured_agents`).
+pass in the fixtured-agent set (e.g. the `applicableAgents` of
+`evals/expected/*.json`).
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ _AGENT_OVERRIDE_RE = re.compile(r"Agent Overrides\s*>\s*([A-Za-z0-9_-]+)")
 def extract_agent_name(component: str) -> str | None:
     """Pull the review-agent stem out of a `component` value.
 
-    Matches both direct plugin-repo edits (``agents/security-review.md``)
-    and project-side overrides (``CLAUDE.md > Agent Overrides >
+    Matches both direct package-repo edits (``agents/security-review.md``)
+    and project-side overrides (``AGENTS.md > Agent Overrides >
     security-review``) — the gate covers both per the spec's Ambiguity Log."""
     if not component:
         return None

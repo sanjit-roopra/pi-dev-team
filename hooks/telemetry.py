@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""telemetry.py — opt-in, privacy-clean telemetry beacon (Python port of telemetry.sh).
+"""telemetry.py — opt-in, privacy-clean telemetry beacon.
 
-The plugin enforces observability on its targets but has none of its own.
+dev-team enforces observability on its targets but has none of its own.
 This records MINIMAL local events so the author can see which commands /
 skills get used and how often the pre-PR review gate is bypassed.
 
@@ -18,19 +18,19 @@ One hook registered on multiple events; it branches on `hook_event_name`:
                         and never reflect a real gate.)
 
 PRIVACY: records only an event type, a grammar-matched name (never free
-text), an outcome, and the plugin version.
+text), an outcome, and the package version.
 
 CONSENT: OFF by default. Enable by writing `{"enabled": true}` to the
-user-level `~/.claude/telemetry.json` (see `hooks/lib/telemetry_consent.py`).
+user-level `~/.pi/agent/dev-team/telemetry.json` (see `hooks/lib/telemetry_consent.py`).
 This is a config-file-only, home-scoped switch — `DEV_TEAM_TELEMETRY` and any
-project-scoped `<cwd>/.claude/telemetry.json` have no effect. When off,
+project-scoped `<cwd>/.pi/dev-team/telemetry.json` have no effect. When off,
 nothing is recorded and nothing leaves the machine. Detecting either now-inert
 legacy signal prints a one-time-per-session stderr notice pointing at the new
 home-scoped path.
 
-TRANSPORT: local-only. Events append to `~/.claude/metrics/telemetry.jsonl`;
+TRANSPORT: local-only. Events append to `~/.pi/agent/dev-team/metrics/telemetry.jsonl`;
 `artifact-usage.json` lives alongside it under the same home-scoped
-`~/.claude/metrics/` directory, never under a project's own `metrics/`.
+`~/.pi/agent/dev-team/metrics/` directory, never under a project's own `metrics/`.
 No network egress.
 
 Posture: record-only, fail-open. Never blocks; any error → exit 0.
@@ -52,6 +52,7 @@ if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 
 import telemetry_consent
+from artifact_paths import user_state_dir
 from atomic_state import append_line_locked
 from boundary_events import emit_boundary_event as _emit_boundary_event
 from gh_pr_create_detect import is_gh_pr_create_command
@@ -100,15 +101,15 @@ def _legacy_signal_path(session_id: object) -> Path:
 def _legacy_signal_present(cwd: Path) -> bool:
     """True when either now-inert consent mechanism is in use: the
     `DEV_TEAM_TELEMETRY` env var, or a project-scoped
-    `<cwd>/.claude/telemetry.json`. Neither has any effect on consent."""
+    `<cwd>/.pi/dev-team/telemetry.json`. Neither has any effect on consent."""
     if os.environ.get("DEV_TEAM_TELEMETRY"):
         return True
-    return (cwd / ".claude" / "telemetry.json").is_file()
+    return (cwd / ".pi" / "dev-team" / "telemetry.json").is_file()
 
 
 def _notice_legacy_signal_once(session_id: object) -> None:
     """Emit a one-time-per-session stderr notice that consent moved to
-    `~/.claude/telemetry.json`. Fail-open: any error creating the dedupe
+    `~/.pi/agent/dev-team/telemetry.json`. Fail-open: any error creating the dedupe
     marker must never raise or block the calling hook.
 
     Uses atomic exclusive creation (`O_CREAT | O_EXCL | O_NOFOLLOW`)
@@ -136,8 +137,8 @@ def _notice_legacy_signal_once(session_id: object) -> None:
 
     sys.stderr.write(
         "NOTE: dev-team telemetry consent now lives only in "
-        "~/.claude/telemetry.json. DEV_TEAM_TELEMETRY and a project-level "
-        ".claude/telemetry.json no longer have any effect.\n"
+        f"{user_state_dir() / 'telemetry.json'}. DEV_TEAM_TELEMETRY and a project-level "
+        ".pi/dev-team/telemetry.json no longer have any effect.\n"
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -149,7 +150,7 @@ def _notice_legacy_signal_once(session_id: object) -> None:
 def _home_metrics_dir() -> Path:
     """`telemetry.jsonl` and `artifact-usage.json` always live here — never
     under a project's own `metrics/` (#1405, Slice 1 Step 1.3)."""
-    return Path.home() / ".claude" / "metrics"
+    return user_state_dir() / "metrics"
 
 
 def _isoformat_utc() -> str:
@@ -158,7 +159,7 @@ def _isoformat_utc() -> str:
 
 
 def _load_plugin_version(hook_dir: Path) -> str:
-    manifest = hook_dir / ".." / ".claude-plugin" / "plugin.json"
+    manifest = hook_dir / ".." / "package.json"
     try:
         data = json.loads(manifest.read_text())
         version = data.get("version")
@@ -196,7 +197,7 @@ def _emit(log: Path, event: str, name: str, outcome: str, version: str) -> None:
 def _upsert_artifact_usage(skill: str) -> None:
     """Atomically bump the use count for `skill` in artifact-usage.json.
 
-    Always writes under the home-scoped `~/.claude/metrics/`, never a
+    Always writes under the home-scoped `~/.pi/agent/dev-team/metrics/`, never a
     project's own `metrics/` (#1405, Slice 1 Step 1.3). Callers gate this
     on `telemetry_consent.is_enabled()` before invoking it (see `main()`)
     — there is no separate per-writer consent check.
@@ -217,7 +218,7 @@ def _upsert_artifact_usage(skill: str) -> None:
                 existing = {}
         except (OSError, ValueError):
             sys.stderr.write(
-                "WARN: ~/.claude/metrics/artifact-usage.json contained malformed JSON; discarding\n"
+                f"WARN: {usage_file} contained malformed JSON; discarding\n"
             )
             existing = {}
 

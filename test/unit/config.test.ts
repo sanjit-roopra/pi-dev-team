@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { type TestContext, test } from "node:test";
 import { MAX_REPO_FILE_BYTES } from "../../extensions/dev-team/lib/safe-read.ts";
 import {
+	autocompactPctValue,
 	DEFAULT_CONFIG,
 	filterProjectConfig,
 	isProjectEnvSettingAllowed,
@@ -53,7 +54,7 @@ test("loadConfig: an untrusted project's config is not read at all", (t) => {
 	assert.deepEqual(sources, [userConfigFile]);
 });
 
-test("loadConfig: project env cannot set PATH, NODE_OPTIONS, file paths or the programs the port runs", (t) => {
+test("loadConfig: project env cannot set PATH, NODE_OPTIONS, file paths or the programs dev-team runs", (t) => {
 	const { project, userConfigFile } = fixture(t);
 	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
 	assert.equal(config.env.PATH, "/user/bin", "the user's own value stays");
@@ -72,10 +73,10 @@ test("project env settings: tuning keys allowed", () => {
 
 test("project env settings: paths, programs, gate bypasses and other env refused", () => {
 	const refused = [
-		"PATH", "PYTHONPATH", "NODE_OPTIONS", "LD_PRELOAD", "GIT_SSH_COMMAND", "CLAUDE_CONFIG_DIR", "PR_GATE_BYPASS_REASON",
-		"DEV_TEAM_PY_CACHE", "DEV_TEAM_PYTHON", "DEV_TEAM_PI_BIN", "DEV_TEAM_REAL_CLAUDE", "DEV_TEAM_PI_ARGS", "DEV_TEAM_TRUSTED_DIR",
+		"PATH", "PYTHONPATH", "NODE_OPTIONS", "LD_PRELOAD", "GIT_SSH_COMMAND", "PI_CODING_AGENT_DIR", "PR_GATE_BYPASS_REASON",
+		"DEV_TEAM_PY_CACHE", "DEV_TEAM_PYTHON", "DEV_TEAM_PI_BIN", "DEV_TEAM_RUN_BIN", "DEV_TEAM_PI_ARGS", "DEV_TEAM_TRUSTED_DIR",
 		"DEV_TEAM_AUTO_APPROVE", "DEV_TEAM_GUARD_OVERRIDE", "DEV_TEAM_STRYKER_XUNIT3_GATE_SKIP", "DEV_TEAM_XUNIT3_SHIM_DECISION_FILE",
-		"DEV_TEAM_VERIFY_THRESHOLD", "DEV_TEAM_BASH_RETRY_THRESHOLD",
+		"DEV_TEAM_VERIFY_THRESHOLD", "DEV_TEAM_BASH_RETRY_THRESHOLD", "DEV_TEAM_AUTOCOMPACT_PCT",
 	];
 	for (const key of refused) assert.ok(!isProjectEnvSettingAllowed(key, "1"), key);
 });
@@ -460,4 +461,36 @@ test("the user file keeps answerMode even when a project file sets it too", (t) 
 	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
 	assert.equal(config.answerMode, "wait");
 	assert.ok(ignoredProjectSettings.includes("answerMode"));
+});
+
+test("loadConfig: the CLI helper's old key claudeShim still works, cliShim wins when both are set", (t) => {
+	const { project, userConfigFile } = fixture(t);
+	fs.writeFileSync(userConfigFile, JSON.stringify({ claudeShim: false }));
+	let { config } = loadConfig(project, { includeProject: false, userConfigFile });
+	assert.equal(config.cliShim, false);
+	assert.equal("claudeShim" in config, false, "the old key is not kept beside the new one");
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.local.json"), JSON.stringify({ claudeShim: true, cliShim: false }));
+	fs.writeFileSync(userConfigFile, JSON.stringify({}));
+	({ config } = loadConfig(project, { includeProject: true, userConfigFile }));
+	assert.equal(config.cliShim, false);
+	assert.equal(DEFAULT_CONFIG.cliShim, true);
+});
+
+test("loadConfig: a project's autocompactPct applies as a setting, not as env", (t) => {
+	const { project, userConfigFile } = fixture(t);
+	fs.writeFileSync(path.join(project, ".pi", "dev-team.local.json"), JSON.stringify({ autocompactPct: 40 }));
+	const { config, ignoredProjectSettings } = loadConfig(project, { includeProject: true, userConfigFile });
+	assert.equal(config.autocompactPct, 40);
+	assert.equal(ignoredProjectSettings.includes("autocompactPct"), false);
+	assert.equal(config.env.DEV_TEAM_AUTOCOMPACT_PCT, undefined);
+});
+
+test("autocompactPctValue: whole numbers 1-100, as a number or a plain string", () => {
+	const cases: [unknown, number | undefined][] = [
+		[1, 1], [40, 40], [100, 100], ["1", 1], ["40", 40], ["100", 100],
+		[0, undefined], [101, undefined], [40.5, undefined], [-1, undefined], [Number.NaN, undefined],
+		["0", undefined], ["101", undefined], ["040", undefined], [" 40", undefined], ["40.0", undefined], ["+40", undefined], ["abc", undefined],
+		[null, undefined], [true, undefined], [[40], undefined],
+	];
+	for (const [raw, expected] of cases) assert.equal(autocompactPctValue(raw), expected, JSON.stringify(raw));
 });

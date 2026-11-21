@@ -34,7 +34,7 @@ that knowledge.
 
 **Dropped:** hunks whose file is doc-classified, reusing
 `pre_commit_doc_classifier.is_doc_only_changeset` per file — the same STRICT
-predicate the doc-only exemption uses, including its "functional Claude-config
+predicate the doc-only exemption uses, including its "functional agent-config
 markdown is never documentation" carve-out. A "cosmetic" edit to `agents/`,
 `skills/`, `.claude/`, `CLAUDE.md`, or any other enforcement machinery can
 therefore never ride the carry-forward.

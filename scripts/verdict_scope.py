@@ -4,7 +4,7 @@ cleared (#2167).
 
 Given a candidate `{lens: [file, ...], ...}` dispatch plan, consult
 `hooks/lib/review_verdicts.py`'s per-lens verdict ledger
-(`.claude/metrics/review-verdicts.jsonl`, written by
+(`.pi/dev-team/metrics/review-verdicts.jsonl`, written by
 `hooks/review_verdict_recorder.py` on every real review-agent dispatch) and
 split each lens's file list into the files that still need a live dispatch
 and the ones an exact `(lens, file_path, current file_content_hash)` match
@@ -77,7 +77,7 @@ if str(_HOOKS_LIB_DIR) not in sys.path:
 from instrument_log import append_row  # type: ignore[import-not-found]
 
 # No `except ImportError` fallback (matches `select_lenses.py`'s own rule,
-# #1968): `hooks/lib/` ships inside this same plugin, always present
+# #1968): `hooks/lib/` ships inside this same package, always present
 # wherever this script runs. A hand-written second copy of
 # `hash_file`/`load_verdicts` is exactly the kind of independently-drifting
 # duplicate that rule exists to prevent -- here it would silently turn every
@@ -91,7 +91,7 @@ try:
     )
 except ImportError as exc:  # pragma: no cover - broken install, not a supported mode
     raise ImportError(
-        f"{__name__} requires 'review_verdicts' from the dev-team plugin's "
+        f"{__name__} requires 'review_verdicts' from pi-dev-team's "
         f"hooks/lib, which could not be imported.\n"
         f"  searched: {_HOOKS_LIB_DIR}\n"
         f"  exists:   {_HOOKS_LIB_DIR.is_dir()}\n"

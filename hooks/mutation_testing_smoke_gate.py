@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Mutation-testing smoke gate — PreToolUse hook (#565; python port per #574 / #572).
+"""Mutation-testing smoke gate — PreToolUse hook (#565; Python per #574 / #572).
 
-Byte-compatible port of the Claude Code PreToolUse hook that enforces the
+The PreToolUse hook that enforces the
 SKILL.md § Step 1c smoke gate. Blocks whole-scope Stryker.NET invocations
 until a single-file smoke probe has landed a mutation-report.json under
 StrykerOutput/smoke/reports/ with at least one Killed mutant.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin
     Output: exit 2 + message on stdout to BLOCK
             exit 0 + no stdout for SILENT-PASS
             exit 0 + ADVISORY-prefixed stdout for missing-dep / malformed / drift
     Env   : MUTATION_SMOKE_GATE_SKIP=1 → silent bypass + audit-log line
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 
 Refs: #565 (the .sh predecessor), #554, #557 (the failure modes it guards).
 """
@@ -154,7 +154,7 @@ def iso_utc_timestamp() -> str:
 
 
 def log_bypass_audit(raw_command: str, payload_cwd: str) -> None:
-    """Append one JSONL line to <payload_cwd>/.claude/metrics/gate-bypass.jsonl.
+    """Append one JSONL line to <payload_cwd>/.pi/dev-team/metrics/gate-bypass.jsonl.
 
     Writes timestamp + hook name + command_hash (sha256 first 16) + cwd.
     The raw command is NEVER written — only its hash — matching the .sh's
@@ -243,8 +243,8 @@ def main() -> int:
     # -------------------------------------------------------------------
     if shutil.which("jq") is None:
         # Preserve parity with the .sh, which uses jq for JSON parsing.
-        # The Python port does not itself use jq, but flags the missing
-        # dep to keep the failure mode identical across ports.
+        # This hook does not itself use jq, but flags the missing
+        # dep to keep the failure mode identical to the .sh.
         print(
             "ADVISORY: mutation-testing-smoke-gate: jq is required but not installed; gate not enforced"
         )

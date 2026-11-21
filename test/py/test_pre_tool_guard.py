@@ -1,5 +1,4 @@
-"""Tests for the pi port's changes to hooks/pre_tool_guard.py (see PORTING.md). Run: python3 -m unittest discover -s test/py"""
-import hashlib
+"""Tests for dev-team's changes to hooks/pre_tool_guard.py. Run: python3 -m unittest discover -s test/py"""
 import json
 import os
 import subprocess
@@ -16,7 +15,6 @@ sys.path.insert(0, str(ROOT / "hooks" / "lib"))
 
 guard = load_module("pre_tool_guard", HOOK)
 guard.emit_boundary_event = lambda *a, **k: None
-sync = load_module("sync_upstream_for_guard", ROOT / "sync" / "sync_upstream.py")
 
 
 class GuardTestCase(unittest.TestCase):
@@ -139,10 +137,14 @@ class SensitivePaths(GuardTestCase):
         self.assertIn("Approval in chat does not lift this block", lines[2])
         self.assertIn("env.DEV_TEAM_GUARD_ALLOWED_PATHS in ~/.pi/agent/dev-team.json", lines[2])
 
-    def test_path_patterns_match_absolute_paths(self):
-        code, lines = guard.evaluate("/repo/.claude/settings.json", str(self.tmp), paths=self.paths)
-        self.assertEqual(code, 0)
-        self.assertTrue(lines[0].startswith("WARNING:"))
+    def test_pi_config_files_warn_and_path_patterns_match_absolute_paths(self):
+        defaults = guard.GuardPaths(self.tmp / "missing-guards.json", self.tmp / "freeze-state.json")  # built-in warn list
+        for paths in (self.paths, defaults):
+            for path in ("/repo/.pi/settings.json", "/repo/.pi/dev-team.json", "/repo/.pi/dev-team.local.json"):
+                with self.subTest(guards=str(paths.guards_path), path=path):
+                    code, lines = guard.evaluate(path, str(self.tmp), paths=paths)
+                    self.assertEqual(code, 0)
+                    self.assertTrue(lines and lines[0].startswith("WARNING:"), lines)
 
 
 class MainEntryPoint(unittest.TestCase):
@@ -162,26 +164,6 @@ class MainEntryPoint(unittest.TestCase):
         self.assertEqual(blocked.returncode, 2)
         self.assertIn("'*credential*'", blocked.stdout)
         self.assertEqual(self.run_hook(repo, target, allowed="fixtures/*").returncode, 0)
-
-
-class OverrideBases(unittest.TestCase):
-    def test_shipped_hook_overrides_match_the_hooks_directory(self):
-        # Slim skills (skills/*) are checked by test_slim_skills.py.
-        for rel in (rel for rel in sync.OVERRIDE_BASES if rel.startswith("hooks/")):
-            with self.subTest(rel=rel):
-                self.assertEqual((ROOT / "overrides" / rel).read_bytes(), (ROOT / rel).read_bytes())
-
-    def test_every_hook_override_has_a_base_hash(self):
-        shipped = {p.relative_to(ROOT / "overrides").as_posix() for p in (ROOT / "overrides" / "hooks").rglob("*") if p.is_file() and "__pycache__" not in p.parts}
-        self.assertEqual(shipped, {rel for rel in sync.OVERRIDE_BASES if rel.startswith("hooks/")})
-
-    def test_stale_override_bases_reports_changed_and_missing_files(self):
-        root = Path(tempfile.mkdtemp())
-        (root / "same.txt").write_text("a")
-        (root / "changed.txt").write_text("b")
-        sha_a = hashlib.sha256(b"a").hexdigest()
-        stale = sync.stale_override_bases(root, {"same.txt": sha_a, "changed.txt": sha_a, "gone.txt": sha_a})
-        self.assertEqual(stale, ["changed.txt", "gone.txt"])
 
 
 if __name__ == "__main__":

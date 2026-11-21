@@ -43,7 +43,7 @@ deliberate contrast with `test-review`, which stays `Scope: always`: its
 coverage-gap check must see production diffs that add code *without* a
 matching test, which is precisely a diff this scope excludes.
 
-Output JSON (extends the shared contract in `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` with `smell` and `remedyFamily` fields. Whole-file load: short, canonical schema):
+Output JSON (extends the shared contract in `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` with `smell` and `remedyFamily` fields. Whole-file load: short, canonical schema):
 
 ```json
 {"status": "pass|warn|fail|skip", "issues": [{"severity": "error|warning|suggestion", "confidence": "high|medium|none", "file": "", "line": 0, "smell": "", "message": "", "remedyFamily": "fixture-construction|result-verification|test-organization|test-refactoring|null", "suggestedFix": ""}], "summary": ""}
@@ -76,7 +76,7 @@ family slug enforceable by the existing fixture grader without extending it.
 ### Smell → family mapping
 
 The mapping the agent uses to populate `remedyFamily`, grounded in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/test-smells.md#smell-categories` and the remedy files it points at
+`${DEV_TEAM_ROOT}/knowledge/test-smells.md#smell-categories` and the remedy files it points at
 (Whole-file load: consult the full taxonomy when a smell does not fit a row):
 
 | Smell (from `test-smells.md`) | remedyFamily | Typical pattern in `suggestedFix` |
@@ -88,13 +88,13 @@ The mapping the agent uses to populate `remedyFamily`, grounded in
 | Eager Test (Split Test), Fragile Test refactor sequences | `test-refactoring` | Split Test, Inline Mystery Guest, Introduce Expected Object |
 | Erratic Test, Slow Tests, pyramid-placement flags with no family fit | `null` | remedy is production-side or layer-relocation (no xUnit family cite) |
 
-When a finding fits no row, consult `${CLAUDE_PLUGIN_ROOT}/knowledge/test-smells.md#smell-categories` and pick the family from its remedy column; emit `null` if none applies.
+When a finding fits no row, consult `${DEV_TEAM_ROOT}/knowledge/test-smells.md#smell-categories` and pick the family from its remedy column; emit `null` if none applies.
 
 Context needs: full-file
 
 ## Scope
 
-The design-level companion to test-review. This agent names xUnit test smells, judges test-double choice, and checks pyramid-layer placement. The division of labor with `test-review` is defined in `${CLAUDE_PLUGIN_ROOT}/knowledge/test-review-division-of-labor.md#the-two-roles`: this agent owns the named-smell signals (including non-determinism, framed as the **Erratic Test** smell with its root cause), and defers the pure tactical mechanics (missing assertion, missing `await`, mock-reset) to `test-review`.
+The design-level companion to test-review. This agent names xUnit test smells, judges test-double choice, and checks pyramid-layer placement. The division of labor with `test-review` is defined in `${DEV_TEAM_ROOT}/knowledge/test-review-division-of-labor.md#the-two-roles`: this agent owns the named-smell signals (including non-determinism, framed as the **Erratic Test** smell with its root cause), and defers the pure tactical mechanics (missing assertion, missing `await`, mock-reset) to `test-review`.
 
 The division of labor with `test-design-advisor` is defined in the same file under the section **"test-smell-review ↔ test-design-advisor — remedy division"** — the invocation rule and grader-alignment specifics live there; the two-field contract above is the on-the-wire summary.
 
@@ -102,25 +102,25 @@ The division of labor with `test-design-advisor` is defined in the same file und
 
 Load on demand by finding type — do not load them all unless the target needs them:
 
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-smells.md` — the canonical xUnit smell taxonomy (code/behavior/project smells). Primary reference; load for every run. Whole-file load: scan the full taxonomy to name each finding.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-automation-principles.md` — the goals/principles each smell violates; load to ground a finding in the principle it breaks (e.g. Fragile Test → *Isolate the SUT*) and to set finding severity by which goal is at risk.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-doubles.md` — dummy/stub/spy/mock/fake selection, Configurable vs. Hard-Coded form, Test-Specific Subclass, and state-vs-behavior verification. Load when the target uses mocking.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/value-patterns.md` — Literal/Derived/Generated Value + Dummy Object. Load for Hard-Coded Values, Irrelevant Information, or random-value (Erratic Test) findings.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-pyramid.md` — layer responsibilities and shape anti-patterns. Load when judging test level.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/microservice-testing.md` — contract/CDC testing. Load only when the target spans independently-deployable services.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/testability-patterns.md` — load when a smell's root cause is untestable production code (recommend the production-code change, never a test workaround).
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/fixture-construction.md` — the named remedy for fixture smells (Mystery Guest, General Fixture, Irrelevant Information, setup duplication): Creation Method / Test Data Builder / Object Mother, Automated Teardown.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/result-verification.md` — the named remedy for assertion smells (Assertion Roulette, Hard-Coded Values, fragile/overspecified asserts): Expected Object, Custom Assertion, Guard Assertion, Delta Assertion.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-organization.md` — the named remedy for structure smells (Obscure Test, Test Code Duplication, High Test Maintenance Cost): Four-Phase Test, Testcase Class per Fixture, Test Utility Method, Parameterized Test.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-refactoring.md` — the goals/principles a smell violates and the behavior-preserving move toward the target pattern. Cite a **named refactoring**, not prose, for each remedy.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/database-test-patterns.md` — the named remedy for DB-backed Erratic/Slow tests (Database Sandbox, Transaction Rollback / Table Truncation Teardown). Load when the target hits a real database.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/component-test-patterns.md` — Whole-file load: load when judging where an owned adapter's layering sits (architecture topic, distinct from the doubling rule below); cite its core principle in the finding.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md#the-three-blockers-exhaustive` — Load when a double at or below the component layer carries a syntactically valid waiver (an `informational`-verdict finding, not an unwaived one — those are `test-review`'s territory). Judge whether the claimed blocker is actually substantiated by the collaborator's own source, and whether the double sits at the real boundary rather than an internal service merely holding a thin/barely-used out-of-process reference.
-- `${CLAUDE_PLUGIN_ROOT}/knowledge/test-stack-profiles/<stack>.md` — stack-specific tool resolution and seam choice (and any references the profile points at). Load on stack match. Detection mirrors `skills/test-design-advisor/SKILL.md:31, 62`: read manifests at the target — `package.json` (refined to react/vue via dependency, or to ssr-htmx when an htmx dep is present alongside `templates/*.html`), `*.csproj` / `*.sln`, `pom.xml` / `build.gradle*`, `go.mod`, `pyproject.toml` / `requirements.txt` — and resolve the profile key. When a finding is stack-specific, cite the matching `${CLAUDE_PLUGIN_ROOT}/knowledge/test-stack-profiles/<stack>.md` (and any reference it points at) by knowledge path in the finding's `message` or `suggestedFix`. When no profile matches, produce stack-agnostic guidance and name the missing profile in the `summary` — never block on it.
+- `${DEV_TEAM_ROOT}/knowledge/test-smells.md` — the canonical xUnit smell taxonomy (code/behavior/project smells). Primary reference; load for every run. Whole-file load: scan the full taxonomy to name each finding.
+- `${DEV_TEAM_ROOT}/knowledge/test-automation-principles.md` — the goals/principles each smell violates; load to ground a finding in the principle it breaks (e.g. Fragile Test → *Isolate the SUT*) and to set finding severity by which goal is at risk.
+- `${DEV_TEAM_ROOT}/knowledge/test-doubles.md` — dummy/stub/spy/mock/fake selection, Configurable vs. Hard-Coded form, Test-Specific Subclass, and state-vs-behavior verification. Load when the target uses mocking.
+- `${DEV_TEAM_ROOT}/knowledge/value-patterns.md` — Literal/Derived/Generated Value + Dummy Object. Load for Hard-Coded Values, Irrelevant Information, or random-value (Erratic Test) findings.
+- `${DEV_TEAM_ROOT}/knowledge/test-pyramid.md` — layer responsibilities and shape anti-patterns. Load when judging test level.
+- `${DEV_TEAM_ROOT}/knowledge/microservice-testing.md` — contract/CDC testing. Load only when the target spans independently-deployable services.
+- `${DEV_TEAM_ROOT}/knowledge/testability-patterns.md` — load when a smell's root cause is untestable production code (recommend the production-code change, never a test workaround).
+- `${DEV_TEAM_ROOT}/knowledge/fixture-construction.md` — the named remedy for fixture smells (Mystery Guest, General Fixture, Irrelevant Information, setup duplication): Creation Method / Test Data Builder / Object Mother, Automated Teardown.
+- `${DEV_TEAM_ROOT}/knowledge/result-verification.md` — the named remedy for assertion smells (Assertion Roulette, Hard-Coded Values, fragile/overspecified asserts): Expected Object, Custom Assertion, Guard Assertion, Delta Assertion.
+- `${DEV_TEAM_ROOT}/knowledge/test-organization.md` — the named remedy for structure smells (Obscure Test, Test Code Duplication, High Test Maintenance Cost): Four-Phase Test, Testcase Class per Fixture, Test Utility Method, Parameterized Test.
+- `${DEV_TEAM_ROOT}/knowledge/test-refactoring.md` — the goals/principles a smell violates and the behavior-preserving move toward the target pattern. Cite a **named refactoring**, not prose, for each remedy.
+- `${DEV_TEAM_ROOT}/knowledge/database-test-patterns.md` — the named remedy for DB-backed Erratic/Slow tests (Database Sandbox, Transaction Rollback / Table Truncation Teardown). Load when the target hits a real database.
+- `${DEV_TEAM_ROOT}/knowledge/component-test-patterns.md` — Whole-file load: load when judging where an owned adapter's layering sits (architecture topic, distinct from the doubling rule below); cite its core principle in the finding.
+- `${DEV_TEAM_ROOT}/knowledge/internal-collaborator-doubling.md#the-three-blockers-exhaustive` — Load when a double at or below the component layer carries a syntactically valid waiver (an `informational`-verdict finding, not an unwaived one — those are `test-review`'s territory). Judge whether the claimed blocker is actually substantiated by the collaborator's own source, and whether the double sits at the real boundary rather than an internal service merely holding a thin/barely-used out-of-process reference.
+- `${DEV_TEAM_ROOT}/knowledge/test-stack-profiles/<stack>.md` — stack-specific tool resolution and seam choice (and any references the profile points at). Load on stack match. Detection mirrors `skills/test-design-advisor/SKILL.md:31, 62`: read manifests at the target — `package.json` (refined to react/vue via dependency, or to ssr-htmx when an htmx dep is present alongside `templates/*.html`), `*.csproj` / `*.sln`, `pom.xml` / `build.gradle*`, `go.mod`, `pyproject.toml` / `requirements.txt` — and resolve the profile key. When a finding is stack-specific, cite the matching `${DEV_TEAM_ROOT}/knowledge/test-stack-profiles/<stack>.md` (and any reference it points at) by knowledge path in the finding's `message` or `suggestedFix`. When no profile matches, produce stack-agnostic guidance and name the missing profile in the `summary` — never block on it.
 
 ## Skip
 
-Return `{"status": "skip", "issues": [], "summary": "No test files in target"}` when no test files are found. Use the test-file indicators in `${CLAUDE_PLUGIN_ROOT}/knowledge/test-file-indicators.md#indicators-by-language` (JS/TS, C#, Java, BDD/Gherkin). `.feature` files count as tests — do not skip if present.
+Return `{"status": "skip", "issues": [], "summary": "No test files in target"}` when no test files are found. Use the test-file indicators in `${DEV_TEAM_ROOT}/knowledge/test-file-indicators.md#indicators-by-language` (JS/TS, C#, Java, BDD/Gherkin). `.feature` files count as tests — do not skip if present.
 
 ## Detect
 
@@ -153,13 +153,13 @@ Test double misuse (load `test-doubles.md`):
 - An already-waived internal-collaborator double (an `informational`-verdict finding — an unwaived one is `test-review`'s territory, never this agent's) whose claimed blocker isn't actually substantiated by the collaborator's own source, for any of the three blockers — cite `internal-collaborator-doubling.md` in the finding's `message`, per the same citation contract that already governs `remedyFamily` slugs (see the two-field contract above)
 - The adapter-relabeling case specifically: an internal service class holds only a thin, barely-used out-of-process field and is doubled wholesale under that claim, when the double more properly belongs at the real owned-adapter boundary (or the leaf beneath it) — cite `internal-collaborator-doubling.md` in the finding's `message` here too
 
-Pyramid placement (load `test-pyramid.md`; use the MinimumCD six test types from `${CLAUDE_PLUGIN_ROOT}/knowledge/cd-test-architecture.md#the-six-test-types` — static analysis / unit / component / contract / integration / E2E. Prefer "contract test" over "narrow integration test"; gloss once if the alias is needed: `contract test (also called narrow integration test)`):
+Pyramid placement (load `test-pyramid.md`; use the MinimumCD six test types from `${DEV_TEAM_ROOT}/knowledge/cd-test-architecture.md#the-six-test-types` — static analysis / unit / component / contract / integration / E2E. Prefer "contract test" over "narrow integration test"; gloss once if the alias is needed: `contract test (also called narrow integration test)`):
 
 - Unit test doing real I/O (mis-layered → Slow Tests); E2E asserting a single edge case (belongs at unit); suite-level ice-cream-cone / hourglass / cupcake shape (name the pathology and the behaviors it harms — never propose a numeric per-layer redistribution; the pyramid is a cost heuristic, not a target shape).
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these test-smell-review-specific challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these test-smell-review-specific challenges:
 
 - For every smell flagged, did you name the specific xUnit smell (not just "this test is bad")?
 - For each "Slow Tests" or "Erratic Test" finding, did you confirm the test's *intended* level — integration/E2E tests touch real resources by design?
@@ -182,7 +182,7 @@ Write-time reflexes for the software-engineer; `scripts/authoring_digest.py` sur
 
 ## Ignore
 
-Tactical mechanics owned by test-review (missing assertion entirely, missing await, mock-reset calls) — defer those there, per `${CLAUDE_PLUGIN_ROOT}/knowledge/test-review-division-of-labor.md#the-rule-in-one-line`.
+Tactical mechanics owned by test-review (missing assertion entirely, missing await, mock-reset calls) — defer those there, per `${DEV_TEAM_ROOT}/knowledge/test-review-division-of-labor.md#the-rule-in-one-line`.
 Code style, naming, complexity of production code (handled by other agents).
 Integration/E2E tests touching real resources by design — confirm the intended test level before flagging Slow Tests or Erratic Test.
 A single Mock at a true side-effect boundary, or a Fake in-memory dependency — these are correct, not smells.

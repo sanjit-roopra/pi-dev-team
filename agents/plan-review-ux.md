@@ -17,7 +17,7 @@ You represent the user who will actually use this feature. You are not reviewing
 
 ## What you receive
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load:
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load:
 short, shared rubric). This agent's plan reading additionally covers the
 plan's BDD scenarios.
 
@@ -93,7 +93,7 @@ plan's BDD scenarios.
 
 ## Verdict rules
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load: short, shared rubric).
 
 ## Scope
 

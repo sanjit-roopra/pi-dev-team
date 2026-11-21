@@ -1,7 +1,7 @@
 {
   "name": "pi-dev-team",
   "version": "0.5.0",
-  "description": "pi port of Bryan Finster's dev-team (bdfinst/agentic-dev-team): persona-driven dev team, reviewer swarm, TDD-gated /specs -> /plan -> /build -> /pr workflow, guard hooks. Works with any pi model provider, including GitHub Copilot.",
+  "description": "A team of AI agents for pi: spec, plan, build with tests, review, pull request. Works with every pi provider.",
   "license": "MIT",
   "author": "Sanjit Roopra (https://github.com/sanjit-roopra)",
   "repository": {
@@ -37,10 +37,10 @@
     "typebox": "*"
   },
   "scripts": {
-    "sync": "python3 sync/sync_upstream.py --upstream ../agentic-dev-team",
     "test": "node --test test/unit/*.test.ts && python3 -m unittest discover -s test/py -p 'test_*.py'",
     "e2e": "node test/e2e/run.mjs",
-    "version": "python3 devtools/changelog.py && git add CHANGELOG.md"
+    "version": "python3 devtools/changelog.py && git add CHANGELOG.md",
+    "index": "python3 hooks/lib/build_knowledge_index.py"
   },
   "files": [
     "extensions",
@@ -53,10 +53,6 @@
     "tools",
     "bin",
     "docs",
-    "sync",
-    "overrides",
-    "UPSTREAM.json",
-    "PORTING.md",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",

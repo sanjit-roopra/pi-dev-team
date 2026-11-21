@@ -17,7 +17,7 @@ used by BOTH extractors' own ``_accumulate_token_signals``/``_cost`` before
 this package existed, so choosing it keeps golden output byte-identical
 (#2042 acceptance criterion).
 
-Why this one, not idiom 3 or 4: a real Claude Code transcript legitimately
+Why this one, not idiom 3 or 4: a real session transcript legitimately
 omits a usage field two different ways. A `thinking`-only assistant message
 carries no `usage` key at all (the corpus's record #2 in
 `tests/fixtures/session_log/projects/.../99999999….jsonl`). A model turn

@@ -74,7 +74,7 @@ the same `maxParallel` resolution the legacy path uses
 (`DEV_TEAM_MAX_PARALLEL_REVIEW_AGENTS`, default 10; see `SKILL.md` Step 4):
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_waves.py" --agents "<this slice's panel agent names, in order>"
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/skills/code-review/scripts/dispatch_waves.py" --agents "<this slice's panel agent names, in order>"
 ```
 
 Dispatch one wave at a time, waiting for each wave to fully return before
@@ -104,7 +104,7 @@ For each slice, once its panel's waves (per the section above) return:
    `dispatch_reconcile.py`, the same CLI as the legacy path, scoped to this
    slice's dispatched agents for that wave:
    ```bash
-   sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names>" --returned "<this wave's contract-valid agent names>"
+   sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names>" --returned "<this wave's contract-valid agent names>"
    ```
    Every name in the resulting `"missing"` array is a dispatch failure for
    this slice's current wave.
@@ -135,8 +135,8 @@ For each slice, once its panel's waves (per the section above) return:
    gate and was deleted in #1904 — sliced mode never wrote that gate file to
    begin with, so the normalized hash never had a consumer on this path):
    ```bash
-   HASH=$(python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/review_gate_hash.py" --branch-diff)
-   python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/boundary_events.py" --event dispatch-failure --agent "<name>" --subject-hash "$HASH"
+   HASH=$(python3 "${DEV_TEAM_ROOT}/hooks/lib/review_gate_hash.py" --branch-diff)
+   python3 "${DEV_TEAM_ROOT}/hooks/lib/boundary_events.py" --event dispatch-failure --agent "<name>" --subject-hash "$HASH"
    ```
 5. **Drop** the findings from orchestrator context. **Retain only a one-line tally per slice** — e.g. `section-0001: 3 findings (1 error, 2 warnings)`. This
    is the move that keeps context flat regardless of repo size: never hold more

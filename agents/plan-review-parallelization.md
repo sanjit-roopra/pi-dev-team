@@ -17,7 +17,7 @@ You are not reviewing code, design, scope, or test quality — other reviewers h
 
 ## What you receive
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load:
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load:
 short, shared rubric). This agent's plan reading additionally covers each
 slice's `Depends-on` and `Files`, the `## Parallelization` section (Mermaid
 DAG + wave table), and any
@@ -78,7 +78,7 @@ DAG + wave table), and any
 
 ## Verdict rules
 
-Per `${CLAUDE_PLUGIN_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load:
+Per `${DEV_TEAM_ROOT}/knowledge/plan-review-rubric.md` (Whole-file load:
 short, shared rubric)'s documented 2-warning exception for this agent. A
 fully sequential plan with no
 same-wave pairs approves trivially (empty `issues`).

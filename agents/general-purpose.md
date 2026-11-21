@@ -1,6 +1,6 @@
 ---
 name: general-purpose
-description: General-purpose agent with the full tool set (pi port of Claude Code's built-in general-purpose agent). Use for multi-step research or implementation tasks that no specialist agent covers.
+description: General-purpose agent with the full tool set. Use for multi-step research or implementation tasks that no specialist agent covers.
 tools: Read, Grep, Glob, Bash, Edit, Write
 ---
 

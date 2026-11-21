@@ -3,7 +3,7 @@
 Reference for the structure of a deployment pipeline and the configuration and
 environment discipline it depends on. Source: *Continuous Delivery* (Humble &
 Farley) Ch.5 (anatomy), Ch.2 (configuration management), Ch.11 (infrastructure
-and environments). Advisory — the plugin designs and assesses pipelines; the
+and environments). Advisory — the package designs and assesses pipelines; the
 test-gate mechanics live in `cd-test-architecture.md`.
 
 A deployment pipeline is the automated manifestation of the process for getting
@@ -72,7 +72,7 @@ A change flows through ordered stages; success in one triggers the next.
 
 ## Scope note (advisory boundary)
 
-This plugin **designs and assesses** pipelines and **plans** changes to fit them.
+This package **designs and assesses** pipelines and **plans** changes to fit them.
 It does not author IaC stacks (Terraform/Helm), operate artifact repositories, or
 execute deployments. Recommend those; don't simulate them.
 

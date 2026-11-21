@@ -17,7 +17,7 @@ import {
 	tierModelsLine,
 } from "../../extensions/dev-team/lib/agents.ts";
 import { DEFAULT_CONFIG, isHookEnabled, mergeConfig } from "../../extensions/dev-team/lib/config.ts";
-import { applyUpdatedInput, claudeToolName, loadHookSpecs, toClaudeInput } from "../../extensions/dev-team/lib/hooks.ts";
+import { applyUpdatedInput, hookToolName, loadHookSpecs, toHookInput } from "../../extensions/dev-team/lib/hooks.ts";
 import { discoverInvocableSkills, discoverSkillPool, discoverSkills, expandSkill, namedSkills, hasRequestText, REQUEST_DIR, requestFileLine, resolveSkillName, saveApprovedExamples, saveDirectRequest, saveRequest, type SkillDef, skillIndex, splitArgs, substituteArguments, unavailableSkillReason } from "../../extensions/dev-team/lib/skills.ts";
 import { buildSystemPrompt, forwardedArgs } from "../../extensions/dev-team/lib/subagent.ts";
 import { buildTranscriptLines } from "../../extensions/dev-team/lib/transcript.ts";
@@ -35,7 +35,7 @@ test("splitToolList keeps scoped Bash grants intact", () => {
 	assert.equal(splitToolList(undefined), undefined);
 });
 
-test("mapTools maps Claude tools to pi tools", () => {
+test("mapTools maps frontmatter tool names to pi tools", () => {
 	const m = mapTools(["Read", "Grep", "Glob", "Bash(graphify *)", "Edit", "Write", "Skill", "Agent", "WebSearch", "Frobnicate"], ["read"]);
 	assert.ok(m);
 	assert.deepEqual(m.tools.sort(), ["bash", "dev_team_subagent", "edit", "find", "grep", "ls", "read", "skill", "write"].sort());
@@ -56,7 +56,7 @@ test("Agent and Task map only to dev-team dispatch, preserving an external subag
 	assert.deepEqual(mapTools(["Agent", "Task", "subagent"], available)?.tools, available);
 });
 
-test("mapTools expands MCP patterns against registered tools, renaming Claude plugin servers", () => {
+test("mapTools expands MCP patterns against registered tools, renaming mcp__plugin_ servers", () => {
 	const available = ["read", "mcp__codegraph__search", "mcp__repowise__get_context", "mcp__other__x", "codemode"];
 	const m = mapTools(["Read", "mcp__codegraph__*", "mcp__plugin_repowise_repowise__get_context", "mcp__missing__*"], available);
 	assert.ok(m);
@@ -165,11 +165,11 @@ test("resolveThinking lets a dispatch lower an agent's effort but not raise it",
 	assert.equal(resolveThinking("medium", "turbo", DEFAULT_CONFIG.thinking, "high"), "high");
 });
 
-test("every upstream agent parses and maps to at least one pi tool", () => {
+test("every package agent parses and maps to at least one pi tool", () => {
 	const agents = discoverAgents(os.tmpdir(), ROOT, { includeProject: false });
-	assert.ok(agents.size >= 48, `expected >= 48 agents, got ${agents.size}`);
+	assert.ok(agents.size >= 46, `expected >= 46 agents, got ${agents.size}`);
 	for (const def of agents.values()) {
-		const m = mapTools(def.claudeTools, []);
+		const m = mapTools(def.hookTools, []);
 		if (m) assert.ok(m.tools.length > 0, `${def.name} maps to no tools`);
 		assert.ok(def.body.trim().length > 50, `${def.name} has an empty body`);
 		assert.ok(!def.model || ["opus", "sonnet", "haiku", "fable", "inherit"].includes(def.model) || def.model.includes("/"), `${def.name} model ${def.model}`);
@@ -192,10 +192,20 @@ test("agent file with blank line after frontmatter opener parses", (t) => {
 
 test("project agents override package agents", (t) => {
 	const dir = tempDir(t, "proj-");
-	fs.mkdirSync(path.join(dir, ".claude", "agents"), { recursive: true });
-	fs.writeFileSync(path.join(dir, ".claude", "agents", "security-review.md"), "---\nname: security-review\ndescription: local\n---\nlocal body\n");
+	fs.mkdirSync(path.join(dir, ".pi", "agents"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".pi", "agents", "security-review.md"), "---\nname: security-review\ndescription: local\n---\nlocal body\n");
 	assert.equal(discoverAgents(dir, ROOT, { includeProject: true }).get("security-review")?.description, "local");
 	assert.equal(discoverAgents(dir, ROOT, { includeProject: false }).get("security-review")?.source, "package");
+});
+
+test("agents and skills in .claude/ are not project agents or skills", (t) => {
+	const dir = tempDir(t, "proj-");
+	fs.mkdirSync(path.join(dir, ".claude", "agents"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".claude", "agents", "security-review.md"), "---\nname: security-review\ndescription: local\n---\nlocal body\n");
+	fs.mkdirSync(path.join(dir, ".claude", "skills", "pr"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".claude", "skills", "pr", "SKILL.md"), "---\nname: pr\ndescription: project pr\n---\nx\n");
+	assert.equal(discoverAgents(dir, ROOT, { includeProject: true }).get("security-review")?.source, "package");
+	assert.equal(discoverSkills(dir, ROOT, { includeProject: true }).get("pr")?.source, "package");
 });
 
 test("saveRequest keeps a /plan request word for word and names the file", (t) => {
@@ -243,7 +253,7 @@ test("saveApprovedExamples keeps approved examples word for word as approved-<ti
 test("saveApprovedExamples saves nothing into a symlinked requests dir", (t) => {
 	const cwd = tempDir(t, "dt-request-approved-link-");
 	const elsewhere = tempDir(t, "dt-request-approved-target-");
-	fs.mkdirSync(path.join(cwd, ".claude", "memory"), { recursive: true });
+	fs.mkdirSync(path.join(cwd, ".pi", "dev-team", "memory"), { recursive: true });
 	fs.symlinkSync(elsewhere, path.join(cwd, REQUEST_DIR));
 	assert.equal(saveApprovedExamples(cwd, "Hello"), undefined);
 	assert.deepEqual(fs.readdirSync(elsewhere), []);
@@ -255,8 +265,8 @@ test("saveRequest saves nothing for other skills, empty arguments or a symlinked
 	assert.equal(saveRequest(cwd, "plan", "   "), undefined);
 	assert.equal(fs.existsSync(path.join(cwd, REQUEST_DIR)), false);
 	const elsewhere = tempDir(t, "dt-request-target-");
-	fs.mkdirSync(path.join(cwd, ".claude"));
-	fs.symlinkSync(elsewhere, path.join(cwd, ".claude", "memory"));
+	fs.mkdirSync(path.join(cwd, ".pi", "dev-team"), { recursive: true });
+	fs.symlinkSync(elsewhere, path.join(cwd, ".pi", "dev-team", "memory"));
 	assert.equal(saveRequest(cwd, "plan", "do it"), undefined);
 	assert.deepEqual(fs.readdirSync(elsewhere), []);
 });
@@ -274,11 +284,11 @@ test("saveRequest saves nothing when the arguments only point at issues, URLs or
 
 test("saveRequest returns undefined instead of throwing when it cannot write", (t) => {
 	const cwd = tempDir(t, "dt-request-ro-");
-	fs.writeFileSync(path.join(cwd, ".claude"), "a file, not a dir");
+	fs.writeFileSync(path.join(cwd, ".pi"), "a file, not a dir");
 	assert.equal(saveRequest(cwd, "plan", "do it"), undefined);
 });
 
-test("splitArgs and Claude argument substitution", () => {
+test("splitArgs and skill argument substitution", () => {
 	assert.deepEqual(splitArgs(`security-review --path "src/a b.ts" --x`), ["security-review", "--path", "src/a b.ts", "--x"]);
 	assert.equal(substituteArguments("Args: $ARGUMENTS", "a b"), "Args: a b");
 	assert.equal(substituteArguments("Agent `$0`, then $ARGUMENTS[1]", "test-review --json"), "Agent `test-review`, then --json");
@@ -298,15 +308,15 @@ test("skills: discovery, qualified names, project override, compact index", (t) 
 	assert.ok(index.length < 40_000, `index too large: ${index.length}`);
 	assert.match(index, /- plan \(\/plan\): /);
 	const dir = tempDir(t, "proj-");
-	fs.mkdirSync(path.join(dir, ".claude", "skills", "pr"), { recursive: true });
-	fs.writeFileSync(path.join(dir, ".claude", "skills", "pr", "SKILL.md"), "---\nname: pr\ndescription: project pr\n---\nx\n");
+	fs.mkdirSync(path.join(dir, ".pi", "skills", "pr"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".pi", "skills", "pr", "SKILL.md"), "---\nname: pr\ndescription: project pr\n---\nx\n");
 	assert.equal(discoverSkills(dir, ROOT, { includeProject: true }).get("pr")?.source, "project");
 	assert.equal(discoverSkills(dir, ROOT, { includeProject: false }).get("pr")?.source, "package", "project skills need a trusted project");
 });
 
 test("skill files that are not small regular files are skipped unread", (t) => {
 	const dir = tempDir(t, "skl-");
-	const skills = path.join(dir, ".claude", "skills");
+	const skills = path.join(dir, ".pi", "skills");
 	fs.mkdirSync(path.join(skills, "ok"), { recursive: true });
 	fs.writeFileSync(path.join(skills, "ok", "SKILL.md"), "---\nname: ok\ndescription: d\n---\nbody\n");
 	fs.mkdirSync(path.join(skills, "as-dir", "SKILL.md"), { recursive: true });
@@ -320,8 +330,8 @@ test("skill files that are not small regular files are skipped unread", (t) => {
 
 function projectSkill(t: TestContext, name: string): string {
 	const dir = tempDir(t, "skl-");
-	fs.mkdirSync(path.join(dir, ".claude", "skills", name), { recursive: true });
-	fs.writeFileSync(path.join(dir, ".claude", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nPROJECT_SKILL_BODY\n`);
+	fs.mkdirSync(path.join(dir, ".pi", "skills", name), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".pi", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: d\n---\nPROJECT_SKILL_BODY\n`);
 	return dir;
 }
 
@@ -362,7 +372,7 @@ test("every skill description fits pi's 1024 limit", () => {
 
 test("hooks.json wiring loads with matchers and every script exists", () => {
 	const specs = loadHookSpecs(ROOT);
-	assert.ok(specs.length >= 45, `only ${specs.length} hook registrations`);
+	assert.ok(specs.length >= 40, `only ${specs.length} hook registrations`);
 	for (const s of specs) assert.ok(fs.existsSync(s.script), `missing ${s.script}`);
 	const preBash = specs.filter((s) => s.event === "PreToolUse" && (!s.matcher || s.matcher.test("Bash"))).map((s) => s.name);
 	assert.ok(preBash.includes("destructive_guard") && preBash.includes("pre_pr_review"));
@@ -380,17 +390,17 @@ test("hook enablement honours defaults, disabled and enable lists", () => {
 	assert.equal(isHookEnabled(mergeConfig(DEFAULT_CONFIG, { hooks: { enabled: false } }), "pre_tool_guard"), false);
 });
 
-test("toClaudeInput / applyUpdatedInput", () => {
-	assert.equal(claudeToolName("find"), "Glob");
-	assert.equal(claudeToolName("dev_team_subagent"), "Agent");
-	assert.equal(claudeToolName("subagent"), "subagent");
-	const w = toClaudeInput("write", { path: "a/b.ts", content: "x" }, "/repo");
+test("toHookInput / applyUpdatedInput", () => {
+	assert.equal(hookToolName("find"), "Glob");
+	assert.equal(hookToolName("dev_team_subagent"), "Agent");
+	assert.equal(hookToolName("subagent"), "subagent");
+	const w = toHookInput("write", { path: "a/b.ts", content: "x" }, "/repo");
 	assert.equal(w.file_path, "/repo/a/b.ts");
 	assert.equal(w.path, "/repo/a/b.ts");
-	const e = toClaudeInput("edit", { path: "/abs/f.ts", edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }] }, "/repo");
+	const e = toHookInput("edit", { path: "/abs/f.ts", edits: [{ oldText: "a", newText: "b" }, { oldText: "c", newText: "d" }] }, "/repo");
 	assert.equal(e.old_string, "a\nc");
 	assert.equal(e.new_string, "b\nd");
-	assert.deepEqual(toClaudeInput("dev_team_subagent", { agent: "x", task: "t" }, "/r"), { subagent_type: "x", prompt: "t", description: "", model: undefined });
+	assert.deepEqual(toHookInput("dev_team_subagent", { agent: "x", task: "t" }, "/r"), { subagent_type: "x", prompt: "t", description: "", model: undefined });
 	const input: Record<string, unknown> = { command: "ls" };
 	applyUpdatedInput("bash", input, { command: "ls -la" });
 	assert.equal(input.command, "ls -la");
@@ -404,7 +414,7 @@ test("hook prompt updates apply only to namespaced dev-team dispatch", () => {
 	assert.equal(dispatch.task, "updated\n\ncontext\n\nmore context");
 
 	const external = { agent: "external", task: "original", description: "external tool" };
-	assert.deepEqual(toClaudeInput("subagent", external, "/r"), external);
+	assert.deepEqual(toHookInput("subagent", external, "/r"), external);
 	applyUpdatedInput("subagent", external, { prompt: "updated", additionalContext: "context" });
 	assert.deepEqual(external, { agent: "external", task: "original", description: "external tool" });
 });
@@ -471,7 +481,7 @@ test("subagent prompt lists the frontmatter and body-named skills and no others"
 test("subagent prompt advertises only frontmatter skills the pool has", () => {
 	const prompt = buildSystemPrompt(agentDef(["alpha", "agent-audit"], "body"), ROOT, [], [], skillMap("alpha"), 220);
 	assert.match(prompt, /per your frontmatter `skills:` list\): alpha\. /);
-	assert.doesNotMatch(prompt, /agent-audit/, "a skill the port dropped");
+	assert.doesNotMatch(prompt, /agent-audit/, "a skill the pool lacks");
 });
 
 test("subagent prompt says other skills load by name only when it lists skills", () => {
@@ -516,8 +526,8 @@ test("namedSkills: a name that prefixes another is not matched by it, names are 
 
 test("discoverSkillPool: project skills need trust, and skillIndex off lists nothing", (t) => {
 	const dir = tempDir(t, "proj-");
-	fs.mkdirSync(path.join(dir, ".claude", "skills", "house-rules"), { recursive: true });
-	fs.writeFileSync(path.join(dir, ".claude", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
+	fs.mkdirSync(path.join(dir, ".pi", "skills", "house-rules"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".pi", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
 	assert.equal(discoverSkillPool({ skillIndex: "compact" }, dir, ROOT, true)?.has("house-rules"), true, "trusted");
 	assert.equal(discoverSkillPool({ skillIndex: "compact" }, dir, ROOT, false)?.has("house-rules"), false, "untrusted");
 	assert.equal(discoverSkillPool({ skillIndex: "off" }, dir, ROOT, true), undefined, "off");
@@ -525,8 +535,8 @@ test("discoverSkillPool: project skills need trust, and skillIndex off lists not
 
 test("namedSkills always includes project skills", (t) => {
 	const dir = tempDir(t, "proj-");
-	fs.mkdirSync(path.join(dir, ".claude", "skills", "house-rules"), { recursive: true });
-	fs.writeFileSync(path.join(dir, ".claude", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
+	fs.mkdirSync(path.join(dir, ".pi", "skills", "house-rules"), { recursive: true });
+	fs.writeFileSync(path.join(dir, ".pi", "skills", "house-rules", "SKILL.md"), "---\nname: house-rules\ndescription: project rules\n---\nx\n");
 	const skills = discoverSkills(dir, ROOT, { includeProject: true });
 	assert.ok(namedSkills(skills, [], "no references").has("house-rules"));
 });

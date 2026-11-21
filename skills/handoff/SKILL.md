@@ -58,7 +58,7 @@ Apply in order to all context older than the last 3-5 turns, in both modes:
 
 ## Redaction
 
-Before writing any output in either mode, redact secrets, API keys, tokens, and PII from the content. Fork-mode output leaves the repo-adjacent trust boundary (an OS temp dir another session reads), so redaction is mandatory there. Continue-mode output stays under `.claude/memory/` inside the repo, but apply the same redaction pass for consistency — a secret that shouldn't be in conversation history shouldn't be in a committed-adjacent file either.
+Before writing any output in either mode, redact secrets, API keys, tokens, and PII from the content. Fork-mode output leaves the repo-adjacent trust boundary (an OS temp dir another session reads), so redaction is mandatory there. Continue-mode output stays under `.pi/dev-team/memory/` inside the repo, but apply the same redaction pass for consistency — a secret that shouldn't be in conversation history shouldn't be in a committed-adjacent file either.
 
 ## Continue Mode
 
@@ -70,7 +70,7 @@ Compress conversation history to keep context utilization below 40% while contin
 deliberate, structured summary beats the harness's generic compaction:
 
 - before a long phase ends, so the next phase starts from a reviewable
-  `.claude/memory/` file rather than replayed history;
+  `.pi/dev-team/memory/` file rather than replayed history;
 - when you notice the session is heavy (many file reads accumulated, turn
   count above about 40, degraded output quality) and want to choose what
   survives;
@@ -86,7 +86,7 @@ alternative to that generic summary.
 
 ### Writing Summaries
 
-- **Destination**: `.claude/memory/{date}-{task-slug}.md`
+- **Destination**: `.pi/dev-team/memory/{date}-{task-slug}.md`
 - **Scope**: full relevant history for the task
 - **Requires**: nothing extra — the task is already known
 
@@ -98,14 +98,14 @@ Each phase produces a progress file that onboards the next phase's agent without
 
 ### Using Summaries in New Conversations
 
-1. Read the most recent summary from `.claude/memory/`
+1. Read the most recent summary from `.pi/dev-team/memory/`
 2. Load only **Key Context for Continuation** into active context
 3. Load referenced files on demand, not upfront
 4. Do NOT reload full conversation history -- the summary replaces it
 
 ### Cleanup (Time-Based)
 
-1. Archive summaries older than 30 days to `.claude/memory/archive/`
+1. Archive summaries older than 30 days to `.pi/dev-team/memory/archive/`
 2. Delete archived summaries older than 90 days
 3. Consolidate multiple summaries for the same task into one
 
@@ -119,7 +119,7 @@ Fork mode always needs a one-line purpose describing the side-task. If the user 
 
 ### Writing the Fork Artifact
 
-- **Destination**: the OS temp dir (e.g. `$TMPDIR` or the platform default), never `.claude/memory/` — the artifact is disposable and not part of the repo's durable history
+- **Destination**: the OS temp dir (e.g. `$TMPDIR` or the platform default), never `.pi/dev-team/memory/` — the artifact is disposable and not part of the repo's durable history
 - **Scope**: just the slice of context relevant to the stated purpose, not the full session history
 - **Naming**: `{tmpdir}/handoff-{purpose-slug}-{date}.md`
 

@@ -23,8 +23,8 @@ Arguments: $ARGUMENTS
 
 - Positional: `<repo-path>`.
 - `--parent <issue-url>` — parent issue URL on the resolved tracker (or empty for local-files mode).
-- `--repo-slug <slug>` — namespace under `.claude/memory/<workflow>/`.
-- `--workflow <name>` — the workflow namespace under `.claude/memory/`. Defaults to `test-improve`. Orchestrators pass their own namespace (e.g. `/test-improve` passes `test-improve` for its Phase-2 baseline).
+- `--repo-slug <slug>` — namespace under `.pi/dev-team/memory/<workflow>/`.
+- `--workflow <name>` — the workflow namespace under `.pi/dev-team/memory/`. Defaults to `test-improve`. Orchestrators pass their own namespace (e.g. `/test-improve` passes `test-improve` for its Phase-2 baseline).
 
 If `<repo-path>` is absent, ask the operator.
 
@@ -62,21 +62,21 @@ reference file holds the mechanics. `coverage-delta`'s own Step 2 links to
 the same reference file rather than re-deriving this a third time.
 
 **.NET** — when a `.sln` file exists at the repo root, run
-`${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_dotnet.py`'s
+`${DEV_TEAM_ROOT}/scripts/coverage_discovery_dotnet.py`'s
 `discover_dotnet_projects(repo_root)` instead of the single `dotnet test`
 command above. It returns every project in the solution, each classified
 `TEST`, `AMBIGUOUS`, or `NOT_TEST` (`coverage_config.TestClassification`).
 
 **JS/TS** — when the root `package.json` declares a `workspaces` field, or a
 `pnpm-workspace.yaml`/`lerna.json` is present, run
-`${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_js.py`'s
+`${DEV_TEAM_ROOT}/scripts/coverage_discovery_js.py`'s
 `discover_js_packages(repo_root)` instead of the single `npm test --
 --coverage` command above. It returns every resolved workspace package, each
 classified `TEST` or `NOT_TEST`.
 
 **Java** — when a root `pom.xml` declares `<modules>` (Maven), or a
 `settings.gradle`/`settings.gradle.kts` declares `include(...)` (Gradle), run
-`${CLAUDE_PLUGIN_ROOT}/scripts/coverage_discovery_java.py`'s
+`${DEV_TEAM_ROOT}/scripts/coverage_discovery_java.py`'s
 `discover_java_modules(repo_root)` instead of the single `mvn test
 jacoco:report` / `./gradlew test jacocoTestReport` command above. Maven takes
 precedence when both signals are present (no cross-merge). It returns every
@@ -284,9 +284,9 @@ same temp-file-then-rename idiom as `baseline-coverage.json` above. This
 step is skipped entirely for single-project repos (Step 1b) — no
 `coverage-config.json` is written for them.
 
-`disabled_test_count` is included **only** when `.claude/memory/<workflow>/<slug>/disabled-tests.json` exists (present when a caller ran `/test-audit-disable` first); omit the field otherwise. `phase` carries the calling workflow's phase number when it has one, and may be omitted for workflows without numbered phases.
+`disabled_test_count` is included **only** when `.pi/dev-team/memory/<workflow>/<slug>/disabled-tests.json` exists (present when a caller ran `/test-audit-disable` first); omit the field otherwise. `phase` carries the calling workflow's phase number when it has one, and may be omitted for workflows without numbered phases.
 
-Append a baseline summary to the workflow's baseline memory file (for `/test-improve`, `.claude/memory/<workflow>/<slug>/phase-2.md`; other workflows write to their own baseline phase file). Just the coverage block — auditing is a separate worker. This is process bookkeeping, distinct from the baseline data file above, and is unaffected by the atomic-write change.
+Append a baseline summary to the workflow's baseline memory file (for `/test-improve`, `.pi/dev-team/memory/<workflow>/<slug>/phase-2.md`; other workflows write to their own baseline phase file). Just the coverage block — auditing is a separate worker. This is process bookkeeping, distinct from the baseline data file above, and is unaffected by the atomic-write change.
 
 ### 6. Post to the parent
 
@@ -317,7 +317,7 @@ glab issue note add <parent-iid> --message "$(cat phase-2-block.md)"
 acli jira workitem comment add --key <parent-key> --body "$(cat phase-2-block.md)"
 ```
 
-**Local-files mode** — append the block to `.claude/plans/<workflow>/FEATURE.md` under a `## Metrics history` heading (create the heading if missing).
+**Local-files mode** — append the block to `.pi/dev-team/plans/<workflow>/FEATURE.md` under a `## Metrics history` heading (create the heading if missing).
 
 ### 7. Report
 

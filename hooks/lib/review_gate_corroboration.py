@@ -7,7 +7,7 @@ since that file was written; it does NOT prove an independent review
 actually produced that write (see `hooks/lib/review_gate_hash.py`'s own
 docstring for the full account of that residual gap). This module reads
 `hooks/agent_dispatch_ledger.py`'s `"record"` events from
-`.claude/metrics/boundary-events.jsonl` to corroborate that a hash-matching
+`.pi/dev-team/metrics/boundary-events.jsonl` to corroborate that a hash-matching
 write was backed by genuine, recent, distinct review-agent dispatches.
 (`hooks/pre_commit_review.py`'s own `.review-passed` gate was this module's
 original consumer at #1461; that hook is now a documented no-op — see its
@@ -191,7 +191,7 @@ def mtime_to_iso(mtime: float) -> str:
 
     Shared here (rather than duplicated in `pre_commit_review.py`) so the
     gate hook and this module never drift on timestamp formatting — the
-    hook anchors `before_ts` on `.claude/memory/.review-passed`'s own mtime
+    hook anchors `before_ts` on `.pi/dev-team/memory/.review-passed`'s own mtime
     and must format it identically to how every emitter in this repo
     stamps `ts` (confirmed against `boundary_events.py`).
     """
@@ -209,14 +209,14 @@ def _since_bound(before_ts: str, window_seconds: int) -> str:
 def _ledger_path(cwd) -> Path:
     base = Path(cwd) if cwd else Path.cwd()
     # Read-only: migrate=False so a corroboration read never migrates a
-    # legacy file or creates .claude/metrics/ as a side effect.
+    # legacy file or creates .pi/dev-team/metrics/ as a side effect.
     return artifact_paths.resolve_file("metrics", _LEDGER_STREAM_NAME, base, migrate=False)
 
 
 def _registered_agents() -> frozenset | None:
     """Re-validate against the live registry at READ time too (#1461 security
     review), not just at write time in `agent_dispatch_ledger.py` — defense
-    in depth against a stale ledger (written by an older plugin version, or
+    in depth against a stale ledger (written by an older package version, or
     copied from another checkout) supplying names no longer registered.
 
     Delegates to `review_agent_registry.read_registered_review_agent_names()`

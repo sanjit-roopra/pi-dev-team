@@ -26,9 +26,7 @@ Exit codes:
     0   always zero on successful scan (findings reported via SARIF, not exit).
     2   argument or IO error.
 
-See plugins/dev-team/knowledge/semgrep-rules/ml-patterns.yaml for
-analogous detection patterns shipped as semgrep rules in Step 3b's ruleset
-work.
+Analogous detection patterns can also be written as semgrep rules.
 """
 from __future__ import annotations
 
@@ -173,7 +171,7 @@ def sarif_from_findings(findings: list[Finding]) -> dict:
                     "driver": {
                         "name": "entropy-check",
                         "version": "1.0.0",
-                        "informationUri": "https://github.com/bdfinst/agentic-dev-team",
+                        "informationUri": "https://github.com/sanjit-roopra/pi-dev-team",
                         "rules": [
                             {"id": rid, "shortDescription": {"text": text}}
                             for rid, text in rules.items()

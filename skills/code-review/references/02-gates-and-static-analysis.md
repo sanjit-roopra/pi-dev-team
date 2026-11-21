@@ -1,5 +1,4 @@
-<!-- step 2 (pre-flight gates) and 2b (static analysis pre-pass). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 2 (pre-flight gates) and 2b (static analysis pre-pass). Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 ### 2. Pre-flight gates
 
 Skip entirely if `--background`. If `--force` without `--reason`, halt:
@@ -8,7 +7,7 @@ Skip entirely if `--background`. If `--force` without `--reason`, halt:
 ERROR: --force requires --reason "<justification>".
 ```
 
-If `--force` with `--reason`, append an entry to `.claude/metrics/override-audit.jsonl` per the schema in [`output-format.md`](output-format.md#override-audit-log-entry-step-2---force-path), then proceed to step 3.
+If `--force` with `--reason`, append an entry to `.pi/dev-team/metrics/override-audit.jsonl` per the schema in [`output-format.md`](output-format.md#override-audit-log-entry-step-2---force-path), then proceed to step 3.
 
 Otherwise run these in sequence (stop on first failure):
 
@@ -28,12 +27,12 @@ Skip if `--no-static-analysis` or `--background`.
 
 Follow the detection, execution, and deduplication procedure in [`skills/static-analysis-integration/SKILL.md`](../static-analysis-integration/SKILL.md). Output is structured findings injected into agent context in step 4. **This step does not gate execution** — it collects context only.
 
-**Growing this registry is a rule, not a discretion (#1981).** When any review agent reports the same mechanically-checkable finding class for the **second** time, and the check is expressible as a deterministic script, it becomes a `CHECKS` entry in `scripts/repo_invariants.py` **in the same PR that fixes the finding**. Two occurrences make it a class; converting there turns an unbounded stream of re-derivations into one bounded conversion. The root `CLAUDE.md` Working Rules state the same rule — it applies to this repo's own development, and the mechanism ships for downstream projects to use the same way.
+**Growing this registry is a rule, not a discretion (#1981).** When any review agent reports the same mechanically-checkable finding class for the **second** time, and the check is expressible as a deterministic script, it becomes a `CHECKS` entry in `scripts/repo_invariants.py` **in the same PR that fixes the finding**. Two occurrences make it a class; converting there turns an unbounded stream of re-derivations into one bounded conversion.
 
 **Repo-specific invariant pre-pass (#1608).** Also run:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/repo_invariants.py" --files <target files>
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/repo_invariants.py" --files <target files>
 ```
 
 It checks a small, growable list of this repo's own "every X should have
@@ -48,28 +47,28 @@ pick up a new check.
 **Internal-collaborator-doubling pre-pass (#2130).** Also run:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/test-design/scripts/internal_double_detector.py" . --files <target files> --json
+python3 "$DEV_TEAM_ROOT/skills/test-design/scripts/internal_double_detector.py" . --files <target files> --json
 ```
 
 Detects an unwaived (or malformed/invalid-blocker-waiver) double of a
 project first-party collaborator, per
-`${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md`. Same
+`${DEV_TEAM_ROOT}/knowledge/internal-collaborator-doubling.md`. Same
 `<target files>` list as the `repo_invariants.py` block above — one
 scoping mechanism for both tools in this step, not two. Its `findings`
 array merges into step 4's static-analysis context using the same envelope
 and the same "detected by static analysis — do not re-report, focus on
 semantic concerns" framing. This step does not gate on the finding — it
 collects context only, exactly like every other check in this step; the
-actual gate is the `hooks/internal_double_gate.py` PreToolUse hook plus
-the required `"Plugin content & hooks"` CI check (#2128). `test-review` and
+actual gate is the `hooks/internal_double_gate.py` PreToolUse hook (#2128).
+`test-review` and
 `test-smell-review` cite this pre-pass's finding rather than re-deriving
 it when it's present (see
-`${CLAUDE_PLUGIN_ROOT}/knowledge/test-review-division-of-labor.md`).
+`${DEV_TEAM_ROOT}/knowledge/test-review-division-of-labor.md`).
 
 **Test-review mechanical pre-phase (#2169).** Also run, for each test file in `<target files>`:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/scripts/test_review_mechanics.py" . <file>
+python3 "$DEV_TEAM_ROOT/scripts/test_review_mechanics.py" . <file>
 ```
 
 Only relevant when `test-review` is in the dispatched lens set for this

@@ -1,16 +1,17 @@
 """artifact_paths — shared project-root resolution for runtime artifacts.
 
-Part of the `.claude/`-scoped runtime artifact migration (issue #1406 /
-plan `opt-in-metrics-and-claude-scoped-artifacts.md`, Slice 4). Provides a
+Part of the scoped runtime artifact migration (issue #1406, Slice 4).
+Every runtime artifact lives under `<project-root>/.pi/dev-team/`
+(`STATE_DIR`). Provides a
 single, git-aware resolution of "the project root" so every hook/script
 that writes a runtime artifact (metrics, memory, plans) agrees on where
 that root is — instead of each hook independently trusting
-`CLAUDE_PROJECT_DIR` (can be unset or stale) or a bare relative path
+`DEV_TEAM_PROJECT_DIR` (can be unset or stale) or a bare relative path
 (resolves against whatever the process's real OS cwd happens to be, which
 disagrees with the project root when a hook is invoked from a
 subdirectory).
 
-Stdlib-only. See docs/python-hook-contract.md.
+Stdlib-only.
 """
 
 from __future__ import annotations
@@ -19,7 +20,45 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
+
+#: Project-relative directory that holds dev-team runtime state
+#: (`<project-root>/.pi/dev-team/<category>/...`). Never `.pi` alone:
+#: `.pi/agents`, `.pi/skills` and `.pi/settings.json` are not dev-team state.
+STATE_DIR = Path(".pi", "dev-team")
+
+
+def agent_dir(env: Mapping[str, str] | None = None) -> Path:
+    """Return pi's agent dir, resolved the way pi's `getAgentDir()` does.
+
+    `PI_CODING_AGENT_DIR` from `env` (default `os.environ`) when set and
+    non-empty: a value of `~` or starting with `~/` expands to `HOME` from
+    `env` (else `os.path.expanduser("~")`); any other value is used as is,
+    not stripped. Unset or empty: `<home>/.pi/agent`. The single resolver
+    for user-level paths (`user_state_dir()`, autocompact's user
+    `dev-team.json`). Pure path-join, no side effects.
+    """
+    source = os.environ if env is None else env
+    home = source.get("HOME") or os.path.expanduser("~")
+    raw = source.get("PI_CODING_AGENT_DIR") or ""
+    if raw == "~":
+        return Path(home)
+    if raw.startswith("~/"):
+        return Path(home) / raw[2:]
+    if raw:
+        return Path(raw)
+    return Path(home) / ".pi" / "agent"
+
+
+def user_state_dir(env: Mapping[str, str] | None = None) -> Path:
+    """Return the user-level dev-team state dir: `<agentDir>/dev-team`.
+
+    `agentDir` comes from `agent_dir(env)`. Holds the telemetry consent file
+    (`telemetry.json`) and the home-scoped metrics (`metrics/`). Pure
+    path-join, no side effects.
+    """
+    return agent_dir(env) / "dev-team"
 
 
 def project_root(start: Path | str | None = None) -> Path:
@@ -58,7 +97,7 @@ def project_root(start: Path | str | None = None) -> Path:
 
 def _validate_segment(value: str, label: str) -> None:
     """Reject any `category`/`filename`/`subpath` component that could
-    traverse outside `.claude/<category>/...`.
+    traverse outside `.pi/dev-team/<category>/...`.
 
     pathlib does not block `..` on its own, so every caller-supplied path
     component is validated here rather than trusting each call site to do
@@ -84,9 +123,9 @@ def _log_migrate_failure(legacy_path: Path, new_path: Path, exc: OSError) -> Non
 
 
 def _category_dir(name: str, root: Path | str | None = None) -> Path:
-    """Return `<project-root>/.claude/<name>`. Pure path-join, no side effects."""
+    """Return `<project-root>/.pi/dev-team/<name>`. Pure path-join, no side effects."""
     _validate_segment(name, "category")
-    return project_root(start=root) / ".claude" / name
+    return project_root(start=root) / STATE_DIR / name
 
 
 def metrics_dir(root: Path | str | None = None) -> Path:
@@ -130,7 +169,7 @@ def resolve_file(
     root: Path | str | None = None,
     migrate: bool = True,
 ) -> Path:
-    """Return the `.claude/<category>/<filename>` path for a runtime artifact.
+    """Return the `.pi/dev-team/<category>/<filename>` path for a runtime artifact.
 
     `root` is always a walk-start passed to `project_root()`, never treated
     as a literal final directory. When `migrate` is True (the writer
@@ -149,7 +188,7 @@ def resolve_file(
     _validate_segment(filename, "filename")
 
     base = project_root(start=root)
-    new_dir = base / ".claude" / category
+    new_dir = base / STATE_DIR / category
     new_path = new_dir / filename
 
     if not migrate:
@@ -177,7 +216,7 @@ def resolve_file(
 
 
 def category_dir(category: str, root: Path | str | None = None) -> Path:
-    """Return `<project-root>/.claude/<category>`. Pure path-join, no side effects.
+    """Return `<project-root>/.pi/dev-team/<category>`. Pure path-join, no side effects.
 
     Public, generic promotion of the internal per-name accessors
     (`metrics_dir()`/`memory_dir()`/`plans_dir()`) for an arbitrary category
@@ -196,7 +235,7 @@ def migrate_dir(
 
     Walks `<project-root>/<category>/<subpath>/` (the entire subtree in one
     call, not scoped to a single slug) and moves each untracked file to the
-    identical relative path under `.claude/<category>/<subpath>/`. A
+    identical relative path under `.pi/dev-team/<category>/<subpath>/`. A
     git-tracked file is left in place. A file whose basename appears in
     `exclude` is left in place even if untracked. A destination that already
     exists is left untouched (never overwritten).
@@ -215,7 +254,7 @@ def migrate_dir(
         return
 
     excluded = exclude or set()
-    new_root = base / ".claude" / category / subpath
+    new_root = base / STATE_DIR / category / subpath
 
     for legacy_path in legacy_root.rglob("*"):
         if legacy_path.is_symlink():
@@ -243,7 +282,7 @@ def dev_team_reports_dir(root: Path | str | None = None) -> Path:
     """Return `<project-root>/.dev-team-reports`. Pure path-join, no side effects.
 
     Deliberately not folded into `category_dir()`/`resolve_file()`/
-    `migrate_dir()`'s `.claude/<category>` shape — the reports domain is a
+    `migrate_dir()`'s `.pi/dev-team/<category>` shape — the reports domain is a
     single terminal directory with no sibling to select via a `category`
     string, and no current caller needs single-filename or directory-walk
     migration semantics for it.
@@ -252,6 +291,8 @@ def dev_team_reports_dir(root: Path | str | None = None) -> Path:
 
 
 __all__ = (
+    "STATE_DIR",
+    "agent_dir",
     "category_dir",
     "dev_team_reports_dir",
     "memory_dir",
@@ -260,4 +301,5 @@ __all__ = (
     "plans_dir",
     "project_root",
     "resolve_file",
+    "user_state_dir",
 )

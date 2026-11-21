@@ -205,10 +205,10 @@ class SessionsReport(Base):
         self.assertEqual(self.row["toolErrors"], 1)  # the unknown skill
 
     def test_port_is_the_package_version_its_dispatches_recorded(self):
-        self.assertIsNone(self.row["port"])  # entries written before the port version was recorded
+        self.assertIsNone(self.row["port"])  # entries written before the pi-dev-team version was recorded
         entries = [*main_session(), usage_entry("x2", "a5", "a", port="0.5.0"), usage_entry("x3", "x2", "b", port="0.5.0")]
-        write_session(self.root, "ported", entries)
-        self.assertEqual(self.run_cli("sessions", "-p", "ported")[0]["port"], "0.5.0")
+        write_session(self.root, "versioned", entries)
+        self.assertEqual(self.run_cli("sessions", "-p", "versioned")[0]["port"], "0.5.0")
 
     def test_compactions_and_skills(self):
         self.assertEqual(self.row["compactions"], 1)

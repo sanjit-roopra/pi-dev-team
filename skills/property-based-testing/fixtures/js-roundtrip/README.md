@@ -27,7 +27,7 @@ in platform-native binaries (`@rolldown/binding-<platform>`,
 `lightningcss-<platform>`) that are specific to the host OS/arch — checking
 one platform's build into git would silently break on a maintainer's
 different platform (this repo's CI is `ubuntu-*`, but maintainers develop on
-macOS — see the repo `CLAUDE.md` "Gates are platform-bound too" note), and
+macOS), and
 covering every platform would multiply the vendored size for no determinism
 benefit `fast-check` itself doesn't already provide. Resolving `vitest` via
 `npx vitest run` (or `npm install` first) is project-init's own normal

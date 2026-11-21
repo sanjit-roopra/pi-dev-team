@@ -8,11 +8,11 @@ allowed-tools: Read, Write, Bash(python3 *), Bash(launchctl *), Bash(crontab *),
 
 # Mutation Night-Watch
 
-<!-- pi-port-notes -->
-## pi port notes
+<!-- pi-notes -->
+## pi notes
 
-- Where this skill schedules or runs `claude --print`, use `pi --mode json -p --no-session` (or the port's `claude` shim, which is on `PATH` inside pi sessions but not in cron). In a cron entry call `pi` directly.
-<!-- pi-port-notes -->
+- Where this skill schedules or runs `dev-team-run --print`, use `pi --mode json -p --no-session` (or the `dev-team-run` shim, which is on `PATH` inside pi sessions but not in cron). In a cron entry call `pi` directly.
+<!-- pi-notes -->
 
 
 Role: worker. Launches and schedules a report-only measurement run. It never
@@ -29,9 +29,9 @@ generates a test, never invokes an LLM, and never commits — that is the
 
 `mutation-kill` already has two modes: **interactive** (an agent generates
 tests turn by turn) and **`--headless`** (unattended, but every round still
-shells out to `claude --print` — LLM cost and API availability are both in
+shells out to `dev-team-run --print` — LLM cost and API availability are both in
 the loop). Neither mode is meant to run **overnight with nobody watching**:
-a multi-hour unattended `claude --print` loop is expensive and, on a flaky
+a multi-hour unattended `dev-team-run --print` loop is expensive and, on a flaky
 network, silently stalls.
 
 Night-watch is a **third, LLM-free mode**: measurement only. It runs the real
@@ -71,7 +71,7 @@ Run once without `--detach` on a small scope, or just read the detection
 output, before committing to an overnight run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/mutation_nightwatch.py" --repo-root . --no-sleep-inhibit
+python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/mutation_nightwatch.py" --repo-root . --no-sleep-inhibit
 ```
 
 This prints the run directory and writes `MORNING-SUMMARY.md` +
@@ -84,13 +84,13 @@ will report the same gap every time.
 ## Step 2: Launch detached (survives closing the terminal/session)
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/mutation_nightwatch.py" --repo-root . --detach
+python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/mutation_nightwatch.py" --repo-root . --detach
 ```
 
 `--detach` re-execs the script into a new session/process group (POSIX
 `setsid`-equivalent; Windows `DETACHED_PROCESS`) and returns immediately,
 printing the child's PID and its `detached-launch.log` path. The run
-continues after the launching terminal or Claude Code session closes.
+continues after the launching terminal or pi session closes.
 
 While running, the script holds the OS awake for the run's duration:
 `caffeinate -dims` on macOS, `systemd-inhibit --what=sleep:idle` on Linux,
@@ -134,7 +134,7 @@ generated code), its `propose_and_ask` entries are signal-only and need a
 human look. Approve what you agree with:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/skills/mutation-testing/scripts/mutation_exclude_policy.py" --approve reports/mutation-nightwatch/LATEST/EXCLUDE-POLICY-PROPOSAL.json --repo-root .
+python3 "${DEV_TEAM_ROOT}/skills/mutation-testing/scripts/mutation_exclude_policy.py" --approve reports/mutation-nightwatch/LATEST/EXCLUDE-POLICY-PROPOSAL.json --repo-root .
 ```
 
 This is the only code path that writes the committed policy file — the

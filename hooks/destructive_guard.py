@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Python port of hooks/destructive-guard.sh (#598 / #572 Phase 3).
+"""destructive_guard — PreToolUse hook (#598 / #572 Phase 3).
 
-Claude Code PreToolUse hook. Runs before Bash tool calls, detects
+PreToolUse hook. Runs before Bash tool calls, detects
 destructive commands, and either warns (default, exit 0) or blocks (when
 careful mode is active, exit 2). Patterns are loaded from
 `hooks/destructive-commands.json`; careful state from
-`<repo-root>/.claude/hooks/careful-state.json` (see below). Falls back to
+`<repo-root>/.pi/dev-team/hooks/careful-state.json` (see below). Falls back to
 inline defaults when the commands config is absent.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin with tool_input.command
     Output: exit 0 = allow (optionally with CAUTION warning on stdout)
             exit 2 = block; stdout contains the block message
@@ -17,15 +17,15 @@ Stdlib-only (json/pathlib/sys). See ADR 0014.
 
 Careful state (issue #1900, same bug class as #1890's freeze-state.json
 fix) is resolved per invoking repo, NOT relative to this hook's own
-`script_dir`. In a real installed session `script_dir` is the shared
-plugin cache (`~/.claude/plugins/cache/bfinster/dev-team/<ver>/hooks/`) —
+`script_dir`. In a real installed session `script_dir` is the installed
+pi-dev-team package (`hooks/` under `~/.pi/agent/npm/` or `~/.pi/agent/git/`) —
 one location shared by every concurrently-running session, worktree, and
 project on the machine. Resolving careful state there let one session's
 `/careful` activation scope-lock every other, unrelated session's Bash
 calls. `main()` instead resolves it via `hooks/lib/artifact_paths.py`'s
 `resolve_file()`, keyed off the tool call's own `cwd` — landing at
-`<repo-root>/.claude/hooks/careful-state.json`, the same per-repo
-`.claude/` convention `freeze-state.json` and `.review-passed` already use.
+`<repo-root>/.pi/dev-team/hooks/careful-state.json`, the same per-repo
+`.pi/dev-team/` convention `freeze-state.json` and `.review-passed` already use.
 
 Refs: #572 (bash → Python migration epic).
 """

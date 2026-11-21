@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""codegraph_bootstrap — Claude Code SessionStart hook (Python port).
-
-Python port of hooks/codegraph-bootstrap.sh (#592 / #572 Phase 3).
+"""codegraph_bootstrap — SessionStart hook (#592 / #572 Phase 3).
 
 Rebuilds the per-machine CodeGraph index when a freshly cloned repo has
 adopted CodeGraph but has no local index yet. This is how a team shares
@@ -9,7 +7,7 @@ CodeGraph — the SQLite db is derived from source and machine-local so it
 is never committed; every clone rebuilds it automatically on the first
 session. See docs/adr/0012-auto-bootstrap-codegraph-index-per-clone.md.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : SessionStart JSON on stdin
     Output: Notice/nudge on stderr (never stdout)
     Exit  : always 0 (a buggy bootstrap must never block a session)

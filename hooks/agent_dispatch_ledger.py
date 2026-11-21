@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """agent_dispatch_ledger.py — PreToolUse dispatch-ledger hook (#1461).
 
-Registered in `settings.json`'s existing `PreToolUse` `"Agent|Task"` matcher
+Registered in `hooks/hooks.json`'s existing `PreToolUse` `"Agent|Task"` matcher
 (alongside `subagent_skill_context.py`). Records a `boundary-events.jsonl`
 `"record"` event whenever a genuine review-agent dispatch fires, so
 `hooks/pre_commit_review.py`'s `.review-passed` gate can later corroborate
@@ -69,7 +69,7 @@ against a deliberate, adversarial bypass. See
 `hooks/pre_commit_review.py`'s module docstring for the matching disclosure
 on the read side.
 
-Contract (docs/python-hook-contract.md):
+Contract:
     Input : PreToolUse JSON on stdin (Agent/Task matcher)
     Output: always exit 0 — fail-open, this hook never blocks a dispatch.
 
@@ -134,7 +134,7 @@ def main() -> int:
         return 0
 
     # Normalize the plugin-qualified dispatch form ("dev-team:doc-review") to
-    # the bare name the registry's closed set uses, so the plugin's normal,
+    # the bare name the registry's closed set uses, so dev-team's normal,
     # installed invocation form is recognized identically to a bare-named one.
     subagent_type = strip_plugin_prefix(subagent_type)
 

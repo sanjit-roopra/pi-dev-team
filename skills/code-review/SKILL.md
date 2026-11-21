@@ -30,7 +30,7 @@ Role: orchestrator. Route work to review agents; do not review code yourself. Pa
 
 Output templates and JSON schemas: [`output-format.md`](output-format.md). Example report: [`examples/sample-report.md`](examples/sample-report.md).
 
-**This file is the pi core of the upstream skill.** The full upstream text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with three exceptions. First, `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale upstream; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`). Second, the lean fix rule in step 5b is a pi change that narrows the actionability table in `references/05-aggregate.md` and the fix loop in `references/06-findings-and-fix-loop.md`: the rule wins. Third, step 4's single dispatch and its `[output: <path>]` files replace the waves of `references/04a-dispatch-waves.md` and the `contract-raw-<agent>.md` copies of `references/04d-contract-validation-and-retry.md`.
+**This file is the core of the skill.** The full text, word for word, with its reasons, incidents and edge cases, is split by step into `references/` (relative links inside a reference resolve from this directory, not from `references/`). Read a reference only when its row below says so; do not read references otherwise. If the core and a reference seem to disagree, follow the reference, with three exceptions. First, `references/05-aggregate.md`, `references/06-findings-and-fix-loop.md` and `references/07-report.md` still say step 9 never runs under `--json`. That text is stale; step 9 does run under `--json` (steps 7 and 9 below, and `references/08-09-corrections-and-gate.md`). Second, the lean fix rule in step 5b narrows the actionability table in `references/05-aggregate.md` and the fix loop in `references/06-findings-and-fix-loop.md`: the rule wins. Third, step 4's single dispatch and its `[output: <path>]` files replace the waves of `references/04a-dispatch-waves.md` and the `contract-raw-<agent>.md` copies of `references/04d-contract-validation-and-retry.md`.
 
 | Reference | Read it when |
 | --- | --- |
@@ -74,7 +74,7 @@ Arguments: $ARGUMENTS
 | `--pdf` | After the durable report is written, also render it to a sibling PDF (step 7). No-op with a message when no report file is written |
 | `--internal` | Orchestrator-internal dispatch; only `/build` and `/test-improve` pass it (`/ship` writes the report by default, see `knowledge/report-output-location.md`): skip the `.dev-team-reports/code-review.md` write in step 7. Orthogonal to `--json`: alone, the prose and fix-loop path still runs |
 | `--init-risks` | Scaffold `ACCEPTED-RISKS.md` from `templates/ACCEPTED-RISKS.md.tmpl` if absent. Exits non-zero without overwriting if present. Schema: `knowledge/accepted-risks-schema.md` |
-| `--force` | Skip pre-flight gates **and the documentation-only short-circuit**. **Requires `--reason "<text>"`** — logged to `.claude/metrics/override-audit.jsonl` |
+| `--force` | Skip pre-flight gates **and the documentation-only short-circuit**. **Requires `--reason "<text>"`** — logged to `.pi/dev-team/metrics/override-audit.jsonl` |
 | `--reason "<text>"` | Override justification (required with `--force`) |
 | `--static-analysis` / `--no-static-analysis` | Force on/off the static analysis pre-pass. Auto-enabled when tools are detected |
 | `--background` | Drift review of the default branch (documentation, naming and structural drift): only doc-review, arch-review, naming-review, structure-review; skips pre-flight gates |
@@ -112,7 +112,7 @@ Priority order:
 - **Never `Read` a directory path** to list it (it throws `EISDIR`); list files with `Glob("<dir>/**/*")`.
 - **Scope validation** (full-repo paths only): ≤200 files proceed; 201–500 warn "Reviewing {N} files — consider `--path` to narrow scope." and proceed; >500 **Auto-engage sliced mode** unless `--no-slice`.
 - **Sliced mode** (>500 files on a full-repo scope, or `--slice <N>`): **read** [`sliced-mode.md`](sliced-mode.md) and run it instead of steps 4–9. It is report-only. `--no-slice` forces the legacy single-pass review (steps 2–9) even past the threshold; Exactly at 500 files does not auto-engage. **Non-full-repo scope** (`--path`, `--since`, auto-scoped uncommitted changes) never auto-engages, whatever the file count.
-- **Documentation-only short-circuit.** If **every** target file is documentation (`.md`, `.mdx`, `.markdown`, `.rst`, `.txt`, `.adoc`, anything under `docs/`, root `README*`, `CHANGELOG*`, `CONTRIBUTING*`, `LICENSE*`, `NOTICE*`, `AUTHORS*`, `CODE_OF_CONDUCT*`) — where any path with a `.claude/` segment or under `agents/`, `skills/`, `prompts/`, `knowledge/`, `templates/agents/`, and `CLAUDE.md`/`AGENTS.md`, is **never** documentation — then **read** the short-circuit in `references/01-target-files.md` and follow it: emit the skip message, write the gate and the `doc-only` boundary event when auto-scoped or `--since <base>`, emit `{"status": "skipped", ...}` under `--json`, and **stop**. Not with `--force`, `--agent <name>` or `--background`.
+- **Documentation-only short-circuit.** If **every** target file is documentation (`.md`, `.mdx`, `.markdown`, `.rst`, `.txt`, `.adoc`, anything under `docs/`, root `README*`, `CHANGELOG*`, `CONTRIBUTING*`, `LICENSE*`, `NOTICE*`, `AUTHORS*`, `CODE_OF_CONDUCT*`) — where any path with a `.claude/` or `.pi/dev-team/` segment or under `agents/`, `skills/`, `prompts/`, `knowledge/`, `templates/agents/`, and `CLAUDE.md`/`AGENTS.md`, is **never** documentation — then **read** the short-circuit in `references/01-target-files.md` and follow it: emit the skip message, write the gate and the `doc-only` boundary event when auto-scoped or `--since <base>`, emit `{"status": "skipped", ...}` under `--json`, and **stop**. Not with `--force`, `--agent <name>` or `--background`.
 
 **1b.** If `REVIEW-CONTEXT.md` exists at the repo root, pass its contents to every agent in step 4, prefixed with: "Institutional context provided for this review:".
 
@@ -126,7 +126,7 @@ Skip entirely with `--background`. `--force` without `--reason` halts with:
 ERROR: --force requires --reason "<justification>".
 ```
 
-`--force` with `--reason`: append an entry to `.claude/metrics/override-audit.jsonl` per [`output-format.md`](output-format.md#override-audit-log-entry-step-2---force-path), then go to step 3.
+`--force` with `--reason`: append an entry to `.pi/dev-team/metrics/override-audit.jsonl` per [`output-format.md`](output-format.md#override-audit-log-entry-step-2---force-path), then go to step 3.
 
 Otherwise run in sequence, stop on the first failure, and skip a gate silently when its tool is missing:
 
@@ -143,11 +143,11 @@ Skip with `--no-static-analysis` or `--background`. Follow [`skills/static-analy
 Also run, with the same `<target files>` list:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/repo_invariants.py" --files <target files>
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/repo_invariants.py" --files <target files>
 ```
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/test-design/scripts/internal_double_detector.py" . --files <target files> --json
+python3 "$DEV_TEAM_ROOT/skills/test-design/scripts/internal_double_detector.py" . --files <target files> --json
 ```
 
 Both `findings` arrays merge into step 4's static-analysis context ("detected by static analysis — do not re-report, focus on semantic concerns"). Never pass `--all` to `repo_invariants.py` here.
@@ -158,7 +158,7 @@ Both `findings` arrays merge into step 4's static-analysis context ("detected by
 **Test-review mechanical pre-phase (#2169).** Only when `test-review` is in this round's lens set, run once per test file in `<target files>`:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/scripts/test_review_mechanics.py" . <file>
+python3 "$DEV_TEAM_ROOT/scripts/test_review_mechanics.py" . <file>
 ```
 
 Keep each result keyed by its file and give it to `test-review` as that file's Phase 0 input, with `agents/test-review.md`'s own framing ("detected by static analysis, do not re-derive"; the agent still reports it when `mechanicalFail` is true) — not the generic envelope the two pre-passes above use.
@@ -181,12 +181,12 @@ set -o pipefail  # a pipeline's status is its LAST command's without this —
 # Auto-scope (uncommitted changes):
 CHANGED_JSON=$({ git -c diff.relative=false -c core.quotePath=false diff --name-status; \
   git -c diff.relative=false -c core.quotePath=false diff --cached --name-status; } \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
   || { echo "ERROR: failed to compute the changed-file list" >&2; exit 1; }
 
 # --since <ref>:
 CHANGED_JSON=$(git -c diff.relative=false -c core.quotePath=false diff --name-status <ref>...HEAD \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/changed_file_list.py" --name-status-from -) \
   || { echo "ERROR: failed to compute the changed-file list" >&2; exit 1; }
 ```
 
@@ -198,7 +198,7 @@ ADDED_LIST=$(printf '%s' "$CHANGED_JSON" | python3 -c 'import json, sys; print("
 ```
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_lenses.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/select_lenses.py" \
   --files-from <(printf '%s\n' "$FILES_LIST") \
   --added-from <(printf '%s\n' "$ADDED_LIST")
 ```
@@ -211,7 +211,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_lenses.py" \
 **Change-shape gate.**
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_shape.py" --files <target files>
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_shape.py" --files <target files>
 ```
 
 Drop every agent in `skipLenses` and note it in the report as gated by change shape. `isTestOnly` gates nothing; do not narrow on it.
@@ -220,10 +220,10 @@ Drop every agent in `skipLenses` and note it in the report as gated by change sh
 
 ```bash
 # Auto-scope (uncommitted changes):
-{ git diff --numstat; git diff --cached --numstat; } | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
+{ git diff --numstat; git diff --cached --numstat; } | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
 
 # --since <ref>:
-git diff --numstat <ref>...HEAD | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
+git diff --numstat <ref>...HEAD | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_size.py" --numstat-from -
 ```
 
 When `qualifiesForFastPath` is `true`, drop every `Scope: always` agent not in `keepAgents` and note the drop (gated by change size). `Scope:`-glob agents are unaffected.
@@ -233,11 +233,11 @@ When `qualifiesForFastPath` is `true`, drop every `Scope: always` agent not in `
 ```bash
 # Auto-scope (uncommitted changes):
 { git -c diff.relative=false diff --no-color; git -c diff.relative=false diff --cached --no-color; } \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
 
 # --since <ref>:
 git -c diff.relative=false diff --no-color <ref>...HEAD \
-  | python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
+  | python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/change_impact.py" --files <target files>
 ```
 
 Drop every agent in `skipLenses` and note it (gated by diff signal). Only `arch-review` and `concurrency-review` can be gated here.
@@ -255,7 +255,7 @@ Drop every agent in `skipLenses` and note it (gated by diff signal). Only `arch-
 - **File scope**: pass only files matching the agent's declared scope. Skip the agent if no files match.
 - **Ledger-scoped dispatch (#2167).** Once per run, for all agents together, before building any prompt: narrow each agent's File scope with the per-lens verdict ledger:
   ```bash
-  python3 "$CLAUDE_PLUGIN_ROOT/scripts/verdict_scope.py" --root . --lens-files '<JSON: {"<agent>": [<its File-scope files from the bullet above>], ...} for every agent surviving step 3''s gates>'
+  python3 "$DEV_TEAM_ROOT/scripts/verdict_scope.py" --root . --lens-files '<JSON: {"<agent>": [<its File-scope files from the bullet above>], ...} for every agent surviving step 3''s gates>'
   ```
   - Narrow each File scope to `toDispatch[<agent>]`. Do not dispatch an agent listed in `fullySkippedLenses`.
   - **Report loudly, never silently.** Name every ledger-skipped `(lens, file)` pair with its row's `ts`/`file_content_hash`/`plugin_version` in the report and `--json` output. When every lens is skipped, say so: "N lenses skipped via ledger evidence, 0 dispatched this run".
@@ -271,13 +271,13 @@ Drop every agent in `skipLenses` and note it (gated by diff signal). Only `arch-
 **After the dispatch: classify, then reconcile.** Each agent's result carries the file pi saved its complete output to: `[output: <path>]`, or `the complete output is in <path>` when cut. Classify each agent that returned something from that path (no path → treat it as missing); never copy the output into a file yourself:
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/validate_review_output.py" --agent "<name>" --file "<path to that agent's raw output>"
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/skills/code-review/scripts/validate_review_output.py" --agent "<name>" --file "<path to that agent's raw output>"
 ```
 
 Exit 0 → the agent goes in `--returned`. Exit 1 → it does not (the script already logged why). Then:
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names, in the order dispatch_waves.py listed them>" --returned "<this wave's contract-valid agent names>"
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/skills/code-review/scripts/dispatch_reconcile.py" --dispatched "<this wave's dispatched agent names, in the order dispatch_waves.py listed them>" --returned "<this wave's contract-valid agent names>"
 ```
 
 `--dispatched` lists only the agents that actually received a prompt, in `tasks` order (do not run `dispatch_waves.py`); leave out agents skipped for no matching files or by the ledger (`references/04c-dispatch-payload-and-ledger.md`). Pass `--returned ""` when no agent returned a valid result. **If `missing` is non-empty, read `references/04d-contract-validation-and-retry.md` and follow it**: retry each missing agent exactly once on its own, with the same prompt, model, context payload and file scope, and finish the retries before aggregating; validate the retry's output the same way (a recovered retry emits no event and is not a failure); on a second failure record a `dispatchFailures` entry, emit the `dispatch-failure` boundary event, and treat it as `fail` for steps 5 and 9. A missing lens is never dropped silently.
@@ -308,7 +308,7 @@ Score with `knowledge/review-rubric.md`; security failures escalate to 🔴. **A
 The initial panel is round 1. Record it now, before any fix:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/review_round_log.py" \
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/review_round_log.py" \
   --round 1 --agents "<comma-separated agents dispatched>" \
   --findings <path-to-this-round's-findings.json> \
   --purpose discovery --outcome "<fixed|no-op|escalated>"
@@ -339,7 +339,7 @@ Non-interactive: with `--json` (or `--yes`), **default to report only** and neve
 
 ### 7. Generate report
 
-**Output paths.** All file artifacts (`./corrections/*.json`, `.claude/memory/.pr-review-passed`) are repo-relative to the target repository's working directory. Never prepend a scratchpad, sandbox, or session root, and never join two absolute paths. Read `knowledge/review-template.md` for the structure.
+**Output paths.** All file artifacts (`./corrections/*.json`, `.pi/dev-team/memory/.pr-review-passed`) are repo-relative to the target repository's working directory. Never prepend a scratchpad, sandbox, or session root, and never join two absolute paths. Read `knowledge/review-template.md` for the structure.
 
 **If `--json`: the JSON object is the ONLY thing printed to stdout for this run — non-negotiable, not model discretion.** Emit the aggregated JSON object per the schema in [`output-format.md`](output-format.md#aggregated-json-result---json-flag) to **stdout**, write no report file, and **skip step 8 in this run, regardless of how many issues were found or whether any are actionable.** There is no fallback to prose, and no `corrections/` persistence, in `--json` mode — ever.
 
@@ -350,7 +350,7 @@ Non-interactive: with `--json` (or `--yes`), **default to report only** and neve
 Otherwise (no `--json`): emit the prose summary using the Code Review Summary template in [`output-format.md`](output-format.md#code-review-summary-report-step-7-prose-mode). For that template's per-finding listing, render this round's aggregated finding list (the same list already assembled for the `--json` branch above and for step 8 — not re-derived) with `render_tiered_findings.py` (#2170) instead of listing each finding's full message inline:
 
 ```bash
-python3 "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/render_tiered_findings.py" --findings <path-to-this-round's-finding-list.json> [--expand <finding-id>|all]
+python3 "$DEV_TEAM_ROOT/skills/code-review/scripts/render_tiered_findings.py" --findings <path-to-this-round's-finding-list.json> [--expand <finding-id>|all]
 ```
 
 Pass `--expand` through exactly as the caller supplied it (omit the flag entirely when the caller did not pass one): Tier-1 lines plus the expansion hint by default; the matching Tier-2 block(s) appended after the Tier-1 report when `--expand` was given. An unknown `--expand` id: relay the script's non-zero exit and "finding-id not found" message to the user rather than silently rendering nothing or crashing. Append the iteration table.
@@ -362,7 +362,7 @@ Pass `--expand` through exactly as the caller supplied it (omit the flag entirel
 **`--pdf`**: only when a report file was written this run, render it per `knowledge/report-pdf-integration.md` and surface the module's `Rendering PDF via <engine>…` and result lines:
 
 ```bash
-sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/code-review.md
+sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/hooks/lib/report_pdf.py" .dev-team-reports/code-review.md
 ```
 
 Otherwise say `--pdf: no report file was written this run, nothing to render.` (to stderr under `--json`). It never changes the review's output or exit status; a missing engine or render error is non-fatal.
@@ -383,14 +383,14 @@ Write the gate only when **all** of these hold:
 - step 6a did not exit by escalation (round cap, iteration limit, or "same issues persist"), even when only warnings remain.
 
 ```bash
-HASH=$(python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/review_gate_hash.py" --branch-diff)
-mkdir -p .claude/memory && printf '%s\n' "$HASH" > .claude/memory/.pr-review-passed
+HASH=$(python3 "${DEV_TEAM_ROOT}/hooks/lib/review_gate_hash.py" --branch-diff)
+mkdir -p .pi/dev-team/memory && printf '%s\n' "$HASH" > .pi/dev-team/memory/.pr-review-passed
 ```
 
 With `--agent <name>`, also record the single-agent exemption against the same hash, at the same time:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/boundary_events.py" --event single-agent --subject-hash "$HASH"
+python3 "${DEV_TEAM_ROOT}/hooks/lib/boundary_events.py" --event single-agent --subject-hash "$HASH"
 ```
 
 Do not stage other files or hash different content at this point. If the overall status is `fail`, do **not** write the gate file; `hooks/pre_pr_review.py` keeps blocking `gh pr create` until the issues are fixed and the review is re-run.

@@ -1,6 +1,6 @@
 """Transcript path classification and enumeration (issue #2042, epic #2040).
 
-Answers one question: given a ``~/.claude/projects``-shaped tree, which
+Answers one question: given a per-project transcript tree, which
 ``.jsonl`` files under it are transcripts this extraction pipeline reads, and
 which of those belong to a dispatched agent's own run rather than a
 main-thread session.
@@ -8,8 +8,7 @@ main-thread session.
 Reconciliation (issue #2042):
 
 - ``is_transcript_path`` was already byte-identical between
-  ``scripts/session_extract.py`` and
-  ``plugins/dev-team/scripts/extract_session_report.py`` — moved verbatim.
+  ``session_extract.py`` and ``extract_session_report.py`` — moved verbatim.
 - ``is_subagent_transcript`` was semantically equivalent but structurally
   divergent (0.22 similarity between the two copies). This module keeps the
   shipped (``extract_session_report.py``) copy's shape: it factors out
@@ -37,8 +36,8 @@ def relative_parts(root: Path, path: Path) -> tuple[str, ...]:
     """The path's components BELOW `root`.
 
     Every layout question here is about the tree under the root, so never ask
-    it of the absolute path: `root` defaults to `~/.claude/projects` and
-    carries the user's home directory, so a matching segment anywhere in that
+    it of the absolute path: `root` usually sits under the user's home
+    directory and carries it, so a matching segment anywhere in that
     prefix would answer for the whole tree."""
     try:
         return path.relative_to(root).parts
@@ -78,8 +77,8 @@ def is_subagent_transcript(root: Path, path: Path) -> bool:
 
     A plain Agent dispatch writes `<project>/<sessionId>/subagents/agent-*.jsonl`;
     a Workflow's agents nest one level further under `subagents/workflows/<runId>/`.
-    Ask the path BELOW the root: `root` defaults to `~/.claude/projects` and
-    carries the user's home directory, so a matching segment in that prefix
+    Ask the path BELOW the root: `root` usually sits under the user's home
+    directory and carries it, so a matching segment in that prefix
     would answer for the whole tree.
     """
     return "subagents" in relative_parts(root, path)

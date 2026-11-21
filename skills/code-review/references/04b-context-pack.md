@@ -1,5 +1,4 @@
-<!-- step 4 (optional shared context pack, opt-in only). Upstream text of skills/code-review/SKILL.md, unchanged; the pi core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. Everything below the marker is verbatim. -->
-<!-- verbatim-below -->
+<!-- step 4 (optional shared context pack, opt-in only). Full text of this part of the code-review skill; the core SKILL.md summarizes it. Relative links below resolve from skills/code-review/, not from references/. -->
 **Optional: shared context pack (#2006, opt-in — off by default).** `scripts/review_context_pack.py` can prepare the panel's file context **once** — changed-file list, diff, and complete line-numbered file bodies — so each lens reads one prepared artifact instead of opening the same changed files itself.
 
 **Do not use it unless the caller explicitly opts in** (`DEV_TEAM_REVIEW_CONTEXT_PACK=on`). The default dispatch path is the per-agent context payload described below, unchanged.
@@ -10,7 +9,7 @@ When opted in:
 
 ```bash
 git -c core.quotePath=false diff --name-status <base> \
-  | sh "$CLAUDE_PLUGIN_ROOT/hooks/py.sh" "$CLAUDE_PLUGIN_ROOT/skills/code-review/scripts/review_context_pack.py" \
+  | sh "$DEV_TEAM_ROOT/hooks/py.sh" "$DEV_TEAM_ROOT/skills/code-review/scripts/review_context_pack.py" \
       --name-status-from - --base <base>
 ```
 

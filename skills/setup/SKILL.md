@@ -1,17 +1,17 @@
 ---
 name: setup
 description: >-
-  Provision a repo for the dev-team plugin end to end — install the plugin's
+  Provision a repo for the dev-team package end to end — install the package's
   own prerequisites (jq, python3, per-language mutation tooling — Stryker,
   pitest, Stryker.NET), then generate dev-team-specific project
-  configuration — project-level CLAUDE.md, the PostToolUse formatting hook,
+  configuration — project-level AGENTS.md, the PostToolUse formatting hook,
   language-specific agent template activation, and a generated `/pr`
   command — from the stack signal `/dev-team:project-init` establishes. This
   is NOT where toolchain detection/installation itself lives (that's
   `/project-init`); `/setup` only consumes it. Use this when onboarding a
-  new project to the dev-team plugin, when the mutation gate reports a
+  new project to the dev-team package, when the mutation gate reports a
   missing tool, or when the user says "setup", "bootstrap", "configure this
-  project for dev-team", "install required tools for the dev-team plugin",
+  project for dev-team", "install required tools for the dev-team package",
   or "activate agent templates".
 argument-hint: "[--yes] [--dry-run] [--autocompact-pct N] [--no-autocompact]"
 user-invocable: true
@@ -20,21 +20,20 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 
 # Project Setup
 
-<!-- pi-port-notes -->
-## pi port notes (read first — these override the steps below)
+<!-- pi-notes -->
+## pi notes (read first — these override the steps below)
 
-This is the pi port of `/setup`. Follow the steps below with these substitutions:
+Follow the steps below with these substitutions:
 
-- **Hard dependencies (Step 3):** the `claude` CLI is not required. `pi`, `python3`, `jq`, `git` and `gh` are.
+- **Hard dependencies (Step 3):** `pi`, `python3`, `jq`, `git` and `gh` are required.
 - **Step 4:** run the `project-init` skill with the `skill` tool (`dev-team:project-init` and `project-init` are the same).
-- **Step 7 (agent templates):** activate templates into `.claude/agents/` exactly as written. The pi `dev_team_subagent` tool loads project agents from `.pi/agents/` and `.claude/agents/`, and they take precedence over the package agents.
-- **Step 8 / 8a (project CLAUDE.md):** pi loads context files from the project root and its ancestors (`AGENTS.md`, or `CLAUDE.md`), **not** from `.claude/CLAUDE.md`. Everywhere these steps say `.claude/CLAUDE.md`, use `AGENTS.md` at the repository root instead (if the repo already has a root `CLAUDE.md` and no `AGENTS.md`, use that `CLAUDE.md`). Same merge/skip and marker rules.
-- **Step 9 (formatting hook):** do not write `.claude/settings.json`. Instead set `"autoFormat": true` in `.pi/dev-team.json` (create the file if missing, keep other keys). The pi extension then runs `hooks/post_format.py` (prettier / ruff / black, auto-detected) after every `write`/`edit`.
-- **Step 9b (autocompact):** run `scripts/set_autocompact_env.py` exactly as written. It only merges `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` into `.claude/settings.json` (the one write to that file this port allows); the pi extension reads that value and compacts the session at that percentage of the model's window. pi's own threshold is `contextWindow - reserveTokens`, so the "values above ~83% have no effect" caveat becomes "values above pi's own threshold have no effect".
-- **Step 10 (/pr):** write the generated project command to `.claude/skills/pr/SKILL.md` as written. The pi port resolves project skills in `.pi/skills/` and `.claude/skills/` before the package's own.
-- **Step 11:** also add `.pi/dev-team.local.json` to the `.gitignore` block.
-- **Step 12 (report):** list `AGENTS.md` and `.pi/dev-team.json` instead of `.claude/CLAUDE.md`, and list `.claude/settings.json` only for the Step 9b `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` key. Add a line recommending `/dev-team doctor`, then `/dev-team models`, to map the opus/sonnet/haiku agent tiers to this user's models. By default every tier runs on the session model, so with an expensive session model the haiku and sonnet agents cost as much as it does. Doctor names the preset that fits the session's provider and the models it maps, or the models the session cannot use.
-<!-- pi-port-notes -->
+- **Step 7 (agent templates):** activate templates into `.pi/agents/`. The pi `dev_team_subagent` tool loads project agents from `.pi/agents/`, and they take precedence over the package agents.
+- **Step 8 / 8a (project AGENTS.md):** pi loads context files from the project root and its ancestors (`AGENTS.md`, or `CLAUDE.md`). These steps mean `AGENTS.md` at the repository root; if the repo already has a root `CLAUDE.md` and no `AGENTS.md`, use that `CLAUDE.md` instead (never create `AGENTS.md` beside it). Same merge/skip and marker rules.
+- **Step 9 (formatting hook):** set `"autoFormat": true` in `.pi/dev-team.json` (create the file if missing, keep other keys). The pi extension then runs `hooks/post_format.py` (prettier / ruff / black, auto-detected) after every `write`/`edit`.
+- **Step 9b (autocompact):** run `scripts/set_autocompact_env.py` exactly as written. It only merges `autocompactPct` into `.pi/dev-team.json`; the pi extension reads that value and compacts the session at that percentage of the model's window. pi's own threshold is `contextWindow - reserveTokens`, so the "values above ~83% have no effect" caveat becomes "values above pi's own threshold have no effect".
+- **Step 10 (/pr):** write the generated project command to `.pi/skills/pr/SKILL.md`. pi resolves project skills in `.pi/skills/` before the package's own.
+- **Step 12 (report):** add a line recommending `/dev-team doctor`, then `/dev-team models`, to map the opus/sonnet/haiku agent tiers to this user's models. By default every tier runs on the session model, so with an expensive session model the haiku and sonnet agents cost as much as it does. Doctor names the preset that fits the session's provider and the models it maps, or the models the session cannot use.
+<!-- pi-notes -->
 
 
 Role: orchestrator. See frontmatter description for scope; delegates all
@@ -60,7 +59,7 @@ Arguments: $ARGUMENTS
   default and pass `--yes` through when invoking `/dev-team:project-init`
   (Step 4). No step waits for input.
 - `--autocompact-pct N`: write `N` (integer 1-100) as the repo's
-  `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (Step 9b) instead of the default `40`.
+  `autocompactPct` (Step 9b) instead of the default `40`.
 - `--no-autocompact`: skip Step 9b's settings write and silence the
   SessionStart nudge that recommends running `/dev-team:setup`.
 
@@ -73,8 +72,8 @@ auto-confirm and proceed:
   non-interactive when the stack is definite; `--yes` additionally suppresses
   the ambiguous-stack fallback below.
 - Agent-template activation for the detected stack (Step 7).
-- Project `CLAUDE.md` (Step 8) and `/pr` (Step 10) generation **when the file
-  is absent**; the downstream `.gitignore` append (Step 11).
+- Project `AGENTS.md` (Step 8) and `/pr` (Step 10) generation **when the file
+  is absent**; the `.gitignore` append (Step 11).
 - Everything `/dev-team:project-init` auto-confirms under its own `--yes`
   (its three-column plan, capability tools whose signal fired, and the keyless
   CodeGraph + Repowise pair — see that skill's Arguments section).
@@ -82,7 +81,7 @@ auto-confirm and proceed:
 **Conservative** — never silently overwrite an existing file or mutate the
 repo in a surprising way; take the skip default and print a one-line note:
 
-- **Existing project `CLAUDE.md`** (Step 8) — never overwritten (orchestrator
+- **Existing project `AGENTS.md`** (Step 8) — never overwritten (orchestrator
   constraint 3). Skip and note it, exactly as the interactive "merge or skip"
   path's skip branch.
 - **Coverage-config edits** (Step 6, JS/TS readiness) — `--yes` may install the
@@ -94,7 +93,7 @@ repo in a surprising way; take the skip default and print a one-line note:
 - **Unrecognized / ambiguous stack** — `--yes` never guesses a toolchain. Do
   the language-neutral steps and report what could not be set up.
 - **Concise-response preference** (Step 8a) — `--yes` never guesses a
-  communication-style preference. Skip the prompt and the `CLAUDE.md`
+  communication-style preference. Skip the prompt and the `AGENTS.md`
   append entirely; note `concise-preference-skipped-under-yes`. This is
   the outcome only when Step 8a's own pre-check found the block absent —
   when the block is already present, the pre-check reports
@@ -121,7 +120,7 @@ uname -s
   (detect Windows package manager below)
 - Other → note the platform; provide manual instructions and continue
 
-> **Windows note:** Claude Code on Windows runs in Git Bash (MINGW) or WSL.
+> **Windows note:** pi on Windows runs in Git Bash (MINGW) or WSL.
 > WSL reports `Linux` and is fully handled by the Linux steps. The Windows
 > steps below apply to native Git Bash only. If you are using WSL, follow
 > the Linux steps instead.
@@ -149,36 +148,6 @@ Use the first one found. If none are found, tell the user:
 "No Windows package manager detected. Install winget (built into Windows 10/11
 via the App Installer), Chocolatey (<https://chocolatey.org>), or Scoop
 (<https://scoop.sh>), then re-run `/setup`."
-
-### 2. Detect the agentic-dev-team repo and delegate to dev-setup.sh
-
-Before installing anything, check whether this invocation is running inside
-the agentic-dev-team plugin-dev repo itself (as opposed to a downstream
-project that merely has the plugin installed):
-
-```bash
-test -f requirements-dev.txt && test -f plugins/dev-team/.claude-plugin/plugin.json && echo "in-repo" || echo "downstream"
-```
-
-- **`in-repo`**: print "Detected the agentic-dev-team repo — running
-  scripts/dev-setup.sh to bootstrap the plugin-dev toolchain (shellcheck, jq,
-  python3, Python dev dependencies)." Then run:
-
-  ```bash
-  bash scripts/dev-setup.sh
-  ```
-
-  Surface its stdout/stderr to the user. `dev-setup.sh` is a separate,
-  intentionally-kept bash entry point — it works before Claude Code or the
-  plugin is installed, and is reused as a generic template by
-  `/new-marketplace` for other marketplace repos (see the note at the top of
-  `scripts/dev-setup.sh`). This skill calls it rather than reimplementing its
-  install logic. After it runs, still execute Step 3's jq/python3 checks below
-  — they are idempotent and confirm dev-setup.sh's work rather than
-  duplicating installation, so running both is a harmless double-check, not
-  redundant install logic.
-- **`downstream`**: no plugin-dev repo detected — proceed exactly as before
-  with Step 3 (existing downstream-user behavior, unchanged).
 
 ### 3. Install hard dependencies (jq and python3)
 
@@ -255,7 +224,7 @@ defaults rather than blocking (see that skill's Arguments section).
 ### 5. Record the stack signal for dev-team's own use
 
 `/setup` still needs a small, cheap signal of its own to populate
-`.claude/project-stack.json` and to drive Step 6's mutation-tool selection
+`.pi/dev-team/project-stack.json` and to drive Step 6's mutation-tool selection
 and Step 7's template selection. `/dev-team:project-init` performs its own
 detection in Step 4 but persists no machine-readable artifact for `/setup`
 to consume, so this is a deliberate lightweight re-probe using the same
@@ -269,7 +238,7 @@ TypeScript/require-scan checks or its formatter-selection logic (those stay
 entirely project-init's job — its Step 4/Scaffold steps and Step 4b/4c) and
 it does not install anything.
 
-Write findings to `.claude/project-stack.json`:
+Write findings to `.pi/dev-team/project-stack.json`:
 
 ```json
 {
@@ -293,10 +262,10 @@ deterministic helper, so the wrong-stack probe (e.g. `dotnet` on a JS repo)
 cannot fire. Call it once:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/mutation_stack_sections.py" .
+python3 "${DEV_TEAM_ROOT}/scripts/mutation_stack_sections.py" .
 ```
 
-It reads `.claude/project-stack.json`'s `stacks` array (recorded in Step 5)
+It reads `.pi/dev-team/project-stack.json`'s `stacks` array (recorded in Step 5)
 and prints one JSON object:
 
 ```json
@@ -310,7 +279,7 @@ and prints one JSON object:
   `python`. **Run every section in `sections` and no others.** More than one
   may apply in a polyglot repo.
 - `ambiguous` — `true` **only** when the stack signal is genuinely empty or
-  missing (no `.claude/project-stack.json`, unreadable/invalid, or an empty
+  missing (no `.pi/dev-team/project-stack.json`, unreadable/invalid, or an empty
   `stacks` array). This is the **only** outcome that authorizes the
   interactive fallback below.
 - `note` — set when a definite stack matched no section (e.g. a Ruby or
@@ -496,7 +465,7 @@ both, a repo that otherwise passes `/setup` still aborts `/test-improve`
 Phase 2 (issue #1086). Probe and repair it now:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/coverage_readiness.py" .
+python3 "${DEV_TEAM_ROOT}/scripts/coverage_readiness.py" .
 ```
 
 Read the JSON report. `ready` is the hard requirement (the summary can be
@@ -521,7 +490,7 @@ is whether the baseline reflects the whole tree.
   `--patch`:
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/coverage_readiness.py" . --patch
+  python3 "${DEV_TEAM_ROOT}/scripts/coverage_readiness.py" . --patch
   ```
 
   The patch only appends `json-summary`, preserving existing reporters.
@@ -782,18 +751,18 @@ Present the list to the user and ask for confirmation before scaffolding.
 **Under `--yes`, activate the selected templates without prompting** and list
 them in the Step 12 report.
 
-### 8. Generate project-level CLAUDE.md
+### 8. Generate project-level AGENTS.md
 
-If `.claude/CLAUDE.md` does not already exist in the target project, generate one containing:
+If `AGENTS.md` does not already exist in the target project, generate one containing:
 
 - Project name and detected stack summary
 - Discovered conventions (formatter, linter, test runner)
 - References to activated agent templates
 - Build/test/lint commands detected from `package.json` scripts, `Makefile`, etc.
 
-If `.claude/CLAUDE.md` already exists, ask whether to merge or skip. **Under
+If `AGENTS.md` already exists, ask whether to merge or skip. **Under
 `--yes`, take the skip branch** — never overwrite existing project config
-(orchestrator constraint 3) — and note `CLAUDE.md exists — left unchanged` in
+(orchestrator constraint 3) — and note `AGENTS.md exists — left unchanged` in
 the Step 12 report. This note describes only Step 8's own generate-or-skip
 decision — Step 8a runs independently right after and may still append to
 this same file, so "left unchanged" here and a `concise-preference-added`
@@ -802,12 +771,12 @@ outcome from Step 8a are not a contradiction in the Step 12 report.
 ### 8a. Ask about concise-response preference
 
 **Check first, before prompting anyone.** If the marker is already present
-in `.claude/CLAUDE.md`, the preference is already in place — do not ask
+in `AGENTS.md`, the preference is already in place — do not ask
 the operator at all, under any flag combination:
 
 ```bash
 MARKER="<!-- dev-team: concise-response preference v1 -->"
-grep -qF "$MARKER" .claude/CLAUDE.md 2>/dev/null && echo "concise-preference-already-covered" || echo "concise-preference-not-yet-covered"
+grep -qF "$MARKER" AGENTS.md 2>/dev/null && echo "concise-preference-already-covered" || echo "concise-preference-not-yet-covered"
 ```
 
 If this reports `concise-preference-already-covered`, record that outcome
@@ -816,7 +785,7 @@ prompt, no `--yes`/`--dry-run` branching, nothing else to do. Only when it
 reports `concise-preference-not-yet-covered` does the rest of this step
 run.
 
-Ask the operator: "Would you like Claude to give concise responses by default in this repo? This appends a block to the project's committed `.claude/CLAUDE.md`, so it becomes a shared convention for every contributor, not just you." **Under `--yes`, skip this prompt entirely** — never
+Ask the operator: "Would you like the agent to give concise responses by default in this repo? This appends a block to the project's committed `AGENTS.md`, so it becomes a shared convention for every contributor, not just you." **Under `--yes`, skip this prompt entirely** — never
 guess a communication-style preference — and note
 `concise-preference-skipped-under-yes` (run /setup without --yes to choose)
 in the Step 12 report. **Under `--dry-run`, report what would be appended
@@ -826,24 +795,21 @@ If the operator declines, note `concise-preference-declined` and move on —
 do not write anything.
 
 If the operator confirms, idempotently append the block below to the
-project's `CLAUDE.md` (the same file Step 8 generated or left in place —
-`.claude/CLAUDE.md`; this step creates `.claude/` and the file itself if
-Step 8 somehow left them absent). The marker is a dedicated, content-free
+project's `AGENTS.md` (the same file Step 8 generated or left in place;
+this step creates the file itself if
+Step 8 somehow left it absent). The marker is a dedicated, content-free
 comment — not a substring of the prose — so a future wording tweak to the
 block below can never desync it from the idempotency check (the hazard
 Step 11's own `.mcp.json` marker note, below, already calls out for its own
-pair of blocks). Both `.claude` and `.claude/CLAUDE.md` are checked for
-symlinks before any write, since a symlinked parent directory is an
-equally valid escape route as a symlinked file:
+pair of blocks). `AGENTS.md` is checked for a symlink before any write:
 
 ```bash
 MARKER="<!-- dev-team: concise-response preference v1 -->"
-if [ -L .claude ] || [ -L .claude/CLAUDE.md ]; then
+if [ -L AGENTS.md ]; then
   echo "concise-preference-skipped-symlink"
 else
-  mkdir -p .claude
-  touch .claude/CLAUDE.md
-  if ! grep -qF "$MARKER" .claude/CLAUDE.md; then
+  touch AGENTS.md
+  if ! grep -qF "$MARKER" AGENTS.md; then
     { printf '\n%s\n' "$MARKER"; cat <<'CONCISE_BLOCK'
 ## General
 Unless asked to behave otherwise, always give concise responses and sacrifice grammar for the sake of concision. Ask clarifying questions when needed and offer your best guess at available interpretations/answers for those questions when possible.
@@ -860,7 +826,7 @@ Default to a few sentences. If the answer is "yes", say "yes" and stop.
 
 Length is the tell: if a reply is over ~10 lines and I didn't ask for depth, it's wrong. Detail I have to skim to find the answer is worse than no answer.
 CONCISE_BLOCK
-    } >> .claude/CLAUDE.md && echo "concise-preference-added" || echo "concise-preference-write-failed"
+    } >> AGENTS.md && echo "concise-preference-added" || echo "concise-preference-write-failed"
   else
     echo "concise-preference-already-covered"
   fi
@@ -886,8 +852,8 @@ race where the file changes between the pre-check and confirmation, the
 append script's own internal re-check — either way the token is the
 same. The other three the append script can reach (`added` /
 `skipped-symlink` / `write-failed`) are echoed verbatim from its own
-output — `write-failed` covers a `mkdir`/`touch`/append that fails (e.g.
-`.claude` exists as a non-directory, or the tree is read-only), so a
+output — `write-failed` covers a `touch`/append that fails (e.g.
+`AGENTS.md` exists as a directory, or the tree is read-only), so a
 failed write is never misreported as `added`; the remaining two
 (`declined` / `skipped-under-yes`) are recorded directly from the prose
 branches below the pre-check,
@@ -895,7 +861,7 @@ since the script never runs on those paths.
 
 ### 9. Generate PostToolUse formatting hook
 
-Wire a PostToolUse hook entry for the project's `.claude/settings.json` that
+Turn on the PostToolUse formatting hook (`"autoFormat": true` in the project's `.pi/dev-team.json`) that
 runs the formatter for the detected stack, mapped by extension (Node/TS →
 prettier + eslint, Python → ruff, Go → gofmt, Rust → rustfmt, Ruby →
 rubocop, Java/Kotlin → google-java-format/ktlint, C# → dotnet format). The
@@ -907,23 +873,23 @@ the user and re-point them at `/project-init` rather than installing it here.
 ### 9b. Configure harness autocompact (#2177)
 
 Replaces the retired context-ceiling hook: the harness compacts the
-conversation at a chosen percentage of its window. Merge the env var into the
-project's `.claude/settings.json` — never overwrite the file:
+conversation at a chosen percentage of its window. Merge the `autocompactPct` key into the
+project's `.pi/dev-team.json` — never overwrite the file:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/set_autocompact_env.py" \
+python3 "${DEV_TEAM_ROOT}/scripts/set_autocompact_env.py" \
   --project-dir "$PWD" [--yes] [--autocompact-pct N | --no-autocompact]
 ```
 
 Forward `--yes` when `/setup` got it, and `--autocompact-pct`/`--no-autocompact`
 when given. The script owns all prompt and `--yes` behavior: it writes
-`CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (default `40`) into the `env` block, keeps an
+`autocompactPct` (default `40`), keeps an
 existing valid value unless `--autocompact-pct` is passed, and aborts without
 touching the file when it is malformed or a symlink (report the stderr line
 and continue with the next step). The harness can only **lower** its
 threshold, so values above its default (~83%) have no effect. The script only
-ever writes the project's `settings.json`; when it warns that a process-env or
-`settings.local.json` entry takes precedence, relay that warning verbatim. Under
+ever writes the project's `.pi/dev-team.json`; when it warns that a process-env or
+`.pi/dev-team.local.json` entry takes precedence, relay that warning verbatim. Under
 `--dry-run`, report what would be written and skip the script. Report line:
 `Autocompact: <value>% (set | kept | replaced | skipped)`.
 
@@ -933,22 +899,13 @@ Create a project-specific `skills/pr/SKILL.md` if one doesn't exist, referencing
 
 ### 11. Ensure `.gitignore` covers dev-team runtime artifacts
 
-**Downstream projects only** — skip this step entirely when Step 2 detected
-`in-repo` (the plugin-dev repo curates its own `.gitignore`, and it tracks
-deliverables such as `.claude/memory/decisions.md` and bare `memory/` eval
-fixtures that this blanket ignore would wrongly hide). One carve-out: the `.mcp.json`
-standing check `project-init`'s Repowise sub-section runs (#1416) is
-unconditional and reaches in-repo too, via this skill's own Step 4 — that one
-`.gitignore` entry lands regardless of Step 2's result. See the `.mcp.json`
-paragraph below.
-
 `/test-improve`, `/build`, and the review workflows write per-run resume
-state, progress bookkeeping, and metrics into `.claude/memory/`,
-`.claude/metrics/`, and `.claude/plans/`; reports land in
-`.dev-team-reports/` (the `.claude/`-scoped artifact migration and
+state, progress bookkeeping, and metrics into `.pi/dev-team/memory/`,
+`.pi/dev-team/metrics/`, and `.pi/dev-team/plans/`; reports land in
+`.dev-team-reports/` (the `.pi/dev-team/`-scoped artifact migration and
 reports-domain consolidation, #1406). `/code-review` additionally writes a
-`.pr-review-passed` gate file to `.claude/memory/` (already covered by the
-`.claude/memory/` line below), consumed and deleted by `hooks/pre_pr_review.py`
+`.pr-review-passed` gate file to `.pi/dev-team/memory/` (already covered by the
+`.pi/dev-team/memory/` line below), consumed and deleted by `hooks/pre_pr_review.py`
 on the next matching `gh pr create` (#1886) — but left behind whenever that
 PR is never opened (branch content changed since review, or
 `PR_GATE_BYPASS_REASON`), cluttering `git status` and risking capture by a
@@ -957,22 +914,22 @@ are regeneratable runtime artifacts, not deliverables — but `/build` commits
 the working tree per completed step, so without an ignore rule they land in
 the project's history (issue #1101).
 
-In a downstream project, `.claude/memory/`, `.claude/metrics/`, and
-`.claude/plans/` are exclusively dev-team runtime state, so each whole
+In a project, `.pi/dev-team/memory/`, `.pi/dev-team/metrics/`, and
+`.pi/dev-team/plans/` are exclusively dev-team runtime state, so each whole
 folder is safe to ignore. `.dev-team-reports/` is **not** wholly safe to
 ignore: `/test-improve` git-tracks a `<slug>/data/` sibling directory
 under it (issue #1412) so its report is a pure function of tracked data and
 regeneratable from a fresh checkout, so the rule anchors a deny-all and
 re-includes that one tracked exception instead of ignoring the whole
-folder — the identical shape this repo's own `.gitignore` and
-`/project-init`'s JS-scaffold template use. The legacy bare `memory/`,
+folder — the identical shape
+`/project-init`'s JS-scaffold template uses. The legacy bare `memory/`,
 `reports/`, `metrics/`, `plans/` lines are appended alongside as a safety
 net for any pre-#1406 content still landing at the old paths.
 Idempotently append the block (create `.gitignore` if absent; do nothing if
 the marker is already present):
 
 ```bash
-MARKER="# dev-team workflow runtime artifacts (.claude/-scoped + .dev-team-reports/, #1406) v2"
+MARKER="# dev-team workflow runtime artifacts (.pi/dev-team/-scoped + .dev-team-reports/, #1406) v3"
 if ! grep -qF "$MARKER" .gitignore 2>/dev/null; then
   # Self-heal: a pre-#1412 run of this block (under the v1 marker) may have
   # already appended the superseded blanket `.dev-team-reports/` line. Strip
@@ -984,9 +941,10 @@ if ! grep -qF "$MARKER" .gitignore 2>/dev/null; then
   fi
   printf '\n%s\n%s\n' \
     "$MARKER (regeneratable; not deliverables — issues #1101, #1377, #1406, #1412)" \
-    ".claude/memory/
-.claude/metrics/
-.claude/plans/
+    ".pi/dev-team/memory/
+.pi/dev-team/metrics/
+.pi/dev-team/plans/
+.pi/dev-team.local.json
 /.dev-team-reports/*
 !/.dev-team-reports/test-improve/
 memory/
@@ -1009,7 +967,7 @@ here. Record whether the block was added for the Step 12 report. Under
 `--dry-run`, report what would be appended without writing.
 
 **`.mcp.json` machine-specific-path hygiene (issues #1376, #1416).**
-Separately — still downstream-projects-only, same Step 2 `in-repo` skip — a
+Separately, a
 project's `.mcp.json` (written by `index-codebase`, hand-registered MCP
 servers, or any other means) commonly bakes in the absolute filesystem path
 of the machine that wrote it (e.g. a CodeGraph server's `args` array). If
@@ -1030,16 +988,16 @@ else
 fi
 ```
 
-This exact marker (including the em dash) is also emitted, unconditionally
-and regardless of in-repo/downstream, by the `.mcp.json` machine-specific-path
+This exact marker (including the em dash) is also emitted, unconditionally,
+by the `.mcp.json` machine-specific-path
 hygiene standing check in `project-init`'s Repowise sub-section (issue #1416
 — Repowise's own install path is the more common source of a project's
-`.mcp.json`, and that check no longer waits for this downstream-only Step 11
+`.mcp.json`, and that check no longer waits for this Step 11
 pass to cover it). The marker prefix (everything up to and including
 `machine-specific MCP config`) must stay byte-identical between the two
 blocks — `grep -qF` matches that prefix only, so the trailing issue-number
 suffix may differ, but changing the prefix itself in only one place breaks
-idempotency. This block remains a downstream-only, defense-in-depth backstop
+idempotency. This block remains a defense-in-depth backstop
 for `.mcp.json` files written by means other than Repowise (e.g.
 `index-codebase`, hand-registered MCP servers).
 
@@ -1100,14 +1058,14 @@ runs on every pass, including one where Graphify install itself is skipped
 because it's already present, so a repo carrying a machine-specific path from
 an install predating this guard gets self-healed the next time `/setup` runs.
 The `.mcp.json` gitignore line reports project-init's own standing check
-(#1416) the same way — it runs on every pass, in-repo included, regardless of
+(#1416) the same way — it runs on every pass, regardless of
 Repowise's own install/decline state for that run.
 
 ### Created
-- `.claude/project-stack.json` — stack detection results
-- `.claude/CLAUDE.md` — project conventions   [Step 8a concise-response preference, independent of this line's created/left-unchanged status: concise-preference-added | concise-preference-already-covered | concise-preference-declined | concise-preference-skipped-under-yes | concise-preference-skipped-symlink | concise-preference-write-failed]
-- `.claude/settings.json` — PostToolUse formatting hook (prettier + eslint); `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (Step 9b)
-- `.gitignore` — dev-team runtime artifacts (.claude/memory/, .claude/metrics/, .claude/plans/, .dev-team-reports/, memory/, reports/, metrics/, plans/, .pr-review-passed)   [downstream only; omit if already covered] plus `.mcp.json` machine-specific-path hygiene (#1376, #1416)   [runs in-repo too, via project-init's Repowise standing check; omit if already covered]
+- `.pi/dev-team/project-stack.json` — stack detection results
+- `AGENTS.md` — project conventions   [Step 8a concise-response preference, independent of this line's created/left-unchanged status: concise-preference-added | concise-preference-already-covered | concise-preference-declined | concise-preference-skipped-under-yes | concise-preference-skipped-symlink | concise-preference-write-failed]
+- `.pi/dev-team.json` — PostToolUse formatting hook (prettier + eslint) via `autoFormat`; `autocompactPct` (Step 9b)
+- `.gitignore` — dev-team runtime artifacts (.pi/dev-team/memory/, .pi/dev-team/metrics/, .pi/dev-team/plans/, .pi/dev-team.local.json, .dev-team-reports/, memory/, reports/, metrics/, plans/, .pr-review-passed)   [omit if already covered] plus `.mcp.json` machine-specific-path hygiene (#1376, #1416)   [via project-init's Repowise standing check; omit if already covered]
 - Activated templates: ts-enforcer, esm-enforcer, react-testing
 
 ### Recommendations

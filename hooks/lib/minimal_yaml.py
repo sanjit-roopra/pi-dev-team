@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""minimal_yaml.py — stdlib-only parser for the small YAML subset this plugin
+"""minimal_yaml.py — stdlib-only parser for the small YAML subset dev-team
 actually consumes (ADR 0014 / ADR 0015: no third-party imports in shipped
-`plugins/dev-team/` code).
+code).
 
 Three shipped scripts used to `import yaml` (PyYAML, a third-party package)
 to read two shapes of content:
@@ -9,7 +9,7 @@ to read two shapes of content:
 1. SKILL.md **frontmatter** blocks — flat `key: value` pairs, occasional
    folded block scalars (`key: >-` followed by indented prose), booleans,
    and simple block sequences (`- item`).
-2. Small **config YAML** files (skill_categories.yaml, scorecard.yaml,
+2. Small **config YAML** files (scorecard.yaml,
    security-review-rule-map.yaml) — nested block mappings/sequences, inline
    flow collections (`{ mvp: true }`, `[".py", ".js"]`, including ones that
    wrap across two physical lines), quoted and bare scalars, ints/floats/

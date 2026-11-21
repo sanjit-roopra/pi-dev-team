@@ -32,7 +32,7 @@ green. Clarity beats brevity: a fix that makes the code shorter but denser
 (nested ternaries, clever one-liners, several steps packed into one
 expression) is not a finding.
 
-Output JSON: per `${CLAUDE_PLUGIN_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
+Output JSON: per `${DEV_TEAM_ROOT}/knowledge/review-agent-output-contract.md` (Whole-file load: short, canonical schema).
 
 Status: pass=nothing to remove, warn=only report-only suggestions, fail=at least one mechanical removal (so `/build`'s checkpoint fix loop applies it)
 Severity: error=mechanical, behavior-preserving removal (unused, unreachable, a duplicate of a named function or a built-in); suggestion=a removal that needs a judgment call or domain knowledge (is this option really unused? is the layer really pass-through?). Never `warning`: a fix loop auto-applies warnings, and a judgment call is for a human
@@ -43,10 +43,10 @@ Context needs: full-file
 
 ## Knowledge Files
 
-Before analysis, read `${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md#reinvented-built-in-cheat-sheet`
+Before analysis, read `${DEV_TEAM_ROOT}/knowledge/design-smells.md#reinvented-built-in-cheat-sheet`
 — the per-language built-in map and the "What NOT to flag" guards (version/idiom
 drift) — plus the "Reinvented built-in / helper" row in
-`${CLAUDE_PLUGIN_ROOT}/knowledge/design-smells.md#design-smells-pattern-mapping`.
+`${DEV_TEAM_ROOT}/knowledge/design-smells.md#design-smells-pattern-mapping`.
 
 ## Skip
 
@@ -92,7 +92,7 @@ lines to delete and, when something replaces them, the existing thing that does.
   re-checks, security or accessibility code.
 - Synchronization, locks, atomics, idempotency, retries, transactions, cleanup
   (finally, dispose), and any branch reachable only by interleaving.
-- A seam the blocker table in `${CLAUDE_PLUGIN_ROOT}/knowledge/internal-collaborator-doubling.md`
+- A seam the blocker table in `${DEV_TEAM_ROOT}/knowledge/internal-collaborator-doubling.md`
   allows (B1–B3), even with one implementation.
 - Test files, fixtures and test helpers.
 - Code outside the slice's changed files.
@@ -102,7 +102,7 @@ code against verified analysis before flagging it.
 
 ## Self-Challenge
 
-After producing findings, run the shared challenger loop in `${CLAUDE_PLUGIN_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these challenges:
+After producing findings, run the shared challenger loop in `${DEV_TEAM_ROOT}/knowledge/adversarial-review-protocol.md` (Whole-file load: the slim shared methodology — The Loop + Output format — read in full), then work these challenges:
 
 - For every finding: does the fix remove more production lines than it adds? If not, drop it.
 - Does the fix preserve behavior exactly — outputs, errors, side effects — so the existing tests stay green unchanged?

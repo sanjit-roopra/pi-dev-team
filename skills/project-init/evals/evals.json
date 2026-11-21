@@ -57,7 +57,7 @@
     },
     {
       "id": 4,
-      "prompt": "Get this repo ready for the plugin.",
+      "prompt": "Get this repo ready for dev-team.",
       "expected_output": "Python detected from pyproject.toml + .py sources. The three-column plan shows ruff and mypy (and pytest, since no test runner is present) under 'missing and will add'; after confirmation they are added to the project's dev-dependency mechanism, nothing user-level or global. Post-install probes (command -v ruff / command -v mypy) reported.",
       "files": [
         { "path": "pyproject.toml", "contents": "[project]\nname = \"csvkit-lite\"\nversion = \"0.1.0\"\n" },
@@ -93,7 +93,7 @@
     {
       "id": 6,
       "prompt": "Install the linters for this repo.",
-      "expected_output": "Java detected from pom.xml + .java sources. After confirmation the skill verifies a JDK, runs the plugin's pinned-PMD installer into repo-local .pmd/, and adds .pmd/ to .gitignore. The user never invokes the installer script by hand.",
+      "expected_output": "Java detected from pom.xml + .java sources. After confirmation the skill verifies a JDK, runs dev-team's pinned-PMD installer into repo-local .pmd/, and adds .pmd/ to .gitignore. The user never invokes the installer script by hand.",
       "files": [
         { "path": "pom.xml", "contents": "<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>demo</artifactId><version>1.0</version></project>" },
         { "path": "src/main/java/App.java", "contents": "public class App { public static void main(String[] a) {} }" }
@@ -142,7 +142,7 @@
     },
     {
       "id": 9,
-      "prompt": "Get this repo ready for the plugin.",
+      "prompt": "Get this repo ready for dev-team.",
       "expected_output": "Brownfield Python repo already configured with black + flake8: the inventory binds the pair as the autofix slot's provider (bind-don't-replace), so the plan shows them under 'found and keeping' and installs nothing for that slot; only mypy (the empty diagnostic slot) appears under 'missing and will add'.",
       "files": [
         { "path": "pyproject.toml", "contents": "[project]\nname = \"legacy\"\nversion = \"2.3.0\"\n\n[tool.black]\nline-length = 100\n" },

@@ -8,10 +8,10 @@ grep-based heuristics. It covers the structural fields (repo metadata,
 languages, entry points, security surface by grep) but produces empty
 `architecture.notable_anti_patterns` and thin prose in `architecture.summary`
 since those need reasoning — `codebase_recon.py` fills that gap with an
-optional LLM step (`claude -p`) layered on top of this module's output.
+optional LLM step (`dev-team-run -p`) layered on top of this module's output.
 
 Usage:
-    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/lib/deterministic_recon.py <target-path> [<output-json>]
+    python3 ${DEV_TEAM_ROOT}/scripts/lib/deterministic_recon.py <target-path> [<output-json>]
 
 Emits JSON to stdout (or to <output-json> if given).
 """
@@ -386,7 +386,7 @@ def build_recon(root: Path) -> dict:
     notes = [
         (
             "Deterministic recon produced by "
-            "plugins/dev-team/scripts/lib/deterministic_recon.py. No LLM reasoning "
+            "scripts/lib/deterministic_recon.py. No LLM reasoning "
             "applied; semantic fields (architecture.summary prose, "
             "notable_anti_patterns) are omitted or minimal."
         )
