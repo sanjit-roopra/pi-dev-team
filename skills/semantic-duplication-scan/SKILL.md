@@ -132,12 +132,12 @@ If no non-trivial functions remain after filtering:
 - **First run**: `No computation units found to analyze` → exit 0, no register created
 - **Incremental run**: `No new computation units found in changed files — register unchanged` → exit 0, register not modified
 
-### Step 6 — Annotation (Haiku, file-level batching)
+### Step 6 — Annotation (small tier, file-level batching)
 
 For each file with non-trivial functions:
 
 1. Emit progress to stderr: `Annotating [N/total] <filename>`
-2. Send all non-trivial functions from the file in a single Haiku call using the pinned prompt below
+2. Send all non-trivial functions from the file in a single small-tier call using the pinned prompt below
 3. If the call fails, record `{file, error}` in `scanErrors` and continue — do not abort
 
 **Annotation prompt (pinned — do not paraphrase):**
@@ -230,7 +230,7 @@ Exit code 0 — partial success is not a failure.
 
 The full register may be too large to cluster in a single call. Use layer-pair sharding:
 
-Shard the register by layer pair before sending to Sonnet:
+Shard the register by layer pair before sending to the standard tier:
 - `domain × presentation`
 - `domain × infrastructure`
 - `application × presentation`
@@ -239,9 +239,9 @@ Shard the register by layer pair before sending to Sonnet:
 
 For each shard: if the shard exceeds **50,000 tokens**, further shard by the first normalized token of `domainConcept` (split alphabetically into sub-groups).
 
-After per-shard clustering, run a **cross-shard reconciliation pass**: send only the cluster representatives (one entry per cluster, the top-ranked candidate) back to Sonnet to catch equivalents that landed in different shards. Keep this merge input under 50,000 tokens.
+After per-shard clustering, run a **cross-shard reconciliation pass**: send only the cluster representatives (one entry per cluster, the top-ranked candidate) back to the standard tier to catch equivalents that landed in different shards. Keep this merge input under 50,000 tokens.
 
-### Clustering Call (Sonnet)
+### Clustering Call (standard tier)
 
 For each shard, emit progress: `Clustering [layer-pair]: <layer-a> × <layer-b>...`
 
@@ -276,11 +276,11 @@ For each cluster with 2 or more entries:
 
 **Within the same layer rank:** count infrastructure imports in the function's file; fewer imports = higher rank.
 
-**Ambiguity predicate:** If the top two candidates tie on layer rank AND differ by ≤1 infrastructure import → escalate to Opus.
+**Ambiguity predicate:** If the top two candidates tie on layer rank AND differ by ≤1 infrastructure import → escalate to the strong tier.
 
-Before the Opus call, emit: `Resolving ambiguous canonical for cluster: <domainConcept>...`
+Before the strong-tier call, emit: `Resolving ambiguous canonical for cluster: <domainConcept>...`
 
-**Opus prompt:**
+**Strong-tier prompt:**
 
 ```
 Given these N entries that all compute the same domain concept, which one is the most appropriate canonical location for the business rule? Consider: domain purity, reusability, and least coupling to delivery mechanism. Return the file:function ID of the preferred canonical and a one-sentence rationale.
@@ -289,7 +289,7 @@ Entries:
 <paste cluster entries>
 ```
 
-If `--no-opus` flag was passed: skip Opus escalation. Report ambiguous clusters as:
+If `--no-opus` flag was passed: skip strong-tier escalation. Report ambiguous clusters as:
 ```
 canonical: ambiguous — human review required
 ```

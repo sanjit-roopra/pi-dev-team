@@ -29,7 +29,7 @@ The orchestrator reads this file during Step 5 (Aggregate and report).
 
 | Agent | Status | Issues | Model |
 |-------|--------|--------|-------|
-| {name} | PASS/WARN/FAIL | {count} | {haiku/sonnet/opus} |
+| {name} | PASS/WARN/FAIL | {count} | {small/standard/strong} |
 | ... | | | |
 
 **Totals:** {N} errors, {N} warnings, {N} suggestions

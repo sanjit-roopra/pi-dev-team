@@ -3,7 +3,7 @@
  * one place, so the tip always names a menu entry that exists. Model ids come from config a project
  * can set, so they are drawn on one line with escape sequences removed.
  */
-import { inherits, type ModelStatus, type PresetAdvice, type TierChange } from "./config.ts";
+import { inherits, type ModelStatus, type PresetAdvice, type TierChange, tierName } from "./config.ts";
 import { toSingleLine } from "../../shared/terminal-text.ts";
 
 /** How doctor shows a ModelStatus. */
@@ -56,6 +56,11 @@ export function tierLine(tier: string, model: unknown, sessionModel: string | un
 	if (inherits(model)) return `  ${name}: inherit (${sessionModel ? toSingleLine(sessionModel) : "none"})`;
 	if (typeof model !== "string") return `  ${name}: (not a model id) ${MODEL_STATUS_TEXT.unknown}`;
 	return `  ${name}: ${toSingleLine(model)} ${MODEL_STATUS_TEXT[getModelStatus(model)]}`;
+}
+
+/** Doctor's note for each config file that still uses earlier tier names (TIER_ALIASES keys). */
+export function oldTierNamesLines(files: readonly { file: string; names: readonly string[] }[]): string[] {
+	return files.map(({ file, names }) => `note: ${toSingleLine(file)} uses earlier tier names; they still work. Rename ${joinWithAnd(names.map((n) => `${n} to ${tierName(n)}`))}.`);
 }
 
 const tierModelText = (changes: readonly TierChange[]) => joinWithAnd(changes.map((c) => `${c.tier} to ${c.model}`));

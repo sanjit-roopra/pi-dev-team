@@ -617,7 +617,7 @@ const scenarios = {
 
 	"dev-team-run -p runs an agent through pi and returns a result envelope"(env) {
 		const inner = script([{ text: '{"status":"pass","issues":[],"summary":"via helper"}' }]);
-		const cmd = `dev-team-run -p --agent dev-team:security-review --model opus --output-format json '${inner}'`;
+		const cmd = `dev-team-run -p --agent dev-team:security-review --model strong --output-format json '${inner}'`;
 		const r = pi(env, script([{ tool: "bash", args: { command: cmd } }]));
 		const json = JSON.parse(r.out.replace(/^ECHO:/, "").trim());
 		assert(json.type === "result" && json.is_error === false && json.result.includes("via helper"), r.out);

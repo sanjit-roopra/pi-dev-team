@@ -6,7 +6,7 @@
 {
   "agentName": "structure-review",
   "status": "pass|warn|fail|skip",
-  "modelTier": "mid",
+  "modelTier": "standard",
   "issues": [
     {
       "severity": "error|warning|suggestion",
@@ -38,7 +38,7 @@
   "targetFiles": 42,
   "preFlightPassed": true,
   "agents": [
-    {"agentName": "test-review", "status": "pass", "modelTier": "mid", "issues": [], "summary": "..."}
+    {"agentName": "test-review", "status": "pass", "modelTier": "standard", "issues": [], "summary": "..."}
   ],
   "totals": {"errors": 0, "warnings": 2, "suggestions": 1},
   "tokenEstimate": {
@@ -320,11 +320,11 @@ description above.
 
 Each agent declares a `Model tier` field that controls which model runs it:
 
-| Tier | Model | Use for |
-| ------ | ------- | --------- |
-| `small` | Haiku | Pattern matching, thresholds, naming checks |
-| `mid` | Sonnet | Structural analysis, test quality, mutation detection |
-| `frontier` | Opus | Security analysis, domain modeling, semantic reasoning |
+| Tier | Use for |
+| ------ | --------- |
+| `small` | Pattern matching, thresholds, naming checks |
+| `standard` | Structural analysis, test quality, mutation detection |
+| `strong` | Security analysis, domain modeling, semantic reasoning |
 
 ## Context needs values
 
@@ -389,9 +389,9 @@ Loop stopped after 5 iterations. 2 issues remain:
 
 | Agent              | Status | Issues | Fixed | Model Tier |
 |--------------------|--------|--------|-------|------------|
-| test-review        | PASS   | 0      | —     | mid        |
-| structure-review   | PASS   | 2      | 2     | mid        |
-| security-review    | WARN   | 1      | 0     | frontier   |
+| test-review        | PASS   | 0      | —     | standard   |
+| structure-review   | PASS   | 2      | 2     | standard   |
+| security-review    | WARN   | 1      | 0     | strong     |
 | ...                | ...    | ...    | ...   | ...        |
 
 Overall: WARN after 2 fix iterations (N agents passed, N warned, N failed)

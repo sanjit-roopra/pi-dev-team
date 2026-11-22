@@ -7,7 +7,7 @@
     {
       "agentName": "structure-review",
       "status": "warn",
-      "modelTier": "mid",
+      "modelTier": "standard",
       "issues": [
         {
           "severity": "warning",
@@ -31,7 +31,7 @@
     {
       "agentName": "test-review",
       "status": "pass",
-      "modelTier": "mid",
+      "modelTier": "standard",
       "issues": [],
       "summary": "No issues found"
     }

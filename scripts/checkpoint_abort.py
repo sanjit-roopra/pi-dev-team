@@ -4,7 +4,7 @@
 ``/build``'s inline review checkpoints dispatch review lenses cheap-first
 (``select_lenses.py``'s ordering). When a cheap-tier lens already reports an
 ``error``-severity, ``high``-confidence finding, dispatching the remaining
-(opus-tier) lenses for that round is very likely wasted spend — the fix loop
+(strong-tier) lenses for that round is very likely wasted spend — the fix loop
 will re-dispatch everything anyway once the cheap-tier finding is addressed.
 This module makes that abort decision, plus the small amount of pure
 aggregation bookkeeping the checkpoint needs around it.
@@ -62,7 +62,7 @@ from instrument_log import append_row  # type: ignore[import-not-found]
 # confidence, nothing looser. The two bars exist for different decisions:
 # step 6a's floor decides whether an *already-dispatched* fix loop should
 # keep iterating (continuing is cheap — the agents already ran), while this
-# script decides whether to SKIP dispatching opus-tier lenses at all
+# script decides whether to SKIP dispatching strong-tier lenses at all
 # (skipping is only safe to do speculatively when the signal is as strong as
 # it gets). They are intentionally different values for different purposes,
 # not one constant with two names — do not extract a shared constant.
@@ -204,7 +204,7 @@ def compute_round_outcome(aborted: bool, redispatched: bool, findings: list) -> 
     Returns ``{"outcome": "pass"|"blocked", "reason": str|None}``.
 
     Note: this ``outcome`` ("pass"/"blocked") is this round's own
-    cheap/opus-tier checkpoint verdict — a different vocabulary from
+    cheap/strong-tier checkpoint verdict — a different vocabulary from
     ``/build`` SKILL.md sub-step 7's review-value telemetry field also named
     ``outcome`` (values ``no-op``/``fixed``/``escalated``/``skipped``). Do
     not conflate the two.
@@ -442,7 +442,7 @@ def _run_merge_mode(args) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Decide whether to abort remaining opus-tier lens dispatch for "
+            "Decide whether to abort remaining strong-tier lens dispatch for "
             "a /build checkpoint round (--mode abort, default), compute a "
             "round's pass/blocked outcome (--mode outcome), or merge "
             "deferred-lens findings back into a round's finding set "

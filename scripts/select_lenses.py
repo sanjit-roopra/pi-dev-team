@@ -2,7 +2,7 @@
 """Resolve which review lenses apply to a set of changed files (#1516).
 
 Given changed file paths, return the review-agent lenses whose ``Scope:``
-declaration matches, ordered cheap-first (non-opus before opus). ``/build``'s
+declaration matches, ordered cheap-first (non-strong before strong). ``/build``'s
 inline review checkpoints call this to avoid dispatching lenses with no
 matching surface in the diff (a backend-only diff should not spend tokens on
 frontend/UI lenses). ``/code-review`` Step 3 also adopted this resolver
@@ -13,7 +13,7 @@ additionally excluded when every changed file is non-executable
 (docs/config/assets/lockfiles, never functional agent-config markdown —
 see ``NON_EXECUTABLE_EXTENSIONS`` and ``doc_classification.is_functional_config``), since
 that lens's own Skip clause would otherwise just self-report
-``{"status": "skip"}`` at opus, high-effort cost.
+``{"status": "skip"}`` at strong-tier, high-effort cost.
 
 Roster source: the **Review Agents** table in ``knowledge/agent-registry.md``
 (the curated lens list), minus the shared ``NON_REVIEW_AGENTS`` boundary and
@@ -79,6 +79,8 @@ except ImportError as exc:  # pragma: no cover - broken install, not a supported
         "(#1968) — a divergent stand-in silently mis-classifies files. Fix the "
         "install or the path rather than re-adding a local implementation."
     ) from exc
+
+from model_tiers import normalize_tier  # noqa: E402  (hooks/lib, same no-fallback rule)
 
 # `knowledge/test-file-indicators.md`'s single encoding, shared with the
 # refactor test-freeze guards and `change_shape.py` (#1978). Same no-fallback
@@ -166,10 +168,10 @@ _REVIEW_AGENTS_HEADING_MARKER = "review agent"
 # vendored dependencies, or lockfiles" verbatim, checked directly against
 # each candidate's own agent-body text before being added here (#1923
 # review round): each would only ever self-report `{"status": "skip"}` on
-# an all-non-executable diff, so dispatching an opus, high-effort model
+# an all-non-executable diff, so dispatching a strong-tier, high-effort model
 # just to hear "skip" is pure waste.
 #
-# Deliberately ONE member today, not "every opus-tier always lens" —
+# Deliberately ONE member today, not "every strong-tier always lens" —
 # `security-review`, `arch-review`, and `domain-review` were considered and
 # REJECTED: their own Skip clauses do not authorize this. security-review's
 # clause covers only "static assets, images, or documentation", not
@@ -186,8 +188,8 @@ _REVIEW_AGENTS_HEADING_MARKER = "review agent"
 # file-content judgment, not a file-type one this filter can safely proxy.
 #
 # An explicit allowlist (matching this file's own MANIFEST_GOVERNED
-# precedent above) rather than an implicit `is_opus` check: a future opus
-# `Scope: always` lens defaults to NOT being filtered until it is added
+# precedent above) rather than an implicit `is_strong` check: a future
+# strong-tier `Scope: always` lens defaults to NOT being filtered until it is added
 # here deliberately, after the same verification against its own Skip
 # clause — so a Skip-clause change on `correctness-review` (or a new
 # candidate with different semantics) can't silently start/stop being
@@ -202,9 +204,9 @@ _REVIEW_AGENTS_HEADING_MARKER = "review agent"
 # functional-config carve-out). This allowlist is NOT redundant with it —
 # `/build`'s inline review checkpoints call `applicable_lenses` directly
 # and never consult `change_shape.py`, so without this, correctness-review
-# still paid full opus cost on every doc-only `/build` step. The two lists
+# still paid full strong-tier cost on every doc-only `/build` step. The two lists
 # legitimately overlap on `correctness-review` rather than duplicating by
-# accident; `performance-review` is haiku-tier and not this filter's cost
+# accident; `performance-review` is small-tier and not this filter's cost
 # concern, so it is intentionally absent here.
 # frozenset (not a plain set), matching `doc_classification.py`'s own
 # convention for these shared-literal-shaped tables: this allowlist governs
@@ -325,12 +327,14 @@ def parse_scope(text: str):
     return None
 
 
-def parse_model_is_opus(text: str) -> bool:
-    """True if the agent's ``model:`` frontmatter resolves to an opus tier."""
+def parse_model_is_strong(text: str) -> bool:
+    """True if the agent's ``model:`` frontmatter resolves to the strong tier
+    (``strong``, its old alias ``opus``, or a full Claude Opus id)."""
     for line in text.splitlines():
         m = _MODEL_RE.match(line)
         if m:
-            return "opus" in m.group(1).strip().lower()
+            value = m.group(1).split("#", 1)[0].strip().strip("'\"")
+            return normalize_tier(value) == "strong" or "opus" in value.lower()
     return False
 
 
@@ -419,18 +423,18 @@ def test_file_subset(changed_files, root=None):
 
 
 def applicable_lenses(changed_files, roster, added_files=None, test_files=None):
-    """Pure resolver. ``roster`` = ``[(name, scope, is_opus)]``. Returns
-    ``(lenses, warnings)`` with lenses ordered cheap-first (non-opus, then opus).
+    """Pure resolver. ``roster`` = ``[(name, scope, is_strong)]``. Returns
+    ``(lenses, warnings)`` with lenses ordered cheap-first (non-strong, then strong).
 
     An empty ``changed_files`` yields ``([], [])`` — nothing to review, so no
     lens (not even ``Scope: always``) is selected. ``scope is None`` ->
     include-biased + warn (never non-executable-filtered, regardless of
-    ``name`` or ``is_opus`` — that filter applies only inside this
+    ``name`` or ``is_strong`` — that filter applies only inside this
     ``SCOPE_ALWAYS`` branch); ``"always"`` -> include, UNLESS ``name`` is on
     the ``NON_EXECUTABLE_SKIP_ELIGIBLE`` allowlist and every changed file is
     non-executable (see ``_should_skip_non_executable``) — that combination
     is excluded and warned as ``skipped-non-executable:<name>`` rather than
-    paying an opus round trip for a self-reported skip; glob list -> include
+    paying a strong-tier round trip for a self-reported skip; glob list -> include
     iff any changed file matches; ``SCOPE_ON_DEMAND`` -> never include, no
     warning (a deliberate, self-declared exclusion, not a defect to
     surface); ``SCOPE_TEST_FILES`` -> include iff a changed file is in
@@ -462,32 +466,32 @@ def applicable_lenses(changed_files, roster, added_files=None, test_files=None):
         return [], []
     selected: list[tuple[str, bool]] = []
     warnings: list[str] = []
-    for name, scope, is_opus in roster:
+    for name, scope, is_strong in roster:
         if scope is None:
             warnings.append(name)
-            selected.append((name, is_opus))
+            selected.append((name, is_strong))
         elif scope == SCOPE_ALWAYS:
             if _should_skip_non_executable(name, changed_files):
                 warnings.append(f"skipped-non-executable:{name}")
                 continue
-            selected.append((name, is_opus))
+            selected.append((name, is_strong))
         elif scope == SCOPE_ON_DEMAND:
             continue  # never dispatched by the per-diff resolver, by design
         elif scope == SCOPE_TEST_FILES:
             if test_files is None:
-                selected.append((name, is_opus))
+                selected.append((name, is_strong))
                 warnings.append(f"unnarrowed-test-files:{name}")
             elif any(f in test_files for f in changed_files):
-                selected.append((name, is_opus))
+                selected.append((name, is_strong))
         elif _is_added_only_scope(scope):
             if not _added_only_eligible(scope[1], changed_files, added_files):
                 continue
-            selected.append((name, is_opus))
+            selected.append((name, is_strong))
             if added_files is None:
                 warnings.append(f"unnarrowed-added-only:{name}")
         elif _scope_matches(scope, changed_files):
-            selected.append((name, is_opus))
-    # Stable cheap-first: False (non-opus) sorts before True (opus).
+            selected.append((name, is_strong))
+    # Stable cheap-first: False (non-strong) sorts before True (strong).
     selected.sort(key=lambda pair: pair[1])
     return [name for name, _ in selected], warnings
 
@@ -508,7 +512,7 @@ def _registry_lens_names(registry_text: str) -> list[str]:
 
 
 def build_review_roster(agents_dir: Path, registry_path: Path):
-    """I/O boundary: build ``roster = [(name, scope, is_opus)]`` from disk.
+    """I/O boundary: build ``roster = [(name, scope, is_strong)]`` from disk.
 
     Fails open: an unreadable registry yields ``([], [warning])``; an unreadable
     agent file is include-biased (``scope=None`` -> included + warned) rather
@@ -528,7 +532,7 @@ def build_review_roster(agents_dir: Path, registry_path: Path):
         except OSError:
             roster.append((name, None, False))  # include-biased fail-open
             continue
-        roster.append((name, parse_scope(text), parse_model_is_opus(text)))
+        roster.append((name, parse_scope(text), parse_model_is_strong(text)))
     return roster, warnings
 
 

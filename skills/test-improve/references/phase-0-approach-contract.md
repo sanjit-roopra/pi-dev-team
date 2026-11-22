@@ -47,7 +47,7 @@ silent surprise.
    figure (`/cost-report` is the instrument for actuals):
 
    > Relative cost: `off` adds none. `kill-loop` adds roughly one
-   > opus-tier `mutation-kill` dispatch per module batch in Phase 5 (up to 3
+   > strong-tier `mutation-kill` dispatch per module batch in Phase 5 (up to 3
    > rounds each), plus the mutation tool's own runtime.
    > `baseline+kill-loop` adds a full mutation baseline run on top of that.
 

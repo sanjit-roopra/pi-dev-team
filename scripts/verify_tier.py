@@ -6,7 +6,7 @@ narrower than discovery — "here is the finding, here is the fix diff:
 resolved or not?" — but the dispatch costs the same. An agent may opt in to a
 cheaper tier for verification dispatches only, by declaring in its **body**:
 
-    Verify-model: haiku
+    Verify-model: small
     Verify-effort: medium
 
 Body declarations, not frontmatter: issue #1333 reserves agent frontmatter
@@ -42,6 +42,8 @@ from pathlib import Path
 # scripts/verify_tier.py -> scripts -> package root
 _PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 _AGENTS_DIR = _PLUGIN_ROOT / "agents"
+sys.path.insert(0, str(_PLUGIN_ROOT / "hooks" / "lib"))
+from model_tiers import ALIASES, TIERS, normalize_tier  # noqa: E402
 
 _VERIFY_MODEL_RE = re.compile(r"^\s*Verify-model\s*:\s*(\S+)\s*$", re.IGNORECASE)
 _VERIFY_EFFORT_RE = re.compile(r"^\s*Verify-effort\s*:\s*(\S+)\s*$", re.IGNORECASE)
@@ -49,10 +51,10 @@ _FM_MODEL_RE = re.compile(r"^\s*model\s*:\s*(\S+)\s*$")
 _FM_EFFORT_RE = re.compile(r"^\s*effort\s*:\s*(\S+)\s*$")
 
 #: Same closed enums the official contract declares for `model:`/`effort:`
-#: (agent-contract.json). A declaration outside these is a typo, not a new
-#: tier — reported as an error rather than passed through to a dispatch that
-#: would fail at runtime.
-VALID_MODELS = frozenset({"sonnet", "opus", "haiku", "fable", "inherit"})
+#: (agent-contract.json), old tier names included as aliases. A declaration
+#: outside these is a typo, not a new tier — reported as an error rather than
+#: passed through to a dispatch that would fail at runtime.
+VALID_MODELS = frozenset({*TIERS, *ALIASES, "inherit"})
 VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
 
@@ -101,9 +103,10 @@ def resolve(text: str, agent: str = "") -> dict:
         verify_effort = None
 
     opted_in = verify_model is not None or verify_effort is not None
+    model = verify_model or discovery_model
     return {
         "agent": agent,
-        "model": (verify_model or discovery_model).lower(),
+        "model": normalize_tier(model) or model.lower(),
         "effort": (verify_effort or discovery_effort).lower(),
         "opted_in": opted_in,
         "errors": errors,

@@ -2,7 +2,7 @@
 name: tech-writer
 description: Project documentation, terminology consistency, and ubiquitous language enforcement
 tools: Read, Grep, Glob, Edit, Write, Skill
-model: sonnet
+model: standard
 effort: high
 color: yellow
 memory: project

@@ -100,7 +100,7 @@ For each **Missing** or **Weaker** gap, produce a rough spec:
 - **Description**: [What it would do — 2-3 sentences]
 - **Dependencies**: [What existing components it would interact with]
 - **Estimated complexity**: [Small / Medium / Large]
-- **Model tier**: [haiku / sonnet / opus — if applicable]
+- **Model tier**: [small / standard / strong — if applicable]
 ```
 
 For **Different approach** items, don't write a spec — write a short analysis of tradeoffs instead, so the reader can decide whether to adopt the alternative approach.

@@ -13,7 +13,24 @@ import * as path from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { readSmallFile } from "./safe-read.ts";
 
-export type Tier = "opus" | "sonnet" | "haiku" | "fable" | string;
+/** Model tiers, cheapest first (DEFAULT_CONFIG.models lists them). */
+export type Tier = "small" | "standard" | "strong" | "max" | string;
+
+/** Earlier tier names, after Claude models. They still work wherever a tier is named. */
+export const TIER_ALIASES: Readonly<Record<string, string>> = { haiku: "small", sonnet: "standard", opus: "strong", fable: "max" };
+
+/** The tier a name means: an earlier name becomes its tier, any other name stays as it is. */
+export const tierName = (name: string): string => (Object.hasOwn(TIER_ALIASES, name) ? TIER_ALIASES[name] : name);
+
+/** A tier table with earlier names renamed; when a table sets both names of a tier, the new name wins. */
+export function normalizeTierTable<T>(models: Record<string, T>): Record<string, T> {
+	return Object.fromEntries(
+		Object.entries(models).flatMap(([name, model]) => {
+			const tier = tierName(name);
+			return tier === name || !Object.hasOwn(models, tier) ? [[tier, model]] : [];
+		}),
+	);
+}
 
 export interface HookConfig {
 	/** Master switch for the Python hook bridge. */
@@ -99,7 +116,7 @@ export const DEFAULT_DISABLED_HOOKS = [
 ];
 
 export const DEFAULT_CONFIG: DevTeamConfig = {
-	models: { opus: "inherit", sonnet: "inherit", haiku: "inherit", fable: "inherit" },
+	models: { small: "inherit", standard: "inherit", strong: "inherit", max: "inherit" },
 	thinking: { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" },
 	maxParallelAgents: 6,
 	maxSubagentDepth: 2,
@@ -123,25 +140,25 @@ export const DEFAULT_CONFIG: DevTeamConfig = {
 /** Tier presets offered by `/dev-team models`. Values are provider/model ids from pi's catalog. */
 export const MODEL_PRESETS: Record<string, Record<string, string>> = {
 	"github-copilot": {
-		opus: "github-copilot/claude-opus-5.5",
-		sonnet: "github-copilot/claude-sonnet-5.5",
-		haiku: "github-copilot/claude-haiku-4.5",
-		fable: "github-copilot/claude-fable-5.1",
+		small: "github-copilot/claude-haiku-5.5",
+		standard: "github-copilot/claude-sonnet-5.5",
+		strong: "github-copilot/claude-opus-5.5",
+		max: "github-copilot/claude-fable-5.2",
 	},
 	anthropic: {
-		opus: "anthropic/claude-opus-5-5",
-		sonnet: "anthropic/claude-sonnet-5-5",
-		haiku: "anthropic/claude-haiku-4-5",
-		fable: "anthropic/claude-fable-5-1",
+		small: "anthropic/claude-haiku-5-5",
+		standard: "anthropic/claude-sonnet-5-5",
+		strong: "anthropic/claude-opus-5-5",
+		max: "anthropic/claude-fable-5-2",
 	},
-	inherit: { opus: "inherit", sonnet: "inherit", haiku: "inherit", fable: "inherit" },
+	inherit: { small: "inherit", standard: "inherit", strong: "inherit", max: "inherit" },
 };
 
 /**
- * The tiers the package's agents use, cheapest first. No bundled agent names `fable` in its
+ * The tiers the package's agents use, cheapest first. No bundled agent names `max` in its
  * frontmatter (a test guards this); only a per-call override or a user or project agent uses it.
  */
-const DEFAULT_USED_TIERS = ["haiku", "sonnet", "opus"] as const;
+const DEFAULT_USED_TIERS = ["small", "standard", "strong"] as const;
 
 /** Whether pi can run a provider/model-id: in its catalog and with auth configured. */
 export type ModelStatus = "ok" | "no-auth" | "unknown";
@@ -337,10 +354,11 @@ export function filterProjectConfig(data: Record<string, unknown>): { data: Reco
 export function loadConfig(
 	cwd: string,
 	opts: { includeProject: boolean; userConfigFile?: string; env?: NodeJS.ProcessEnv },
-): { config: DevTeamConfig; sources: string[]; ignoredProjectSettings: string[] } {
+): { config: DevTeamConfig; sources: string[]; ignoredProjectSettings: string[]; oldTierNames: { file: string; names: string[] }[] } {
 	let config = DEFAULT_CONFIG;
 	const sources: string[] = [];
 	const ignoredProjectSettings: string[] = [];
+	const oldTierNames: { file: string; names: string[] }[] = [];
 	const userFile = opts.userConfigFile ?? userConfigPath();
 	const projectFiles = projectConfigFiles(cwd, opts);
 	for (const file of [userFile, ...projectFiles]) {
@@ -359,6 +377,11 @@ export function loadConfig(
 		if ("notify" in data && typeof data.notify !== "string") delete data.notify;
 		// A tier table that is not a table (null, a list) would replace the whole table; it sets nothing.
 		if ("models" in data && !isPlainObject(data.models)) delete data.models;
+		if (isPlainObject(data.models)) {
+			const names = Object.keys(data.models).filter((name) => Object.hasOwn(TIER_ALIASES, name));
+			if (names.length) oldTierNames.push({ file, names });
+			data.models = normalizeTierTable(data.models);
+		}
 		config = mergeConfig(config, data);
 		sources.push(file);
 		ignoredProjectSettings.push(...ignored);
@@ -368,7 +391,7 @@ export function loadConfig(
 		config = { ...config, maxParallelAgents: envParallel };
 		sources.push(`env ${PARALLEL_AGENTS_ENV}`);
 	}
-	return { config, sources, ignoredProjectSettings };
+	return { config, sources, ignoredProjectSettings, oldTierNames };
 }
 
 /**
@@ -398,24 +421,28 @@ export function projectFileSettingTiers(cwd: string, opts: { includeProject: boo
 	return projectConfigFiles(cwd, opts)
 		.filter((file) => {
 			const models = readJson(file)?.models;
-			return isPlainObject(models) && tiers.some((t) => Object.hasOwn(models, t));
+			return isPlainObject(models) && tiers.some((t) => Object.hasOwn(normalizeTierTable(models), t));
 		})
 		.at(-1);
 }
 
-/** The tier models one config file sets itself, known tiers with text values only; what `/dev-team models` starts from. */
+/** The tier models one config file sets itself, known tiers (earlier names renamed) with text values only; what `/dev-team models` starts from. */
 export function fileTierModels(file: string): Record<string, string> {
 	const models = readJson(file)?.models;
 	if (!isPlainObject(models)) return {};
 	return Object.fromEntries(
-		Object.entries(models).filter((e): e is [string, string] => Object.hasOwn(DEFAULT_CONFIG.models, e[0]) && typeof e[1] === "string"),
+		Object.entries(normalizeTierTable(models)).filter((e): e is [string, string] => Object.hasOwn(DEFAULT_CONFIG.models, e[0]) && typeof e[1] === "string"),
 	);
 }
 
-/** Read-modify-write one config file (used by /dev-team models). A file it cannot parse is left alone, not replaced. */
+/**
+ * Read-modify-write one config file (used by /dev-team models). A file it cannot parse is left alone, not
+ * replaced. A patch of tier models also renames the file's earlier tier names, so it writes only new names.
+ */
 export function updateConfigFile(file: string, patch: Record<string, unknown>): void {
 	const current = readJson(file);
 	if (!current && fs.existsSync(file)) throw new Error(`${file} is not valid JSON; fix or remove it, then try again.`);
+	if (current && "models" in patch && isPlainObject(current.models)) current.models = normalizeTierTable(current.models);
 	const next = mergeConfig(current ?? {}, patch);
 	fs.mkdirSync(path.dirname(file), { recursive: true });
 	const target = current ? fs.realpathSync(file) : file; // a symlinked config keeps its link

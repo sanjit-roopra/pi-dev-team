@@ -2,7 +2,7 @@
 name: codebase-recon
 description: Reconnaissance agent that surveys a codebase's structure, entry points, dependencies, security surface, and git history. Produces a contract-conformant RECON artifact at `.pi/dev-team/memory/recon-<slug>.{md,json}` that other agents consume.
 tools: Read, Grep, Glob, Bash, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__search_codebase, mcp__plugin_repowise_repowise__get_risk, mcp__plugin_repowise_repowise__get_why
-model: opus
+model: strong
 effort: high
 color: cyan
 ---

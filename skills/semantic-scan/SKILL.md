@@ -48,6 +48,6 @@ Apply the guidelines defined in skills/semantic-duplication-scan/SKILL.md to the
 
 - `[path]` — Optional subdirectory to scope the scan. Only files under this path are re-annotated; out-of-scope register entries are preserved.
 - `--full` — Force full-scan mode regardless of whether a register exists. Bypasses the shallow-clone pre-flight check. Use when `lastScanCommit` is stale or after a major restructuring.
-- `--no-opus` — Skip Opus canonical resolution for ambiguous clusters. Ambiguous clusters are reported as `canonical: ambiguous — human review required` instead of triggering an Opus call. Use in cost-sensitive environments (CI, personal accounts).
+- `--no-opus` — Skip strong-tier canonical resolution for ambiguous clusters. Ambiguous clusters are reported as `canonical: ambiguous — human review required` instead of triggering a strong-tier call. Use in cost-sensitive environments (CI, personal accounts).
 
 Apply this skill to: $ARGUMENTS

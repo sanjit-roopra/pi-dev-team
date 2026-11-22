@@ -10,7 +10,7 @@ checkpoint loops — stated once here, never restated in either caller.
 When a fix loop re-dispatches an agent to confirm a fix, that dispatch is
 indistinguishable from discovery: same tier, same full context payload. But
 the task is far narrower — *here is the finding, here is the fix diff:
-resolved or not?* `correctness-review` (opus/`effort: high`, the most
+resolved or not?* `correctness-review` (strong/`effort: high`, the most
 dispatched review agent in the project's logged history at 24) pays full
 discovery cost for every confirmation.
 
@@ -49,7 +49,7 @@ An agent may opt in to a cheaper tier **for verification dispatches only** by
 declaring these in its **body** (not frontmatter — see below):
 
 ```
-Verify-model: haiku
+Verify-model: small
 Verify-effort: medium
 ```
 
@@ -88,9 +88,9 @@ declarations.
 
 | Agent | Verify tier | Why |
 | --- | --- | --- |
-| `structure-review` | haiku | Confirming an extracted function or a flattened nesting level is a structural read, not a judgment call |
-| `naming-review` | haiku | Confirming a rename landed consistently is near-mechanical once the rename itself is applied |
-| `doc-review` | haiku | Confirming a doc line now matches the code it describes is a comparison, not an inference |
+| `structure-review` | small | Confirming an extracted function or a flattened nesting level is a structural read, not a judgment call |
+| `naming-review` | small | Confirming a rename landed consistently is near-mechanical once the rename itself is applied |
+| `doc-review` | small | Confirming a doc line now matches the code it describes is a comparison, not an inference |
 
 `correctness-review` and `security-review` deliberately do **not** opt in.
 They are the two most expensive lenses and the two most obvious candidates —

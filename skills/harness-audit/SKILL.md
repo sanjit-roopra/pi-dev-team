@@ -201,7 +201,7 @@ log=".pi/dev-team/metrics/review-value.jsonl"; [ -f "$log" ] || log="metrics/rev
 diff *size* (change-size), and architectural *signal* (change-impact). None of
 them exploits a fourth, structurally-guaranteed shape: under `/test-improve`'s
 default `refactor-mode: no-refactor`, Phase 5's diff **cannot** contain
-production code, because `/build` rejects it — yet the four opus-tier
+production code, because `/build` rejects it — yet the four strong-tier
 `Scope: always` lenses run on it anyway, per Story and again at phase end.
 
 Whether any of them can be dropped there is an empirical question, so answer
@@ -576,8 +576,8 @@ proposals.
 
 For each agent listed in `knowledge/agent-registry.md` (with its `model:`/`effort:` frontmatter, resolved natively by the harness per `agents/orchestrator.md` → Model/Effort Resolution — ADR 0026):
 
-1. **Over-tiered agents**: Agents assigned to opus that consistently produce simple pattern-match findings may work equally well on sonnet or haiku.
-2. **Under-tiered agents**: Agents on haiku that frequently miss issues caught by human review may need a higher tier.
+1. **Over-tiered agents**: Agents on the strong tier that consistently produce simple pattern-match findings may work equally well on standard or small.
+2. **Under-tiered agents**: Agents on the small tier that frequently miss issues caught by human review may need a higher tier.
 3. **Cost distribution**: Which agents consume the most tokens? Are the most expensive agents also the most valuable?
 
 ### 7. Analyze orchestration complexity

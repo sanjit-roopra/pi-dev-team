@@ -197,8 +197,8 @@ class GenerationExhausted(RuntimeError):
 
     This file gets exactly one downgrade, ever — reaching this exception
     means no second downgrade will be attempted, regardless of whether the
-    exhausted tier is the true ladder floor (``haiku``), a mid-ladder tier
-    (e.g. ``sonnet``), or an operator override. Callers (the ``--headless``
+    exhausted tier is the true ladder floor (``small``), a mid-ladder tier
+    (e.g. ``standard``), or an operator override. Callers (the ``--headless``
     CLIs' ``main()``) catch this subclass ahead of ``RevertFailed`` and the
     generic ``RuntimeError`` and report it via the existing exit-code
     taxonomy — the message names the file, round, model, and error class,
@@ -245,10 +245,10 @@ def _format_downgrade_message(event: DowngradeEvent) -> str:
     if event.exhausted:
         model_label = event.from_model if event.from_model is not None else "unspecified"
         # #1952: branch on the reason the caller actually computed, not on
-        # whether from_model happens to be a ladder name. `fable` is a VALID
+        # whether from_model happens to be a ladder name. `max` is a VALID
         # --model / DEV_TEAM_MUTATION_FALLBACK_MODEL override that deliberately
-        # has no _MODEL_DOWNGRADE_LADDER entry, so a file that started on opus,
-        # downgraded once to fable, and then exhausted was reported as "no
+        # has no _MODEL_DOWNGRADE_LADDER entry, so a file that started on strong,
+        # downgraded once to max, and then exhausted was reported as "no
         # downgrade ladder position available for this model" when the true
         # cause was "this file already spent its one downgrade".
         if event.already_downgraded:

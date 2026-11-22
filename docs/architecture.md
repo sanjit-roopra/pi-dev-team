@@ -117,7 +117,7 @@ The tool looks up `.pi/agents/` first (only when pi trusts the project), then `a
 | `skills` | The skill names, listed in the agent prompt with how to load them. |
 | `memory`, `color` | Ignored. |
 
-The tiers are `opus`, `sonnet`, `haiku` and `fable`. By default every tier is `inherit`. [Choose the models](../README.md#choose-the-models) tells how to map them.
+The tiers are `small`, `standard`, `strong` and `max`. By default every tier is `inherit`. [Choose the models](../README.md#choose-the-models) tells how to map them.
 
 Agents with `effort: high` include `correctness-review`, `plan-review-acceptance`, `software-engineer` and `qa-engineer`. Most review lenses (review agents with one topic each) and plan critics (agents that review a plan) have `effort: medium`. A dispatch can lower the effort, never raise it. Before this rule, the session passed its own level on most dispatches, so a lens set to `medium` ran at `high`.
 
@@ -517,14 +517,14 @@ The core says not to read references otherwise. Where the core and a reference d
 A `/build` step reaches a dead-end when its repair loop gives the same failure signature twice. The pi notes in `skills/build/SKILL.md` add one retry on the next tier up before the build stops for the human:
 
 1. The session commits the work of the dead-end step.
-2. It finds the next tier: `haiku` to `sonnet` to `opus`. `fable` is never a retry target.
+2. It finds the next tier: `small` to `standard` to `strong`. `max` is never a retry target.
 3. It dispatches `software-engineer` again for the same step, with `model: "<next tier>"`. The task names that commit, the improved tests, the remaining failure signature and the fixes already tried.
 4. If the retry also dead-ends, the build stops as before.
 
 The session skips the retry in these cases:
 
 - The step has no tier, or it ran in the session, not in an agent.
-- The step ran on `opus` or `fable`.
+- The step ran on `strong` or `max`.
 - The Agent tiers line shows `(not a model id)` for the next tier.
 - The Agent tiers line shows the same model for both tiers. With the default configuration every tier is `inherit`, so there is no retry.
 

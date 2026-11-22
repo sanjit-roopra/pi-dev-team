@@ -132,9 +132,9 @@ test("result failed: error and the skipped project agents", () => {
 
 test("result expanded, one agent: header, task, full output and worktree", () => {
 	const wt = { path: "/r/.pi/dev-team/worktrees/a", branch: "dev-team/a", kept: true, dirty: false, commits: 1 };
-	const details = { results: [taskView({ output: "first\nsecond", usage, worktree: wt, tier: "sonnet", source: "project" })] };
+	const details = { results: [taskView({ output: "first\nsecond", usage, worktree: wt, tier: "standard", source: "project" })] };
 	const out = draw(renderSubagentResult(result(details), { expanded: true, isPartial: false }, theme));
-	assert.match(out, /✓ a \(project\) \[sonnet\]/);
+	assert.match(out, /✓ a \(project\) \[standard\]/);
 	assert.match(out, /Task: do x/);
 	assert.match(out, /second/);
 	assert.match(out, /worktree kept: \/r\/\.pi\/dev-team\/worktrees\/a on branch dev-team\/a, 1 commit\(s\)/);

@@ -14,7 +14,7 @@ function sandbox(t: TestContext) {
 	fs.mkdirSync(project);
 	const writeSetting = (file: string, v: unknown) => {
 		fs.mkdirSync(path.dirname(file), { recursive: true });
-		fs.writeFileSync(file, JSON.stringify({ models: { opus: "inherit" }, [AUTOCOMPACT_CONFIG_KEY]: v }));
+		fs.writeFileSync(file, JSON.stringify({ models: { strong: "inherit" }, [AUTOCOMPACT_CONFIG_KEY]: v }));
 	};
 	return {
 		dir,

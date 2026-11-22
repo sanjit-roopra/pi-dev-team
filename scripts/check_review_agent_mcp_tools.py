@@ -10,7 +10,7 @@ in each agent's `tools:` frontmatter allowlist.
 Grants are no longer one-size-fits-all (#1467). Three tiers:
 
 - ``EXEMPT_AGENTS`` (``token-efficiency-review``) — a pure
-  text/regex/frontmatter validator on the ``haiku`` tier that never touches code
+  text/regex/frontmatter validator on the ``small`` tier that never touches code
   structure. It requires **none** of the code-intelligence MCP tools, and this
   check actively asserts it carries **none** of them — a "forbidden tools
   present" failure mode, reported and JSON-exposed distinctly from the ordinary

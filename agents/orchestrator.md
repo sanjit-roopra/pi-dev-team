@@ -2,7 +2,7 @@
 name: orchestrator
 description: Central dispatcher that routes tasks to specialized agents and coordinates multi-agent collaboration
 tools: Read, Grep, Glob, Agent, Skill
-model: sonnet
+model: standard
 effort: high
 color: purple
 skills:
@@ -93,7 +93,7 @@ judgement rather than a tool.
 
 ## Model/Effort Resolution
 
-Each agent declares `model:` (an alias, a full model ID, or `inherit`) and `effort:` (`low|medium|high|xhigh|max`) directly in its frontmatter — the native sub-agent contract. The harness resolves both fields itself before dispatch. There is no PreToolUse hook, routing map, or per-environment ladder file in this path — ADR 0026 retired that machinery once the native fields were confirmed to already do what it was built to provide. See ADR 0004/0008/0021/0023/0024/0025 for why the retired system existed and ADR 0026 for why it doesn't anymore.
+Each agent declares `model:` (a tier: `small|standard|strong|max`, a full model ID, or `inherit`) and `effort:` (`low|medium|high|xhigh|max`) directly in its frontmatter — the native sub-agent contract. The harness resolves both fields itself before dispatch. There is no PreToolUse hook, routing map, or per-environment ladder file in this path — ADR 0026 retired that machinery once the native fields were confirmed to already do what it was built to provide. See ADR 0004/0008/0021/0023/0024/0025 for why the retired system existed and ADR 0026 for why it doesn't anymore.
 
 ### Effort guidance (informational)
 

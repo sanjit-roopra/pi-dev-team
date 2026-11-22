@@ -3,7 +3,7 @@
 name: a11y-review
 description: WCAG 2.1 AA compliance, semantic HTML, ARIA, keyboard navigation, focus management
 tools: Read, Grep, Glob, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__search_codebase, mcp__plugin_repowise_repowise__get_risk
-model: haiku
+model: small
 effort: medium
 color: green
 ---

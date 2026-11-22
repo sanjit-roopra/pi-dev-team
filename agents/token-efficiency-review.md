@@ -3,7 +3,7 @@
 name: token-efficiency-review
 description: Token usage optimization, file length, AGENTS.md size, LLM anti-patterns
 tools: Read, Grep, Glob
-model: haiku
+model: small
 effort: medium
 color: green
 ---

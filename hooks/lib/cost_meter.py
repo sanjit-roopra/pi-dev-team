@@ -727,7 +727,7 @@ def cmd_pace(args, pricing) -> int:
                 f"${args.budget:.2f} budget."
             )
             print(
-                "  Consider dropping Opus→Sonnet for the remainder of the "
+                "  Consider dropping strong→standard tier for the remainder of the "
                 "window (see .pi/dev-team/model-overrides.json / /harness-audit)."
             )
     return 0

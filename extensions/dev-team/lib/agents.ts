@@ -2,8 +2,8 @@
  * Agent discovery and the mapping of agent frontmatter to pi.
  *
  * Agent files use this frontmatter (tool names are the hook-protocol names: Read, Grep, Glob, Agent, ...):
- *   name, description, tools ("Read, Grep, Glob, ..."), model (opus|sonnet|haiku|fable|inherit|provider/id),
- *   effort (low|medium|high|...), skills (list), color, memory.
+ *   name, description, tools ("Read, Grep, Glob, ..."), model (small|standard|strong|max|inherit|provider/id;
+ *   the earlier names haiku|sonnet|opus|fable still work), effort (low|medium|high|...), skills (list), color, memory.
  * They are mapped to pi at dispatch time.
  *
  * Lookup order (first wins):
@@ -13,7 +13,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_CONFIG, inherits } from "./config.ts";
+import { DEFAULT_CONFIG, inherits, tierName } from "./config.ts";
 import { readSmallFile } from "./safe-read.ts";
 import { DEV_TEAM_SUBAGENT_TOOL } from "../../spend/lib/subagent-usage.ts";
 import type { AgentSource } from "./subagent-types.ts";
@@ -243,13 +243,14 @@ export function mapTools(hookTools: string[] | undefined, available: string[]): 
 export interface ModelChoice {
 	/** provider/id to pass to --model, or undefined to inherit. */
 	model?: string;
-	/** Tier label for reporting (opus/sonnet/haiku/...). */
+	/** Tier label for reporting (small/standard/strong/...). */
 	tier?: string;
 }
 
 /**
  * Resolve an agent's model. `override` (per call) beats frontmatter.
- * Tier names go through the config table; "inherit" or an unmapped tier inherits the parent's model.
+ * Tier names (an earlier name means its tier) go through the config table; "inherit" or an unmapped
+ * tier inherits the parent's model.
  */
 export function resolveModel(
 	frontmatterModel: string | undefined,
@@ -259,7 +260,7 @@ export function resolveModel(
 ): ModelChoice {
 	const wanted = (override || frontmatterModel || "inherit").trim();
 	if (wanted.includes("/")) return { model: wanted };
-	const tier = wanted.toLowerCase();
+	const tier = tierName(wanted.toLowerCase());
 	if (tier === "inherit") return { model: parentModel, tier: "inherit" };
 	const mapped = tiers[tier];
 	if (inherits(mapped)) return { model: parentModel, tier };

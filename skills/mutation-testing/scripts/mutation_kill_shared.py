@@ -67,6 +67,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+# skills/mutation-testing/scripts -> package root -> hooks/lib (shared tier table)
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "hooks" / "lib"))
+from model_tiers import TIERS, normalize_tier  # noqa: E402
+
 
 def _timeout_from_env(name: str, default: int) -> int:
     """Parse a positive-integer timeout (seconds) from an env var.
@@ -420,29 +424,29 @@ def resolve_model(explicit: str | None = None) -> str | None:
     return os.environ.get("DEV_TEAM_MUTATION_MODEL") or None
 
 
-# One-step model-downgrade ladder (#1908): opus -> sonnet -> haiku -> floor.
+# One-step model-downgrade ladder (#1908): strong -> standard -> small -> floor.
+# Old names (opus/sonnet/haiku) are normalised to these first.
 # No ``None`` entry: resolve_model()'s "unspecified, let the CLI pick its own
 # default" result has no observable ladder position from this codebase (the
 # CLI's actual default model is not knowable here), so treating it as
-# equivalent to "opus" would be an unverified assumption. ``.get()`` returning
-# ``None`` for an unresolved model, the floor (``haiku``), AND any
-# operator-supplied model string outside {opus, sonnet, haiku} all mean the
+# equivalent to "strong" would be an unverified assumption. ``.get()`` returning
+# ``None`` for an unresolved model, the floor (``small``), AND any
+# operator-supplied model string outside {strong, standard, small} all mean the
 # same thing to this ladder: no known position to step down from. Every round
 # before a downgrade is otherwise unaffected: no --model flag is added, no
 # snapshot id is pinned (see ``tests/repo/test_no_pinned_snapshots.py``)
 # unless/until a downgrade actually happens.
 _MODEL_DOWNGRADE_LADDER: dict[str, str] = {
-    "opus": "sonnet",
-    "sonnet": "haiku",
+    "strong": "standard",
+    "standard": "small",
 }
 
-# Mirrors the agent frontmatter ``model:`` enum (opus/sonnet/haiku/fable/
-# inherit) minus ``inherit`` (which doesn't make sense as a fallback
-# target). ``fable`` is a display-latency variant, not a capability tier, so
-# it is a valid --model/DEV_TEAM_MUTATION_FALLBACK_MODEL override value but
-# deliberately has no entry in _MODEL_DOWNGRADE_LADDER above — it is not part
-# of the opus->sonnet->haiku capability step-down.
-_VALID_FALLBACK_MODELS = frozenset({"opus", "sonnet", "haiku", "fable"})
+# Mirrors the agent frontmatter ``model:`` enum (small/standard/strong/max/
+# inherit, old names as aliases) minus ``inherit`` (which doesn't make sense
+# as a fallback target). ``max`` is a valid --model/
+# DEV_TEAM_MUTATION_FALLBACK_MODEL override value but deliberately has no
+# entry in _MODEL_DOWNGRADE_LADDER above — it is never a step-down target.
+_VALID_FALLBACK_MODELS = frozenset(TIERS)
 
 
 def resolve_fallback_model(current: str | None) -> str | None:
@@ -451,8 +455,9 @@ def resolve_fallback_model(current: str | None) -> str | None:
     it names a valid tier.
 
     ``current`` is expected to be ``resolve_model()``'s result: ``None``,
-    ``"opus"``, ``"sonnet"``, or ``"haiku"`` (matched case-insensitively).
-    ``None`` (unresolved), ``"haiku"`` (the floor), and any other value not
+    ``"strong"``, ``"standard"``, or ``"small"`` (or an old alias, matched
+    case-insensitively). ``None`` (unresolved), ``"small"`` (the floor), and
+    any other value not
     on the ladder (an unrecognized model string) all return ``None`` — "no
     known ladder position to step down to." The three cases are
     indistinguishable to ``resolve_fallback_model`` itself; a caller that
@@ -465,23 +470,23 @@ def resolve_fallback_model(current: str | None) -> str | None:
     is actually a downgrade from ``current``: an explicit operator override
     is authoritative operator intent, not validated against the ladder
     position it replaces (#1908). Matched case-insensitively against
-    ``{opus, sonnet, haiku, fable}``. A value outside that enum is never
+    ``{small, standard, strong, max}`` and their old aliases, and returned
+    as the new name. A value outside that enum is never
     silently accepted or silently ignored: it's reported on stderr and this
     call falls back to the one-step ladder default instead.
     """
     override = os.environ.get("DEV_TEAM_MUTATION_FALLBACK_MODEL")
     if override:
-        normalized_override = override.strip().lower()
+        normalized_override = normalize_tier(override)
         if normalized_override in _VALID_FALLBACK_MODELS:
             return normalized_override
         sys.stderr.write(
             f"warning: DEV_TEAM_MUTATION_FALLBACK_MODEL={override!r} is not "
-            "one of opus/sonnet/haiku/fable — ignoring the override and "
+            "one of small/standard/strong/max — ignoring the override and "
             "using the one-step ladder default instead\n"
         )
 
-    normalized_current = current.strip().lower() if current else None
-    return _MODEL_DOWNGRADE_LADDER.get(normalized_current)
+    return _MODEL_DOWNGRADE_LADDER.get(normalize_tier(current))
 
 
 _FENCE_OPEN_RE = re.compile(r"^```[\w-]*\n?")
