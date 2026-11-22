@@ -2,7 +2,7 @@
 name: quality-reviewer
 description: Coordinates code quality review agents and drives the fix loop for a freshly-implemented unit of work
 tools: Read, Grep, Glob, Edit, Bash, Agent, Skill
-model: sonnet
+model: standard
 effort: high
 color: purple
 memory: project
@@ -33,7 +33,7 @@ If `Complexity: trivial`, return `status: skip` immediately. The final `/code-re
 
 Apply the **Inline Review Checkpoint** dispatch table from `${DEV_TEAM_ROOT}/knowledge/three-phase-workflow.md#inline-review-checkpoint`, Step 1 — that table is the single source of truth for which agents run on which changed-file classes; do not re-duplicate it here, it drifts.
 
-If `Complexity: complex`, also add the opus-tier agents: `security-review`, `domain-review`, `arch-review` (regardless of file type).
+If `Complexity: complex`, also add the strong-tier agents: `security-review`, `domain-review`, `arch-review` (regardless of file type).
 
 When this selection would dispatch 5+ agents in one wave, note the coordination-cost signal and consider batching high-overlap lenses per `${DEV_TEAM_ROOT}/knowledge/wave-consolidation-guidance.md#when-it-applies` — advisory only; dispatch still proceeds.
 
@@ -98,7 +98,7 @@ Failures from `/browse` enter the same review-fix loop (max 2 iterations).
   "status": "pass | warn | escalate | skip",
   "complexity": "trivial | standard | complex",
   "agentsRun": [
-    { "agent": "<name>", "model": "haiku|sonnet|opus", "status": "pass|warn|fail" }
+    { "agent": "<name>", "model": "small|standard|strong", "status": "pass|warn|fail" }
   ],
   "loopIterations": 0,
   "fixSummary": {

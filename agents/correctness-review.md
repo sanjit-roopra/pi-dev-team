@@ -3,7 +3,7 @@
 name: correctness-review
 description: Functional/behavioral defects where implementation diverges from evident intent (missing assignments, wrong operators, inverted conditions, missing guard clauses, off-by-one/boundary errors, unverified runtime/library claims, error-signalling divergence)
 tools: Read, Grep, Glob, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__search_codebase, mcp__plugin_repowise_repowise__get_risk
-model: opus
+model: strong
 effort: high
 color: green
 ---

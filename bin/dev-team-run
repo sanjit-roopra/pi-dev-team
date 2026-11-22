@@ -32,10 +32,13 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hooks" / "lib"))
+from model_tiers import ALIASES, normalize_tier  # noqa: E402
 
 IGNORED_WITH_VALUE = {"--session-id", "--max-turns", "--permission-mode", "--settings", "--mcp-config", "--add-dir", "--fallback-model", "--input-format"}
 IGNORED_FLAGS = {"--dangerously-skip-permissions", "--verbose", "--no-session-persistence", "--strict-mcp-config", "--include-partial-messages"}
-TIERS = {"opus", "sonnet", "haiku", "fable", "inherit", "default"}
 TOOL_MAP = {
     "read": ["read"], "grep": ["grep"], "glob": ["find", "ls"], "ls": ["ls"], "bash": ["bash"],
     "edit": ["edit"], "multiedit": ["edit"], "write": ["write"], "notebookedit": ["edit"],
@@ -80,10 +83,13 @@ def model_args(model: str | None) -> list[str]:
     if "/" in m:
         return ["--model", m]
     low = m.lower()
-    if low in TIERS:
-        return [] if low in ("inherit", "default") else ["--dev-team-tier", low]
-    for tier in ("opus", "sonnet", "haiku", "fable"):
-        if tier in low:  # full model ids like claude-sonnet-4-5 -> tier
+    if low in ("inherit", "default"):
+        return []
+    tier = normalize_tier(low)
+    if tier:  # new names and old aliases (opus -> strong)
+        return ["--dev-team-tier", tier]
+    for old, tier in ALIASES.items():
+        if old in low:  # full Claude ids like claude-sonnet-4-5 -> standard
             return ["--dev-team-tier", tier]
     return ["--model", m]
 

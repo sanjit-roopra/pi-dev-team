@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ModelStatus, PresetAdvice } from "../../extensions/dev-team/lib/config.ts";
-import { CUSTOM_MENU_LABEL, joinWithAnd, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "../../extensions/dev-team/lib/doctor-text.ts";
+import { CUSTOM_MENU_LABEL, joinWithAnd, oldTierNamesLines, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "../../extensions/dev-team/lib/doctor-text.ts";
 
 const SESSION = "github-copilot/claude-opus-5.5";
 const advice = (overrides: Partial<PresetAdvice>): PresetAdvice => ({
 	presetName: "github-copilot",
-	tiersOnSessionModel: ["haiku", "sonnet"],
+	tiersOnSessionModel: ["small", "standard"],
 	action: "preset",
 	changes: [
-		{ tier: "haiku", model: "github-copilot/h" },
-		{ tier: "sonnet", model: "github-copilot/s" },
+		{ tier: "small", model: "github-copilot/h" },
+		{ tier: "standard", model: "github-copilot/s" },
 	],
 	unusable: [],
 	...overrides,
@@ -18,25 +18,25 @@ const advice = (overrides: Partial<PresetAdvice>): PresetAdvice => ({
 
 for (const [words, text] of [
 	[[], ""],
-	[["haiku"], "haiku"],
-	[["haiku", "sonnet"], "haiku and sonnet"],
-	[["haiku", "sonnet", "opus"], "haiku, sonnet and opus"],
+	[["small"], "small"],
+	[["small", "standard"], "small and standard"],
+	[["small", "standard", "strong"], "small, standard and strong"],
 ] as const) {
 	test(`joinWithAnd: ${words.length} word(s)`, () => assert.equal(joinWithAnd(words), text));
 }
 
 test("presetTipLines: the preset action names the menu entry and every tier it sets", () => {
 	assert.deepEqual(presetTipLines(advice({}), SESSION), [
-		`tip: haiku and sonnet agents run on ${SESSION}, your session model.`,
-		"     /dev-team models → preset: github-copilot sets haiku to github-copilot/h and sonnet to github-copilot/s.",
+		`tip: small and standard agents run on ${SESSION}, your session model.`,
+		"     /dev-team models → preset: github-copilot sets small to github-copilot/h and standard to github-copilot/s.",
 	]);
 });
 
 test("presetTipLines: custom steps say why and what to set", () => {
-	const lines = presetTipLines(advice({ action: "custom", tiersOnSessionModel: ["sonnet"], changes: [{ tier: "sonnet", model: "github-copilot/s" }] }), SESSION);
+	const lines = presetTipLines(advice({ action: "custom", tiersOnSessionModel: ["standard"], changes: [{ tier: "standard", model: "github-copilot/s" }] }), SESSION);
 	assert.deepEqual(lines, [
-		`tip: sonnet agents run on ${SESSION}, your session model.`,
-		"     You mapped other tiers yourself, so set these with /dev-team models → custom: sonnet to github-copilot/s. Leave the other tiers as they are.",
+		`tip: standard agents run on ${SESSION}, your session model.`,
+		"     You mapped other tiers yourself, so set these with /dev-team models → custom: standard to github-copilot/s. Leave the other tiers as they are.",
 	]);
 });
 
@@ -54,7 +54,7 @@ for (const [branch, shape] of [
 
 test("presetTipLines: the session model cannot drive the terminal", () => {
 	const [head] = presetTipLines(advice({}), "p/\u001b[2Jx\nFAKE");
-	assert.equal(head, "tip: haiku and sonnet agents run on p/xFAKE, your session model.");
+	assert.equal(head, "tip: small and standard agents run on p/xFAKE, your session model.");
 });
 
 test("presetTipLines: unusable models are named instead of the action", () => {
@@ -80,22 +80,22 @@ const statuses: Record<string, ModelStatus> = { "p/ok": "ok", "p/noauth": "no-au
 const status = (m: string) => statuses[m] ?? "unknown";
 
 for (const [title, tier, model, session, line] of [
-	["inherit shows the session model", "haiku", "inherit", "p/session", "  haiku: inherit (p/session)"],
-	["inherit without a session model", "haiku", "inherit", undefined, "  haiku: inherit (none)"],
-	["an empty tier inherits", "haiku", "", "p/session", "  haiku: inherit (p/session)"],
-	["a null tier inherits", "haiku", null, "p/session", "  haiku: inherit (p/session)"],
-	["an unset tier inherits", "haiku", undefined, "p/session", "  haiku: inherit (p/session)"],
-	["a usable model", "sonnet", "p/ok", "p/session", "  sonnet: p/ok ok"],
-	["a model without auth", "sonnet", "p/noauth", "p/session", "  sonnet: p/noauth NO AUTH (/login)"],
-	["an unknown model", "opus", "p/x", "p/session", "  opus: p/x UNKNOWN MODEL"],
-	["a value that is not text is unknown, not a crash", "opus", 5, "p/session", "  opus: (not a model id) UNKNOWN MODEL"],
-	["an object that cannot become text is unknown, not a crash", "opus", { toString: 1 }, "p/session", "  opus: (not a model id) UNKNOWN MODEL"],
+	["inherit shows the session model", "small", "inherit", "p/session", "  small: inherit (p/session)"],
+	["inherit without a session model", "small", "inherit", undefined, "  small: inherit (none)"],
+	["an empty tier inherits", "small", "", "p/session", "  small: inherit (p/session)"],
+	["a null tier inherits", "small", null, "p/session", "  small: inherit (p/session)"],
+	["an unset tier inherits", "small", undefined, "p/session", "  small: inherit (p/session)"],
+	["a usable model", "standard", "p/ok", "p/session", "  standard: p/ok ok"],
+	["a model without auth", "standard", "p/noauth", "p/session", "  standard: p/noauth NO AUTH (/login)"],
+	["an unknown model", "strong", "p/x", "p/session", "  strong: p/x UNKNOWN MODEL"],
+	["a value that is not text is unknown, not a crash", "strong", 5, "p/session", "  strong: (not a model id) UNKNOWN MODEL"],
+	["an object that cannot become text is unknown, not a crash", "strong", { toString: 1 }, "p/session", "  strong: (not a model id) UNKNOWN MODEL"],
 ] as const) {
 	test(`tierLine: ${title}`, () => assert.equal(tierLine(tier, model, session, status), line));
 }
 
 test("tierLine: a project's model id or tier name cannot drive the terminal", () => {
-	assert.equal(tierLine("hai\u001b[2Jku", "p/\u001b]52;c;eA==\u0007x\nFAKE", "p/s", status), "  haiku: p/xFAKE UNKNOWN MODEL");
+	assert.equal(tierLine("sm\u001b[2Jall", "p/\u001b]52;c;eA==\u0007x\nFAKE", "p/s", status), "  small: p/xFAKE UNKNOWN MODEL");
 });
 
 test("tierMenuChoices: the file's own model first, then inherit and the available models, no duplicate", () => {
@@ -137,4 +137,12 @@ test("tierMenuChoices: labels are one line and unique, so a picked label maps ba
 		{ label: "p/x", value: "p/x" },
 		{ label: "p/y", value: "p/y\u001b[2J" },
 	], "the file's look-alike is marked, and a later look-alike is dropped");
+});
+
+test("oldTierNamesLines: one note per file naming each earlier tier name and its new name; none without one", () => {
+	assert.deepEqual(oldTierNamesLines([{ file: "/u/dev-team.json", names: ["opus", "haiku"] }, { file: ".pi/dev-team.local.json", names: ["fable"] }]), [
+		"note: /u/dev-team.json uses earlier tier names; they still work. Rename opus to strong and haiku to small.",
+		"note: .pi/dev-team.local.json uses earlier tier names; they still work. Rename fable to max.",
+	]);
+	assert.deepEqual(oldTierNamesLines([]), []);
 });

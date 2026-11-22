@@ -70,7 +70,7 @@ assignment alone is not a substitute for worktree isolation here.
      unknown as `ok`.
 5. **Mutation-kill, once per module batch (`kill-loop` and
    `baseline+kill-loop`; skipped when `off`).** The `mutation-kill` agent is
-   opus-tier at `effort: high`, and every dispatch re-pays its fixed priming
+   strong-tier at `effort: high`, and every dispatch re-pays its fixed priming
    plus the mutation tool's build/instrumentation warm-up. Phase 4 writes the
    Story set in `coverage-gap-ranking.json` rank order (#1786), so Stories
    targeting the same module are **adjacent** — dispatching per Story paid

@@ -163,14 +163,16 @@ In 52 SlopCodeBench checkpoints, the check passed 78.2% of hidden tests against 
 
 ## Choose the models
 
-To map tiers to models, run `/dev-team models` and pick a preset. A tier is a model class that an agent names, for example `sonnet`. By default, every tier uses your session model.
+To map tiers to models, run `/dev-team models` and pick a preset. A tier is a model class that an agent names, for example `standard`. By default, every tier uses your session model.
 
-| Tier | Used for |
-|---|---|
-| `opus` | Deep reviews and hard design |
-| `sonnet` | Most work |
-| `haiku` | Small checks |
-| `fable` | The strongest tier. No package agent uses it by default. |
+| Tier | Used for | Example models |
+|---|---|---|
+| `small` | Small checks | Claude Haiku 5.5 · GPT-6 Luna · Gemini 4 Hydrogen |
+| `standard` | Most work | Claude Sonnet 5.5 · GPT-6.1 Terra · Gemini 4 Neon |
+| `strong` | Deep reviews and hard design | Claude Opus 5.5 · GPT-6.2 Sol · Gemini 4 Neon |
+| `max` | The strongest tier. No package agent uses it by default. | Claude Fable 5.2 · GPT-6.2 Astra · Gemini 4 Neon |
+
+The old names `opus`, `sonnet`, `haiku` and `fable` still work as aliases.
 
 The presets are `github-copilot`, `anthropic`, `inherit` (your session model, the default) and `custom` (you set each tier).
 

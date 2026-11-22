@@ -91,8 +91,8 @@ def compose(
         fixed_by_agents: agents whose findings were fixed during the loop.
             Each verifies its own fixes at the final hash.
         eligible_roster: the resolver's eligible lenses in `select_lenses.py`
-            order — cheap-first (non-opus before opus). Top-ups are taken
-            from the front, so a top-up never reaches for an opus lens while
+            order — cheap-first (non-strong before strong). Top-ups are taken
+            from the front, so a top-up never reaches for a strong-tier lens while
             a cheaper eligible one is available.
         panel_agents: the full round-1 panel, used only by the escape hatch.
         panel_files / fix_delta_files: drive `scope_grew`.

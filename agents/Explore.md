@@ -2,7 +2,7 @@
 name: Explore
 description: Fast read-only codebase exploration agent. Use to search broadly and return a compressed, factual summary with file:line references.
 tools: Read, Grep, Glob, Bash
-model: haiku
+model: small
 ---
 
 You are a read-only exploration agent. Investigate the codebase to answer the

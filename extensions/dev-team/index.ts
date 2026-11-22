@@ -30,7 +30,7 @@ import {
 	updateConfigFile,
 	userConfigPath,
 } from "./lib/config.ts";
-import { CUSTOM_MENU_LABEL, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
+import { CUSTOM_MENU_LABEL, oldTierNamesLines, presetFromMenuLabel, presetMenuLabel, presetTipLines, tierLine, tierMenuChoices } from "./lib/doctor-text.ts";
 import { toSingleLine } from "../shared/terminal-text.ts";
 import { createStyleGate, styleGuideFor } from "./lib/github-style.ts";
 import { applyUpdatedInput, hookToolName, HookBridge, type HookOutcome, resolvePython, toHookInput } from "./lib/hooks.ts";
@@ -165,7 +165,7 @@ export default function devTeam(pi: ExtensionAPI) {
 
 	pi.registerFlag("dev-team-agent", { type: "string", description: "Run this pi process as the named dev-team agent (used by bin/dev-team-run)" });
 	pi.registerFlag(AGENT_PROMPT_FLAG, { type: "string", description: "Set by dev_team_subagent on its children: the appended prompt is a dev-team agent prompt, which lists the agent's own skills and goes after the shared guide" });
-	pi.registerFlag("dev-team-tier", { type: "string", description: "Model tier (opus|sonnet|haiku|fable) resolved through dev-team.json" });
+	pi.registerFlag("dev-team-tier", { type: "string", description: "Model tier (small|standard|strong|max) resolved through dev-team.json" });
 
 	function applyEnv(ctx: ExtensionContext) {
 		cwd = ctx.cwd;
@@ -454,6 +454,7 @@ export default function devTeam(pi: ExtensionAPI) {
 				...rows.map(([name, p]) => `${p ? "ok     " : "MISSING"} ${name}${p ? `  ${p}` : ""}`),
 				`model tiers:`,
 				...tierLines,
+				...oldTierNamesLines(loadConfig(ctx.cwd, projectConfigOpts(ctx)).oldTierNames),
 				...(advice && sessionModel
 					? presetTipLines(advice, sessionModel, projectFileSettingTiers(ctx.cwd, projectConfigOpts(ctx), advice.changes.map((c) => c.tier)))
 					: []),
@@ -469,7 +470,7 @@ export default function devTeam(pi: ExtensionAPI) {
 		const scope = await ctx.ui.select("Save tier mapping for", [`user (${userConfigPath()})`, `project (${projectConfigPath(ctx.cwd)})`]);
 		if (!scope) return;
 		const file = scope.startsWith("user") ? userConfigPath() : projectConfigPath(ctx.cwd);
-		const mode = await ctx.ui.select("Map dev-team agent tiers (opus/sonnet/haiku/fable) to models", [
+		const mode = await ctx.ui.select("Map dev-team agent tiers (small/standard/strong/max) to models", [
 			...Object.keys(MODEL_PRESETS).map(presetMenuLabel),
 			CUSTOM_MENU_LABEL,
 		]);

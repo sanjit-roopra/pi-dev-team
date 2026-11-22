@@ -84,7 +84,7 @@ Logged at the end of each task:
     "total": 15700
   },
   "cost_usd": 0.043,
-  "llm": "opus",
+  "llm": "anthropic/claude-opus-5-5",
   "handoffs": 0,
   "phases": 2,
   "rework_cycles": 1,

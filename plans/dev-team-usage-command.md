@@ -550,7 +550,7 @@ graph TD
 |--------|----------|--------------|
 | `trivial` | Single-file rename, config change, typo fix, documentation-only | Skip inline review; covered by final `/code-review` |
 | `standard` | New function, test, module, or behavioral change within existing patterns | Spec-compliance + relevant quality agents |
-| `complex` | Architectural change, security-sensitive, cross-cutting concern, new abstraction | Full agent suite including opus-tier agents |
+| `complex` | Architectural change, security-sensitive, cross-cutting concern, new abstraction | Full agent suite including strong-tier agents |
 
 ## Pre-PR Quality Gate
 

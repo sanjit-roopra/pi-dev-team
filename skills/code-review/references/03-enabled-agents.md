@@ -165,7 +165,7 @@ rather than by file type or diff size, and it gates two lenses:
 `arch-review` (structural signals) and `concurrency-review` (concurrency
 primitives, #1975).
 
-`arch-review` is `Scope: always` and opus-tier, so it runs on every non-empty
+`arch-review` is `Scope: always` and strong-tier, so it runs on every non-empty
 changeset — including diffs that cannot exhibit what it looks for. Its scope
 is ADR compliance, layer-boundary violations, dependency direction, and
 pattern consistency: all properties of *structure*. A diff that adds a guard

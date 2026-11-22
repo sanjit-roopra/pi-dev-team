@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Architectural-impact gate for expensive structural lenses.
 
-`arch-review` is `Scope: always` and opus-tier: it runs on every non-empty
+`arch-review` is `Scope: always` and strong-tier: it runs on every non-empty
 changeset, including diffs that cannot possibly exhibit what it looks for.
 Its declared scope is ADR compliance, **layer boundary violations**,
 **dependency direction**, and pattern consistency — all of which are

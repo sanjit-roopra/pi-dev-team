@@ -2,7 +2,7 @@
 name: plan-review-acceptance
 description: Adversarially critiques an implementation plan's acceptance criteria, Gherkin scenarios, and step traceability before the human plan-review gate
 tools: Read, Grep, Glob
-model: sonnet
+model: standard
 effort: high
 color: green
 ---

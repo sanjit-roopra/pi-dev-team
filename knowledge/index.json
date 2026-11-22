@@ -5380,9 +5380,9 @@
       "summary": "For each selected file, identify non-trivial computation functions using the Trivial Function Definition above.",
       "anchor": "step-5-pre-filter"
     },
-    "Step 6 — Annotation (Haiku, file-level batching)": {
+    "Step 6 — Annotation (small tier, file-level batching)": {
       "summary": "For each file with non-trivial functions:",
-      "anchor": "step-6-annotation-haiku-file-level-batching"
+      "anchor": "step-6-annotation-small-tier-file-level-batching"
     },
     "Step 7 — Register Update": {
       "summary": "Build a register entry for each annotated function:",
@@ -5396,9 +5396,9 @@
       "summary": "The full register may be too large to cluster in a single call.",
       "anchor": "token-budget-and-partitioning"
     },
-    "Clustering Call (Sonnet)": {
+    "Clustering Call (standard tier)": {
       "summary": "For each shard, emit progress: `Clustering [layer-pair]: <layer-a> × <layer-b>...`",
-      "anchor": "clustering-call-sonnet"
+      "anchor": "clustering-call-standard-tier"
     },
     "Canonical Scoring": {
       "summary": "For each cluster with 2 or more entries:",

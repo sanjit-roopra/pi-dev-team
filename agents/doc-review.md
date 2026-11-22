@@ -3,7 +3,7 @@
 name: doc-review
 description: Documentation accuracy, README staleness, API doc alignment, inline comment drift, ADR update triggers
 tools: Read, Grep, Glob, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__get_why
-model: haiku
+model: small
 effort: medium
 color: green
 skills:
@@ -13,10 +13,10 @@ skills:
 # Documentation Review
 
 Scope: always
-Verify-model: haiku
+Verify-model: small
 Verify-effort: medium
 <!-- Verification-mode opt-in (#1628): confirming a doc line now matches the
-     code it describes is a comparison, not an inference. Already haiku for
+     code it describes is a comparison, not an inference. Already small-tier for
      discovery; this drops effort high -> medium for confirmations only.
      Contract: ${DEV_TEAM_ROOT}/knowledge/verification-mode.md
      (Whole-file load: short shared contract, no anchors). -->

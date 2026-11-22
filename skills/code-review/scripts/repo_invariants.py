@@ -168,7 +168,7 @@ def check_skill_scripts_documented(changed_files=None) -> list[dict]:
 # --- #1629: churn generators observed in PR #1619 -------------------------
 #
 # Of #1619's 8 follow-up review rounds, at least 4 were triggered by defect
-# classes that never needed an opus reviewer to catch. Each check below
+# classes that never needed a strong-tier reviewer to catch. Each check below
 # encodes one of them, so the author sees it at edit time and the panel gets
 # "already detected — do not re-report" framing instead of N agents
 # rediscovering the same mechanical fact.

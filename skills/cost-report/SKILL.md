@@ -168,7 +168,7 @@ text, code, file paths, or tool payloads. `metrics/cost-metering.jsonl` and
    ```
 
    Without `--budget` it reports pace only (no flag). When it flags an
-   over-budget pace it suggests dropping a model tier (Opus→Sonnet) for the rest
+   over-budget pace it suggests dropping a model tier (strong→standard) for the rest
    of the window.
 
 ## Notes

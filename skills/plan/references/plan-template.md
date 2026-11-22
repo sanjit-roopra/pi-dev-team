@@ -138,7 +138,7 @@ Each step must include a complexity rating that controls review depth during `/b
 |--------|----------|--------------|
 | `trivial` | Single-file rename, config change, typo fix, documentation-only | Skip inline review; covered by final `/code-review` |
 | `standard` | New function, test, module, or behavioral change within existing patterns | Spec-compliance + relevant quality agents |
-| `complex` | Architectural change, security-sensitive, cross-cutting concern, new abstraction | Full agent suite including opus-tier agents |
+| `complex` | Architectural change, security-sensitive, cross-cutting concern, new abstraction | Full agent suite including strong-tier agents |
 
 When in doubt, classify up (standard rather than trivial, complex rather than standard).
 

@@ -4,7 +4,7 @@
  * Each dispatch runs a child `pi --mode json -p --no-session` process with:
  *   - the agent's markdown body appended to the system prompt
  *   - its frontmatter tool list mapped to pi tools (Glob -> find/ls, Agent -> dev_team_subagent, Skill -> skill, ...)
- *   - its model tier (opus/sonnet/haiku/fable) resolved through dev-team.json, default: inherit
+ *   - its model tier (small/standard/strong/max) resolved through dev-team.json, default: inherit
  *   - its `effort` mapped to --thinking
  * Around each dispatch it fires the dev-team hooks for an Agent call:
  *   PreToolUse(Agent) before (dispatch ledger for the PR gate), SubagentStop after
@@ -310,7 +310,7 @@ const TaskFields = {
 	task: Type.Optional(Type.String({ description: "Full task prompt for the agent (alias: prompt). The agent sees only this, not the conversation." })),
 	description: Type.Optional(Type.String({ description: "Short 3-5 word label" })),
 	model: Type.Optional(
-		Type.String({ description: "Override model: a tier (opus|sonnet|haiku|fable|inherit) or provider/model-id" }),
+		Type.String({ description: "Override model: a tier (small|standard|strong|max|inherit) or provider/model-id" }),
 	),
 	thinking: Type.Optional(Type.String({ description: "Lower the thinking/effort level (low|medium|high|xhigh); never raises it above the agent's own effort" })),
 	cwd: Type.Optional(Type.String({ description: "Working directory for the agent" })),
@@ -740,7 +740,7 @@ export function viewFromResult(r: SubagentRunResult): Partial<SubagentTaskView> 
 }
 
 /**
- * "provider/id, tier sonnet", or just the model when the dispatch named no tier (`inherit` or an
+ * "provider/id, tier standard", or just the model when the dispatch named no tier (`inherit` or an
  * explicit provider/id): how a result names what it ran on. Both can come from a project's config
  * (a model pi rejected before the child reported its own), so only a model id and a known tier show.
  */

@@ -2,7 +2,7 @@
 name: gherkin-quality-critic
 description: Adversarially reviews freshly-derived or freshly-authored Gherkin scenarios for coverage gaps and positive/negative balance, immediately after generation
 tools: Read, Grep, Glob
-model: sonnet
+model: standard
 effort: high
 color: cyan
 ---

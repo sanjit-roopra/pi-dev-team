@@ -19,8 +19,11 @@ helper = load_module("dev_team_run", HELPER)
 
 class RunHelper(unittest.TestCase):
     def test_model_args(self):
-        self.assertEqual(helper.model_args("opus"), ["--dev-team-tier", "opus"])
-        self.assertEqual(helper.model_args("claude-sonnet-4-5"), ["--dev-team-tier", "sonnet"])
+        self.assertEqual(helper.model_args("strong"), ["--dev-team-tier", "strong"])
+        self.assertEqual(helper.model_args("Max"), ["--dev-team-tier", "max"])
+        self.assertEqual(helper.model_args("opus"), ["--dev-team-tier", "strong"], "old names are aliases")
+        self.assertEqual(helper.model_args("fable"), ["--dev-team-tier", "max"])
+        self.assertEqual(helper.model_args("claude-sonnet-4-5"), ["--dev-team-tier", "standard"])
         self.assertEqual(helper.model_args("github-copilot/gpt-5.5"), ["--model", "github-copilot/gpt-5.5"])
         self.assertEqual(helper.model_args("inherit"), [])
         self.assertEqual(helper.model_args(None), [])
@@ -114,7 +117,7 @@ class RunHelper(unittest.TestCase):
             self.assertEqual(env_out["usage"]["input_tokens"], 15)
             argv = json.loads(log.read_text())
             self.assertEqual(argv[:4], ["--mode", "json", "-p", "--no-session"])
-            for expected in (["-e", "/x/ext.ts"], ["--dev-team-agent", "security-review"], ["--dev-team-tier", "haiku"], ["--tools", "read,grep"]):
+            for expected in (["-e", "/x/ext.ts"], ["--dev-team-agent", "security-review"], ["--dev-team-tier", "small"], ["--tools", "read,grep"]):
                 i = argv.index(expected[0])
                 self.assertEqual(argv[i : i + 2], expected)
             self.assertEqual(argv[-1], "review this")

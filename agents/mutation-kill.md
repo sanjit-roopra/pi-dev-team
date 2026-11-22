@@ -2,7 +2,7 @@
 name: mutation-kill
 description: Autonomous mutation survivor-reduction loop — runs a scoped mutation tool, generates targeted tests for survivors in priority order, verifies they compile and pass, commits, and repeats until survivors stop decreasing. Gates on hard kills only (timeouts excluded). Complements the advisory /mutation-testing skill.
 tools: Read, Grep, Glob, Edit, Write, Bash, Skill, mcp__codegraph__*, mcp__plugin_repowise_repowise__get_context, mcp__plugin_repowise_repowise__get_symbol, mcp__plugin_repowise_repowise__search_codebase, mcp__plugin_repowise_repowise__get_risk
-model: opus
+model: strong
 effort: high
 color: yellow
 memory: project
@@ -90,7 +90,7 @@ Generation is a seam the loop calls into; it never decides *what* tests to write
 - **Forced `--headless` in the shard pipeline.** `stryker_shard_pipeline.py`
   **forces `--headless`** on every survivor-fix launch, because a script-spawned
   round is unattended and has no live agent turn to call back into.
-- **Retry-then-downgrade on repeated gateway errors.** Within one `--headless` generation call, the 3rd consecutive 502/gateway-class failure earns exactly 1 same-model retry (a short, capped backoff runs before each pre-threshold retry); a failed retry downgrades one step down `opus`→`sonnet`→`haiku` — **at most once per file, ever**. Exhaustion at the fallback tier surfaces to the operator instead of a second downgrade (`--all` continues). Override via `DEV_TEAM_MUTATION_FALLBACK_MODEL` (an invalid value is rejected and falls back to the ladder default).
+- **Retry-then-downgrade on repeated gateway errors.** Within one `--headless` generation call, the 3rd consecutive 502/gateway-class failure earns exactly 1 same-model retry (a short, capped backoff runs before each pre-threshold retry); a failed retry downgrades one step down `strong`→`standard`→`small` — **at most once per file, ever**. Exhaustion at the fallback tier surfaces to the operator instead of a second downgrade (`--all` continues). Override via `DEV_TEAM_MUTATION_FALLBACK_MODEL` (an invalid value is rejected and falls back to the ladder default).
 
 ## The honest score — hard kills only
 

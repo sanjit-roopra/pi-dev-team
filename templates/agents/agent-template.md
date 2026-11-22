@@ -28,17 +28,17 @@ tools: Read, Grep, Glob
 # disallowedTools: Write, Edit
 
 # OPTIONAL — model to use for this agent's dispatch
-# An alias (haiku | sonnet | opus | fable), a full model ID, or inherit.
+# A tier (small | standard | strong | max), a full model ID, or inherit.
 # Resolved natively by the harness before dispatch (ADR 0026) — there is no
 # PreToolUse hook, routing map, or ladder file in this path.
-# Do not pin a dated snapshot ID here; use the alias.
+# Do not pin a dated snapshot ID here; use a tier.
 # inherit: use the same model as the main conversation (default if omitted)
 #
 # Routing guidance:
-#   haiku  — high-volume, structured extraction, simple classification
-#   sonnet — balanced capability and speed; most agents
-#   opus   — frontier reasoning, security analysis, architectural judgment
-model: sonnet
+#   small    — high-volume, structured extraction, simple classification
+#   standard — balanced capability and speed; most agents
+#   strong   — frontier reasoning, security analysis, architectural judgment
+model: standard
 
 # OPTIONAL — reasoning effort for this agent's model calls
 # Values: low | medium | high | xhigh | max (available levels depend on model)
