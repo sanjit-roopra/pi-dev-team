@@ -1,6 +1,6 @@
 {
   "name": "pi-dev-team",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A team of AI agents for pi: spec, plan, build with tests, review, pull request. Works with every pi provider.",
   "license": "MIT",
   "author": "Sanjit Roopra (https://github.com/sanjit-roopra)",
